@@ -352,31 +352,21 @@ void validate_sampling(const sv_recipe_t& recipe, std::uint64_t span,
     }
 }
 
-constexpr std::size_t maximum_expression_source_bytes = 16 * 1024;
 
 // The expression source belongs to the lua_expression curve alone, bounded and free of NUL bytes.
 void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
     const bool is_expression = recipe.curve == sv_recipe_curve_t::lua_expression;
-    if (!is_expression && !recipe.expression_source.empty()) {
+    if (!is_expression && !recipe.script().frozen_source.empty()) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "only a Lua expression SV recipe may carry expression source");
     }
-    if (is_expression && (recipe.expression_source.empty() ||
-                          !text_util::is_valid_bounded_text(recipe.expression_source, maximum_expression_source_bytes))) {
+    if (is_expression && (recipe.script().frozen_source.empty() ||
+                          !text_util::is_valid_bounded_text(recipe.script().frozen_source, lua_source_descriptor_t::maximum_frozen_source_bytes))) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "a Lua expression SV recipe needs 1 to 16384 non-NUL bytes of source");
     }
 }
 
-auto is_lua_identifier(std::string_view name) -> bool {
-    const auto initial = [](char byte) {
-        return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || byte == '_';
-    };
-    return !name.empty() && name.size() <= 128 && initial(name.front()) &&
-        std::ranges::all_of(name, [&](char byte) {
-            return initial(byte) || (byte >= '0' && byte <= '9');
-        });
-}
 
 auto is_lua_content_hash(std::string_view hash) -> bool {
     return hash.empty() || text_util::is_sha256_digest(hash);
@@ -391,12 +381,12 @@ auto is_lua_source_reference(const std::filesystem::path& path) -> bool {
 
 void validate_lua_parameters(const sv_recipe_lua_t& lua, diagnostic_list_t& diagnostics) {
     std::set<std::string_view> names;
-    if (lua.parameters.size() > 256 || lua.inputs.size() > 256) {
+    if (lua.source.parameters.size() > 256 || lua.inputs.size() > 256) {
         reject(diagnostics, diagnostic_code_t::invalid_id, "Lua recipes allow at most 256 parameters and inputs");
         return;
     }
-    for (const auto& parameter : lua.parameters) {
-        if (!is_lua_identifier(parameter.name) || !names.insert(parameter.name).second ||
+    for (const auto& parameter : lua.source.parameters) {
+        if (!lua_source_descriptor_t::is_valid_identifier(parameter.name) || !names.insert(parameter.name).second ||
             !is_valid_bounded_rational(parameter.value, maximum_parameter_magnitude)) {
             reject(diagnostics, diagnostic_code_t::invalid_rational,
                 "Lua parameters need unique identifiers and bounded rational values");
@@ -448,14 +438,14 @@ void validate_lua_descriptor(const sv_recipe_t& recipe, std::uint64_t span,
     diagnostic_list_t& diagnostics) {
     if (!recipe.lua) return;
     const auto& lua = *recipe.lua;
-    if (recipe.curve != sv_recipe_curve_t::lua_expression || lua.api_version != 1 ||
+    if (recipe.curve != sv_recipe_curve_t::lua_expression || lua.source.api_version != lua_source_descriptor_t::current_api_version ||
         static_cast<unsigned int>(lua.mode) > static_cast<unsigned int>(sv_recipe_lua_mode_t::ordered)) {
         reject(diagnostics, diagnostic_code_t::invalid_id, "Lua descriptor needs a Lua recipe, API version 1 and a valid execution mode");
         return;
     }
-    if ((!lua.entry_point.empty() && !is_lua_identifier(lua.entry_point)) ||
-        !is_lua_content_hash(lua.source_hash) ||
-        (lua.source_reference && !is_lua_source_reference(*lua.source_reference))) {
+    if ((!lua.source.entry_point.empty() && !lua_source_descriptor_t::is_valid_identifier(lua.source.entry_point)) ||
+        !is_lua_content_hash(lua.source.source_hash) ||
+        (lua.source.source_reference && !is_lua_source_reference(*lua.source.source_reference))) {
         reject(diagnostics, diagnostic_code_t::invalid_id, "Lua entry point, source reference or source hash is invalid");
     }
     validate_lua_parameters(lua, diagnostics);

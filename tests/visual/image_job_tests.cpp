@@ -1,6 +1,7 @@
 #include <wormedit/visual/image_job.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <array>
 #include <chrono>
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <latch>
 #include <span>
 #include <string>
 #include <vector>
@@ -34,13 +36,15 @@ constexpr std::array<std::uint8_t, 62> two_pixel_bmp{
 struct temporary_image_t {
     std::filesystem::path path;
 
-    explicit temporary_image_t(std::string suffix) {
+    explicit temporary_image_t(std::string suffix, std::uint8_t red = 255) {
         const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
         path = std::filesystem::temp_directory_path() /
                ("wormedit-image-job-" + std::to_string(nonce) + "-" + std::move(suffix) + ".bmp");
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
-        output.write(reinterpret_cast<const char*>(two_pixel_bmp.data()),
-                     static_cast<std::streamsize>(two_pixel_bmp.size()));
+        auto pixels = two_pixel_bmp;
+        pixels[56] = red;
+        output.write(reinterpret_cast<const char*>(pixels.data()),
+                     static_cast<std::streamsize>(pixels.size()));
     }
 
     ~temporary_image_t() {
@@ -187,4 +191,108 @@ TEST_CASE("image batch lookup preserves the first source result",
     REQUIRE(batch.find(other.resource));
     CHECK(batch.find(other.resource)->payload == image);
     CHECK(batch.find(resource_id_t{99}) == nullptr);
+}
+
+namespace {
+struct tiny_image_batch_t {
+    std::vector<std::unique_ptr<temporary_image_t>> files;
+    std::vector<resolved_visual_asset_t> sources;
+    [[nodiscard]] static auto from(std::size_t count) -> tiny_image_batch_t {
+        tiny_image_batch_t result;
+        result.files.reserve(count); result.sources.reserve(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            result.files.push_back(std::make_unique<temporary_image_t>("distinct-" + std::to_string(i),
+                static_cast<std::uint8_t>(i % 251 + 1)));
+            result.sources.push_back(source(resource_id_t{i + 1}, asset_id_t{i + 11}, result.files.back()->path));
+        }
+        return result;
+    }
+};
+void check_count_admission_refused(image_job_t& job, const task_scheduler_t& scheduler,
+    const image_cache_t& cache, std::span<const resolved_visual_asset_t> sources) {
+    const auto rejected = job.request(song_id_t{3}, 20, sources);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().code == failure_code_t::invalid_request);
+    CHECK(scheduler.outstanding_tasks() == 0);
+    CHECK(cache.size() == 0);
+    CHECK_FALSE(job.is_busy());
+}
+void check_distinct_decoded_item(const image_job_item_outcome_t& item,
+    const resolved_visual_asset_t& requested, std::size_t index) {
+    REQUIRE(item);
+    CHECK(item->context.resource == requested.resource);
+    CHECK(item->context.asset == requested.asset);
+    CHECK(item->payload->path == requested.path);
+    REQUIRE(item->payload->pixels.size() == 8);
+    CHECK(item->payload->pixels[0] == static_cast<std::uint8_t>(index % 251 + 1));
+}
+void check_published_image_cache(image_cache_t& cache, const image_job_t& job,
+    std::span<const resolved_visual_asset_t> sources) {
+    const auto count = sources.size();
+    CHECK(cache.size() == count);
+    CHECK(cache.rgba_bytes() == 8 * count);
+    REQUIRE(cache.find(song_id_t{3}, 20, sources.front()));
+    REQUIRE(cache.find(song_id_t{3}, 20, sources[count - 1]));
+    CHECK_FALSE(job.is_busy());
+}
+void check_disabled_count_admission(image_cache_t& cache, task_scheduler_t& scheduler,
+    std::span<const resolved_visual_asset_t> sources) {
+    image_job_t disabled{cache, scheduler, 0};
+    CHECK_FALSE(disabled.request(song_id_t{3}, 20, sources.first(1)));
+    CHECK(scheduler.outstanding_tasks() == 0);
+}
+} // namespace
+
+TEST_CASE("Image jobs honor explicit large count budgets with distinct decoded sources and bounded publication",
+          "[unit][visual][image-job][configured-budget]") {
+    const auto count = GENERATE(std::size_t{33}, std::size_t{1030});
+    const auto batch = tiny_image_batch_t::from(count + 1);
+    // Keep the normal byte ceiling; only the explicit entry/count budgets differ.
+    image_cache_t cache{256U * 1024U * 1024U, count};
+    task_scheduler_t scheduler{1, 4};
+    image_job_t job{cache, scheduler, count};
+    check_count_admission_refused(job, scheduler, cache, batch.sources);
+    const auto admitted = job.request(song_id_t{3}, 20, std::span{batch.sources}.first(count));
+    REQUIRE(admitted);
+    const auto completion = job.wait();
+    REQUIRE(completion);
+    REQUIRE(*completion);
+    CHECK(completion->value().generation == *admitted);
+    const auto& items = completion->value().payload->items;
+    REQUIRE(items.size() == count);
+    for (std::size_t i = 0; i < count; ++i)
+        check_distinct_decoded_item(items[i], batch.sources[i], i);
+    check_published_image_cache(cache, job, std::span{batch.sources}.first(count));
+}
+TEST_CASE("Image jobs retain default five and zero count admission bounds", "[unit][visual][image-job][negative]") {
+    const auto batch = tiny_image_batch_t::from(6);
+    image_cache_t cache;
+    task_scheduler_t scheduler{1, 4};
+    image_job_t defaults{cache, scheduler};
+    CHECK_FALSE(defaults.request(song_id_t{3}, 20, batch.sources));
+    CHECK(scheduler.outstanding_tasks() == 0);
+    REQUIRE(defaults.request(song_id_t{3}, 20, std::span{batch.sources}.first(5)));
+    const auto completion = defaults.wait();
+    REQUIRE(completion);
+    REQUIRE(*completion);
+    CHECK(completion->value().payload->items.size() == 5);
+    check_disabled_count_admission(cache, scheduler, batch.sources);
+}
+
+TEST_CASE("Configured image batches retain cancellation before worker decode", "[unit][visual][image-job][configured-budget]") {
+    const auto batch = tiny_image_batch_t::from(33);
+    image_cache_t cache;
+    std::latch release{1};
+    task_scheduler_t scheduler{1, 4, {.on_worker_start = [&] { release.wait(); }}};
+    image_job_t job{cache, scheduler, 33};
+    const auto started = job.request(song_id_t{3}, 20, batch.sources);
+    job.cancel();
+    release.count_down(); // Release before assertions so failure cannot strand the worker.
+    job.shutdown();
+    REQUIRE(started);
+    CHECK_FALSE(job.is_busy());
+    CHECK_FALSE(job.poll());
+    CHECK(cache.size() == 0);
+    CHECK(cache.rgba_bytes() == 0);
+    CHECK(scheduler.outstanding_tasks() == 0);
 }

@@ -1,7 +1,10 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_storage.h>
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/core/storyboard_preview.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -337,4 +340,323 @@ TEST_CASE("wormedit-convert rejects BMS sound capacity before any generated writ
     check_cli(run.result.dump().find("needs 1296 sounds, BMS holds 1295") != std::string::npos);
     check_cli(read_file(output / "manual.txt") == "keep");
     check_cli(std::distance(std::filesystem::directory_iterator(output), std::filesystem::directory_iterator{}) == 1);
+}
+
+namespace {
+auto write_osbx_cli_project(const scratch_directory_t& scratch, bool skew) -> std::filesystem::path {
+    using namespace wormedit;
+    const std::string source = "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    auto parsed = parse_osu_mania_bytes(bytes_of(source));
+    require_cli(parsed.value.has_value());
+    osbx_document_t scene{.images = {{.id = "image", .file = "images/sprite.ppm"}},
+        .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite,
+                   .parent = "parent", .image = "image",
+                   .ops = {{.id = "offset", .track = {.default_value = {100, 0}}}}}}};
+    osbx_transform_op_t turn{.id = "turn", .kind = osbx_transform_kind_t::rotate,
+        .track = {.default_value = {0}, .keys = {{.id = "a", .value = {0}},
+            {.id = "b", .time_ms = 2000, .value = {90}}}}};
+    if (skew) turn = {.id = "offending-skew", .kind = osbx_transform_kind_t::skew,
+                      .track = {.default_value = {10, 0}}};
+    scene.nodes.push_back({.id = "parent", .ops = {turn}});
+    parsed.value->storyboards = {{.id = storyboard_id_t{1}, .osbx = scene}};
+    const auto saved = write_native_project(*parsed.value);
+    require_cli(saved.value.has_value());
+    return write_source(scratch, "osbx.wormedit", *saved.value);
+}
+auto write_native_actor_project(const scratch_directory_t& scratch) -> std::filesystem::path {
+    using namespace wormedit;
+    const auto input = write_osbx_cli_project(scratch, false);
+    auto project = parse_native_project(read_file(input));
+    require_cli(project.value.has_value());
+    auto& scene = *project.value->storyboards.front().osbx;
+    scene.nodes = {{.id = "pass-sprite", .kind = osbx_node_kind_t::sprite, .layer = osbx_layer_t::pass,
+        .image = "image", .ops = {{.id = "position", .track = {.default_value = {320,240}}}}}};
+    auto failed = scene.nodes.front();
+    failed.id = "fail-sprite";
+    failed.layer = osbx_layer_t::fail;
+    failed.ops.front().id = "fail-position";
+    scene.nodes.push_back(std::move(failed));
+    const auto saved = write_native_project(*project.value);
+    require_cli(saved.value.has_value());
+    write_source(scratch, "osbx.wormedit", *saved.value);
+    std::filesystem::create_directory(scratch.path() / "images");
+    write_source(scratch, "images/sprite.ppm", "P6\n2 1\n255\nabcdef");
+    return input;
+}
+auto native_actor_request(const std::filesystem::path& input, const std::filesystem::path& output,
+    const char* mode = "actors", const char* conditional = "pass") -> json {
+    return {{"input", input.string()}, {"output_directory", output.string()}, {"target", "stepmania"},
+        {"loss_policy", "warn"}, {"overwrite", true},
+        {"stepmania", {{"file_profile", "ssc"}, {"timing_syntax", "native_warps"},
+            {"implementation_profile", "stepmania_5_1"}, {"storyboard", mode}, {"conditional_layer", conditional}}}};
+}
+}
+
+TEST_CASE("wormedit-convert native actor mode selects the shared conditional layer", "[tools][convert][stepmania][storyboard]") {
+    const auto* layer = GENERATE("pass", "fail", "neither");
+    const scratch_directory_t scratch{std::string{"native-actors-"} + layer};
+    const auto input = write_native_actor_project(scratch);
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    const auto run = run_tool(scratch, native_actor_request(input, output, "actors", layer));
+    INFO(run.result.dump());
+    require_cli(run.status == 0);
+    check_cli(count_files(output, ".ssc") == 1);
+    const auto script = output / "wormedit-storyboard/background/default.lua";
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+    if (std::string_view{layer} != "neither") {
+        require_cli(std::filesystem::exists(script));
+        const auto bytes = read_file(script);
+        check_cli(bytes.find(std::string{layer} + "-sprite") != std::string::npos);
+        const auto excluded = std::string_view{layer} == "pass" ? "fail-sprite" : "pass-sprite";
+        check_cli(bytes.find(excluded) == std::string::npos);
+        check_cli(read_file(output / "images/sprite.ppm") == "P6\n2 1\n255\nabcdef");
+    } else check_cli(!std::filesystem::exists(script));
+#else
+    check_cli(!std::filesystem::exists(script));
+#endif
+}
+
+TEST_CASE("wormedit-convert video and none modes keep the chart without a fake video", "[tools][convert][stepmania][storyboard]") {
+    const auto* mode = GENERATE("video", "none");
+    const scratch_directory_t scratch{std::string{"native-mode-"} + mode};
+    const auto input = write_native_actor_project(scratch);
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    const auto run = run_tool(scratch, native_actor_request(input, output, mode));
+    require_cli(run.status == 0);
+    check_cli(count_files(output, ".ssc") == 1);
+    check_cli(!std::filesystem::exists(output / "wormedit-storyboard"));
+    if (std::string_view{mode} == "video")
+        check_cli(run.result["diagnostics"].dump().find("video route is not yet available") != std::string::npos);
+}
+
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+TEST_CASE("wormedit-convert atomically protects unrelated native actor files", "[tools][convert][stepmania][storyboard]") {
+    const scratch_directory_t scratch{"native-ownership"};
+    const auto input = write_native_actor_project(scratch);
+    const auto output = scratch.path() / "output";
+    const auto script = output / "wormedit-storyboard/background/default.lua";
+    std::filesystem::create_directories(script.parent_path());
+    std::ofstream(script) << "unrelated Lua";
+    const auto request = native_actor_request(input, output);
+    const auto refused = run_tool(scratch, request);
+    check_cli(refused.status != 0);
+    check_cli(read_file(script) == "unrelated Lua");
+    check_cli(count_files(output, ".ssc") == 0);
+    std::filesystem::remove(script);
+    const auto published = run_tool(scratch, request);
+    INFO(published.result.dump());
+    require_cli(published.status == 0);
+    check_cli(count_files(output, ".ssc") == 1);
+    check_cli(read_file(script).find("GAMESTATE:GetSongPosition()") != std::string::npos);
+    check_cli(published.result["artifacts"].dump().find("native-storyboard") != std::string::npos);
+}
+#endif
+
+TEST_CASE("wormedit-convert rejects unknown native storyboard policy names", "[tools][convert][stepmania][storyboard]") {
+    const auto* field = GENERATE("storyboard", "conditional_layer");
+    const scratch_directory_t scratch{std::string{"native-invalid-"} + field};
+    const auto input = write_native_actor_project(scratch);
+    const auto output = scratch.path() / "output";
+    auto request = native_actor_request(input, output);
+    request["stepmania"][field] = "unknown";
+    const auto refused = run_tool(scratch, request);
+    check_cli(refused.status != 0);
+    check_cli(refused.result.dump().find(std::string{"stepmania."} + field) != std::string::npos);
+    check_cli(!std::filesystem::exists(output));
+}
+
+TEST_CASE("wormedit-convert atomically publishes OSBX with images and bake warnings",
+          "[unit][tools][convert][osbx]") {
+    scratch_directory_t scratch("osbx");
+    const auto input = write_osbx_cli_project(scratch, false);
+    auto project = wormedit::parse_native_project(read_file(input));
+    require_cli(project.value.has_value());
+    auto& scene = *project.value->storyboards.front().osbx;
+    scene.nodes[1].ops.front().track.keys.back().time_ms = 500;
+    scene.images.push_back({.id = "alias", .file = "images/./sprite.ppm"});
+    scene.nodes.push_back({.id = "alias-sprite", .kind = wormedit::osbx_node_kind_t::sprite, .image = "alias"});
+    const auto saved = wormedit::write_native_project(*project.value);
+    require_cli(saved.value.has_value());
+    std::ofstream(input) << *saved.value;
+
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    std::ofstream(output / "unrelated.txt") << "keep";
+    std::filesystem::create_directory(scratch.path() / "images");
+    const std::string image = "P6\n2 1\n255\nabcdef";
+    write_source(scratch, "images/sprite.ppm", image);
+    const auto run = run_tool(scratch, {{"input", input.string()}, {"output_directory", output.string()},
+        {"target", "osu_mania"}, {"overwrite", true}});
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+    INFO(run.result.dump());
+    require_cli(run.status == 0);
+    check_cli(run.result["ok"] == true);
+    check_cli(read_file(output / "images/sprite.ppm") == image);
+    std::size_t storyboards{};
+    for (const auto& artifact : run.result["artifacts"]) {
+        const auto filename = artifact["filename"].get<std::string>();
+        if (std::filesystem::path(filename).extension() != ".osb") continue;
+        ++storyboards;
+        const auto parsed = wormedit::parse_osb(read_file(output / filename));
+        require_cli(parsed.value.has_value());
+        check_cli(parsed.value->sprites.size() == 2);
+        const auto index = wormedit::storyboard_preview_index_t::from(*parsed.value);
+        require_cli(index.value.has_value());
+        wormedit::storyboard_frame_arena_t arena;
+        const auto frame = wormedit::evaluate_storyboard_frame(*parsed.value, *index.value, 1500, arena);
+        require_cli(frame.is_success());
+        check_cli(frame.instances.size() == 2);
+    }
+    check_cli(storyboards == 1);
+    check_cli(run.result["diagnostics"].dump().find("worst normalized error") != std::string::npos);
+    const auto repeated = run_tool(scratch, {{"input", input.string()}, {"output_directory", output.string()},
+        {"target", "osu_mania"}, {"overwrite", true}});
+    INFO(repeated.result.dump());
+    check_cli(repeated.status == 0);
+#else
+    check_cli(run.status == 1);
+    check_cli(run.result.dump().find("image decoding support") != std::string::npos);
+    check_cli(std::distance(std::filesystem::directory_iterator(output), std::filesystem::directory_iterator{}) == 1);
+#endif
+    check_cli(read_file(output / "unrelated.txt") == "keep");
+}
+
+TEST_CASE("wormedit-convert OSBX preflight refusal leaves destination bytes untouched",
+          "[unit][tools][convert][osbx]") {
+    scratch_directory_t scratch("osbx-refusal");
+    const auto input = write_osbx_cli_project(scratch, true);
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    std::ofstream(output / "sentinel.osb") << "original bytes";
+    std::filesystem::create_directory(scratch.path() / "images");
+    write_source(scratch, "images/sprite.ppm", "P6\n2 1\n255\nabcdef");
+    const auto run = run_tool(scratch, {{"input", input.string()}, {"output_directory", output.string()},
+        {"target", "osu_mania"}, {"overwrite", true}});
+    check_cli(run.status == 1);
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+    check_cli(run.result["diagnostics"].dump().find("offending-skew") != std::string::npos);
+#endif
+    check_cli(read_file(output / "sentinel.osb") == "original bytes");
+    check_cli(std::distance(std::filesystem::directory_iterator(output), std::filesystem::directory_iterator{}) == 1);
+}
+
+TEST_CASE("wormedit-convert OSBX matrix and image failures preserve the whole output set",
+          "[unit][tools][convert][osbx]") {
+    scratch_directory_t scratch("osbx-other-refusals");
+    const auto input = write_osbx_cli_project(scratch, false);
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    std::ofstream(output / "sentinel.txt") << "unchanged";
+    std::filesystem::create_directory(scratch.path() / "images");
+    write_source(scratch, "images/sprite.ppm", "P6\n2 1\n255\nabcdef");
+    auto parsed = wormedit::parse_native_project(read_file(input));
+    require_cli(parsed.value.has_value());
+    auto& scene = *parsed.value->storyboards.front().osbx;
+    std::string expected;
+    SECTION("matrix op") {
+        scene.nodes.back().ops = {{.id = "offending-matrix", .kind = wormedit::osbx_transform_kind_t::matrix,
+            .track = {.default_value = {1, 0, 0, 1, 0, 0}}}};
+        expected = "offending-matrix";
+    }
+    SECTION("missing image") {
+        std::filesystem::remove(scratch.path() / "images/sprite.ppm");
+        expected = "unavailable";
+    }
+    SECTION("invalid encoded image") {
+        write_source(scratch, "images/sprite.ppm", "broken image");
+        expected = "image";
+    }
+    SECTION("image aliases the storyboard artifact") {
+        const auto filename = "project-" + std::to_string(parsed.value->id.value) + ".osb";
+        scene.images.front().file = filename;
+        write_source(scratch, filename, "P6\n2 1\n255\nabcdef");
+        expected = "collides";
+    }
+    const auto saved = wormedit::write_native_project(*parsed.value);
+    require_cli(saved.value.has_value());
+    std::ofstream(input) << *saved.value;
+    const auto run = run_tool(scratch, {{"input", input.string()}, {"output_directory", output.string()},
+        {"target", "osu_mania"}, {"overwrite", true}});
+    INFO(run.result.dump());
+    check_cli(run.status == 1);
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+    check_cli(run.result.dump().find(expected) != std::string::npos);
+#endif
+    check_cli(read_file(output / "sentinel.txt") == "unchanged");
+    check_cli(std::distance(std::filesystem::directory_iterator(output), std::filesystem::directory_iterator{}) == 1);
+}
+
+TEST_CASE("wormedit-convert resolves frozen subtree links and publishes only their generated image set",
+          "[unit][tools][convert][osbx-link]") {
+    using namespace wormedit;
+    scratch_directory_t scratch("osbx-linked");
+    const auto input = write_osbx_cli_project(scratch,false);
+    auto parsed = parse_native_project(read_file(input)); require_cli(static_cast<bool>(parsed.value));
+    const std::string source = "return function(ctx) image{id='new',file='generated.ppm'}; sprite('generated'); image('new') end";
+    parsed.value->storyboards.front().osbx = osbx_document_t{.nodes = {{.id = "hand-group",
+        .children_link = osbx_lua_link_t{.id = "subtree-link", .source = {.frozen_source = source,
+            .source_reference = "absent-module.lua", .source_hash = native_project_content_checksum(source)}}}}};
+    const auto saved = write_native_project(*parsed.value); require_cli(static_cast<bool>(saved.value));
+    std::ofstream(input) << *saved.value;
+    const auto output = scratch.path()/"output"; std::filesystem::create_directory(output);
+    write_source(scratch,"output/sentinel.txt","keep");
+    const bool missing = GENERATE(false,true);
+    const std::string bytes = "P6\n2 1\n255\nabcdef";
+    if (!missing) write_source(scratch,"generated.ppm",bytes);
+    const auto run = run_tool(scratch,{{"input",input.string()},{"output_directory",output.string()},
+        {"target","osu_mania"},{"overwrite",true}});
+    INFO(run.result.dump());
+#if defined(WORMEDIT_TEST_HAS_LUA) && defined(WORMEDIT_TEST_HAS_IMAGE_DECODER)
+    if (!missing) {
+        require_cli(static_cast<bool>(run.status == 0));
+        check_cli(static_cast<bool>(read_file(output/"generated.ppm") == bytes));
+        std::size_t count{};
+        for (const auto& artifact : run.result["artifacts"]) {
+            const auto name = artifact["filename"].get<std::string>();
+            if (std::filesystem::path{name}.extension() != ".osb") continue;
+            const auto osb = parse_osb(read_file(output/name)); require_cli(static_cast<bool>(osb.value));
+            require_cli(static_cast<bool>(osb.value->sprites.size() == 1)); check_cli(static_cast<bool>(osb.value->sprites.front().path == "generated.ppm"));
+            ++count;
+        }
+        check_cli(static_cast<bool>(count == 1));
+    } else {
+        check_cli(static_cast<bool>(run.status != 0));
+        check_cli(static_cast<bool>(std::distance(std::filesystem::directory_iterator(output),std::filesystem::directory_iterator{}) == 1));
+    }
+#else
+    check_cli(static_cast<bool>(run.status != 0));
+    check_cli(static_cast<bool>(std::distance(std::filesystem::directory_iterator(output),std::filesystem::directory_iterator{}) == 1));
+#endif
+    check_cli(static_cast<bool>(read_file(output/"sentinel.txt") == "keep"));
+}
+
+TEST_CASE("wormedit-convert NotITG profile publishes SM XML and Lua with existing atomic ownership", "[tools][convert][notitg]") {
+    using namespace wormedit;
+    const scratch_directory_t scratch{"notitg-profile"};
+    const auto input = write_native_actor_project(scratch);
+    auto project = parse_native_project(read_file(input));
+    require_cli(project.value.has_value());
+    project.value->storyboards.front().osbx->nodes.front().layer = osbx_layer_t::foreground;
+    const auto saved = write_native_project(*project.value);
+    require_cli(saved.value.has_value());
+    write_source(scratch, "osbx.wormedit", *saved.value);
+    const auto output = scratch.path() / "output";
+    std::filesystem::create_directory(output);
+    auto request = native_actor_request(input, output);
+    request["stepmania"]["file_profile"] = "sm";
+    request["stepmania"]["implementation_profile"] = "notitg_v4";
+    const auto run = run_tool(scratch, request);
+    INFO(run.result.dump());
+    require_cli(run.status == 0);
+    check_cli(count_files(output, ".sm") == 1);
+#ifdef WORMEDIT_TEST_HAS_IMAGE_DECODER
+    check_cli(std::filesystem::exists(output / "wormedit-storyboard/main.xml"));
+    check_cli(std::filesystem::exists(output / "wormedit-storyboard/scene-1/foreground/main.lua"));
+    check_cli(read_file(output / "wormedit-storyboard/main.xml").find("scene-1/foreground/main.xml") != std::string::npos);
+#else
+    check_cli(!std::filesystem::exists(output / "wormedit-storyboard/main.xml"));
+#endif
 }

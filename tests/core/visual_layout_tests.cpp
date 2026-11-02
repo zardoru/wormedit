@@ -85,11 +85,9 @@ TEST_CASE("visual image quad rotates about its origin and preserves signed flips
         {.source_width = 20,
          .source_height = 10,
          .destination = {.left = 10.0, .top = 20.0, .width = 640.0, .height = 480.0},
-         .x = 100.0,
-         .y = 50.0,
          .origin_x = 0.5,
          .origin_y = 0.5,
-         .rotation_radians = half_pi});
+         .transform = visual_affine_t::from(100, 50, 1, 1, half_pi)});
     REQUIRE(rotated);
     CHECK(rotated->points[0].x == Catch::Approx(115.0));
     CHECK(rotated->points[0].y == Catch::Approx(60.0));
@@ -103,12 +101,9 @@ TEST_CASE("visual image quad rotates about its origin and preserves signed flips
     const auto flipped = visual_image_quad_t::from({.source_width = 20,
                                                  .source_height = 10,
                                                  .destination = {.width = 320.0, .height = 240.0},
-                                                 .x = 100.0,
-                                                 .y = 50.0,
                                                  .origin_x = 0.0,
                                                  .origin_y = 0.0,
-                                                 .scale_x = -2.0,
-                                                 .scale_y = 3.0});
+                                                 .transform = visual_affine_t::from(100, 50, -2, 3)});
     REQUIRE(flipped);
     CHECK(flipped->points[0].x == Catch::Approx(50.0));
     CHECK(flipped->points[0].y == Catch::Approx(25.0));
@@ -132,10 +127,27 @@ TEST_CASE("visual image quad rejects invalid canvas transforms",
     CHECK_FALSE(visual_image_quad_t::from({.source_width = 1,
                                         .source_height = 1,
                                         .destination = {.width = 1, .height = 1},
-                                        .scale_y = 0.0}));
+                                        .transform = visual_affine_t::from(0, 0, 1, 0)}));
     CHECK_FALSE(
         visual_image_quad_t::from({.source_width = 1,
                                 .source_height = 1,
                                 .destination = {.width = 1, .height = 1},
-                                .rotation_radians = std::numeric_limits<double>::infinity()}));
+                                .transform = visual_affine_t::from(0, 0, 1, 1, std::numeric_limits<double>::infinity())}));
+}
+
+TEST_CASE("affine layout maps shear and rejects singular or nonfinite geometry",
+          "[core][visual-layout][osbx]") {
+    using namespace wormedit;
+    visual_image_quad_request_t request{
+        .source_width = 20, .source_height = 10,
+        .destination = {.left = 10, .top = 20, .width = 320, .height = 240},
+        .origin_x = 0, .origin_y = 1, .transform = {1, 0, 0.5, 1, 100, 50}};
+    const auto quad = visual_image_quad_t::from(request);
+    REQUIRE(quad);
+    CHECK(quad->points == std::array<visual_point_t, 4>{{{57.5, 40}, {67.5, 40},
+                                                       {70, 45}, {60, 45}}});
+    request.transform = {1, 2, 2, 4, 0, 0};
+    CHECK_FALSE(visual_image_quad_t::from(request));
+    request.transform.values[0] = std::numeric_limits<double>::infinity();
+    CHECK_FALSE(visual_image_quad_t::from(request));
 }

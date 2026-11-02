@@ -30,6 +30,27 @@ boundary supports event-harness workflows without a second dispatcher or direct 
   lifecycle (begin → update → commit or cancel), the "another gesture is already active" and
   stale checks, and the result. A gesture holds only its planning and the edit it proposes
   *(T-634)*.
+  The shared runner accepts two explicit scopes: chart gestures use
+  `editor_edit_context_t` with chart geometry and chart views; song-owned gestures
+  use `editor_document_context_t` without requiring a selected chart. Song captures
+  retain project plus revision identity; their success, cancellation and diagnostics
+  do not construct a chart projection. OSBX property/key drags enter through the
+  typed storyboard gesture actions and stage the same edits as direct commands.
+- **Storyboard previews:** the pending OSBX gesture retains an immutable, validated
+  candidate from the existing transaction preview. Accepted revisions replace that
+  owner; rejected revisions retain the last accepted candidate. The document accessor
+  shares its ownership, so a consumer can keep the snapshot alive across cancellation
+  or a later revision. Only Apply publishes through the shared gesture runner and
+  transaction. Prepared Lua output is rebased through the existing prepared scope
+  when its captured source and link descriptors still match; preview never runs a
+  Lua backend or reads source files.
+  The shared scene presenter binds staged geometry separately from the committed
+  document, session, directory and prepared-generation media binding. It retains the
+  candidate while frame/index views borrow it, retiring those views before releasing
+  their source. A property revision rebuilds the affected storyboard geometry without
+  resetting decoded images, video or the chart transport schedule. Gizmo projection
+  queries operation space from that same evaluated index/frame and shared fractional
+  time; it does not construct another evaluator or clock.
 - **Proposals:** a gesture, drag or staged preview produces a `proposal_t<Payload, Stamp>`, the
   payload plus the document stamp it was planned against. `revise` updates it. `apply_proposal` applies it through the transaction and is
   the commit *(T-630, T-634)*.
@@ -230,6 +251,26 @@ previous frame's catalog request before workspace actions can submit another. Th
 borrow the existing audio services only while delivering; resetting project state clears pending
 requests. Submission precedes rebinding, preserving an accepted request if rebinding later fails
 *(T-652)*.
+
+The Storyboard canvas and auxiliary player share `storyboard_scene_presenter_t`, owned by
+`player_preview_presenter_t`. A single populate boundary evaluates at
+`storyboard_time_t::from_frame`, binds indices by document pointer/full stamp/session/prepared
+snapshot, and requests the union of canvas/player/BGA images through the existing image job.
+Borrowed sprite IDs and pixels live through the complete frame; input captures copy IDs.
+The canvas reserves its visible sprites first from the existing 1024-quad frame budget;
+player overflow is explicit and leaves its notes/BGA available. Texture pinning begins at
+the complete frontend image-quad frame boundary, before either consumer, with the existing
+1030-entry/256 MiB cache and no eviction of pending-frame textures.
+`storyboard_canvas_geometry_t` owns fit/zoom/pan mapping; inverse-affine rectangle hits use
+resolved image dimensions without core I/O. Canvas clicks select sprites, Alt-click cycles
+stacked hits, and groups are selected through the hierarchy. Sprite outlines use the shared
+transformed quad and authored origin; group outlines bound their drawn descendants.
+Selection, viewport and hidden-node IDs belong to the existing project Storyboard runtime;
+hidden IDs are scoped to its selected storyboard and never edit authored visibility/lifetimes.
+Actions carry project/revision/session/storyboard/prepared captures; dispatch validates node
+IDs against the same immutable prepared Lua snapshot without running Lua. The model-free
+`storyboard_vocabulary.h` owns shared time/origin/OSBX values; origin lookup and projected
+choices use `storyboard_origin_t::catalog()` as their single nine-origin fact table.
 
 Not everything reaches the transaction. View-only actions such as zoom, scroll, selection, tool
 switches and filters change interaction or UI state and stop at dispatch. Area-selection captures
@@ -601,6 +642,40 @@ temporary owned by `prepared_atomic_file_t`. UI-thread polling checks the docume
 and selected chart before explicit atomic publication. Cancelled, stale and abandoned
 results destroy their temporary without replacing the destination. Replacement is explicit;
 project asset destinations are rejected even when replacement was requested.
+
+Storyboard video export belongs to `storyboard_video_export_t`
+(`sys/storyboard/storyboard_video_export.h`). Its capability and export jobs use
+the existing `async_job_t` shell on the application's resource scheduler. The
+request owns a document snapshot, source-song interval and immutable prepared Lua
+results. The worker uses the shared scene evaluators, raster ring and validated
+atomic video encoder. Later edits do not invalidate a published snapshot; project
+replacement and shutdown request cancellation through the same shell.
+`offline_preview_mix_t` owns audio preparation shared with preview audio export.
+The sole profile value lives in `core/video_vocabulary.h`, without exposing media
+implementations to the frontend.
+
+Only the storyboard video export request opts into
+`task_cancel_result_policy_t::retain_running_result`. Explicit cancellation still
+requests the graph's stop token, but an already-running callback's returned result
+remains authoritative. Queued and blocked work cancels, canceled dependencies do
+not start, and scheduler shutdown still overrides with `scheduler_stopped`.
+Existing callers retain their default cancellation behavior. Async-job
+`retain_completion` continues to control delivery rather than worker results.
+Confirmed replacement reaches the existing atomic publisher; a late-created
+destination is preserved when replacement was refused. Successful publication wins
+over a later UI Cancel.
+
+Video settings are session-only per-project view state, bounded to 32 projects.
+Both pixels and PCM use the same source-song interval; export-cut splices are not
+applied here, and the dialog explains this when cuts exist. Source edges quantize
+once to the native sample clock. The final video frame rounds the duration outward
+by less than one frame, with silence after the selected audio end. Matching real
+encoder probes run off the frame thread before enabling a resolution. File-size
+and render-time estimates are approximate; free-space checks also run on the
+worker. The existing notification center carries a transient file target for
+Show in folder. File-completion info toasts use the existing eight-second bounded
+toast policy, while ordinary info messages stay excluded. Only a user action opens
+the parent directory through `local_file_location_t`.
 
 osu! note samples are semantic `osu_hitsample_t` values, persisted by the native codec.
 Volume and sample-set timing controls are typed chart events, each unique per lane/row.

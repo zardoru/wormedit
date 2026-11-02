@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>
+#include <array>
 
 namespace {
 using namespace wormedit;
@@ -473,4 +474,45 @@ TEST_CASE("Standard export bars preserve exact object rows across a long measure
     CHECK(std::ranges::all_of(chart.measures, [](const auto& measure) {
         return measure.definition.length == rational_t{1, 1};
     }));
+}
+
+TEST_CASE("custom BGM descriptors share proven duration and cut crossing checks", "[resource_plan][export-cut]") {
+    auto song = export_song();
+    song.audio_assets = {{.id = asset_id_t{70}, .source_path = "custom.wav"}};
+    auto& measure = song.charts.front().measures.front();
+    measure.bgm_events = {{.id = object_id_t{71}, .position = {measure.id, 0}, .source_lane = object_id_t{72},
+        .osu_hitsample = osu_hitsample_t{.filename = "custom.wav"}}};
+    song.charts.front().bgm_source_lanes = {{.id = object_id_t{72}, .name = "Typed BGM"}};
+    const auto unknown = export_cut_transform_t::from(song, {});
+    CHECK_FALSE(unknown.value);
+    const std::array sources{export_cut_source_t{.asset = asset_id_t{70}, .native_sample_rate = 44100,
+        .native_frame_count = 44100, .output_frame_count = 44100, .source_path = "custom.wav"}};
+    const auto proven = export_cut_transform_t::from(song, {}, sources);
+    REQUIRE(proven.value);
+    CHECK(proven.value->document.charts.front().measures.front().bgm_events.empty());
+    CHECK(song.charts.front().measures.front().bgm_events.size() == 1);
+}
+
+TEST_CASE("export cuts refuse structured Sample times instead of leaving them unrebased", "[export-cut][storyboard][sample]") {
+    auto song = export_song();
+    storyboard_document_model_t model;
+    model.samples.push_back({.stable_id = 1, .source_order = 1, .time_ms = 1500, .path = "hit.wav"});
+    song.storyboards.push_back({.id = storyboard_id_t{1}, .model = model});
+    const auto before = song;
+    const auto transformed = export_cut_transform_t::from(song, {});
+    CHECK_FALSE(transformed.value);
+    CHECK(song.storyboards == before.storyboards);
+    CHECK(song.export_cuts == before.export_cuts);
+}
+
+TEST_CASE("Export cuts refuse structured trigger payload without changing its owner", "[core][export-cut][trigger]") {
+    auto song = storyboard_cut_song();
+    const auto parsed = parse_osb("Sprite,Foreground,Centre,a.png,0,0\n T,Passing,0,1000\n  F,0,0,100,0,1\n");
+    REQUIRE(parsed.value);
+    song.storyboards.front().model = *parsed.value;
+    const auto before = song.storyboards;
+    const auto result = export_cut_transform_t::from(song, {});
+    CHECK_FALSE(result.value);
+    CHECK(song.storyboards == before);
+    REQUIRE_FALSE(result.diagnostics.empty());
 }

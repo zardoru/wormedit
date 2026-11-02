@@ -39,7 +39,10 @@ auto document_number(const json& value) -> std::uint64_t {
 auto array_key(const json& before, const json& after) -> std::string_view {
     for (const auto key : collection_keys) {
         const auto has_key = [key](const json& entry) {
-            return entry.is_object() && entry.contains(json::json_pointer{"/" + std::string{key}});
+            // OSBX IDs are authored strings, not native uint64 identities.
+            // Such arrays use the ordinary lossless replacement delta.
+            return entry.is_object() && entry.contains(json::json_pointer{"/" + std::string{key}}) &&
+                collection_identity(entry, key).is_number_unsigned();
         };
         if ((!before.empty() || !after.empty()) && std::ranges::all_of(before, has_key) && std::ranges::all_of(after, has_key))
             return key;
@@ -50,6 +53,7 @@ auto build_dom_delta(const json& before, const json& after) -> value_delta_t;
 auto build_value_delta(const chart_document_t&, const chart_document_t&) -> value_delta_t;
 auto build_value_delta(const measure_chunk_t&, const measure_chunk_t&) -> value_delta_t;
 auto build_value_delta(const bms_program_node_t&, const bms_program_node_t&) -> value_delta_t;
+auto build_value_delta(const storyboard_document_t&, const storyboard_document_t&) -> value_delta_t;
 
 // JSON numeric equality merges signed zero. Native saves retain its spelling,
 // including inside otherwise equal arrays/objects, so compare encoded leaves.
@@ -203,6 +207,10 @@ template<class Owner> auto build_owner_delta(const Owner& before, const Owner& a
         result.removed_bytes += change.removed_bytes;
     });
     return result;
+}
+auto build_value_delta(const storyboard_document_t& before, const storyboard_document_t& after) -> value_delta_t {
+    // Domain equality merges signed zero; persisted storyboard numbers retain it.
+    return build_dom_delta(encode_native_value(before), encode_native_value(after));
 }
 auto build_value_delta(const chart_document_t& before, const chart_document_t& after) -> value_delta_t {
     return build_owner_delta(before, after);

@@ -16,10 +16,13 @@ void worm_ui_nuklear_begin_image_quad_frame(void) {
 }
 
 bool worm_ui_nuklear_push_image_quad(struct nk_command_buffer* canvas, const struct nk_image* image,
-                                     const struct nk_vec2* points, struct nk_color color) {
+                                     const struct nk_vec2* points, struct nk_color color,
+                                     wormedit::ui::image_blend_t blend) {
     if (!canvas || !image || !points || image_quad_count == image_quads.size()) {
         return false;
     }
+    if (!wormedit::ui::is_valid_image_blend(blend))
+        return false;
     auto& quad = image_quads[image_quad_count++];
     quad.image = *image;
     std::copy_n(points, 4, quad.points);
@@ -43,6 +46,7 @@ bool worm_ui_nuklear_push_image_quad(struct nk_command_buffer* canvas, const str
         std::copy(uvs.begin(), uvs.end(), quad.uvs);
     }
     quad.color = color;
+    quad.blend = blend;
     const auto [minimum_x, maximum_x] =
         std::minmax_element(std::begin(quad.points), std::end(quad.points),
                             [](const auto& left, const auto& right) { return left.x < right.x; });
@@ -54,4 +58,11 @@ bool worm_ui_nuklear_push_image_quad(struct nk_command_buffer* canvas, const str
                            maximum_y->y - minimum_y->y),
                    worm_ui_nuklear_append_image_quad, nk_handle_ptr(&quad));
     return true;
+}
+
+auto worm_ui_nuklear_image_quad_blend(nk_handle userdata) -> wormedit::ui::image_blend_t {
+    for (std::size_t index = 0; index < image_quad_count; ++index)
+        if (userdata.ptr == &image_quads[index])
+            return image_quads[index].blend;
+    return wormedit::ui::image_blend_t::inherit;
 }

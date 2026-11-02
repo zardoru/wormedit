@@ -1,3 +1,4 @@
+#include <wormedit/formats/stepmania.h>
 #include <wormedit/core/storyboard.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <source_location>
@@ -8,6 +9,9 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_delta.h>
+#include <wormedit/formats/osu_mania.h>
+#include "formats/native_project_value_codec.h"
 #include <wormedit/formats/native_project_storage.h>
 #include "../support/timing_links_fixture.h"
 #include "../support/temporary_directory.h"
@@ -15,6 +19,7 @@
 #include "formats/native_project_migrations.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -22,15 +27,31 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <map>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace {
+void omit_schema35_sample_fields(nlohmann::json& root) {
+    auto& document = root.at("document");
+    if (!document.contains("storyboards")) return;
+    for (auto& storyboard : document.at("storyboards"))
+        if (storyboard.contains("model") && storyboard.at("model").is_object())
+            storyboard["model"].erase("samples");
+}
+void expect_schema35_empty_samples(nlohmann::json& root) {
+    for (auto& storyboard : root.at("document").at("storyboards"))
+        if (storyboard.contains("model") && storyboard.at("model").is_object())
+            storyboard["model"]["samples"] = nlohmann::json::array();
+}
+
+
 
 auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
     std::ifstream stream(path, std::ios::binary);
@@ -303,6 +324,7 @@ auto legacy_schema3_bms_document() -> nlohmann::json {
         if (event["kind"] == std::uint64_t{5}) event["kind"] = std::uint64_t{2};
     }
     legacy["document"]["schema_version"] = std::uint64_t{3};
+    omit_schema35_sample_fields(legacy);
     return legacy;
 }
 
@@ -433,6 +455,7 @@ auto schema4_stem_lanes_migrate_by_source_order() -> bool {
         lanes[index].erase("stem_channel");
     }
     root["document"]["schema_version"] = 4;
+    omit_schema35_sample_fields(root);
     const auto migrated = wormedit::parse_native_project(root.dump());
     if (!migrated.value || migrated.value->charts.front().bgm_source_lanes.size() != lanes.size())
         return false;
@@ -459,6 +482,7 @@ auto bms_schema4_migration_keeps_unlinked_lanes() -> bool {
     auto& chart = root["document"]["charts"][0];
     for (auto& lane : chart["bgm_source_lanes"]) lane.erase("stem_channel");
     root["document"]["schema_version"] = 4;
+    omit_schema35_sample_fields(root);
     const auto migrated = decode_native_schema(root.dump());
     if (!migrated.value) return false;
     const auto& before = imported.value.song->charts.front().bgm_source_lanes;
@@ -530,7 +554,10 @@ void check_bmson_condition(const T& condition, std::source_location where = std:
     CHECK(static_cast<bool>(condition));
 }
 template <typename T>
-void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+void require_bmson_condition(const T& condition, std::source_location where = std::source_location::current()) {
+    INFO("Native assertion at " << where.line());
+    REQUIRE(static_cast<bool>(condition));
+}
 } // namespace
 
 TEST_CASE("native project deterministically round-trips rich editor state",
@@ -645,6 +672,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
 
     auto legacy = root;
     legacy["document"]["schema_version"] = 5;
+    omit_schema35_sample_fields(legacy);
     legacy["document"]["charts"][0]["measures"][0]["bgm_events"][0].erase("end");
     const auto upgraded = wormedit::parse_native_project(legacy.dump());
     require_bmson_condition(upgraded.value.has_value());
@@ -653,6 +681,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
 
     auto legacy_with_end = root;
     legacy_with_end["document"]["schema_version"] = 5;
+    omit_schema35_sample_fields(legacy_with_end);
     const auto upgraded_with_end = wormedit::parse_native_project(legacy_with_end.dump());
     require_bmson_condition(upgraded_with_end.value.has_value());
     check_bmson_condition(upgraded_with_end.value->charts.front().measures.front().bgm_events.front().end ==
@@ -961,6 +990,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
 
     auto fractional_integer_json = nlohmann::json::parse(*written.value);
     fractional_integer_json["document"]["schema_version"] = 1.5;
+    omit_schema35_sample_fields(fractional_integer_json);
     const auto fractional_integer = wormedit::parse_native_project(fractional_integer_json.dump());
     CHECK_FALSE(fractional_integer.value.has_value());
     CHECK(has_code(fractional_integer.diagnostics,
@@ -1042,6 +1072,8 @@ auto legacy_project_bytes() -> std::string {
     const auto written = wormedit::write_native_project(rich_bmson_song());
     auto root = nlohmann::json::parse(*written.value);
     root["document"]["schema_version"] = 1;
+    // The injected table targets schema 2 with this current-shape test payload.
+    // It intentionally does not run the released schema 34 to 35 migration.
     root["document"]["legacy_title"] = "old";
     return root.dump();
 }
@@ -1072,6 +1104,7 @@ TEST_CASE("native schema 6 output groups migrate to Ask existing-files policy",
     check_bmson_condition(current.value->output_groups.front().existing_files ==
                           wormedit::existing_files_policy_t::replace);
     root["document"]["schema_version"] = 6;
+    omit_schema35_sample_fields(root);
     root["document"]["output_groups"][0].erase("existing_files");
 
     const auto parsed = wormedit::parse_native_project(root.dump());
@@ -1126,6 +1159,7 @@ TEST_CASE("native schema 7 derives explicit StepMania target policies",
     auto root = nlohmann::json::parse(*written.value);
     auto& document = root["document"];
     document["schema_version"] = 7;
+    omit_schema35_sample_fields(root);
     const auto chart = document["charts"][0]["id"];
     document["output_groups"] = nlohmann::json::array({
         {{"name", "SM directory"},
@@ -1182,20 +1216,29 @@ TEST_CASE("native schema 8 preserves resolved typed output destinations",
     };
     const auto native = wormedit::convert_document(
         song, {.target = wormedit::format_family_t::native_project});
+    for (const auto& diagnostic : native.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_bmson_condition(static_cast<bool>(native));
     auto stepmania_filename =
         std::filesystem::path{native.outputs.front().suggested_filename};
     stepmania_filename.replace_extension(".ssc");
     const auto written = wormedit::write_native_project(song);
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_bmson_condition(written.value.has_value());
     auto root = nlohmann::json::parse(*written.value);
     root["document"]["schema_version"] = 8;
+    omit_schema35_sample_fields(root);
     root["document"]["output_groups"][0]["relative_output_path"] = "exports/native";
     root["document"]["output_groups"][1]["relative_output_path"] = "exports/stepmania";
-    for (auto& group : root["document"]["output_groups"])
+    for (auto& group : root["document"]["output_groups"]) {
         group.erase("destination_kind");
+        if (group["stepmania"].is_object()) {
+            group["stepmania"].erase("storyboard");
+            group["stepmania"].erase("conditional_layer");
+        }
+    }
 
     const auto parsed = wormedit::parse_native_project(root.dump());
+    for (const auto& diagnostic : parsed.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_bmson_condition(parsed.value.has_value());
     require_bmson_condition(parsed.value->output_groups.size() == 3);
     check_bmson_condition(parsed.value->output_groups[0].relative_output_path ==
@@ -1249,11 +1292,12 @@ TEST_CASE("native project migrations: schema 1 documents gain current default fi
     auto& recipe = root["document"]["charts"][0]["sv_recipes"][0];
     recipe.erase("expression_source");
     root["document"]["schema_version"] = 1;
+    omit_schema35_sample_fields(root);
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
     CHECK(parsed.value->schema_version == wormedit::current_document_schema_version);
-    CHECK(parsed.value->charts.front().sv_recipes.front().expression_source.empty());
+    CHECK(parsed.value->charts.front().sv_recipes.front().script().frozen_source.empty());
     const auto rewritten = wormedit::write_native_project(*parsed.value);
     REQUIRE(rewritten.value.has_value());
 
@@ -1270,6 +1314,7 @@ TEST_CASE("native project schema 1 migration supplies empty quantization presets
     auto root = nlohmann::json::parse(*written.value);
     root["document"].erase("quantization_presets");
     root["document"]["schema_version"] = 1;
+    omit_schema35_sample_fields(root);
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
     CHECK(parsed.value->quantization_presets.empty());
@@ -1282,6 +1327,7 @@ TEST_CASE("native project schema 2 migration adds an empty preset list",
     auto root = nlohmann::json::parse(*written.value);
     root["document"].erase("quantization_presets");
     root["document"]["schema_version"] = 2;
+    omit_schema35_sample_fields(root);
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
@@ -1627,19 +1673,19 @@ TEST_CASE("native projects round-trip Lua expression recipes",
     auto song = rich_bmson_song();
     auto& recipe = song.charts.front().sv_recipes.front();
     recipe.curve = wormedit::sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "return 1 + 0.5 * math.sin(t * math.pi)";
+    recipe.set_frozen_source("return 1 + 0.5 * math.sin(t * math.pi)");
     REQUIRE(wormedit::validate_document(song).empty());
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.value.has_value());
     auto serialized = nlohmann::json::parse(*written.value);
     CHECK(serialized["document"]["charts"][0]["sv_recipes"][0]["expression_source"] ==
-          recipe.expression_source);
+          recipe.script().frozen_source);
 
     const auto reparsed = wormedit::parse_native_project(*written.value);
     REQUIRE(reparsed.value.has_value());
     const auto& loaded = reparsed.value->charts.front().sv_recipes.front();
     CHECK(loaded.curve == wormedit::sv_recipe_curve_t::lua_expression);
-    CHECK(loaded.expression_source == recipe.expression_source);
+    CHECK(loaded.script().frozen_source == recipe.script().frozen_source);
 }
 
 TEST_CASE("native projects persist sound kind and tags only when set",
@@ -1746,6 +1792,7 @@ TEST_CASE("Native schema nine migrates to inherited project settings", "[formats
     REQUIRE(written.value);
     auto legacy = nlohmann::json::parse(*written.value);
     legacy["document"]["schema_version"] = 9;
+    omit_schema35_sample_fields(legacy);
     legacy["document"].erase("project_settings");
     const auto migrated = wormedit::parse_native_project(legacy.dump());
     REQUIRE(migrated.value);
@@ -1774,6 +1821,7 @@ TEST_CASE("native projects retain ordered recipe stages and migrate empty pipeli
     CHECK(parsed.value->charts.front().sv_recipes.front().postprocess == recipe.postprocess);
     auto legacy = nlohmann::json::parse(*written.value);
     legacy["document"]["schema_version"] = std::uint64_t{10};
+    omit_schema35_sample_fields(legacy);
     for (auto& chart : legacy["document"]["charts"])
         for (auto& stored : chart["sv_recipes"]) stored.erase("postprocess");
     const auto migrated = wormedit::parse_native_project(legacy.dump());
@@ -1833,6 +1881,7 @@ void check_bookmark_schema_compatibility(const nlohmann::json& encoded, const wo
 
     auto legacy = encoded;
     legacy["document"]["schema_version"] = 23U;
+    omit_schema35_sample_fields(legacy);
     const auto unbumped = wormedit::parse_native_project(legacy.dump());
     REQUIRE(unbumped.value);
     CHECK(unbumped.value->bookmark_orders == song.bookmark_orders);
@@ -1877,6 +1926,7 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     REQUIRE(written.value);
     auto legacy = nlohmann::json::parse(*written.value);
     legacy["document"]["schema_version"] = 23U;
+    omit_schema35_sample_fields(legacy);
     legacy["document"].erase("bookmark_orders");
     const auto old = wormedit::parse_native_project(legacy.dump());
     REQUIRE(old.value);
@@ -1885,14 +1935,15 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     const auto rewritten = wormedit::write_native_project(*old.value);
     REQUIRE(rewritten.value);
     legacy["document"]["schema_version"] = wormedit::current_document_schema_version;
+    expect_schema35_empty_samples(legacy);
     CHECK(*rewritten.value == legacy.dump() + '\n');
 }
 
-TEST_CASE("native schema 28 pins the persisted song document key set",
+TEST_CASE("native schema 39 pins the persisted song document key set",
           "[unit][format][native-project][schema-guard]") {
     INFO("Persisted document keys changed: bump current_document_schema_version, add a migration, "
          "and update this schema/key-set guard together.");
-    check_bmson_condition(wormedit::current_document_schema_version == 28);
+    check_bmson_condition(wormedit::current_document_schema_version == 39);
     const auto song = make_schema_guard_song();
     const auto written = wormedit::write_native_project(song);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
@@ -1932,6 +1983,7 @@ TEST_CASE("native schema 25 saves output-group flattening and migrates schema 24
     check_bmson_condition(!older.value);
     check_bmson_condition(has_code(older.diagnostics, wormedit::native_project_diagnostic_code_t::unsupported_version));
     encoded["document"]["schema_version"] = 24U;
+    omit_schema35_sample_fields(encoded);
     for (auto& group : encoded["document"]["output_groups"]) group.erase("flatten_bms_branches");
     const auto migrated = wormedit::parse_native_project(encoded.dump());
     INFO((migrated.diagnostics.empty() ? "no diagnostic" : migrated.diagnostics.front().message));
@@ -1941,10 +1993,410 @@ TEST_CASE("native schema 25 saves output-group flattening and migrates schema 24
     const auto rewritten = wormedit::write_native_project(*migrated.value);
     require_bmson_condition(rewritten.value);
     encoded["document"]["schema_version"] = 25U;
+    omit_schema35_sample_fields(encoded);
     const auto absent_current = wormedit::parse_native_project(encoded.dump());
     require_bmson_condition(absent_current.value);
     check_bmson_condition(!absent_current.value->output_groups.front().flatten_bms_branches);
     for (auto& group : encoded["document"]["output_groups"]) group["flatten_bms_branches"] = false;
     encoded["document"]["schema_version"] = wormedit::current_document_schema_version;
+    expect_schema35_empty_samples(encoded);
     check_bmson_condition(nlohmann::json::parse(*rewritten.value) == encoded);
+}
+
+TEST_CASE("osu export refuses OSBX without prepared playback context", "[formats][osu][osbx]") {
+    using namespace wormedit;
+    const auto parsed = parse_osu_mania_bytes(read_binary(fixture_path("osu", "versioned-stable-v14.osu")));
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    REQUIRE(write_osu_mania(song).value);
+    song.storyboards.push_back({.id = storyboard_id_t{999}, .osbx = osbx_document_t{}});
+    const auto written = write_osu_mania(song);
+    CHECK_FALSE(written.value);
+    REQUIRE_FALSE(written.diagnostics.empty());
+    CHECK(written.diagnostics.back().code == osu_mania_write_diagnostic_code_t::invalid_document);
+    CHECK(written.diagnostics.back().message == "OSBX export requires the song playback span");
+}
+
+namespace {
+auto native_policy_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    const std::string source = "#VERSION:0.83;#TITLE:Native;#BPMS:0=120;#NOTEDATA:;#STEPSTYPE:dance-single;#DIFFICULTY:Edit;#METER:1;#NOTES:1000\n0000\n0000\n0000;";
+    const auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{source.data(),source.size()}), {.profile = stepmania_profile_t::ssc});
+    require_bmson_condition(static_cast<bool>(parsed.value));
+    auto song = *parsed.value;
+    song.output_groups = {{.name = "Native", .family = format_family_t::stepmania,
+        .charts = {song.charts.front().id}, .relative_output_path = "exports/native",
+        .stepmania = stepmania_export_policy_t{}}};
+    return song;
+}
+}
+
+TEST_CASE("schema31 persists native storyboard options with strict enum and field guards", "[native-project][stepmania][storyboard]") {
+    using namespace wormedit;
+    auto song = native_policy_song();
+    song.output_groups.front().stepmania->storyboard = stepmania_storyboard_mode_t::video;
+    song.output_groups.front().stepmania->conditional_layer = storyboard_conditional_layer_t::neither;
+    const auto written = write_native_project(song);
+    require_bmson_condition(static_cast<bool>(written.value));
+    const auto parsed = parse_native_project(*written.value);
+    require_bmson_condition(static_cast<bool>(parsed.value));
+    check_bmson_condition(static_cast<bool>(parsed.value->output_groups.front().stepmania == song.output_groups.front().stepmania));
+    const auto root = nlohmann::json::parse(*written.value);
+    auto altered = root;
+    altered["document"]["output_groups"][0]["stepmania"]["storyboard"] = 99U;
+    check_bmson_condition(!static_cast<bool>(parse_native_project(altered.dump()).value));
+    altered = root;
+    altered["document"]["output_groups"][0]["stepmania"]["conditional_layer"] = 99U;
+    check_bmson_condition(!static_cast<bool>(parse_native_project(altered.dump()).value));
+    altered = root;
+    altered["document"]["output_groups"][0]["stepmania"]["future"] = true;
+    check_bmson_condition(!static_cast<bool>(parse_native_project(altered.dump()).value));
+    altered = root;
+    altered["document"]["output_groups"][0]["stepmania"].erase("storyboard");
+    check_bmson_condition(!static_cast<bool>(parse_native_project(altered.dump()).value));
+}
+
+TEST_CASE("schema30 migration keeps explicit absent and null SM policies chart only", "[native-project][migration][stepmania]") {
+    using namespace wormedit;
+    const auto song = native_policy_song();
+    const auto written = write_native_project(song);
+    require_bmson_condition(static_cast<bool>(written.value));
+    const auto encoded = nlohmann::json::parse(*written.value);
+    for (int shape = 0; shape < 3; ++shape) {
+        auto legacy = encoded;
+        legacy["document"]["schema_version"] = 30U;
+        omit_schema35_sample_fields(legacy);
+        auto& group = legacy["document"]["output_groups"][0];
+        group["stepmania"].erase("storyboard");
+        group["stepmania"].erase("conditional_layer");
+        if (shape == 1) group["stepmania"] = nullptr;
+        if (shape == 2) group.erase("stepmania");
+        const auto migrated = parse_native_project(legacy.dump());
+        require_bmson_condition(static_cast<bool>(migrated.value));
+        require_bmson_condition(static_cast<bool>(migrated.value->output_groups.front().stepmania));
+        const auto& policy = *migrated.value->output_groups.front().stepmania;
+        check_bmson_condition(static_cast<bool>(policy.storyboard == stepmania_storyboard_mode_t::none));
+        check_bmson_condition(static_cast<bool>(policy.conditional_layer == storyboard_conditional_layer_t::pass));
+        check_bmson_condition(static_cast<bool>(policy.file_profile == stepmania_profile_t::ssc));
+        check_bmson_condition(static_cast<bool>(policy.timing_syntax == stepmania_timing_syntax_t::native_warps));
+        check_bmson_condition(static_cast<bool>(migrated.value->schema_version == wormedit::current_document_schema_version));
+    }
+}
+
+namespace {
+using namespace wormedit;
+void check_sample_provenance_roundtrip(const song_document_t& song, const std::string& bytes) {
+    const auto parsed = parse_native_project(bytes);
+    INFO((parsed.diagnostics.empty() ? "no parse diagnostic" : parsed.diagnostics.front().message));
+    REQUIRE(parsed.value);
+    const auto& measure = song.charts.front().measures.front();
+    CHECK(parsed.value->charts.front().measures.front().bgm_events.front() == measure.bgm_events.front());
+    CHECK(parsed.value->charts.front().measures.front().notes.back() == measure.notes.back());
+}
+auto schema31_sample_payload(const std::string& bytes) -> std::string {
+    auto root = nlohmann::json::parse(bytes);
+    root["document"]["schema_version"] = 31U;
+    omit_schema35_sample_fields(root);
+    for (auto& chart : root["document"]["charts"])
+        for (auto& chunk : chart["measures"]) {
+            for (auto& note : chunk["notes"]) note.erase("sample_reference");
+            for (auto& event : chunk["bgm_events"]) {
+                event.erase("sample_reference"); event.erase("osu_hitsample");
+            }
+        }
+    return root.dump();
+}
+auto checked_schema31_samples(const std::string& bytes) -> song_document_t {
+    auto legacy = parse_native_project(schema31_sample_payload(bytes));
+    REQUIRE(legacy.value);
+    CHECK(legacy.value->schema_version == wormedit::current_document_schema_version);
+    return std::move(*legacy.value);
+}
+void check_legacy_sample_owners(const song_document_t& legacy, const song_document_t& song) {
+    const auto& migrated = legacy.charts.front().measures.front().bgm_events.front();
+    CHECK(migrated.sound == song.charts.front().measures.front().bgm_events.front().sound);
+    CHECK_FALSE(migrated.sample_reference);
+    CHECK_FALSE(migrated.osu_hitsample);
+    const auto& old_note = legacy.charts.front().measures.front().notes.back();
+    CHECK_FALSE(old_note.sample_reference);
+    REQUIRE(old_note.osu_hitsample);
+    CHECK(old_note.osu_hitsample->finish);
+}
+}
+
+TEST_CASE("schema32 sample provenance and BGM descriptor roundtrip without changing legacy sounds", "[native-project][resource_plan]") {
+    using namespace wormedit;
+    auto song = rich_bmson_song();
+    REQUIRE(prepare_bgm_event(song, false));
+    auto& bgm = song.charts.front().measures.front().bgm_events.front();
+    REQUIRE(bgm.sound);
+    const auto resource = std::ranges::find(song.resources, *bgm.sound, &resource_entry_t::id);
+    REQUIRE(resource != song.resources.end());
+    bgm.sample_reference = sample_reference_binding_t{.reference = bms_wav_reference_t{.index = "01", .source_chart = song.charts.front().id},
+        .bound_sound = *bgm.sound, .bound_asset = resource->asset};
+    bgm.osu_hitsample = osu_hitsample_t{.clap = true, .custom_index = 2, .volume = 70};
+    auto& measure = song.charts.front().measures.front();
+    measure.notes.push_back({.id = object_id_t{90003}, .position = {measure.id, 0},
+        .lane = song.charts.front().lane_layouts.front().layout.lanes.front().id,
+        .sound = bgm.sound, .osu_hitsample = osu_hitsample_t{.finish = true}, .sample_reference = bgm.sample_reference});
+    const auto written = write_native_project(song);
+    INFO((written.diagnostics.empty() ? "no write diagnostic" : written.diagnostics.front().message));
+    REQUIRE(written.value);
+    check_sample_provenance_roundtrip(song, *written.value);
+    const auto legacy = checked_schema31_samples(*written.value);
+    check_legacy_sample_owners(legacy, song);
+}
+
+TEST_CASE("schema33 NotITG profile is explicit and old32 defaults remain unchanged", "[native-project][migration][notitg]") {
+    using namespace wormedit;
+    auto song = native_policy_song();
+    const auto original = *song.output_groups.front().stepmania;
+    const auto previous = write_native_project(song);
+    require_bmson_condition(previous.value.has_value());
+    auto legacy = nlohmann::json::parse(*previous.value);
+    legacy["document"]["schema_version"] = 32U;
+    omit_schema35_sample_fields(legacy);
+    const auto migrated = parse_native_project(legacy.dump());
+    require_bmson_condition(migrated.value.has_value());
+    check_bmson_condition(migrated.value->output_groups.front().stepmania == original);
+    legacy["document"]["output_groups"][0]["stepmania"]["implementation_profile"] = 3U;
+    check_bmson_condition(!parse_native_project(legacy.dump()).value.has_value());
+    song.output_groups.front().stepmania->implementation_profile = stepmania_implementation_profile_t::notitg_v4;
+    song.output_groups.front().stepmania->file_profile = stepmania_profile_t::sm;
+    const auto written = write_native_project(song);
+    require_bmson_condition(written.value.has_value());
+    const auto roundtrip = parse_native_project(*written.value);
+    require_bmson_condition(roundtrip.value.has_value());
+    check_bmson_condition(roundtrip.value->output_groups.front().stepmania == song.output_groups.front().stepmania);
+}
+
+
+namespace {
+auto native_animation_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    auto song = native_policy_song();
+    const auto parsed = parse_osb("Sprite,Background,Centre,still.png,0,0\n F,0,0,10,1,1\n"
+        "Animation,Foreground,Centre,anim.png,320,240,12,31.25,LoopOnce\n L,0,2\n  L,10,3\n   F,0,0,10,0,1\n");
+    REQUIRE(parsed.value);
+    song.storyboards.push_back({.id = storyboard_id_t{900005}, .name = "Animation", .model = *parsed.value});
+    return song;
+}
+auto read_animation_native_document(std::string_view bytes) -> wormedit::song_document_t {
+    auto decoded = wormedit::parse_native_project(bytes);
+    REQUIRE(decoded.value);
+    CHECK(decoded.value->schema_version == wormedit::current_document_schema_version);
+    return std::move(*decoded.value);
+}
+void check_retained_animation_output_policy(const wormedit::song_document_t& decoded,
+    const wormedit::song_document_t& source) {
+    REQUIRE(decoded.output_groups.size() == source.output_groups.size());
+    CHECK(decoded.output_groups.front().name == source.output_groups.front().name);
+    CHECK(decoded.output_groups.front().family == source.output_groups.front().family);
+    CHECK(decoded.output_groups.front().stepmania == source.output_groups.front().stepmania);
+}
+}
+
+TEST_CASE("schema34 Animation metadata and its common command tree roundtrip natively", "[native-project][storyboard][animation]") {
+    using namespace wormedit;
+    const auto song = native_animation_song();
+    const auto encoded = write_native_project(song);
+    REQUIRE(encoded.value);
+    const auto decoded = read_animation_native_document(*encoded.value);
+    CHECK(decoded.storyboards == song.storyboards);
+    REQUIRE(decoded.storyboards.front().model);
+    const auto emitted = emit_osb(*decoded.storyboards.front().model);
+    REQUIRE(emitted.value);
+    CHECK(emitted.value->find("Animation,Foreground,Centre,\"anim.png\",320,240,12,31.25,LoopOnce") != std::string::npos);
+}
+
+TEST_CASE("schema33 Animation-absent visuals remain Sprite and NotITG policies survive schema34", "[native-project][migration][animation]") {
+    using namespace wormedit;
+    auto song = native_animation_song();
+    song.storyboards.front().model->sprites.back().animation.reset();
+    song.output_groups.front().stepmania->implementation_profile = stepmania_implementation_profile_t::notitg_v4;
+    song.output_groups.front().stepmania->file_profile = stepmania_profile_t::sm;
+    const auto encoded = write_native_project(song);
+    REQUIRE(encoded.value);
+    auto root = nlohmann::json::parse(*encoded.value);
+    root["document"]["schema_version"] = 33U;
+    omit_schema35_sample_fields(root);
+    const auto decoded = read_animation_native_document(root.dump());
+    check_retained_animation_output_policy(decoded, song);
+    CHECK(decoded.storyboards == song.storyboards);
+    CHECK_FALSE(decoded.storyboards.front().model->sprites.back().animation);
+}
+
+TEST_CASE("native Animation metadata rejects malformed counts delays and enum values", "[native-project][storyboard][animation]") {
+    using namespace wormedit;
+    const auto encoded = write_native_project(native_animation_song());
+    REQUIRE(encoded.value);
+    auto root = nlohmann::json::parse(*encoded.value);
+    auto& metadata = root["document"]["storyboards"][0]["model"]["sprites"][1]["animation"];
+    SECTION("zero frames") { metadata["frame_count"] = 0U; }
+    SECTION("negative frames") { metadata["frame_count"] = -1; }
+    SECTION("overflow frames") { metadata["frame_count"] = 2147483648ULL; }
+    SECTION("fractional frames") { metadata["frame_count"] = 1.5; }
+    SECTION("zero delay") { metadata["frame_delay_ms"] = 0; }
+    SECTION("negative delay") { metadata["frame_delay_ms"] = -1; }
+    SECTION("null delay") { metadata["frame_delay_ms"] = nullptr; }
+    SECTION("unknown enum") { metadata["loop_type"] = 2U; }
+    SECTION("overflow enum") { metadata["loop_type"] = 256U; }
+    SECTION("text enum") { metadata["loop_type"] = "LoopOnce"; }
+    SECTION("missing field") { metadata.erase("frame_count"); }
+    SECTION("unknown field") { metadata["extra"] = true; }
+    SECTION("non-object") { metadata = nlohmann::json::array(); }
+    const auto failed = parse_native_project(root.dump());
+    CHECK_FALSE(failed.value);
+    CHECK_FALSE(failed.diagnostics.empty());
+}
+
+TEST_CASE("schema35 Sample objects persist strictly and old34 models gain an empty collection", "[native-project][storyboard][sample]") {
+    using namespace wormedit;
+    auto song = native_policy_song();
+    storyboard_document_model_t model;
+    model.samples.push_back({.stable_id = 8, .source_order = 9, .time_ms = -10,
+        .layer = osbx_layer_t::pass, .path = "audio/hit.wav", .volume = 80});
+    model.samples.front().time_ms = GENERATE(std::numeric_limits<std::int64_t>::min(),
+        std::int64_t{-10}, std::int64_t{0}, std::numeric_limits<std::int64_t>::max());
+    song.storyboards = {{.id = storyboard_id_t{1}, .model = model}};
+    const auto written = write_native_project(song);
+    require_bmson_condition(written.value.has_value());
+    const auto parsed = parse_native_project(*written.value);
+    require_bmson_condition(parsed.value.has_value());
+    check_bmson_condition(parsed.value->storyboards.front().model == model);
+    auto root = nlohmann::json::parse(*written.value);
+    root["document"]["schema_version"] = 34U;
+    omit_schema35_sample_fields(root);
+    root["document"]["storyboards"][0]["model"].erase("samples");
+    const auto migrated = parse_native_project(root.dump());
+    require_bmson_condition(migrated.value.has_value());
+    check_bmson_condition(migrated.value->storyboards.front().model->samples.empty());
+    root["document"]["storyboards"][0]["model"]["samples"] = nlohmann::json::array();
+    check_bmson_condition(!parse_native_project(root.dump()).value.has_value());
+}
+
+TEST_CASE("native Samples reject wrapped numeric fields unknown keys and duplicate identities", "[native-project][storyboard][sample]") {
+    using namespace wormedit;
+    auto song = native_policy_song();
+    storyboard_document_model_t model;
+    model.samples = {{.stable_id = 1, .source_order = 1, .path = "hit.wav"}};
+    song.storyboards = {{.id = storyboard_id_t{1}, .model = model}};
+    const auto written = write_native_project(song);
+    require_bmson_condition(written.value.has_value());
+    const auto root = nlohmann::json::parse(*written.value);
+    for (const auto& field : {"volume", "layer", "time_ms", "stable_id"}) {
+        auto invalid = root;
+        invalid["document"]["storyboards"][0]["model"]["samples"][0][field] = -1.5;
+        check_bmson_condition(!parse_native_project(invalid.dump()).value.has_value());
+    }
+    auto invalid = root;
+    invalid["document"]["storyboards"][0]["model"]["samples"][0]["volume"] = 256U;
+    check_bmson_condition(!parse_native_project(invalid.dump()).value.has_value());
+    invalid = root;
+    invalid["document"]["storyboards"][0]["model"]["samples"][0]["time_ms"] =
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1U;
+    check_bmson_condition(!parse_native_project(invalid.dump()).value.has_value());
+    invalid = root;
+    invalid["document"]["storyboards"][0]["model"]["samples"][0]["future"] = true;
+    check_bmson_condition(!parse_native_project(invalid.dump()).value.has_value());
+    auto duplicate = root;
+    auto& samples = duplicate["document"]["storyboards"][0]["model"]["samples"];
+    samples.push_back(samples[0]);
+    check_bmson_condition(!parse_native_project(duplicate.dump()).value.has_value());
+}
+
+TEST_CASE("schema36 migration preserves schema35 sample and animation collections", "[native-project][migration][clips]") {
+    auto song = make_schema_guard_song();
+    const auto encoded = wormedit::write_native_project(song);
+    require_bmson_condition(encoded.value);
+    auto root = nlohmann::json::parse(*encoded.value);
+    root["document"]["schema_version"] = 35;
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    require_bmson_condition(parsed.value);
+    check_bmson_condition(parsed.value->schema_version == wormedit::current_document_schema_version);
+    check_bmson_condition(parsed.value->storyboards == song.storyboards);
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    require_bmson_condition(rewritten.value);
+    check_bmson_condition(*rewritten.value == *encoded.value);
+}
+
+namespace {
+auto trigger_native_song(std::string_view commands) -> wormedit::song_document_t {
+    auto song = rich_bmson_song();
+    const auto parsed = wormedit::parse_osb(std::string("Sprite,Foreground,Centre,a.png,0,0\n") + std::string(commands));
+    REQUIRE(parsed.value);
+    song.storyboards = {{.id = wormedit::storyboard_id_t{90000}, .name = "Trigger", .model = *parsed.value}};
+    return song;
+}
+auto trigger_native_json() -> nlohmann::json {
+    const auto written = wormedit::write_native_project(trigger_native_song(" T,Passing,-9223372036854775808,9223372036854775807,-2147483648\n  F,0,0,10,0,1\n"));
+    REQUIRE(written.value);
+    return nlohmann::json::parse(*written.value);
+}
+auto first_trigger_json(nlohmann::json& root) -> nlohmann::json& {
+    return root["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0];
+}
+void check_native_trigger_signed_bounds(const wormedit::storyboard_node_t& node) {
+    REQUIRE(node.trigger);
+    CHECK(node.trigger->start_time_ms == std::numeric_limits<std::int64_t>::min());
+    CHECK(node.trigger->end_time_ms == std::numeric_limits<std::int64_t>::max());
+    CHECK(node.trigger->group_number == std::numeric_limits<std::int32_t>::min());
+}
+}
+TEST_CASE("schema37 native trigger metadata roundtrips exact signed bounds", "[native-project][trigger]") {
+    const auto root = trigger_native_json();
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    REQUIRE(parsed.value);
+    const auto& node = parsed.value->storyboards.front().model->sprites.front().nodes.front();
+    check_native_trigger_signed_bounds(node);
+    REQUIRE(wormedit::write_native_project(*parsed.value).value);
+    CHECK(nlohmann::json::parse(*wormedit::write_native_project(*parsed.value).value) == root);
+}
+TEST_CASE("schema37 native trigger codec refuses malformed and mismatched metadata", "[native-project][trigger]") {
+    auto root = trigger_native_json();
+    auto& node = first_trigger_json(root);
+    SECTION("missing") { node.erase("trigger"); }
+    SECTION("null") { node["trigger"] = nullptr; }
+    SECTION("wrong kind") { node["kind"] = 0; }
+    SECTION("unknown name") { node["trigger"]["name"] = "Unknown"; }
+    SECTION("group overflow") { node["trigger"]["group_number"] = 2147483648ULL; }
+    SECTION("fractional time") { node["trigger"]["start_time_ms"] = 0.5; }
+    SECTION("reversed") { node["trigger"]["start_time_ms"] = 100; node["trigger"]["end_time_ms"] = 0; }
+    SECTION("extra key") { node["trigger"]["extra"] = 1; }
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).value);
+}
+TEST_CASE("schema36 migrations cannot smuggle future trigger kind or metadata", "[native-project][migration][trigger]") {
+    auto root = trigger_native_json();
+    root["document"]["schema_version"] = 36;
+    SECTION("typed future kind") { first_trigger_json(root).erase("trigger"); }
+    SECTION("empty future metadata") { first_trigger_json(root)["kind"] = 2; first_trigger_json(root)["trigger"] = nlohmann::json::object(); }
+    SECTION("null future metadata") { first_trigger_json(root)["kind"] = 2; first_trigger_json(root)["trigger"] = nullptr; }
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).value);
+}
+TEST_CASE("schema36 ordinary nodes migrate unchanged to37", "[native-project][migration][trigger]") {
+    const auto written = wormedit::write_native_project(trigger_native_song(" F,0,0,10,0,1\n"));
+    REQUIRE(written.value);
+    auto root = nlohmann::json::parse(*written.value);
+    const auto before = first_trigger_json(root);
+    CHECK_FALSE(before.contains("trigger"));
+    root["document"]["schema_version"] = 36;
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->schema_version == wormedit::current_document_schema_version);
+    const auto rewritten = wormedit::write_native_project(*parsed.value);
+    REQUIRE(rewritten.value);
+    auto canonical = nlohmann::json::parse(*rewritten.value);
+    CHECK(first_trigger_json(canonical) == before);
+}
+
+TEST_CASE("schema37 native raw malformed trigger subtrees retain exact bytes", "[native-project][trigger]") {
+    const auto song = trigger_native_song("_T,Passing,0,100\n__F,invalid,0,10,0,1\n__M,0,0,10,0,0,1,1\n");
+    const auto encoded = wormedit::write_native_project(song);
+    REQUIRE(encoded.value);
+    const auto parsed = wormedit::parse_native_project(*encoded.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->storyboards == song.storyboards);
+    const auto emitted = wormedit::emit_osb(*parsed.value->storyboards.front().model);
+    REQUIRE(emitted.value);
+    CHECK(emitted.value->find("_T,Passing,0,100\n__F,invalid,0,10,0,1\n__M,0,0,10,0,0,1,1\n") != std::string::npos);
 }

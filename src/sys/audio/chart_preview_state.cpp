@@ -327,21 +327,7 @@ auto frame_to_milliseconds(std::uint64_t frame, std::uint32_t sample_rate)
     return static_cast<std::int64_t>(milliseconds);
 }
 
-auto milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
-    -> std::uint64_t {
-    if (milliseconds <= 0 || sample_rate == 0)
-        return 0;
-    const auto unsigned_milliseconds = static_cast<std::uint64_t>(milliseconds);
-    const auto whole_seconds = unsigned_milliseconds / 1'000;
-    const auto remainder = unsigned_milliseconds % 1'000;
-    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / sample_rate)
-        return std::numeric_limits<std::uint64_t>::max();
-    const auto base = whole_seconds * sample_rate;
-    const auto fractional_frames = (remainder * sample_rate + 999) / 1'000;
-    if (fractional_frames > std::numeric_limits<std::uint64_t>::max() - base)
-        return std::numeric_limits<std::uint64_t>::max();
-    return base + fractional_frames;
-}
+
 
 
 } // namespace
@@ -459,6 +445,39 @@ auto chart_preview_t::audio_milliseconds(
     return frame_to_milliseconds(source_frame(current_frame(session)), audio::output_sample_rate);
 }
 
+auto chart_preview_t::source_frame_at_audio_milliseconds(std::int64_t milliseconds, std::uint32_t sample_rate)
+    -> std::uint64_t {
+    if (milliseconds <= 0 || sample_rate == 0)
+        return 0;
+    const auto unsigned_milliseconds = static_cast<std::uint64_t>(milliseconds);
+    const auto whole_seconds = unsigned_milliseconds / 1'000;
+    const auto remainder = unsigned_milliseconds % 1'000;
+    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / sample_rate)
+        return std::numeric_limits<std::uint64_t>::max();
+    const auto base = whole_seconds * sample_rate;
+    const auto fractional_frames = (remainder * sample_rate + 999) / 1'000;
+    if (fractional_frames > std::numeric_limits<std::uint64_t>::max() - base)
+        return std::numeric_limits<std::uint64_t>::max();
+    return base + fractional_frames;
+}
+
+auto chart_preview_t::loop_region_at_audio_milliseconds(std::int64_t begin_ms, std::int64_t end_ms,
+    const song_document_t& document, const workspace_controller_t& workspace) const
+    -> std::optional<audio::preview_loop_region_t> {
+    if (begin_ms < 0 || begin_ms >= end_ms || !compiled.value().schedule || !matches_selection(document, workspace))
+        return std::nullopt;
+    const auto begin = source_frame_at_audio_milliseconds(begin_ms, audio::output_sample_rate);
+    const auto end = source_frame_at_audio_milliseconds(end_ms, audio::output_sample_rate);
+    if (end == std::numeric_limits<std::uint64_t>::max() || end > source_frame(compiled.value().end_frame))
+        return std::nullopt;
+    const auto& cuts = compiled.value().cut_frames;
+    if (cuts && (cuts->contains(begin) || cuts->contains(end))) return std::nullopt;
+    const audio::preview_loop_region_t region{collapsed_frame(begin), collapsed_frame(end)};
+    if (region.begin_frame >= region.end_frame || region.end_frame > compiled.value().end_frame)
+        return std::nullopt;
+    return region;
+}
+
 auto chart_preview_t::seek_audio_milliseconds(
     std::int64_t milliseconds, const song_document_t& document,
     const workspace_controller_t& workspace, sdl_audition_output_t& audition_output,
@@ -467,7 +486,7 @@ auto chart_preview_t::seek_audio_milliseconds(
     if (!audio_milliseconds(document, workspace, preview_session))
         return report(notification_severity_t::warning, false,
                       "Chart preview seek is unavailable for the selected chart.");
-    const auto requested_source = milliseconds_to_frame(milliseconds, audio::output_sample_rate);
+    const auto requested_source = source_frame_at_audio_milliseconds(milliseconds, audio::output_sample_rate);
     const auto unclamped = collapsed_frame(requested_source);
     const auto frame = std::min(unclamped, compiled.value().end_frame);
     const auto seek_status = seek(frame, document, workspace, audition_output, preview_session,

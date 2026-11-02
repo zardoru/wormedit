@@ -1,0 +1,106 @@
+[#storyboards]
+= Storyboards
+
+A storyboard adds images and animation around the chart. Open the *Storyboard* workspace tab
+to edit an OSBX storyboard on a canvas, with its hierarchy on the left, properties on the right,
+and keyframes below. The player preview uses the same evaluated scene and transport time.
+
+.Storyboard canvas, selected sprite and keyframe timeline — captured at {shot-storyboards-revision}.
+image::storyboards.png[Storyboard workspace with a selected sprite and two rotation keys]
+
+== Choose an editable storyboard
+
+Use the picker above the canvas to choose a storyboard. Hover the plus beside the picker for
+*New storyboard*. New storyboards use OSBX, Wormedit's editable storyboard format.
+
+An imported OSB is read-only. Select it and use *Convert to OSBX* in the inspector to create an
+editable copy when its contents support that conversion; retained directives,
+Animation, Sample and trigger content can refuse with a diagnostic. The imported
+original remains available. A generated storyboard shows its module
+and owner above *Detach*. Long module paths wrap; very long paths scroll inside their own small
+area, leaving the owner and Detach button visible. Detach makes that storyboard editable and
+removes its generator ownership in one Undo step. Undo restores the ownership and read-only state.
+If the owner is unavailable, Detach remains disabled.
+
+== Add an image, group and sprite
+
+. Open *Assets* on the left. Import an image into the project, or add an existing song image with
+  *Add song image to storyboard*. Keep image files inside the project folder.
+. Add a sprite from the image, or drag its asset row onto the canvas. The drop position supplies
+  its initial translation.
+. Return to *Hierarchy*. The plus beside a layer adds a group. Drag a node by its grip onto a
+  group to reparent it. Reparent within the same layer; moving to a different layer uses the
+  layer control rather than a cross-layer drop.
+. Click a sprite on the canvas or in the hierarchy. The inspector and timeline follow that
+  selection. An editor eye hides a node only in the editor; it does not change the saved scene.
+
+Layers appear in draw order: Background, Fail, Pass, then Foreground. A conditional layer marked
+*Not shown in this state* remains selectable and editable.
+
+== Transform stacks and keys
+
+The inspector lists a node's transform stack from top to bottom. *+ Add op* adds a translation,
+rotation, scale, skew, matrix or pivot operation. Rotations are in degrees. Order matters: a
+rotation above a translation gives a different path from the same two operations in reverse.
+
+To animate a rotation:
+
+. Add *Rotate (degrees)* to the selected node's stack.
+. Set the shared playhead to 0 ms. Click the rotation track in the timeline and press
+  *Add key (K)*, or press kbd:[K] while that timeline track has focus.
+. Move the playhead to 2000 ms and add the second key. Enter the desired rotation in the
+  inspector at that key, for example 90 degrees.
+. Select the first marker and choose an easing in the timeline. Easing describes the segment
+  from that key to the next one.
+
+Millisecond snapping is the default. Beat/grid snapping uses the selected chart's existing timing
+and grid when those are available. Key markers retain their authored identities when moved.
+
+Canvas handles use the selected operation. Move, rotate, scale and pivot gestures preview their
+result before publication. Starting an edit pauses playback. Release to apply; kbd:[Esc] cancels
+the current gesture. One completed gesture is one Undo step. Use kbd:[Ctrl+Z] to Undo and
+kbd:[Ctrl+Shift+Z] to Redo.
+
+== Playback, loops and conditional layers
+
+Use the shared transport buttons, playhead and rate controls already visible below the workspace.
+The canvas follows that clock; there is no separate Storyboard playback position. Space uses the
+shared play/pause command when a text field or modal dialog does not own the input.
+
+Select two or more keys with different nonnegative times to loop their exact minimum-to-maximum
+interval. A range that cannot map to the current chart preview is refused rather than silently
+shortened. Chart selection, audio/output availability and export cuts can affect loop availability.
+
+The *State* choice is *Pass*, *Fail* or *Neither*, initially Pass. Both the Storyboard canvas and
+player preview use this one project view choice. Neither hides both conditional layers. Changing
+the choice does not edit the document, create an Undo entry or alter saved export settings.
+Custom state-switch timelines and gameplay-trigger simulation are not part of these controls.
+
+== Lua links and generated content
+
+The inspector and timeline identify Lua-linked properties and tracks. Their controls use the
+stored source and explicit run/reload workflow described in <<scripting>>. Opening, saving,
+scrubbing and drawing a frame do not run Lua. Linked or generated content may require its
+specific bake/unlink or Detach action before direct editing; a disabled field explains why.
+
+== Save and export
+
+Save the project normally to keep the OSBX scene, image references, hierarchy, transform stacks
+and keys. Reopening uses that saved authored data. Keep referenced image files with the project.
+
+osu! export converts OSBX through the storyboard baker. Simple representable operations can be
+exact; composed animated transforms can require sampled keys. Read the resulting bake warnings
+and node report. A refused scene is not an exported approximation. Review output before publishing
+it, especially when parent transforms, easing or generated content are involved.
+
+*Export video…* uses its own dialog, capability checks and saved output policy. Its conditional-layer
+choice is explicit; changing the live preview State does not silently overwrite it. Codec support
+and an available encoder determine which video actions are usable in a particular build.
+
+== Screen layout
+
+At a narrow window width, the same hierarchy/assets, canvas, inspector and timeline remain
+available with compact controls and wrapped ownership text. The shared global transport replaces
+the mockup's duplicate toolbar transport. The required fixed Neither choice occupies the scenario
+slot; the mockup's optional Custom row is deferred. These presentation choices do not change
+the saved storyboard.

@@ -7,11 +7,15 @@
 #include <wormedit/formats/export_cut_audio.h>
 #endif
 #include <wormedit/formats/conversion.h>
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_decoder.h>
+#endif
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/conversion_publication.h>
 
 #if defined(WORMEDIT_HAS_LUA)
 #include "scripting/lua_curve.h"
+#include "scripting/osbx_lua_link.h"
 #endif
 
 #include <nlohmann/json.hpp>
@@ -111,7 +115,8 @@ auto parse_stepmania_policy(const json& object) -> stepmania_export_policy_t {
     static const std::map<std::string, stepmania_implementation_profile_t, std::less<>> profiles{
         {"unspecified", stepmania_implementation_profile_t::unspecified},
         {"stepmania_5_1", stepmania_implementation_profile_t::stepmania_5_1},
-        {"etterna_0_75_1", stepmania_implementation_profile_t::etterna_0_75_1}};
+        {"etterna_0_75_1", stepmania_implementation_profile_t::etterna_0_75_1},
+        {"notitg_v4", stepmania_implementation_profile_t::notitg_v4}};
     if (!object.is_object()) throw request_error_t{"field 'stepmania' must be an object"};
     stepmania_export_policy_t policy;
     if (const auto name = string_field(object, "file_profile"); !name.empty())
@@ -120,6 +125,16 @@ auto parse_stepmania_policy(const json& object) -> stepmania_export_policy_t {
         policy.timing_syntax = lookup(syntaxes, name, "stepmania.timing_syntax");
     if (const auto name = string_field(object, "implementation_profile"); !name.empty())
         policy.implementation_profile = lookup(profiles, name, "stepmania.implementation_profile");
+    static const std::map<std::string, stepmania_storyboard_mode_t, std::less<>> modes{
+        {"actors", stepmania_storyboard_mode_t::actors}, {"video", stepmania_storyboard_mode_t::video},
+        {"none", stepmania_storyboard_mode_t::none}};
+    static const std::map<std::string, storyboard_conditional_layer_t, std::less<>> layers{
+        {"pass", storyboard_conditional_layer_t::pass}, {"fail", storyboard_conditional_layer_t::fail},
+        {"neither", storyboard_conditional_layer_t::neither}};
+    if (const auto name = string_field(object, "storyboard"); !name.empty())
+        policy.storyboard = lookup(modes, name, "stepmania.storyboard");
+    if (const auto name = string_field(object, "conditional_layer"); !name.empty())
+        policy.conditional_layer = lookup(layers, name, "stepmania.conditional_layer");
     return policy;
 }
 
@@ -263,6 +278,19 @@ auto write_outputs(const conversion_result_t& converted, const std::filesystem::
     return std::nullopt;
 }
 
+auto make_cli_image_probe() -> export_image_probe_t {
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    return [](const std::filesystem::path& path)
+        -> result_t<std::pair<std::uint32_t, std::uint32_t>, std::string> {
+        const auto image = visual::open_image_rgba({.path = path});
+        if (!image) return std::unexpected(image.error().message);
+        return std::pair{image->width, image->height};
+    };
+#else
+    return {};
+#endif
+}
+
 auto prepare_cli_slices(const song_document_t& song, cli_request_t& request) -> std::optional<std::string> {
 #ifdef WORMEDIT_HAS_AUDIO_DECODER
     if (!song.export_cuts.empty()) {
@@ -273,14 +301,15 @@ auto prepare_cli_slices(const song_document_t& song, cli_request_t& request) -> 
     if (!is_conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
     return prepare_conversion_slice_sources(song, request.conversion, request.input.parent_path());
 #else
+    (void)song;
+    (void)request;
     // The pure planner accepts soundless BMSON; audible sources reject missing geometry.
     return std::nullopt;
 #endif
 }
 
-auto publish_cli_slices(const song_document_t& song, const cli_request_t& request,
+auto publish_cli_conversion(const song_document_t& song, const cli_request_t& request,
     const conversion_result_t& converted, json& artifacts) -> std::optional<std::string> {
-#ifdef WORMEDIT_HAS_AUDIO_DECODER
     const auto directory = std::filesystem::absolute(request.output_directory).lexically_normal();
     output_group_t group;
     group.family = request.conversion.target;
@@ -288,10 +317,17 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
     group.destination_kind = output_destination_kind_t::directory;
     conversion_publication_options_t options;
     options.destination_is_directory = true;
+#ifdef WORMEDIT_HAS_AUDIO_DECODER
     options.stage_generated_files = [&](const auto& staging) {
         return render_conversion_slice_plans(song, converted,
             {request.input.parent_path(), staging, {}});
     };
+#else
+    if (!converted.slice_plans.empty() || !converted.cut_audio_plans.empty() ||
+        !converted.asset_copies.empty() || !converted.silent_files.empty())
+        return "Generated audio conversion requires the audio decoder build";
+    (void)song;
+#endif
     const auto published = create_conversion_group(directory.parent_path(), group,
         request.conversion, converted, std::move(options));
     if (!published.value.published) return published.diagnostics.errors.empty() ? "Atomic publication failed" : published.diagnostics.errors.front();
@@ -299,13 +335,12 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
         artifacts.push_back({{"path", (directory / output.suggested_filename).string()},
             {"filename", output.suggested_filename}, {"bytes", output.bytes.size()},
             {"reimport_validated", output.reimport_validated}});
+    for (const auto& file : converted.storyboard_files)
+        artifacts.push_back({{"path", (directory / file.relative_path).string()},
+            {"filename", file.relative_path.generic_string()}, {"bytes", file.bytes.size()},
+            {"kind", "native-storyboard"}});
     return std::nullopt;
-#else
-    (void)song;
-    if (!converted.slice_plans.empty() || !converted.cut_audio_plans.empty() || !converted.asset_copies.empty() || !converted.silent_files.empty())
-        return "BMSON sliced-audio conversion requires the audio decoder build";
-    return write_outputs(converted, request.output_directory, artifacts);
-#endif
+
 }
 
 auto run_request(const json& body) -> std::pair<int, json> {
@@ -320,6 +355,16 @@ auto run_request(const json& body) -> std::pair<int, json> {
     if (!std::filesystem::is_directory(request.output_directory, error)) {
         return {2, fail_json("output_directory must be an existing directory")};
     }
+#if defined(WORMEDIT_HAS_LUA)
+    const scripting::osbx_lua_link_backend_t links;
+    if (request.conversion.target != format_family_t::native_project)
+        request.conversion.osbx_prepared = prepare_osbx_lua_scenes(*opened.document, links);
+#endif
+    const osbx_lua_prepared_scope_t prepared_scope{request.conversion.osbx_prepared};
+    if (auto failure = prepare_osu_storyboard_export(*opened.document, request.conversion,
+            std::filesystem::absolute(request.input).parent_path(), make_cli_image_probe())) return {1, fail_json(*failure)};
+    if (auto failure = prepare_stepmania_storyboard_export(*opened.document, request.conversion,
+            std::filesystem::absolute(request.input).parent_path(), make_cli_image_probe())) return {1, fail_json(*failure)};
     if (auto failure = prepare_cli_slices(*opened.document, request)) return {1, fail_json(*failure)};
 #if defined(WORMEDIT_HAS_LUA)
     scripting::lua_curve_backend_t scripts;
@@ -338,8 +383,9 @@ auto run_request(const json& body) -> std::pair<int, json> {
         return {1, result};
     }
     const auto failure = (is_conversion_needs_slice_spans(*opened.document, request.conversion) ||
-                          !converted.cut_audio_plans.empty() || !converted.asset_copies.empty())
-        ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
+                          !converted.cut_audio_plans.empty() || !converted.asset_copies.empty() ||
+                          request.conversion.osbx_playback_span.has_value())
+        ? publish_cli_conversion(*opened.document, request, converted, result["artifacts"])
         : write_outputs(converted, request.output_directory, result["artifacts"]);
     if (failure) {
         result["error"] = *failure;

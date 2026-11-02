@@ -2419,3 +2419,60 @@ TEST_CASE("Scoped WAV replacement preserves a shared resource in another difficu
     check_wav_slot(history.document.read_chart(first)->measures.front().notes.front().sound == replacement);
     check_wav_slot(history.document.read_chart(second)->measures.front().notes.front().sound == shared);
 }
+
+namespace {
+void check_reassigned_note_sample_owner(const note_t& note) {
+    CHECK(note.sound == resource_id_t{1});
+    CHECK_FALSE(note.sample_reference);
+    REQUIRE(note.osu_hitsample);
+    CHECK(note.osu_hitsample->clap);
+}
+}
+
+TEST_CASE("same-resource assignment retires typed sample intent as one undoable edit", "[resource_plan][resource-assignment]") {
+    auto song = assignment_song();
+    auto& note = song.charts.front().measures.front().notes.front();
+    note.sample_reference = sample_reference_binding_t{.reference = bms_wav_reference_t{.index = "01", .source_chart = chart_id_t{2}},
+        .bound_sound = resource_id_t{1}, .bound_asset = asset_id_t{1}};
+    note.osu_hitsample = osu_hitsample_t{.clap = true};
+    auto history = document_history_t::from(std::move(song));
+    const auto assigned = apply_resource_assignment(history, {.chart = chart_id_t{2}, .resource = resource_id_t{1},
+        .objects = {{editor_selection_object_kind_t::note, object_id_t{10}}}});
+    REQUIRE(assigned.applied);
+    CHECK(history.undo.size() == 1);
+    const auto& result = history.document.charts.front().measures.front().notes.front();
+    check_reassigned_note_sample_owner(result);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().notes.front().sample_reference.has_value());
+}
+
+TEST_CASE("sample provenance normalization never overrides changed sound or catalog audio", "[resource_plan]") {
+    auto song = assignment_song();
+    auto& note = song.charts.front().measures.front().notes.front();
+    note.sample_reference = sample_reference_binding_t{.reference = bms_wav_reference_t{.index = "01"},
+        .bound_sound = resource_id_t{1}, .bound_asset = asset_id_t{1}};
+    SECTION("sound reassigned") { note.sound = resource_id_t{2}; }
+    SECTION("catalog asset changed") { song.resources.front().asset = asset_id_t{2}; }
+    const auto effective = note.sound;
+    normalize_sample_references(song);
+    CHECK_FALSE(note.sample_reference);
+    CHECK(note.sound == effective);
+}
+
+TEST_CASE("audio relink retires file receipts but retains valid explicit WAV intent", "[resource_plan]") {
+    auto song = assignment_song();
+    auto& measure = song.charts.front().measures.front();
+    measure.notes.front().sample_reference = sample_reference_binding_t{.reference = audio_file_reference_t{
+        .declared_name = "one", .path = "one.wav", .content_hash = std::string(64, 'a'),
+        .stream = {.sample_rate = 44100, .channels = 2, .frame_count = 100}},
+        .bound_sound = resource_id_t{1}, .bound_asset = asset_id_t{1}};
+    measure.bgm_events.front().sample_reference = sample_reference_binding_t{
+        .reference = bms_wav_reference_t{.index = "01"}, .bound_sound = resource_id_t{1}, .bound_asset = asset_id_t{1}};
+    auto history = document_history_t::from(std::move(song));
+    REQUIRE(apply_resource_asset_relink(history, {.asset = asset_id_t{1}, .source_path = "replacement.wav"}).applied);
+    const auto& result = history.document.charts.front().measures.front();
+    CHECK_FALSE(result.notes.front().sample_reference);
+    CHECK(result.bgm_events.front().sample_reference.has_value());
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().notes.front().sample_reference.has_value());
+}

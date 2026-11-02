@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/osbx_osb_export.h>
 #include <wormedit/formats/text_source_location.h>
 
 #include <cstddef>
@@ -9,6 +10,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace wormedit {
 
@@ -67,6 +69,7 @@ enum class osu_mania_write_diagnostic_code_t {
     metadata_limit,
     timestamp_quantization,
     lossy_transform,
+    storyboard_bake,
     output_limit,
 };
 
@@ -88,9 +91,18 @@ struct osu_mania_write_options_t {
     // Applies to serialized non-timeline fields, including retained fields.
     std::size_t max_metadata_fields{4'096};
     std::size_t max_metadata_bytes{1U * 1024U * 1024U};
+    // OSBX conversion context is supplied by the media/timing preparation owner.
+    osbx_osb_options_t osbx;
+    bool embed_storyboard{true};
 };
 
 using osu_mania_write_outcome_t = attempt_t<std::string, std::vector<osu_mania_write_diagnostic_t>>;
+
+// Emits the song storyboard through the same validation used by the .osu writer.
+// No storyboard is represented by an absent value with no diagnostics.
+[[nodiscard]] auto write_osu_storyboard(const song_document_t& song,
+                                       osu_mania_write_options_t options = {})
+    -> osu_mania_write_outcome_t;
 
 // Parses one stable-v14 or lazer-v128 UTF-8 osu!mania .osu file. Other
 // file-format versions reject explicitly. Parsing is bounded and transactional:
@@ -116,6 +128,12 @@ using osu_mania_write_outcome_t = attempt_t<std::string, std::vector<osu_mania_w
 
 // Resolves Auto/index-zero/volume-zero inheritance at the note's current musical
 // position, using the modeled timing events' retained sample fields.
+// Pure registered-catalog resolution, ordered exactly like playback. Each
+// contribution remains distinct, including duplicate resource/path voices.
+[[nodiscard]] auto resolve_osu_sample_resources(const song_document_t& song, const osu_hitsample_t& sample,
+    osu_sample_context_t context = {}, std::optional<resource_id_t> custom_normal = {})
+    -> result_t<std::vector<std::pair<resource_id_t, std::int64_t>>, error_t<failure_code_t>>;
+
 struct osu_sample_context_index_t {
     struct entry_t {
         std::uint64_t row{};

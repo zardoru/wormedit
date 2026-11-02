@@ -5,9 +5,131 @@
 #include "id_ceiling.h"
 #include "lane_occupancy.h"
 #include "text_util.h"
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <map>
 #include <set>
+#include <type_traits>
 namespace wormedit {
+namespace {
+
+template<class Event> auto matches_audio_receipt(const Event& event, asset_id_t asset,
+    const audio_file_reference_t& receipt) -> bool {
+    if (!event.sample_reference || event.sound != event.sample_reference->bound_sound ||
+        event.sample_reference->bound_asset != asset) return false;
+    const auto* existing = std::get_if<audio_file_reference_t>(&event.sample_reference->reference);
+    return existing && existing->path == receipt.path && existing->content_hash == receipt.content_hash &&
+        existing->stream == receipt.stream;
+}
+template<class Measures> auto measures_have_audio_receipt(const Measures& measures, asset_id_t asset,
+    const audio_file_reference_t& receipt) -> bool {
+    for (const auto& measure : measures) {
+        for (const auto& note : measure.notes) if (matches_audio_receipt(note, asset, receipt)) return true;
+        for (const auto& event : measure.bgm_events) if (matches_audio_receipt(event, asset, receipt)) return true;
+    }
+    return false;
+}
+auto has_audio_receipt(const song_document_t& song, const generator_recipe_t& recipe,
+    asset_id_t asset, const audio_file_reference_t& receipt) -> bool {
+    for (const auto& chart : song.charts)
+        if (measures_have_audio_receipt(chart.measures, asset, receipt)) return true;
+    for (const auto& chart : recipe.generated_charts)
+        if (measures_have_audio_receipt(chart.content.measures, asset, receipt)) return true;
+    return false;
+}
+
+auto intern_sample_audio(song_document_t& song, const std::filesystem::path& path,
+    const audio_stream_info_t& stream, const generator_recipe_t& recipe,
+    const audio_file_reference_t* receipt = nullptr) -> result_t<resource_id_t, error_t<failure_code_t>> {
+    auto asset = std::ranges::find_if(song.audio_assets, [&](const auto& value) {
+        return value.source_path.lexically_normal() == path.lexically_normal() && value.stream == stream &&
+            (!receipt || (receipt->asset ? value.id == *receipt->asset : has_audio_receipt(song, recipe, value.id, *receipt)));
+    });
+    asset_id_t id;
+    if (asset != song.audio_assets.end()) id = asset->id;
+    else {
+        const auto next = next_resource_asset_id(song);
+        if (!next) return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Audio asset IDs exhausted"});
+        id = *next;
+        song.audio_assets.push_back({.id = id, .source_path = path, .stream = stream});
+    }
+    const auto existing = std::ranges::find_if(song.resources, [&](const auto& value) {
+        return value.asset == id && !value.missing && value.has_role(resource_role_t::sample);
+    });
+    if (existing != song.resources.end()) return existing->id;
+    const auto next = id_ceiling_t<resource_id_t>::from(song, 100'000).next();
+    if (!next) return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Audio resource IDs exhausted"});
+    song.resources.push_back({.id = *next, .name = text_util::path_utf8(path), .asset = id,
+        .roles = {resource_role_t::sample, resource_role_t::bgm}});
+    return *next;
+}
+
+auto materialize_bms_sample(song_document_t& song, const bms_wav_reference_t& reference,
+    const generator_recipe_t& recipe) -> result_t<resource_id_t, error_t<failure_code_t>> {
+    const auto source = resolve_bms_sample_reference(song, reference);
+    if (!source) return std::unexpected(source.error());
+    const auto resource = std::ranges::find(song.resources, source->first.id, &resource_entry_t::id);
+    if (resource == song.resources.end())
+        return intern_sample_audio(song, source->second.source_path, source->second.stream, recipe);
+    const auto* asset = song.find_audio_asset(resource->asset);
+    if (!asset || resource->asset != source->second.id ||
+        asset->source_path.lexically_normal() != source->second.source_path.lexically_normal() ||
+        asset->stream != source->second.stream)
+        return std::unexpected(error_t{failure_code_t::conflict, "Scoped WAV resource ID collides with a different catalog asset"});
+    return resource->id;
+}
+auto materialize_audio_file(song_document_t& song, const audio_file_reference_t& reference,
+    const generator_recipe_t& recipe) -> result_t<resource_id_t, error_t<failure_code_t>> {
+    if (!reference.asset)
+        return intern_sample_audio(song, text_util::path_from_utf8(reference.path), reference.stream, recipe, &reference);
+    const auto* asset = song.find_audio_asset(*reference.asset);
+    if (!asset || asset->stream != reference.stream)
+        return std::unexpected(error_t{failure_code_t::conflict, "Declared audio asset changed after discovery"});
+    return intern_sample_audio(song, asset->source_path, asset->stream, recipe, &reference);
+}
+template<class Event> auto materialize_sample(song_document_t& song, Event& event, const generator_recipe_t& recipe) -> diagnostic_list_t {
+    if (!event.sample_reference) return {};
+    auto& binding = *event.sample_reference;
+    if (!binding.is_valid()) return {error(diagnostic_code_t::invalid_binding, "Invalid sample reference receipt")};
+    const auto sound = std::visit([&](const auto& reference) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(reference)>, bms_wav_reference_t>)
+            return materialize_bms_sample(song, reference, recipe);
+        else return materialize_audio_file(song, reference, recipe);
+    }, binding.reference);
+    if (!sound) return {error(diagnostic_code_t::invalid_binding, sound.error().message)};
+    const auto resource = std::ranges::find(song.resources, *sound, &resource_entry_t::id);
+    event.sound = *sound;
+    binding.bound_sound = *sound;
+    binding.bound_asset = resource->asset;
+    if (auto* audio = std::get_if<audio_file_reference_t>(&binding.reference)) audio->asset = resource->asset;
+    return {};
+}
+} // namespace
+
+namespace {
+auto materialize_chart_samples(song_document_t& song, generator_chart_binding_t& chart, const generator_recipe_t& recipe) -> diagnostic_list_t {
+    for (auto& measure : chart.content.measures) {
+        for (auto& note : measure.notes)
+            if (auto errors = materialize_sample(song, note, recipe); !errors.empty()) return errors;
+        for (auto& event : measure.bgm_events)
+            if (auto errors = materialize_sample(song, event, recipe); !errors.empty()) return errors;
+    }
+    return {};
+}
+}
+auto materialize_generator_sample_references(document_command_transaction_t& transaction,
+    generator_recipe_t& recipe) -> diagnostic_list_t {
+    const auto result = transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        const auto asset_count = song.audio_assets.size();
+        const auto resource_count = song.resources.size();
+        for (auto& chart : recipe.generated_charts)
+            if (auto errors = materialize_chart_samples(song, chart, recipe); !errors.empty()) return {.diagnostics = std::move(errors)};
+        return {.value = document_edit_effect_t{.changed = song.audio_assets.size() != asset_count || song.resources.size() != resource_count,
+            .command_label = "Materialize generated samples"}};
+    });
+    return result.diagnostics;
+}
+
 auto generator_chart_content_t::from(const chart_document_t& chart, bool owns_sv) -> generator_chart_content_t {
     return {.name = chart.metadata.name,
             .resolution = chart.divisions_per_standard_measure,

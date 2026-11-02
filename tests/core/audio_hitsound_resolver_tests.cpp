@@ -197,3 +197,40 @@ TEST_CASE("Hitsound playback bindings distinguish typed notes from ordinary reso
     REQUIRE(schedule.music);
     CHECK_FALSE(playback.value.bindings.back().voices.front().is_hitsound);
 }
+
+namespace {
+void check_bgm_descriptor_voice_query() {
+    const osu_hitsample_t descriptor{.whistle = true, .clap = true, .addition_set = osu_sample_set_t::drum};
+    const auto query = descriptor.query({.normal_set = osu_sample_set_t::soft, .custom_index = 2, .volume = 50});
+    REQUIRE(query.voices.size() == 3);
+    CHECK(query.voices[0].fallback.stem() == "soft-hitnormal2");
+    CHECK(query.voices[1].fallback.stem() == "drum-hitwhistle2");
+    CHECK(query.voices[2].fallback.stem() == "drum-hitclap2");
+    CHECK(query.volume == 50);
+    CHECK(descriptor.query({}, true).voices.size() == 2);
+
+}
+}
+
+TEST_CASE("BGM descriptors share ordered voices context and one gain with note playback", "[audio][hitsound][resource_plan]") {
+    check_bgm_descriptor_voice_query();
+
+    decoded_source_registry_t registry;
+    hitsound_resolver_t resolver;
+    resolver.environment.bundle_directory = bundled_samples();
+    song_document_t song{.id = song_id_t{1}, .charts = {{.id = chart_id_t{2},
+        .measures = {{.id = measure_id_t{3}, .bgm_events = {{.id = object_id_t{10},
+            .position = {measure_id_t{3}, 0}, .source_lane = object_id_t{20},
+            .osu_hitsample = osu_hitsample_t{.clap = true, .volume = 50}}}}}}}};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.bgm.push_back({.object = object_id_t{10}});
+    const auto extras = resolver.bindings(song, song.charts.front(), registry, 1);
+    REQUIRE(extras.size() == 1);
+    CHECK(extras.front().binding.voices.size() == 2);
+    const auto resolved = preview_bindings_resolution_t::from(song, chart_id_t{2}, schedule, {}, {.hitsounds = extras});
+    check_audible_hitsound_mix(registry, schedule, resolved);
+    const auto audition = audition_resolution_t::from(song, chart_id_t{2}, object_id_t{10}, {}, {.hitsounds = extras});
+    REQUIRE(audition.diagnostics.empty());
+    REQUIRE(audition.value.clips.size() == 2);
+    CHECK(audition.value.clips.front().gain == 0.5F);
+}

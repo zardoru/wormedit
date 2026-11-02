@@ -1,6 +1,8 @@
 #include <wormedit/core/document_index.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/export_cut_transform.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1087,4 +1089,128 @@ TEST_CASE("Concurrent first chart reads share one borrowed index", "[core][docum
         CHECK(view.front() == &song.charts.front());
         CHECK(view.data() == views.front().data());
     }
+}
+
+namespace {
+auto make_osbx_storyboard() -> storyboard_document_t {
+    return {.id = storyboard_id_t{51}, .name = "OSBX",
+        .osbx = osbx_document_t{
+            .images = {{.id = "image", .file = "background.png"}},
+            .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite, .image = "image"}}}};
+}
+void check_osbx_source_context(const diagnostic_t& diagnostic) {
+    CHECK(diagnostic.object == object_id_t{51});
+    CHECK(diagnostic.severity == diagnostic_severity_t::error);
+    CHECK(diagnostic.message.find("sprite") != std::string::npos);
+    CHECK(diagnostic.message.find("scene.osbx.lua:42") != std::string::npos);
+}
+}
+
+TEST_CASE("Song validation accepts OSBX registered images and project-relative files", "[core][document][osbx]") {
+    auto song = make_valid_song();
+    song.storyboards.push_back(make_osbx_storyboard());
+    CHECK(validate_document(song).empty());
+    CHECK(song.storyboard_resource("./background.png") == resource_id_t{2});
+    song.storyboards.front().osbx->images.front().file = "images/unregistered.png";
+    CHECK_FALSE(song.storyboard_resource("images/unregistered.png"));
+    CHECK(validate_document(song).empty());
+    song.storyboards.front().osbx->images.front().file = "../outside.png";
+    CHECK(has_code(validate_document(song), diagnostic_code_t::dangling_asset));
+}
+
+TEST_CASE("Song validation rejects competing storyboard models and missing recipe owners", "[core][document][osbx]") {
+    auto song = make_valid_song();
+    song.storyboards.push_back(make_osbx_storyboard());
+    song.storyboards.front().model.emplace();
+    CHECK(has_code(validate_document(song), diagnostic_code_t::unsupported_feature));
+    song.storyboards.front().model.reset();
+    song.storyboards.front().owning_generator_recipe = recipe_id_t{999};
+    CHECK(has_code(validate_document(song), diagnostic_code_t::invalid_id));
+    song.generator_recipes.push_back({.id = recipe_id_t{999}});
+    CHECK(validate_document(song).empty());
+}
+
+TEST_CASE("Song validation maps OSBX diagnostics with storyboard and source context", "[core][document][osbx]") {
+    auto song = make_valid_song();
+    song.storyboards.push_back(make_osbx_storyboard());
+    auto& osbx = *song.storyboards.front().osbx;
+    osbx.nodes.front().image = "missing";
+    osbx.nodes.front().provenance = {.file = "scene.osbx.lua", .line = 42};
+    auto diagnostics = validate_document(song);
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().code == diagnostic_code_t::dangling_asset);
+    check_osbx_source_context(diagnostics.front());
+    osbx.nodes.front().image = "image";
+    osbx.nodes.front().id = "image";
+    CHECK(has_code(validate_document(song), diagnostic_code_t::duplicate_id));
+    osbx.nodes.front().id = "sprite";
+    osbx.canvas.width = 0;
+    CHECK(has_code(validate_document(song), diagnostic_code_t::unsupported_feature));
+}
+
+namespace {
+void check_clip_document_context(const diagnostic_t& diagnostic) {
+    CHECK(diagnostic.object == object_id_t{51});
+    CHECK(diagnostic.severity == diagnostic_severity_t::error);
+    CHECK(diagnostic.message.starts_with("OSBX ["));
+}
+void check_clip_document_diagnostics(const diagnostic_list_t& diagnostics, diagnostic_code_t expected) {
+    REQUIRE_FALSE(diagnostics.empty());
+    CHECK(has_code(diagnostics, expected));
+    for (const auto& diagnostic : diagnostics) check_clip_document_context(diagnostic);
+}
+}
+
+TEST_CASE("Song validation reports clip reference cycle and clock-capacity failures", "[core][document][osbx][clips]") {
+    auto song = make_valid_song();
+    song.storyboards.push_back(make_osbx_storyboard());
+    auto& scene = *song.storyboards.front().osbx;
+    scene.clips = {{.id = "clip", .ops = {{.id = "clip-op", .track = {
+        .default_value = {0, 0}, .keys = {{.id = "clip-key", .time_ms = 1, .value = {1, 2}}}}}}}};
+    scene.nodes.front().uses = {{.id = "use", .clip = "clip"}};
+    REQUIRE(validate_document(song).empty());
+    auto expected = diagnostic_code_t::invalid_binding;
+    SECTION("missing reference") {
+        scene.nodes.front().uses.front().clip = "missing";
+    }
+    SECTION("recursive definition") {
+        scene.clips.front().uses = {{.id = "recursive", .clip = "clip"}};
+        expected = diagnostic_code_t::invalid_id;
+    }
+    SECTION("unrepresentable exact clip clock") {
+        scene.nodes.front().uses.front().time_scale = 0.1;
+        expected = diagnostic_code_t::unsupported_feature;
+    }
+    check_clip_document_diagnostics(validate_document(song), expected);
+}
+
+TEST_CASE("A document transaction replaces an OSB storyboard with OSBX in one undo step", "[core][document][osbx]") {
+    auto song = make_valid_song();
+    auto original = storyboard_document_t{.id = storyboard_id_t{51}, .name = "OSB",
+        .model = storyboard_document_model_t{}};
+    song.storyboards.push_back(original);
+    song.generator_recipes.push_back({.id = recipe_id_t{999}});
+    auto history = document_history_t::from(std::move(song));
+    auto replacement = make_osbx_storyboard();
+    replacement.owning_generator_recipe = recipe_id_t{999};
+    auto transaction = document_command_transaction_t(history);
+    transaction.document().storyboards.front() = replacement;
+    REQUIRE(transaction.commit("Replace storyboard").applied);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.storyboards.front() == original);
+    CHECK_FALSE(history.can_undo());
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.storyboards.front() == replacement);
+}
+
+TEST_CASE("Export cuts refuse OSBX timed content without changing the source", "[core][document][osbx]") {
+    const auto storyboard = make_osbx_storyboard();
+    const auto song = song_document_t{.id = song_id_t{1}, .storyboards = {storyboard},
+        .export_cuts = {{.id = object_id_t{52}, .begin_milliseconds = 100, .end_milliseconds = 200}}};
+    const auto result = export_cut_transform_t::from(song, {});
+    CHECK_FALSE(result.value);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    CHECK(result.diagnostics.front().location.object == object_id_t{51});
+    CHECK(song.storyboards.front() == storyboard);
 }

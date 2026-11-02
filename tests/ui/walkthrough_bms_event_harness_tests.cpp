@@ -1,6 +1,7 @@
 #include "sys/resources/bms_catalog_bindings.h"
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
+#include "../support/temporary_directory.h"
 #include "sys/app/application_defaults.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/actions/compose_sound_actions.h"
@@ -300,6 +301,7 @@ TEST_CASE("BMS walkthrough wizard creates BME and BMSON charts with their source
     check_step(document->output_groups.front().family == family);
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC paste from a new project",
           "[frontend-state][event-harness][walkthrough-bms]") {
     walkthrough_t flow;
@@ -351,6 +353,8 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     move_note_and_paste_imported_sound(flow, sound);
 }
 
+#endif
+
 TEST_CASE("BMS walkthrough pastes all four editor formats through preview commit and Undo",
           "[frontend-state][event-harness][walkthrough-bms]") {
     const auto* name = GENERATE("bmse-3.0-mixed.clip", "bmse-legacy-mixed.clip",
@@ -385,6 +389,7 @@ TEST_CASE("BMS walkthrough pastes all four editor formats through preview commit
     check_step(serialized_document(history.document) == serialized_document(before));
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses replacement",
           "[frontend-state][event-harness][walkthrough-bms]") {
     walkthrough_t flow;
@@ -394,7 +399,9 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     flow.interaction->active_lane = flow.chart().input_profile.bindings[1].lane;
     require_step(dispatch_editor_action(flow.history, *flow.interaction,
         place_tap_action_t{.position = {measure, 0}, .sound = sound}));
-    const auto directory = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/bms-export-walkthrough";
+    auto temporary = test::temporary_directory_t::from();
+    REQUIRE(temporary);
+    const auto directory = temporary->path();
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
     const auto saved = create_native_project_file(directory / "song.wormedit", flow.history.document);
@@ -442,6 +449,8 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     check_step(read_file(output) == bytes);
     std::filesystem::remove_all(directory);
 }
+
+#endif
 
 TEST_CASE("BMS walkthrough Project group edit preview and export emit their production actions",
           "[frontend-state][event-harness][walkthrough-bms]") {
@@ -573,6 +582,7 @@ auto sound_drop_origin(walkthrough_t& flow) -> sound_drop_origin_t {
 }
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("BMS walkthrough imports three picked files starting at an explicitly clicked 0A",
           "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
     // The production BMS session factory starts a fresh chart; layout family is T-707.
@@ -657,6 +667,8 @@ TEST_CASE("BMS walkthrough explicitly selected drop ranges retain occupied-slot 
     check_step(slots.rows.front().source_path == paths[1]);
 }
 
+#endif
+
 TEST_CASE("BMS walkthrough refuses a selected range beyond ZZ before staging and names remaining slots",
           "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
     walkthrough_t flow{make_initial_document(song_id_t{1})};
@@ -699,6 +711,7 @@ TEST_CASE("BMS walkthrough clears explicit slot imports on mode chart and projec
     check_false_step(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit);
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target",
           "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
     walkthrough_t flow{make_initial_document(song_id_t{1})};
@@ -715,6 +728,8 @@ TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target"
     check_step(static_cast<bool>(slots.rows.front().resource));
 }
 
+
+#endif
 
 TEST_CASE("BMS walkthrough treats dotted and extensionless destinations as folders",
           "[frontend-state][event-harness][walkthrough-bms]") {
@@ -748,6 +763,7 @@ TEST_CASE("BMS walkthrough treats dotted and extensionless destinations as folde
     std::filesystem::remove_all(directory);
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("BMS walkthrough packages declared sounds and images and names missing sources",
           "[frontend-state][event-harness][walkthrough-bms]") {
     const auto family = GENERATE(format_family_t::bms, format_family_t::bmson);
@@ -811,3 +827,26 @@ TEST_CASE("BMS walkthrough packages declared sounds and images and names missing
     check_false_step(std::filesystem::exists(root / "song"));
     std::filesystem::remove_all(root);
 }
+#endif
+
+#if !defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("BMS walkthrough refuses decoder-dependent sound imports without mutation when decoding is unavailable",
+          "[frontend-state][event-harness][walkthrough-bms][unavailable]") {
+    walkthrough_t flow;
+    const auto path = (std::filesystem::path{WORMEDIT_SOURCE_ROOT} /
+                       "tests/fixtures/audio/keysound-c4.ogg").string();
+    require_step(std::filesystem::is_regular_file(path));
+    const std::array paths{path};
+    const auto before = serialized_document(flow.history.document);
+    const auto prepared = prepare_keysound_import(flow.history.document, flow.chart().id, paths);
+    check_step(prepared.entries.empty());
+    check_step(prepared.skipped_unreadable == 1);
+    const auto staged = stage_sound_import(flow.history.document, *flow.workspace.value, paths);
+    check_false_step(staged.mutated);
+    check_false_step(staged.message.empty());
+    (void)flow.harness.frame();
+    check_false_step(static_cast<bool>(flow.harness.drawn_text_center("Confirm import")));
+    check_step(serialized_document(flow.history.document) == before);
+    check_step(flow.history.undo.empty());
+}
+#endif

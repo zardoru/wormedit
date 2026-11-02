@@ -12,6 +12,7 @@
 
 namespace wormedit {
 struct document_history_t;
+struct editor_interaction_state_t;
 namespace visual {
 class image_job_t;
 class video_frame_job_t;
@@ -45,6 +46,8 @@ class player_preview_presenter_t {
                   ,
                   visual::video_frame_job_t& video_job
 #endif
+        , ui::storyboard_view_t* storyboard = nullptr, std::uint64_t session_generation = 0,
+        const editor_interaction_state_t* interaction = nullptr
     );
 
   private:

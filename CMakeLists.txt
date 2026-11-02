@@ -59,6 +59,8 @@ option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
 option(WORMEDIT_WINDOWS_CONSOLE "Keep a console window attached to the Windows executable" OFF)
+option(WORMEDIT_ENABLE_VIDEO_ENCODER "Build the optional linked FFmpeg video encoder boundary" ON)
+option(WORMEDIT_VIDEO_ENCODER_ALLOW_GPL "Allow an explicitly requested GPL encoder (never in release SDKs)" OFF)
 option(WORMEDIT_ENABLE_VIDEO_DECODER "Build the optional bounded FFmpeg video-frame decoder" ON)
 option(WORMEDIT_ENABLE_FFMPEG "Enable optional FFmpeg audio metadata prefill" ON)
 option(WORMEDIT_REQUIRE_FFMPEG "Require FFmpeg development libraries for shipped builds" OFF)
@@ -174,11 +176,23 @@ add_library(wormedit_core
     src/core/sound_import.cpp
     src/core/arena.cpp
     src/core/notifications.cpp
+    src/core/keyframe_simplify.cpp
+    src/core/osbx_export_metric.cpp
+    src/core/osbx_osb_export.cpp
+    src/core/osbx_evaluator.cpp
+    src/core/osbx_document.cpp
+    src/core/osbx_edit.cpp
+    src/core/osb_to_osbx.cpp
+    src/core/osbx_lua_link.cpp
+    src/core/lua_source.cpp
     src/core/storyboard.cpp
     src/core/storyboard_preview.cpp
+    src/core/storyboard_canvas.cpp
+    src/core/storyboard_gizmo.cpp
     src/core/sv_recipe_definitions.cpp
     src/core/sv_recipe.cpp
     src/core/generator.cpp
+    src/core/generator_storyboard.cpp
     src/core/generator_chart.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
@@ -202,6 +216,7 @@ add_library(wormedit_core
     src/formats/bms_program_writer.cpp
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
+    src/formats/resource_plan.cpp
     src/formats/conversion.cpp
     src/formats/slice_spans.cpp
     src/formats/conversion_publication.cpp
@@ -212,6 +227,7 @@ add_library(wormedit_core
     src/formats/native_project_storage.cpp
     src/formats/osu_mania.cpp
     src/formats/stepmania.cpp
+    src/formats/stepmania_storyboard.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
@@ -268,6 +284,8 @@ if(WORMEDIT_ENABLE_LUA)
         src/scripting/lua_curve.cpp
         src/scripting/lua_document_api.cpp
         src/scripting/lua_project.cpp
+        src/scripting/osbx_lua.cpp
+        src/scripting/osbx_lua_link.cpp
         src/scripting/chart_lua.cpp
         src/scripting/lua_generator.cpp
     )
@@ -300,14 +318,19 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     target_compile_definitions(wormedit-convert PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
 endif()
 
-if(WORMEDIT_ENABLE_IMAGE_DECODER OR WORMEDIT_ENABLE_VIDEO_DECODER)
-    add_library(wormedit_visual_assets src/visual/visual_asset.cpp)
-    add_library(wormedit::visual_assets ALIAS wormedit_visual_assets)
-    target_include_directories(wormedit_visual_assets PUBLIC "${CMAKE_SOURCE_DIR}/include")
-    target_compile_features(wormedit_visual_assets PUBLIC cxx_std_23)
-    target_link_libraries(wormedit_visual_assets PUBLIC wormedit::core)
-    wormedit_enable_warnings(wormedit_visual_assets)
+# Project discovery freezes audio geometry through the existing decoder.
+if(TARGET wormedit_scripting AND TARGET wormedit_audio_decoder)
+    target_link_libraries(wormedit_scripting PRIVATE wormedit::audio_decoder)
+    target_compile_definitions(wormedit_scripting PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
 endif()
+
+# Catalog/path resolution is also used when media decoders are disabled.
+add_library(wormedit_visual_assets src/visual/visual_asset.cpp)
+add_library(wormedit::visual_assets ALIAS wormedit_visual_assets)
+target_include_directories(wormedit_visual_assets PUBLIC "${CMAKE_SOURCE_DIR}/include")
+target_compile_features(wormedit_visual_assets PUBLIC cxx_std_23)
+target_link_libraries(wormedit_visual_assets PUBLIC wormedit::core)
+wormedit_enable_warnings(wormedit_visual_assets)
 
 if(WORMEDIT_ENABLE_IMAGE_DECODER)
     include(cmake/dependencies/stb_image.cmake)
@@ -320,9 +343,16 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     target_compile_features(wormedit_visual_decoder PUBLIC cxx_std_23)
     target_link_libraries(wormedit_visual_decoder PUBLIC wormedit::visual_assets PRIVATE stb::image)
     wormedit_enable_warnings(wormedit_visual_decoder)
+    target_link_libraries(wormedit-convert PRIVATE wormedit::visual_decoder)
+    target_compile_definitions(wormedit-convert PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+    add_library(wormedit_storyboard_raster src/core/storyboard_raster.cpp)
+    add_library(wormedit::storyboard_raster ALIAS wormedit_storyboard_raster)
+    target_link_libraries(wormedit_storyboard_raster PUBLIC wormedit::visual_decoder)
+    target_compile_features(wormedit_storyboard_raster PUBLIC cxx_std_23)
+    wormedit_enable_warnings(wormedit_storyboard_raster)
 endif()
 
-if(WORMEDIT_ENABLE_FFMPEG OR WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_REQUIRE_FFMPEG)
+if(WORMEDIT_ENABLE_FFMPEG OR WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_ENABLE_VIDEO_ENCODER OR WORMEDIT_REQUIRE_FFMPEG)
     set(WORMEDIT_FFMPEG_FIND_MODE QUIET)
     if(WORMEDIT_REQUIRE_FFMPEG)
         set(WORMEDIT_FFMPEG_FIND_MODE REQUIRED)
@@ -362,6 +392,32 @@ if(WORMEDIT_ENABLE_VIDEO_DECODER)
             "FFmpeg development libraries were not found; optional video decoding is disabled"
         )
     endif()
+endif()
+
+# The vendor-free boundary always exists, including genuinely disabled builds.
+add_library(wormedit_video_encoder src/media/ffmpeg_video_encoder.cpp)
+add_library(wormedit::video_encoder ALIAS wormedit_video_encoder)
+target_include_directories(wormedit_video_encoder PUBLIC "${CMAKE_SOURCE_DIR}/include")
+target_compile_features(wormedit_video_encoder PUBLIC cxx_std_23)
+target_link_libraries(wormedit_video_encoder PUBLIC wormedit::core)
+wormedit_enable_warnings(wormedit_video_encoder)
+set(WORMEDIT_VIDEO_ENCODER_AVAILABLE OFF)
+if(WORMEDIT_ENABLE_VIDEO_ENCODER AND TARGET PkgConfig::WORMEDIT_FFMPEG)
+    # Keep the existing decoder discovery independent of this extra dependency.
+    # The boundary targets the pinned9.x SDK's API and needs resampling once.
+    pkg_check_modules(WORMEDIT_VIDEO_ENCODER_FFMPEG QUIET IMPORTED_TARGET
+        libavformat>=63 libavcodec>=63 libavutil libswscale libswresample)
+    if(TARGET PkgConfig::WORMEDIT_VIDEO_ENCODER_FFMPEG)
+        set(WORMEDIT_VIDEO_ENCODER_AVAILABLE ON)
+        target_compile_definitions(wormedit_video_encoder PRIVATE WORMEDIT_HAS_VIDEO_ENCODER=1)
+        target_link_libraries(wormedit_video_encoder PRIVATE PkgConfig::WORMEDIT_VIDEO_ENCODER_FFMPEG)
+        if(WORMEDIT_VIDEO_ENCODER_ALLOW_GPL)
+            target_compile_definitions(wormedit_video_encoder PRIVATE WORMEDIT_VIDEO_ENCODER_ALLOW_GPL=1)
+        endif()
+    endif()
+endif()
+if(NOT WORMEDIT_VIDEO_ENCODER_AVAILABLE)
+    message(STATUS "Video export unavailable: encoder disabled or FFmpeg9.x/swresample development libraries absent")
 endif()
 
 if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
@@ -476,6 +532,9 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     wormedit_add_frontend_library(wormedit_ui_region_cache
         src/ui/nuklear/render/sdl_region_cache.cpp
     )
+    wormedit_add_frontend_library(wormedit_ui_image_quad
+        src/ui/nuklear/render/image_quad.cpp
+    )
     wormedit_add_frontend_library(wormedit_ui_sdl_backend
         src/ui/nuklear/app/sdl_backend.cpp
         src/ui/nuklear/render/sdl_region_frame.cpp
@@ -503,8 +562,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         src/ui/nuklear/audio/meter_state.cpp
     )
     wormedit_add_frontend_library(wormedit_ui_player_preview
-        src/ui/nuklear/render/image_quad.cpp
         src/ui/nuklear/audio/player_preview.cpp
+        src/ui/nuklear/storyboard/scenario.cpp
         src/ui/nuklear/audio/player_preview_texture.cpp
     )
     wormedit_add_frontend_library(wormedit_ui_notifications
@@ -514,12 +573,13 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     target_link_libraries(wormedit_ui_field_renderer PRIVATE wormedit_ui_interval_index)
     target_link_libraries(wormedit_ui_region_cache PRIVATE
         wormedit_ui_command_mesh wormedit_ui_field_renderer)
-    target_link_libraries(wormedit_ui_sdl_backend PRIVATE wormedit_ui_region_cache)
+    target_link_libraries(wormedit_ui_sdl_backend PRIVATE
+        wormedit_ui_region_cache wormedit_ui_image_quad)
     target_link_libraries(wormedit_ui_nuklear_theme PRIVATE
         wormedit::core nlohmann_json::nlohmann_json wormedit_ui_arrow_glyph)
     target_link_libraries(wormedit_ui_nuklear_state PRIVATE
         wormedit::core wormedit_ui_nuklear_theme wormedit_ui_arrow_glyph)
-    target_link_libraries(wormedit_ui_player_preview PRIVATE wormedit::core)
+    target_link_libraries(wormedit_ui_player_preview PRIVATE wormedit::core wormedit_ui_image_quad)
     target_link_libraries(wormedit_ui_nuklear_tooltip PRIVATE wormedit_ui_nuklear_theme)
     target_link_libraries(wormedit_ui_notifications PRIVATE wormedit_ui_nuklear_tooltip)
 
@@ -538,6 +598,13 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/tap_timing_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_settings_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/bms_branch_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/storyboard_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/export_dialog.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/hierarchy.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/inspector.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/timeline.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/assets.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/transport.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/font_atlas.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_bookmark_chooser.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_sound_picker.cpp"
@@ -587,13 +654,20 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/text_field.cpp"
     )
 
-    # These two units depend on consumer-specific icon recording / macOS menus.
+    # These units depend on consumer-specific icon recording / macOS menus.
     # Keep them on the executable; common frontend code has no application,
     # decoder, allocation-hook or test definitions.
     set(WORMEDIT_UI_FRONTEND_VARIANT_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/storyboard/canvas.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/components.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/frontend.cpp")
     wormedit_add_frontend_library(wormedit_ui_frontend_common ${WORMEDIT_UI_FRONTEND_COMMON_SOURCES})
+    if(NOT WORMEDIT_ENABLE_AUDIO_DECODER)
+        # These UI math helpers do not require decoder or waveform analysis support.
+        target_sources(wormedit_ui_frontend_common PRIVATE
+            src/audio/waveform_viewport.cpp
+            src/audio/playback_rate.cpp)
+    endif()
     target_include_directories(wormedit_ui_frontend_common PRIVATE
         "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
@@ -666,6 +740,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/actions/compose_measure_actions.cpp
         src/sys/compose/actions/compose_recipe_actions.cpp
         src/sys/compose/recipe_evaluation_runtime.cpp
+        src/sys/storyboard/osbx_lua_link_runtime.cpp
+        src/sys/storyboard/storyboard_runtime.cpp
         src/sys/compose/generator_runtime.cpp
         src/sys/compose/views/generator_view.cpp
         src/sys/compose/actions/compose_generator_actions.cpp
@@ -708,10 +784,22 @@ if(WORMEDIT_BUILD_APP)
         src/sys/audio/bmson_waveform_view.cpp
         src/sys/compose/views/compose_waveform_overlays.cpp
         src/sys/resources/resource_job_state.cpp
+        src/sys/resources/image_import_probe.cpp
         src/sys/audio/preview_audio_export.cpp
+        src/sys/audio/offline_preview_mix.cpp
+        src/sys/storyboard/storyboard_video_export.cpp
+        src/sys/storyboard/storyboard_video_export_view.cpp
         src/sys/audio/audio_slicer_runtime.cpp
         src/sys/project/output_group_export.cpp
         src/sys/audio/player_preview_presenter.cpp
+        src/sys/storyboard/storyboard_scene_presenter.cpp
+        src/sys/storyboard/storyboard_canvas_view.cpp
+        src/sys/storyboard/storyboard_hierarchy_view.cpp
+        src/sys/storyboard/storyboard_inspector_view.cpp
+        src/sys/storyboard/storyboard_timeline_view.cpp
+        src/sys/storyboard/storyboard_gizmo_view.cpp
+        src/sys/storyboard/storyboard_assets_view.cpp
+        src/sys/storyboard/storyboard_transport_view.cpp
         src/sys/project/workspace_view.cpp
         src/sys/bms_program_runtime.cpp
         src/sys/project/workspace_frame_view.cpp
@@ -834,6 +922,10 @@ if(WORMEDIT_BUILD_APP)
             PROPERTIES COMPILE_DEFINITIONS WORMEDIT_HAS_FFMPEG=1)
     endif()
 
+    target_link_libraries(wormedit PRIVATE wormedit::video_encoder wormedit::visual_assets)
+    if(TARGET wormedit_storyboard_raster)
+        target_link_libraries(wormedit PRIVATE wormedit::storyboard_raster)
+    endif()
     if(TARGET wormedit_video_decoder)
         target_link_libraries(wormedit PRIVATE wormedit::video_decoder)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_VIDEO_DECODER=1)

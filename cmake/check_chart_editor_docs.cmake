@@ -35,6 +35,7 @@ set(plan_slices
     docs/chart-editor-plan/tasks/persistence-metadata.md
     docs/chart-editor-plan/tasks/editing-depth.md
     docs/chart-editor-plan/tasks/scripting-storyboard.md
+    docs/chart-editor-plan/tasks/storyboard-screen.md
     docs/chart-editor-plan/tasks/late-compat.md
     docs/chart-editor-plan/tasks/osbx.md
     docs/chart-editor-plan/tasks/compose-ux.md
@@ -269,6 +270,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/persistence-metadata.md
     docs/chart-editor-plan/tasks/editing-depth.md
     docs/chart-editor-plan/tasks/scripting-storyboard.md
+    docs/chart-editor-plan/tasks/storyboard-screen.md
     docs/chart-editor-plan/tasks/late-compat.md
     docs/chart-editor-plan/tasks/osbx.md
     docs/chart-editor-plan/tasks/compose-ux.md
@@ -320,17 +322,18 @@ foreach(card_file IN LISTS task_card_files)
     endif()
     file(READ "${WORMEDIT_SOURCE_ROOT}/${card_file}" card_text)
     string(REPLACE ";" "@SEMI@" card_escaped "${card_text}")
-    string(REGEX REPLACE "\n## T-" "\n@CARD@## T-" card_marked "${card_escaped}")
+    string(REGEX REPLACE "\n## (T|SB)-" "\n@CARD@## \\1-" card_marked "${card_escaped}")
     string(REPLACE "@CARD@" ";" card_marked "${card_marked}")
     string(REPLACE "[" "(" card_marked "${card_marked}")
     string(REPLACE "]" ")" card_marked "${card_marked}")
     list(POP_FRONT card_marked)
     foreach(card IN LISTS card_marked)
-        string(REGEX MATCH "^## (T-[0-9]+)" card_id "${card}")
+        string(REGEX MATCH "^## ((T|SB)-[0-9]+)" card_id "${card}")
+        set(card_name "${CMAKE_MATCH_1}")
         foreach(field IN LISTS task_card_fields)
             string(FIND "${card}" "- **${field}:**" field_offset)
             if(field_offset EQUAL -1)
-                message(FATAL_ERROR "${card_file} ${CMAKE_MATCH_1} lacks field: ${field}")
+                message(FATAL_ERROR "${card_file} ${card_name} lacks field: ${field}")
             endif()
         endforeach()
     endforeach()

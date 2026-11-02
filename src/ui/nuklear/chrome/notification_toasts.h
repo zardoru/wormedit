@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace wormedit::ui::nuklear {
 
@@ -39,11 +40,13 @@ inline auto notification_toast_bounds(int width, int height, std::size_t index)
 struct notification_toast_state_t {
     std::array<notification_rect_t, ui::notification_view_t::maximum_visible_toasts> bounds{};
     std::array<notification_rect_t, ui::notification_view_t::maximum_visible_toasts> close_bounds{};
+    std::array<notification_rect_t, ui::notification_view_t::maximum_visible_toasts> folder_bounds{};
     std::array<std::uint64_t, ui::notification_view_t::maximum_visible_toasts> ids{};
     std::size_t count{};
     std::uint64_t captured_id{};
     std::uint32_t captured_buttons{};
-    bool captured_close{};
+    bool captured_close{}, captured_folder{};
+    std::uint64_t folder_pending{};
     std::uint64_t dismiss_pending{};
 };
 
@@ -77,12 +80,24 @@ inline auto notification_capture_press(notification_toast_state_t& state, float 
         if (left) {
             state.captured_id = state.ids[index];
             state.captured_close = notification_contains(state.close_bounds[index], x, y);
+            state.captured_folder = notification_contains(state.folder_bounds[index], x, y);
         }
         return true;
     }
     if (state.captured_buttons == 0) return false;
     state.captured_buttons |= mask;
     return true;
+}
+
+inline void notification_release_action(notification_toast_state_t& state, float x, float y) {
+    if (!state.captured_close && !state.captured_folder) return;
+    for (std::size_t index = 0; index < state.count; ++index) {
+        const auto bounds = state.captured_folder ? state.folder_bounds[index] : state.close_bounds[index];
+        if (state.ids[index] != state.captured_id || !notification_contains(bounds, x, y)) continue;
+        if (state.captured_folder) state.folder_pending = state.captured_id;
+        else state.dismiss_pending = state.captured_id;
+        return;
+    }
 }
 
 inline auto notification_pointer_edge(notification_toast_state_t& state, float x, float y,
@@ -94,19 +109,12 @@ inline auto notification_pointer_edge(notification_toast_state_t& state, float x
         return notification_capture_press(state, x, y, mask, button == 1);
     }
     if ((state.captured_buttons & mask) == 0) return false;
-    if (button == 1 && state.captured_close) {
-        for (std::size_t index = 0; index < state.count; ++index) {
-            if (state.ids[index] == state.captured_id &&
-                notification_contains(state.close_bounds[index], x, y)) {
-                state.dismiss_pending = state.captured_id;
-                break;
-            }
-        }
-    }
+    if (button == 1) notification_release_action(state, x, y);
     state.captured_buttons &= ~mask;
     if (button == 1) {
         state.captured_id = 0;
         state.captured_close = false;
+        state.captured_folder = false;
     }
     return true;
 }
@@ -116,10 +124,14 @@ inline void notification_focus_lost(notification_toast_state_t& state) {
     state.captured_buttons = 0;
     state.captured_close = false;
     state.dismiss_pending = 0;
+    state.folder_pending = 0;
+    state.captured_folder = false;
 }
 
 inline auto notification_take_action(notification_toast_state_t& state)
     -> wormedit::ui::notification_action_t {
+    if (const auto file = std::exchange(state.folder_pending, 0))
+        return {WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER, file};
     const auto id = state.dismiss_pending;
     state.dismiss_pending = 0;
     return {id == 0 ? WORM_UI_NOTIFICATION_ACTION_NONE : WORM_UI_NOTIFICATION_ACTION_DISMISS, id};

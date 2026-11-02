@@ -19,6 +19,17 @@ constexpr std::string_view declarations = R"lua(
 local chart_type, chart_error, chart_pairs, chart_next, chart_ipairs = type, error, pairs, next, ipairs
 local chart_current
 local chart_result = {}
+local chart_audio_receipts = {}
+function _wormedit_chart_project_audio(name, receipt)
+  local stream=receipt.stream
+  if not stream then
+    chart_audio_receipts[name]={declared_name=name,file=receipt.file,probe_error=receipt.probe_error or 'Declared audio geometry unavailable'}
+    return
+  end
+  chart_audio_receipts[name]={declared_name=name,file=receipt.file,content_hash=receipt.content_hash,
+    asset=receipt.asset_id,stream={sample_rate=stream.sample_rate,channels=stream.channels,
+      frame_count=stream.frame_count,seekable=stream.seekable}}
+end
 local function current()
   if not chart_current then chart_error('Declare difficulty before chart settings or measures', 0) end
   return chart_current
@@ -51,6 +62,31 @@ function at_measure(id, row) return {_kind='position', measure=id, row=row} end
 function note(value) return descriptor('note', value) end
 function hold(value) return descriptor('hold', value) end
 function bgm(value) return descriptor('bgm', value) end
+function osu_sample(value) return descriptor('osu_sample', value) end
+function bms_wav(value)
+  if chart_type(value) == 'string' then value = {index=value} end
+  return descriptor('bms_wav', value)
+end
+function audio_file(value)
+  if chart_type(value) ~= 'string' or value == '' then
+    chart_error('audio_file requires a declared audio asset name or relative file',0)
+  end
+  local declared, declared_name
+  if chart_audio_receipts[value] then declared=chart_audio_receipts[value]; declared_name=value
+  else
+    for name, receipt in chart_pairs(chart_audio_receipts) do
+      if receipt.file==value then
+        if declared then chart_error('audio_file reference is ambiguous',0) end
+        declared=receipt; declared_name=name
+      end
+    end
+  end
+  if not declared then chart_error('audio_file requires a declared hash-frozen audio receipt',0) end
+  if declared.probe_error then chart_error(declared.probe_error,0) end
+  return descriptor('audio_file', {declared_name=declared_name,file=declared.file,
+    content_hash=declared.content_hash,asset=declared.asset,stream={sample_rate=declared.stream.sample_rate,
+      channels=declared.stream.channels,frame_count=declared.stream.frame_count,seekable=declared.stream.seekable}})
+end
 function measure(value)
   local values = current().measures
   values[#values+1] = descriptor('measure', value)
@@ -101,8 +137,32 @@ function sv_span(value)
   if chart_current then return timing('sv_span',value) end
   return descriptor('sv_span',value)
 end
+local function validate_audio_samples(charts)
+  for _,chart in chart_ipairs(charts or {}) do
+    for _,measure in chart_ipairs(chart.measures or {}) do
+      for _,event in chart_ipairs(measure) do
+        local sample=event.sample
+        if chart_type(sample)=='table' and sample._kind=='audio_file' then
+          local receipt=chart_audio_receipts[sample.declared_name]
+          if not receipt or receipt.probe_error or sample.file~=receipt.file or sample.content_hash~=receipt.content_hash or sample.asset~=receipt.asset then
+            chart_error('audio_file does not match a declared receipt',0)
+          end
+          for _,field in chart_ipairs({'sample_rate','channels','frame_count','seekable'}) do
+            if chart_type(sample.stream)~='table' or sample.stream[field]~=receipt.stream[field] then
+              chart_error('audio_file metadata differs from its frozen receipt',0)
+            end
+          end
+        end
+      end
+    end
+  end
+end
 local function finish_chart_declarations(value)
-  if #chart_result == 0 then return value end
+  if #chart_result == 0 then
+    if chart_type(value)=='table' then validate_audio_samples(value.charts) end
+    return value
+  end
+  validate_audio_samples(chart_result)
   if value ~= nil then
     if chart_type(value) ~= 'table' then chart_error('Chart declarations require a table or no return value',0) end
     for key, items in chart_pairs(value) do
@@ -115,6 +175,82 @@ local function finish_chart_declarations(value)
   return {charts=chart_result}
 end
 )lua";
+
+auto sample_set(const values::node_t& value) -> osu_sample_set_t {
+    const auto name = values::text(value);
+    for (std::size_t i = 0; i < osu_sample_set_names.size(); ++i)
+        if (text_util::ascii_iequal(name, osu_sample_set_names[i])) return static_cast<osu_sample_set_t>(i);
+    values::malformed("Unknown osu! sample set");
+}
+
+auto decode_osu_sample(const values::table_t& value) -> osu_hitsample_t {
+    values::only_fields(value, {"_kind", "set", "addition_set", "addition", "index", "volume", "filename"});
+    osu_hitsample_t sample;
+    if (const auto* field = values::field(value, "set")) sample.normal_set = sample_set(*field);
+    if (const auto* field = values::field(value, "addition_set")) sample.addition_set = sample_set(*field);
+    if (const auto* field = values::field(value, "index")) {
+        const auto number = values::integer(*field);
+        if (number > INT32_MAX) values::malformed("osu! custom sample index exceeds INT32_MAX");
+        sample.custom_index = static_cast<std::int64_t>(number);
+    }
+    if (const auto* field = values::field(value, "volume")) {
+        const auto number = values::integer(*field);
+        if (number > 100) values::malformed("osu! sample volume exceeds 100");
+        sample.volume = static_cast<std::int64_t>(number);
+    }
+    if (const auto* field = values::field(value, "filename")) sample.filename = values::text(*field);
+    if (const auto* field = values::field(value, "addition")) {
+        const auto name = values::text(*field);
+        if (name == "clap") sample.clap = true;
+        else if (name == "whistle") sample.whistle = true;
+        else if (name == "finish") sample.finish = true;
+        else if (name != "normal") values::malformed("Unknown osu! sample addition");
+    }
+    if (!sample.is_valid()) values::malformed("Invalid osu! sample descriptor");
+    return sample;
+}
+
+auto decode_audio_reference(const values::table_t& value) -> audio_file_reference_t {
+    values::only_fields(value, {"_kind", "declared_name", "file", "content_hash", "asset", "stream"});
+    const auto& stream = values::children(values::required(value, "stream"));
+    values::only_fields(stream, {"sample_rate", "channels", "frame_count", "seekable"});
+    const auto rate = values::integer(values::required(stream, "sample_rate"));
+    const auto channels = values::integer(values::required(stream, "channels"));
+    if (rate > UINT32_MAX || channels > UINT32_MAX) values::malformed("Audio geometry exceeds uint32");
+    const auto* seekable = std::get_if<bool>(&values::scalar(values::required(stream, "seekable")));
+    if (!seekable) values::malformed("Audio seekability must be boolean");
+    audio_file_reference_t reference{.declared_name = values::text(values::required(value, "declared_name")),
+        .path = values::text(values::required(value, "file")),
+        .content_hash = values::text(values::required(value, "content_hash")),
+        .stream = {.sample_rate = static_cast<std::uint32_t>(rate), .channels = static_cast<std::uint32_t>(channels),
+            .frame_count = values::integer(values::required(stream, "frame_count")), .seekable = *seekable}};
+    if (const auto* asset = values::field(value, "asset")) reference.asset = asset_id_t{values::integer(*asset)};
+    if (!reference.is_valid()) values::malformed("Invalid declared audio receipt");
+    return reference;
+}
+
+template<class Event> void decode_sample(const values::table_t& descriptor, Event& event) {
+    const auto* sample = values::field(descriptor, "sample");
+    if (!sample) return;
+    if (values::field(descriptor, "sound")) values::malformed("Use sound or sample, not both");
+    const auto& value = values::children(*sample);
+    const auto kind = values::text(values::required(value, "_kind"));
+    if (kind == "osu_sample") {
+        event.osu_hitsample = decode_osu_sample(value);
+        event.provenance.source_field = typed_lua_osu_sample_origin;
+        return;
+    }
+    if (kind == "audio_file") {
+        event.sample_reference = sample_reference_binding_t{.reference = decode_audio_reference(value)};
+        return;
+    }
+    if (kind != "bms_wav") values::malformed("Unknown typed sample reference");
+    values::only_fields(value, {"_kind", "index", "chart"});
+    bms_wav_reference_t reference{.index = text_util::ascii_upper(values::text(values::required(value, "index")))};
+    if (const auto* chart = values::field(value, "chart")) reference.source_chart = chart_id_t{values::integer(*chart)};
+    if (!reference.is_valid()) values::malformed("BMS WAV index must be 01 through ZZ");
+    event.sample_reference = sample_reference_binding_t{.reference = reference};
+}
 
 class chart_decoder_t {
   public:
@@ -399,7 +535,7 @@ class chart_decoder_t {
         return prefix + std::to_string(index + 1);
     }
     void parse_note(const values::table_t& value, std::size_t measure, std::size_t ordinal) {
-        values::only_fields(value, {"_kind", "key", "row", "lane", "end_at", "sound"});
+        values::only_fields(value, {"_kind", "key", "row", "lane", "end_at", "sound", "sample"});
         const auto kind = values::text(values::required(value, "_kind"));
         if (kind != "note" && kind != "hold" && kind != "bgm")
             values::malformed("Only note/hold/bgm belong inside measure tables.");
@@ -423,6 +559,7 @@ class chart_decoder_t {
                                          .source_lane = result_.content.bgm_lanes.front().id,
                                          .sound = sound,
                                          .structural_slot = ordinal});
+            decode_sample(value, target.bgm_events.back());
             return;
         }
         const auto column = values::integer(values::required(value, "lane"));
@@ -438,6 +575,7 @@ class chart_decoder_t {
             note.end = position_value(values::required(value, "end_at"));
         else if (values::field(value, "end_at"))
             values::malformed("Only holds take end_at.");
+        decode_sample(value, note);
         target.notes.push_back(std::move(note));
     }
     void parse_notes(const values::table_t& values) {

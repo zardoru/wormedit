@@ -177,7 +177,7 @@ struct chart_cut_t {
         }
         return true;
     }
-    auto custom_sound_end(const note_t& note, signed_rational_t begin) -> std::optional<signed_rational_t> {
+    template<class Event> auto custom_sound_end(const Event& note, signed_rational_t begin) -> std::optional<signed_rational_t> {
         if (!note.osu_hitsample || note.osu_hitsample->filename.empty()) return begin;
         const auto duration = context.custom_sound_duration(note.osu_hitsample->filename);
         const auto end = duration ? add_exact(begin, *duration) : std::nullopt;
@@ -208,7 +208,7 @@ struct chart_cut_t {
             if (!sound_end) return false;
             if (!end || less(*end, *sound_end)) end = sound_end;
         }
-        if constexpr (std::is_same_v<Event, note_t>) {
+        {
             const auto custom = custom_sound_end(event, *begin);
             if (!custom) return true;
             if (!end || less(*end, *custom)) end = custom;
@@ -762,6 +762,7 @@ auto is_storyboard_comment(std::string_view text) -> bool {
     return trimmed.empty() || trimmed.starts_with("//");
 }
 auto is_storyboard_content_known(const storyboard_document_model_t& model, transform_context_t& context) -> bool {
+    if (!model.samples.empty()) return false;
     std::vector<const std::vector<storyboard_node_t>*> pending;
     if (!context.reserve_work(model.sprites.size())) return false;
     for (const auto& sprite : model.sprites) pending.push_back(&sprite.nodes);
@@ -770,6 +771,7 @@ auto is_storyboard_content_known(const storyboard_document_model_t& model, trans
         pending.pop_back();
         if (!context.reserve_work(nodes->size())) return false;
         for (const auto& node : *nodes) {
+            if (node.kind == storyboard_node_kind_t::trigger) return false;
             if (node.kind == storyboard_node_kind_t::retained_line && !is_storyboard_comment(node.retained_line)) return false;
             if (!node.children.empty()) pending.push_back(&node.children);
         }
@@ -800,6 +802,8 @@ auto rewrite_storyboard(storyboard_document_t& storyboard, transform_context_t& 
             "Export cuts cannot rebase this storyboard's unmodeled timed payload safely.", object_id_t{storyboard.id.value});
         return false;
     };
+    // OSBX-8 owns timing conversion; a cut must not silently leave OSBX times unchanged.
+    if (storyboard.osbx) return fail();
     if (!storyboard.model) {
         return std::ranges::all_of(storyboard.retained_source_lines, is_storyboard_comment) || fail();
     }

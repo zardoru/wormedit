@@ -17,20 +17,20 @@ void reject(recipe_form_outcome_t& result, std::string message) {
 }
 
 auto reload_module(sv_recipe_t& recipe, const std::filesystem::path& base) -> std::string {
-    if (!recipe.lua || !recipe.lua->source_reference) return "Choose a Lua module file first.";
-    auto path = *recipe.lua->source_reference;
+    if (!recipe.lua || !recipe.lua->source.source_reference) return "Choose a Lua module file first.";
+    auto path = *recipe.lua->source.source_reference;
     if (path.is_relative()) path = base / path;
     std::ifstream input{path, std::ios::binary};
     if (!input) return "Cannot open Lua module: " + text_util::path_utf8(path);
-    constexpr std::size_t source_limit = 16 * 1024;
+    constexpr auto source_limit = lua_source_descriptor_t::maximum_frozen_source_bytes;
     std::string source(source_limit + 1, '\0');
     input.read(source.data(), static_cast<std::streamsize>(source.size()));
     source.resize(static_cast<std::size_t>(input.gcount()));
     if (source.size() > source_limit) return "Lua module exceeds the 16 KiB source limit.";
     if (input.bad()) return "Cannot read Lua module: " + text_util::path_utf8(path);
-    recipe.expression_source = std::move(source);
-    recipe.lua->source_hash = native_project_content_checksum(recipe.expression_source);
-    if (!base.empty() && path.is_absolute()) recipe.lua->source_reference = path.lexically_relative(base);
+    recipe.set_frozen_source(std::move(source));
+    recipe.lua->source.source_hash = native_project_content_checksum(recipe.script().frozen_source);
+    if (!base.empty() && path.is_absolute()) recipe.lua->source.source_reference = path.lexically_relative(base);
     return {};
 }
 
@@ -72,13 +72,13 @@ auto recipe_evaluation_runtime_t::request(const song_document_t& document,
     if (report) {
         report->requested_form = form;
         report->requested_form->lua_reload = false;
-        if (report->candidate.lua && report->candidate.lua->source_reference && !base.empty() &&
-            report->candidate.lua->source_reference->is_absolute())
-            report->candidate.lua->source_reference = report->candidate.lua->source_reference->lexically_relative(base);
+        if (report->candidate.lua && report->candidate.lua->source.source_reference && !base.empty() &&
+            report->candidate.lua->source.source_reference->is_absolute())
+            report->candidate.lua->source.source_reference = report->candidate.lua->source.source_reference->lexically_relative(base);
     }
-    const auto previous_origin = recipe.lua ? recipe.lua->source_reference : std::nullopt;
-    const bool origin_changed = report && report->candidate.lua && report->candidate.lua->source_reference &&
-        report->candidate.lua->source_reference != previous_origin;
+    const auto previous_origin = recipe.lua ? recipe.lua->source.source_reference : std::nullopt;
+    const bool origin_changed = report && report->candidate.lua && report->candidate.lua->source.source_reference &&
+        report->candidate.lua->source.source_reference != previous_origin;
     const bool reload = form.lua_reload || origin_changed;
     requested_ = proposal;
     pending_ = recipe_evaluation_request_t{chart, std::move(proposal), base, reload};

@@ -69,8 +69,8 @@ auto wobble(sv_recipe_sampling_t sampling) -> sv_recipe_sample_result_t {
     sv_recipe_t recipe{.id = recipe_id_t{900}, .name = "Wobble",
         .range = {{chart.measures[0].id, 0}, {chart.measures[2].id, 0}},
         .curve = sv_recipe_curve_t::lua_expression,
-        .expression_source = read_file(tutorial_dir / "scripts/sv/wobble.lua")};
-    recipe.lua = sv_recipe_lua_t{};
+        .lua = sv_recipe_lua_t{.source = {.frozen_source = read_file(tutorial_dir / "scripts/sv/wobble.lua")}}};
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source}};
     recipe.sampling = sampling;
     lua_curve_backend_t backend;
     const sv_recipe_evaluation_scope_t scope{backend};

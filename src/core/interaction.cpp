@@ -1715,8 +1715,39 @@ template <> struct editor_action_handler_t<end_note_paint_gesture_action_t> {
     }
 };
 
+template <> struct editor_action_handler_t<begin_osbx_edit_gesture_action_t> {
+    using context_type = editor_document_context_t;
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+    static auto perform(context_type& context, const begin_osbx_edit_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        return begin_gesture<pending_osbx_edit_gesture_t>(context, action.edit);
+    }
+};
+template <> struct editor_action_handler_t<update_osbx_edit_gesture_action_t> {
+    using context_type = editor_document_context_t;
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+    static auto perform(context_type& context, const update_osbx_edit_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        if (!action.pointer_captured)
+            return dispatch_editor_action(context.history, context.state,
+                cancel_editor_gesture_action_t{.reason = editor_gesture_cancel_reason_t::pointer_capture_lost});
+        if (action.operation == proposal_operation_t::apply)
+            return apply_gesture<pending_osbx_edit_gesture_t>(context, action.change);
+        return revise_gesture<pending_osbx_edit_gesture_t>(context, action.change);
+    }
+};
+
+template<class Action, class = void> struct editor_action_context_for_t {
+    using type = editor_action_context_t;
+};
+template<class Action> struct editor_action_context_for_t<Action,
+    std::void_t<typename editor_action_handler_t<Action>::context_type>> {
+    using type = typename editor_action_handler_t<Action>::context_type;
+};
+template<class Action> using editor_action_context_for = typename editor_action_context_for_t<Action>::type;
+
 template <class Action>
-concept editor_action_handler = requires(editor_action_context_t& context, const Action& action) {
+concept editor_action_handler = requires(editor_action_context_for<Action>& context, const Action& action) {
     { editor_action_handler_t<Action>::virtual_cursor } -> std::convertible_to<virtual_cursor_policy_t>;
     { editor_action_handler_t<Action>::perform(context, action) } -> std::same_as<editor_interaction_result_t>;
 };
@@ -1733,7 +1764,7 @@ struct editor_action_dispatch_t {
     editor_interaction_state_t& state;
 
     template <editor_action_handler Action, class Perform>
-    auto with_context(const Action&, Perform perform) const
+    auto with_chart_context(const Action&, Perform perform) const
         -> std::invoke_result_t<Perform&, editor_action_context_t&> {
         using result_type = std::invoke_result_t<Perform&, editor_action_context_t&>;
         constexpr auto policy = editor_action_handler_t<Action>::virtual_cursor;
@@ -1758,9 +1789,18 @@ struct editor_action_dispatch_t {
             *state.cursor_canvas_row(index)};
         return perform(context);
     }
+    template <editor_action_handler Action, class Perform>
+    auto with_context(const Action& action, Perform perform) const
+        -> std::invoke_result_t<Perform&, editor_action_context_for<Action>&> {
+        if constexpr (std::same_as<editor_action_context_for<Action>, editor_document_context_t>) {
+            editor_document_context_t context{.history = history, .state = state,
+                .dispatch_capture_revision = history.document.revision};
+            return perform(context);
+        } else return with_chart_context(action, std::move(perform));
+    }
     template <editor_action_handler Action>
     auto operator()(const Action& action) const -> editor_interaction_result_t {
-        return with_context(action, [&](editor_action_context_t& context) {
+        return with_context(action, [&](editor_action_context_for<Action>& context) {
             return editor_action_handler_t<Action>::perform(context, action);
         });
     }

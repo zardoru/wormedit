@@ -204,7 +204,7 @@ auto link_recipe_grid_error(const chart_document_t& source, const chart_document
         if (sampling.curve == sv_recipe_curve_t::lua_expression && sampling.sampling.mode == sv_recipe_sampling_mode_t::fixed) {
             sampling.curve = sv_recipe_curve_t::constant;
             sampling.parameters = {};
-            sampling.expression_source.clear();
+            sampling.lua.reset();
             sampling.postprocess.clear();
         }
         const auto prepared = sv_recipe_prepared_t::from(source, sampling);

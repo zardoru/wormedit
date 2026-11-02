@@ -954,7 +954,7 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
     view.recipe_form.definition_id = recipe->definition;
     view.recipe_form.enabled = recipe->enabled;
     view.recipe_form.name = recipe->name;
-    view.recipe_form.expression_source = recipe->expression_source;
+    view.recipe_form.expression_source = recipe->script().frozen_source;
     view.recipe_form.status_text =
         application_state.project.timing_recipe.recipe_preview &&
                 !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()

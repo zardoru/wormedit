@@ -241,3 +241,25 @@ TEST_CASE("SDL command mesh normalization handles first references above the min
     source.indices[2] = 1; // Below the retained first-reference offset: reject safely.
     expect_mesh(!owned->is_equal_to(source.view()));
 }
+
+TEST_CASE("SDL command meshes preserve blend through retention compaction and invalidation",
+          "[ui][command-mesh][blend]") {
+    mesh_fixture_t source;
+    source.batches[0].blend = wormedit::ui::image_blend_t::normal;
+    source.batches[1].blend = wormedit::ui::image_blend_t::additive;
+    auto owned = sdl_command_mesh_t::from(source.view());
+    expect_mesh(owned.has_value());
+    expect_mesh(owned->is_equal_to(source.view()));
+    expect_mesh(owned->view().batches[0].blend == wormedit::ui::image_blend_t::normal);
+    expect_mesh(owned->view().batches[1].blend == wormedit::ui::image_blend_t::additive);
+    const std::array<unsigned char, 3> omitted{1, 0, 0};
+    expect_mesh(owned->refill(source.view(), omitted));
+    expect_mesh(owned->view().batches[0].index_count == 0);
+    expect_mesh(owned->view().batches[1].blend == wormedit::ui::image_blend_t::additive);
+    expect_mesh(owned->refill(source.view()));
+    source.batches[1].blend = wormedit::ui::image_blend_t::normal;
+    expect_mesh(!(owned->is_equal_to(source.view())));
+    source.batches[1].blend = static_cast<wormedit::ui::image_blend_t>(99);
+    expect_mesh(!(source.view().is_valid()));
+    expect_mesh(!(owned->refill(source.view())));
+}

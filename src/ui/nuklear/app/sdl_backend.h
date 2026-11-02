@@ -23,11 +23,12 @@
 
 #pragma once
 #include "ui/field/field_renderer.h"
+#include "ui/frontend/timing_preview.h"
 #include "wormedit/nuklear_config.h"
 #include <SDL3/SDL.h>
 #include <cstddef>
-#include <optional>
 #include <memory>
+#include <optional>
 
 /* nuklear - public domain */
 
@@ -135,11 +136,12 @@ struct sdl_draw_batch_t {
     SDL_Rect clip{};
     std::size_t index_offset{};
     unsigned index_count{};
+    image_blend_t blend{image_blend_t::inherit};
 };
 class sdl_draw_batcher_t {
   public:
-    auto append(SDL_Texture* texture, SDL_Rect clip, unsigned count)
-        -> std::optional<sdl_draw_batch_t>;
+    auto append(SDL_Texture* texture, SDL_Rect clip, unsigned count,
+                image_blend_t blend = image_blend_t::inherit) -> std::optional<sdl_draw_batch_t>;
     auto finish() -> std::optional<sdl_draw_batch_t>;
 
   private:

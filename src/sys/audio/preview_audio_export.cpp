@@ -1,5 +1,6 @@
 #include "sys/audio/preview_audio_export.h"
 #include "core/text_util.h"
+#include "sys/audio/offline_preview_mix.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/audio/audio_source_registration.h"
@@ -57,25 +58,11 @@ auto prepare_preview_audio_destination(const preview_audio_export_request_t& req
     return destination;
 }
 
-struct preview_audio_mix_t {
-    audio::decoded_source_registry_t sources;
-    preview_schedule_t schedule;
-    audio::preview_bindings_resolution_t bindings;
+struct preview_audio_interval_t {
     std::uint64_t begin{}, end{};
-
-    auto include_music(const song_document_t& document, const chart_document_t& chart)
-        -> result_t<void, error_t<failure_code_t>> {
-        const auto selected = audio::preview_music_selection_t::from(document, chart);
-        if (!selected.ok()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
-            selected.diagnostics.front().message});
-        if (!selected.value) return {};
-        const auto source = sources.open_source_binding(selected.value->asset);
-        if (!source) return std::unexpected(source.error());
-        bindings.append_music(selected.value->resource, *source, schedule);
-        return {};
-    }
-
-    auto prepare(const preview_audio_export_request_t& request) -> result_t<void, error_t<failure_code_t>> {
+    static auto from(const preview_audio_export_request_t& request)
+        -> result_t<preview_audio_interval_t, error_t<failure_code_t>> {
+        preview_audio_interval_t result;
         const auto* chart = request.document.read_chart(chart_id_t{request.settings.chart});
         if (!chart) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, "Preview chart is unavailable."});
         const auto timing = timing_index_t::from(*chart, {.allow_bounded_clock = true});
@@ -86,27 +73,13 @@ struct preview_audio_mix_t {
         const auto last = b.seconds ? sample_frame_at(*b.seconds, audio::output_sample_rate).frame : std::nullopt;
         if (!first || !last || *last <= *first)
             return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, "Select a nonempty materialized audio interval."});
-        begin = *first;
-        end = *last;
+        result.begin = *first;
+        result.end = *last;
         if (request.settings.duration_seconds > 0) {
             const auto frames = static_cast<std::uint64_t>(std::llround(request.settings.duration_seconds * audio::output_sample_rate));
-            end = begin + std::min(frames, end - begin);
+            result.end = result.begin + std::min(frames, result.end - result.begin);
         }
-        (void)register_audition_sources(request.document, request.asset_base, 1, sources);
-        auto built = preview_schedule_t::from(*chart, *timing.value,
-            {.sample_rate = audio::output_sample_rate, .include_metronome = false});
-        if (!built.value) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, "Preview schedule is invalid."});
-        schedule = std::move(*built.value);
-        audio::hitsound_resolver_t hitsounds;
-        hitsounds.environment = {.map_directory = request.asset_base, .skin_directory = request.skin_directory,
-            .bundle_directory = request.bundle_directory};
-        const auto extras = hitsounds.bindings(request.document, *chart, sources, 1);
-        auto resolved = audio::preview_bindings_resolution_t::from(request.document, chart->id, schedule,
-            sources.bindings(), {.hitsounds = extras});
-        if (!resolved.diagnostics.empty())
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, resolved.diagnostics.front().message});
-        bindings = std::move(resolved.value);
-        return include_music(request.document, *chart);
+        return result;
     }
 };
 
@@ -166,13 +139,15 @@ auto prepare_preview_audio_export(const preview_audio_export_request_t& request,
     if (!destination) return std::unexpected(destination.error());
     if (stop.stop_requested()) return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "Preview export cancelled."});
     if (auto valid = validate_cut_preview(request, stop); !valid) return std::unexpected(std::move(valid.error()));
-    preview_audio_mix_t prepared;
-    if (auto setup = prepared.prepare(request); !setup) return std::unexpected(std::move(setup.error()));
-    auto mixed = audio::render_offline_interval(prepared.sources, prepared.schedule, prepared.bindings.bindings,
-        prepared.begin, prepared.end,
+    const auto interval = preview_audio_interval_t::from(request);
+    if (!interval) return std::unexpected(interval.error());
+    auto prepared = offline_preview_mix_t::from(request.document, chart_id_t{settings.chart},
+        {.project = request.asset_base, .skin = request.skin_directory, .bundle = request.bundle_directory});
+    if (!prepared) return std::unexpected(prepared.error());
+    auto mixed = (*prepared)->render(interval->begin, interval->end,
         {.fade_out_ms = request.document.export_cuts.empty() ? settings.fade_out_ms : 0}, stop);
     if (!mixed) return std::unexpected(std::move(mixed.error()));
-    if (auto cut = finish_cut_preview(mixed->interleaved_stereo, request, prepared.begin); !cut)
+    if (auto cut = finish_cut_preview(mixed->interleaved_stereo, request, interval->begin); !cut)
         return std::unexpected(std::move(cut.error()));
     const auto output_frames = mixed->interleaved_stereo.size() / audio::output_channel_count;
     if (request.progress) request.progress->phase.store(job_phase_t::reading);

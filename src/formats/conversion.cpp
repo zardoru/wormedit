@@ -1,6 +1,9 @@
+#include <wormedit/formats/resource_plan.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
+#include "../core/checked_math.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/slice_spans.h>
@@ -17,6 +20,8 @@
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
+#include "stepmania_storyboard.h"
+#include "../core/timing_arithmetic.h"
 
 #include <algorithm>
 #include <cctype>
@@ -24,6 +29,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <new>
 #include <set>
 #include <tuple>
 #include <ranges>
@@ -163,7 +169,9 @@ void append_target_diagnostics(conversion_outcome_t& result,
                                format_family_t target, std::optional<chart_id_t> chart,
                                loss_policy_t loss_policy) {
     for (const auto& diagnostic : diagnostics) {
-        const bool loss = diagnostic.severity == diagnostic_severity_t::warning;
+        bool loss = diagnostic.severity == diagnostic_severity_t::warning;
+        if constexpr (std::is_same_v<Diagnostic, osu_mania_write_diagnostic_t>)
+            if (diagnostic.code == osu_mania_write_diagnostic_code_t::storyboard_bake) loss = false;
         auto severity = diagnostic.severity;
         if (loss && loss_policy == loss_policy_t::allow)
             severity = diagnostic_severity_t::info;
@@ -419,7 +427,7 @@ void retain_slice_export_assets(std::vector<Asset>& assets,
                 return c != '.' && !std::isalnum(c);
             })) extension.clear();
         const auto filename = "retained-" + std::to_string(asset.id.value) + extension;
-        result.value.asset_copies.push_back({asset.id, filename});
+        result.value.asset_copies.push_back({.asset = asset.id, .relative_path = filename});
         for (auto& chart : charts)
             chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
                 if (reference.lexically_normal() == asset.source_path.lexically_normal()) reference = filename;
@@ -668,6 +676,23 @@ auto make_bms_reimport_options(const conversion_request_t& request, const conver
     return options;
 }
 
+auto validate_osu_reimport(conversion_context_t& context, const conversion_output_t& output) -> bool {
+    if (std::filesystem::path(output.suggested_filename).extension() == ".osb") {
+        const auto parsed = parse_osb(output.bytes);
+        if (parsed.value && parsed.ok()) return true;
+        for (const auto& diagnostic : parsed.diagnostics)
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::reimport_failed, conversion_stage_t::reimport,
+                output.target, output.chart, diagnostic.message, output.suggested_filename);
+        return false;
+    }
+    const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
+    if (parsed.value && parsed.ok()) return true;
+    append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
+                              loss_policy_t::warn);
+    return false;
+}
+
 auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
                        const stepmania_export_policy_outcome_t* stepmania_options,
                        const song_document_t& prepared) -> bool {
@@ -707,14 +732,9 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
                                   loss_policy_t::warn);
         break;
     }
-    case format_family_t::osu_mania: {
-        const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
-        if (parsed.value && parsed.ok())
-            return true;
-        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
-                                  loss_policy_t::warn);
+    case format_family_t::osu_mania:
+        if (validate_osu_reimport(context, output)) return true;
         break;
-    }
     case format_family_t::bmson: {
         const auto parsed = parse_bmson_bytes(byte_span(output.bytes));
         if (parsed.value && parsed.ok())
@@ -830,6 +850,13 @@ void append_conversion_output(conversion_context_t& context, const song_document
     if (!context.can_continue() || !bytes) {
         return;
     }
+    if (context.result.value.outputs.size() >= context.limits.maximum_outputs) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::output_limit, conversion_stage_t::serialize,
+                       context.request.target, chart,
+                       "Conversion output count exceeds its configured limit");
+        return;
+    }
     const auto filename = filename_for(prepared, chart_document, extension, context.limits);
     if (!filename) {
         add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -924,6 +951,221 @@ auto resolve_stepmania_options(conversion_context_t& context)
     return resolved;
 }
 
+void append_native_report(conversion_context_t& context, osbx_osb_report_t report) {
+    if (report.classification != osbx_osb_class_t::exact)
+        add_diagnostic(context.result, diagnostic_severity_t::warning,
+            conversion_diagnostic_code_t::target_diagnostic, conversion_stage_t::serialize,
+            format_family_t::stepmania, context.request.chart,
+            "Storyboard " + report.node_id + ": " + report.reason, report.node_id);
+    context.result.value.stepmania_storyboard_report.push_back(std::move(report));
+}
+auto native_scene(const storyboard_document_t& storyboard) -> const osbx_document_t& {
+    const auto prepared = osbx_lua_prepared_scope_t::find(*storyboard.osbx);
+    return prepared ? *prepared : *storyboard.osbx;
+}
+void refuse_native_scene(conversion_context_t& context, const storyboard_document_t& storyboard,
+    std::string reason) {
+    for (const auto& node : native_scene(storyboard).nodes) {
+        if (node.kind == osbx_node_kind_t::group) continue;
+        append_native_report(context, {.node_id = std::to_string(storyboard.id.value) + "/" + node.id,
+            .reason = reason});
+    }
+}
+
+struct native_activation_t {
+    signed_rational_t beat;
+    std::int64_t time_ms{};
+};
+auto native_activation(const song_document_t& song, const osbx_osb_span_t& span)
+    -> result_t<native_activation_t, std::string> {
+    const auto charts = song.read_charts();
+    if (charts.empty()) return std::unexpected("Native storyboard activation needs a chart");
+    const auto timing = timing_index_t::from(*charts.front());
+    if (!timing.value || timing.value->rows.empty()) return std::unexpected("Native storyboard song timing is unavailable");
+    const auto& first = timing.value->rows.front();
+    const auto earliest = std::min(static_cast<long double>(span.begin_time_ms) / 1000,
+        to_long_double(first.before_delays_seconds)) - 1;
+    constexpr auto clock_limit_seconds = stepmania_storyboard_options_t::maximum_music_time_ms / 1000 - 1;
+    if (!std::isfinite(earliest) || earliest < -clock_limit_seconds || earliest > clock_limit_seconds)
+        return std::unexpected("Native storyboard activation is outside its bounded music clock");
+    const auto query = timing.value->row_at({static_cast<std::int64_t>(std::floor(earliest * 1000)), 1000},
+        {.extrapolate_before_chart = true});
+    if (!query) return std::unexpected("Native storyboard activation has no unambiguous preroll position");
+    const auto beat = timing_arithmetic::multiply(*query.absolute_row, {4, charts.front()->divisions_per_standard_measure});
+    if (!beat) return std::unexpected("Native storyboard activation beat exceeds exact bounds");
+    const auto integer = static_cast<std::int64_t>(std::floor(to_long_double(*beat)));
+    const auto seconds = to_long_double(first.before_delays_seconds) +
+        static_cast<long double>(integer) * 60 / to_long_double(first.effective_bpm);
+    if (!std::isfinite(seconds) || seconds < -clock_limit_seconds || seconds > clock_limit_seconds)
+        return std::unexpected("Native storyboard activation duration is outside its bounded music clock");
+    return native_activation_t{.beat = {integer, 1},
+        .time_ms = static_cast<std::int64_t>(std::floor(seconds * 1000)) - 1};
+}
+void mark_native_layer_loss(conversion_context_t& context, const storyboard_document_t& storyboard,
+    bool foreground, std::string reason) {
+    for (const auto& node : native_scene(storyboard).nodes) {
+        if ((node.layer == osbx_layer_t::foreground) != foreground) continue;
+        const auto id = std::to_string(storyboard.id.value) + "/" + node.id;
+        const auto report = std::ranges::find(context.result.value.stepmania_storyboard_report, id, &osbx_osb_report_t::node_id);
+        if (report != context.result.value.stepmania_storyboard_report.end()) {
+            report->classification = osbx_osb_class_t::unsupported;
+            report->reason = reason;
+        }
+    }
+    add_diagnostic(context.result, diagnostic_severity_t::warning, conversion_diagnostic_code_t::target_diagnostic,
+        conversion_stage_t::serialize, format_family_t::stepmania, context.request.chart, std::move(reason));
+}
+struct native_bundle_t {
+    std::array<std::string, 2> layers;
+    std::set<std::filesystem::path> images;
+    std::vector<conversion_artifact_t> files;
+    std::size_t bytes{};
+};
+void append_notitg_files(conversion_context_t& context, const song_document_t& song,
+    const storyboard_document_t& storyboard, native_bundle_t& bundle,
+    const stepmania_storyboard_export_t& emitted) {
+    if (has_stepmania_storyboard_hook(song, true)) return;
+    std::size_t bytes{};
+    for (const auto& file : emitted.files) bytes += file.bytes.size();
+    const auto limit = context.limits.maximum_total_output_bytes / 2;
+    if (bytes + 256 > limit - std::min(bundle.bytes, limit)) {
+        mark_native_layer_loss(context, storyboard, true, "NotITG XML/Lua bundle exceeds aggregate byte budget; chart kept unchanged");
+        return;
+    }
+    bundle.bytes += bytes + 256;
+    for (const auto& file : emitted.files) {
+        if (!file.actor_reference.empty()) {
+            const auto relative = std::filesystem::path{file.actor_reference}.lexically_relative("wormedit-storyboard");
+            bundle.layers[1] += "    <Layer File=\"" + relative.generic_string() + "\" />\n";
+        }
+        bundle.files.push_back({.relative_path = file.relative_path, .bytes = file.bytes});
+        for (const auto& image : file.images) bundle.images.emplace(image);
+    }
+}
+void append_native_scene(conversion_context_t& context, const song_document_t& song,
+    const storyboard_document_t& storyboard, native_bundle_t& bundle, native_activation_t activation) {
+    const auto& request = context.request;
+    const auto notitg = request.stepmania->implementation_profile == stepmania_implementation_profile_t::notitg_v4;
+    const auto emitted = emit_stepmania_storyboard(*storyboard.osbx,
+        {.playback_span = *request.osbx_playback_span, .activation_time_ms = activation.time_ms,
+         .conditional_layer = request.stepmania->conditional_layer,
+         .implementation_profile = request.stepmania->implementation_profile,
+         .relative_directory = notitg ? "wormedit-storyboard/scene-" + std::to_string(storyboard.id.value) : "wormedit-storyboard",
+         .image_sizes = request.osbx_image_sizes,
+         .maximum_output_bytes = std::min(std::size_t{8U*1024U*1024U}, context.limits.maximum_total_output_bytes / 2)});
+    const auto conflict = [&](const osbx_osb_report_t& report) {
+        const auto& scene = native_scene(storyboard);
+        const auto found = std::ranges::find(scene.nodes, report.node_id, &osbx_node_t::id);
+        return found != scene.nodes.end() && has_stepmania_storyboard_hook(song, found->layer == osbx_layer_t::foreground);
+    };
+    for (auto report : emitted.value.report) {
+        if (conflict(report)) { report.classification = osbx_osb_class_t::unsupported; report.reason = "Retained source owns this BGCHANGES/FGCHANGES hook; chart kept unchanged"; }
+        report.node_id = std::to_string(storyboard.id.value) + "/" + report.node_id;
+        const auto failure = std::ranges::find(request.stepmania_storyboard_report, report.node_id, &osbx_osb_report_t::node_id);
+        if (failure != request.stepmania_storyboard_report.end()) report = *failure;
+        append_native_report(context, std::move(report));
+    }
+    if (notitg) {
+        append_notitg_files(context, song, storyboard, bundle, emitted.value);
+        return;
+    }
+    for (const auto& file : emitted.value.files) {
+        if (has_stepmania_storyboard_hook(song, file.foreground)) continue;
+        auto& layer = bundle.layers[file.foreground ? 1 : 0];
+        if (file.bytes.size() + 64 > context.limits.maximum_total_output_bytes / 2 -
+                std::min(layer.size(), context.limits.maximum_total_output_bytes / 2)) {
+            mark_native_layer_loss(context, storyboard, file.foreground, "Native actor bundle exceeds aggregate byte budget; chart kept unchanged");
+            continue;
+        }
+        layer += "layers[#layers + 1] = (function()\n" + file.bytes + "\nend)()\n";
+        for (const auto& image : file.images) bundle.images.emplace(image);
+    }
+}
+void finish_notitg_bundle(conversion_context_t& context, native_bundle_t& bundle,
+    stepmania_write_options_t& options, native_activation_t activation) {
+    if (!bundle.layers[1].empty()) {
+        const auto keeper = (static_cast<double>(stepmania_storyboard_options_t::maximum_music_time_ms) - activation.time_ms) / 1000 + 1;
+        auto xml = "<ActorFrame OnCommand=\"sleep," + std::to_string(keeper) + "\">\n  <children>\n";
+        xml += bundle.layers[1] + "  </children>\n</ActorFrame>\n";
+        bundle.files.push_back({.relative_path = "wormedit-storyboard/main.xml", .bytes = std::move(xml)});
+        options.storyboard_changes.push_back({.start_beat = activation.beat,
+            .actor_reference = "wormedit-storyboard/main.xml", .foreground = true});
+    }
+    context.result.value.storyboard_files = std::move(bundle.files);
+    context.result.value.storyboard_images.assign(bundle.images.begin(), bundle.images.end());
+}
+auto has_conditional_storyboard_drawables(const song_document_t& song) -> bool {
+    return std::ranges::any_of(song.storyboards, [](const auto& storyboard) {
+        if (!storyboard.osbx) return false;
+        return std::ranges::any_of(native_scene(storyboard).nodes, [](const auto& node) {
+            if (node.kind != osbx_node_kind_t::sprite && node.kind != osbx_node_kind_t::animation) return false;
+            const auto layer = static_cast<std::size_t>(node.layer);
+            return layer < osbx_layer_names.size() &&
+                !is_storyboard_layer_visible(osbx_layer_names[layer], storyboard_conditional_layer_t::neither);
+        });
+    });
+}
+void append_etterna_conditional_advisory(conversion_context_t& context, const song_document_t& song) {
+    const auto& policy = *context.request.stepmania;
+    if (policy.implementation_profile != stepmania_implementation_profile_t::etterna_0_75_1 ||
+        policy.storyboard != stepmania_storyboard_mode_t::actors || !has_conditional_storyboard_drawables(song)) return;
+    const auto pass = osbx_layer_names[static_cast<std::size_t>(osbx_layer_t::pass)];
+    const auto fail = osbx_layer_names[static_cast<std::size_t>(osbx_layer_t::fail)];
+    const auto name = is_storyboard_layer_visible(pass, policy.conditional_layer) ? pass :
+        is_storyboard_layer_visible(fail, policy.conditional_layer) ? fail : std::string_view{"Neither"};
+    add_diagnostic(context.result, diagnostic_severity_t::warning, conversion_diagnostic_code_t::target_diagnostic,
+        conversion_stage_t::serialize, format_family_t::stepmania, context.request.chart,
+        "Etterna storyboard conditional state " + std::string{name} +
+            " is fixed for export; no gameplay-trigger interactivity is inferred.");
+}
+void prepare_native_storyboard(conversion_context_t& context, const song_document_t& song,
+    stepmania_write_options_t& options) {
+    const auto& request = context.request;
+    if (!request.stepmania || request.stepmania->storyboard == stepmania_storyboard_mode_t::none) return;
+    append_etterna_conditional_advisory(context, song);
+    std::string refusal;
+    if (request.stepmania->storyboard == stepmania_storyboard_mode_t::video)
+        refusal = "StepMania video route is not yet available; no video was exported";
+    else if (options.profile != stepmania_profile_t::ssc &&
+             options.target_implementation_profile != stepmania_implementation_profile_t::notitg_v4)
+        refusal = "Native actors require SM5.1/ITGmania/Etterna SSC or the conservative NotITG SM dialect";
+    else if (!request.osbx_playback_span) refusal = "Native actor export needs a prepared song playback domain";
+    auto activation = refusal.empty() ? native_activation(song, *request.osbx_playback_span)
+        : result_t<native_activation_t, std::string>{std::unexpected(refusal)};
+    native_bundle_t bundle;
+    for (const auto& storyboard : song.storyboards) {
+        if (!storyboard.osbx) continue;
+        if (!activation) refuse_native_scene(context, storyboard, activation.error());
+        else append_native_scene(context, song, storyboard, bundle, *activation);
+    }
+    if (!activation) return;
+    if (options.target_implementation_profile == stepmania_implementation_profile_t::notitg_v4) {
+        finish_notitg_bundle(context, bundle, options, *activation);
+        return;
+    }
+    const auto lifetime = (static_cast<double>(request.osbx_playback_span->end_time_ms) - activation->time_ms) / 1000 + 1;
+    for (std::size_t layer = 0; layer < bundle.layers.size(); ++layer) {
+        if (bundle.layers[layer].empty()) continue;
+        const auto reference = std::string{"wormedit-storyboard/"} + (layer == 1 ? "foreground" : "background");
+        auto text = "local layers = {}\n" + std::move(bundle.layers[layer]);
+        text += "return Def.ActorFrame{\n  OnCommand = function(self)\n    self:stoptweening()\n    self:sleep(" + std::to_string(lifetime) + ")\n  end,\n  unpack(layers)\n}\n";
+        context.result.value.storyboard_files.push_back({.relative_path = reference + "/default.lua", .bytes = std::move(text)});
+        options.storyboard_changes.push_back({.start_beat = activation->beat, .actor_reference = reference, .foreground = layer == 1});
+    }
+    context.result.value.storyboard_images.assign(bundle.images.begin(), bundle.images.end());
+}
+void drop_native_artifacts(conversion_context_t& context) {
+    context.result.value.storyboard_files.clear();
+    context.result.value.storyboard_images.clear();
+    for (auto& report : context.result.value.stepmania_storyboard_report) {
+        report.classification = osbx_osb_class_t::unsupported;
+        report.reason = "Native storyboard exceeds package byte budget; chart kept unchanged";
+    }
+    add_diagnostic(context.result, diagnostic_severity_t::warning, conversion_diagnostic_code_t::target_diagnostic,
+        conversion_stage_t::serialize, format_family_t::stepmania, context.request.chart,
+        "Native storyboard exceeds package byte budget; chart kept unchanged");
+}
+
 auto write_stepmania_output(conversion_context_t& context, const song_document_t& prepared)
     -> std::optional<stepmania_export_policy_outcome_t> {
     auto resolved = resolve_stepmania_options(context);
@@ -933,7 +1175,20 @@ auto write_stepmania_output(conversion_context_t& context, const song_document_t
     auto options = resolved->value();
     options.chart = context.request.chart;
     options.allow_timing_approximation = true;
-    const auto written = write_stepmania(prepared, std::move(options));
+    prepare_native_storyboard(context, prepared, options);
+    auto written = write_stepmania(prepared, options);
+    std::size_t artifact_bytes{};
+    for (const auto& file : context.result.value.storyboard_files) artifact_bytes += file.bytes.size();
+    const auto native_writer_limit = !written.value && !options.storyboard_changes.empty() &&
+        std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.code == stepmania_write_diagnostic_code_t::output_limit;
+        });
+    if (native_writer_limit || (written.value && artifact_bytes > context.limits.maximum_total_output_bytes -
+            std::min(written.value->size(), context.limits.maximum_total_output_bytes))) {
+        drop_native_artifacts(context);
+        options.storyboard_changes.clear();
+        written = write_stepmania(prepared, options);
+    }
     append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                               context.request.chart, context.request.loss_policy);
     const auto extension =
@@ -961,16 +1216,54 @@ auto osu_profile(conversion_context_t& context) -> std::optional<osu_mania_file_
     return std::nullopt;
 }
 
+auto append_osbx_output(conversion_context_t& context, const song_document_t& prepared) -> bool {
+    const auto media = storyboard_media_plan_t::from(prepared, {}, context.execution.stop);
+    if (!context.can_continue()) return false;
+    if (!media) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+            conversion_diagnostic_code_t::output_limit, conversion_stage_t::serialize,
+            context.request.target, std::nullopt, media.error());
+        return false;
+    }
+    const auto written = write_osu_storyboard(prepared,
+        {.osbx = {.image_sizes = context.request.osbx_image_sizes,
+                  .playback_span = context.request.osbx_playback_span}});
+    append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                              std::nullopt, context.request.loss_policy);
+    if (!written.value) {
+        if (written.diagnostics.empty())
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::target_diagnostic, conversion_stage_t::serialize,
+                context.request.target, std::nullopt, "OSBX conversion returned no storyboard");
+        return false;
+    }
+    append_conversion_output(context, prepared, std::nullopt, ".osb", written.value, nullptr);
+    std::set<std::filesystem::path> images;
+    for (const auto& image : media->images) {
+        auto file = image.file;
+        std::ranges::replace(file, '\\', '/');
+        images.insert(text_util::path_from_utf8(file).lexically_normal());
+    }
+    context.result.value.storyboard_images.assign(images.begin(), images.end());
+    context.result.value.storyboard_samples = media->samples;
+    return true;
+}
+
 void write_osu_outputs(conversion_context_t& context, const song_document_t& prepared,
                        const std::vector<chart_id_t>& charts) {
     const auto profile = osu_profile(context);
     if (!context.request.target_profile.empty() && !profile.has_value()) {
         return;
     }
+    const bool osbx = std::ranges::any_of(prepared.storyboards, [](const auto& storyboard) {
+        return storyboard.osbx.has_value();
+    });
+    if (osbx && !append_osbx_output(context, prepared)) return;
     for (const auto chart_id : charts) {
         if (!context.can_continue()) return;
         const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id,
-            .max_rows_per_measure = std::numeric_limits<std::size_t>::max()});
+            .max_rows_per_measure = std::numeric_limits<std::size_t>::max(),
+            .embed_storyboard = !osbx});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
         append_conversion_output(context, prepared, chart_id, ".osu", written.value,
@@ -1047,6 +1340,7 @@ auto validate_conversion_outputs(conversion_context_t& context,
         return false;
     }
     std::size_t total_bytes{};
+    for (const auto& file : context.result.value.storyboard_files) total_bytes += file.bytes.size();
     for (const auto& output : context.result.value.outputs) {
         if (output.bytes.size() > context.limits.maximum_total_output_bytes - total_bytes) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -1071,8 +1365,131 @@ auto validate_conversion_outputs(conversion_context_t& context,
 
 } // namespace
 
+namespace {
+class storyboard_media_builder_t {
+    osbx_validation_options_t options_;
+    std::stop_token stop_;
+    std::size_t remaining_, remaining_bytes_, remaining_nodes_, remaining_source_images_;
+    storyboard_media_plan_t plan_;
+    std::map<std::pair<std::string,std::string>, std::size_t> images_;
+    std::set<std::filesystem::path> samples_;
+    auto add_image(const osbx_image_t& image) -> std::size_t {
+        const auto key = std::pair{image.id, image.file};
+        if (const auto found = images_.find(key); found != images_.end()) return found->second;
+        const auto index = plan_.images.size();
+        images_.emplace(key, index); plan_.images.push_back(image);
+        return index;
+    }
+    auto path_storage_cost(const osbx_node_t& node,
+        const std::map<std::string_view, const osbx_image_t*>& images) const -> std::optional<std::size_t> {
+        const auto overhead = sizeof(osbx_image_t) * 2 + sizeof(std::size_t) * 8;
+        if (overhead > remaining_bytes_) return std::nullopt;
+        const auto maximum_text = (remaining_bytes_ - overhead) / sizeof(std::filesystem::path::value_type);
+        std::size_t text = 10; // Maximum uint32 decimal suffix.
+        if (text > maximum_text) return std::nullopt;
+        if (node.image) {
+            if (!checked_math::account_size(text, images.at(*node.image)->file.size(), maximum_text) ||
+                !checked_math::account_size(text, node.image->size(), maximum_text)) return std::nullopt;
+        } else if (node.sample && !checked_math::account_size(text, node.sample->path.size(), maximum_text)) return std::nullopt;
+        return overhead + text * sizeof(std::filesystem::path::value_type);
+    }
+    auto charge(const osbx_document_t& scene) -> bool {
+        if (scene.nodes.size() > remaining_nodes_ || scene.images.size() > remaining_source_images_) return false;
+        remaining_nodes_ -= scene.nodes.size(); remaining_source_images_ -= scene.images.size();
+        std::map<std::string_view, const osbx_image_t*> images;
+        for (const auto& image : scene.images) images.emplace(image.id, &image);
+        for (const auto& node : scene.nodes) {
+            if (stop_.stop_requested()) return false;
+            const auto count = node.animation ? std::size_t{node.animation->frame_count} * 2 + 1 :
+                (node.image || node.sample ? std::size_t{2} : std::size_t{0});
+            if (count > remaining_) return false;
+            if (count == 0) continue;
+            const auto bytes = path_storage_cost(node, images);
+            if (!bytes || count > remaining_bytes_ / *bytes) return false;
+            remaining_ -= count; remaining_bytes_ -= count * *bytes;
+        }
+        return true;
+    }
+    auto append_animation(const osbx_image_t& image, const storyboard_animation_t& metadata)
+        -> std::optional<std::string> {
+        storyboard_animation_assets_t animation{.image = image};
+        storyboard_frame_arena_t arena;
+        for (std::uint32_t i = 0; i < metadata.frame_count; ++i) {
+            if (stop_.stop_requested()) return "OSBX media preparation cancelled";
+            arena.reset();
+            const auto file = storyboard_animation_t::frame_path(image.file, i, arena);
+            if (!file) return "OSBX Animation frame path exceeds its bounds";
+            animation.frames.push_back(add_image({.id = image.id, .file = std::string{*file}}));
+        }
+        plan_.animations.push_back(std::move(animation));
+        return std::nullopt;
+    }
+    void append_static_images(const osbx_document_t& scene) {
+        std::set<std::string_view> referenced;
+        for (const auto& node : scene.nodes)
+            if (node.kind == osbx_node_kind_t::sprite && node.image) referenced.insert(*node.image);
+        // Preserve the predecessor's static image/receipt ordering.
+        for (const auto& image : scene.images)
+            if (referenced.contains(image.id)) add_image(image);
+    }
+    auto append_scene(const osbx_document_t& scene) -> std::optional<std::string> {
+        append_static_images(scene);
+        std::map<std::string_view, const osbx_image_t*> images;
+        for (const auto& image : scene.images) images.emplace(image.id, &image);
+        for (const auto& node : scene.nodes) {
+            if (stop_.stop_requested()) return "OSBX media preparation cancelled";
+            if (node.kind == osbx_node_kind_t::animation) {
+                if (!node.animation || !node.image) return "OSBX Animation metadata is incomplete";
+                if (auto failure = append_animation(*images.at(*node.image), *node.animation)) return failure;
+            } else if (node.kind == osbx_node_kind_t::sample) {
+                if (!node.sample) return "OSBX Sample metadata is incomplete";
+                auto path = node.sample->path; std::ranges::replace(path, '\\', '/');
+                samples_.insert(text_util::path_from_utf8(path).lexically_normal());
+            }
+        }
+        return std::nullopt;
+    }
+  public:
+    explicit storyboard_media_builder_t(osbx_validation_options_t options, std::stop_token stop)
+        : options_(options), stop_(stop), remaining_(options.maximum_images), remaining_bytes_(options.maximum_expanded_storage_bytes),
+          remaining_nodes_(options.maximum_nodes), remaining_source_images_(options.maximum_images) {}
+    auto build(const song_document_t& song) -> result_t<storyboard_media_plan_t, std::string> {
+        if (song.storyboards.size() > options_.maximum_nodes) return std::unexpected("OSBX media scene count exceeds its bounds");
+        std::vector<const osbx_document_t*> scenes;
+        for (const auto& storyboard : song.storyboards) {
+            if (stop_.stop_requested()) return std::unexpected("OSBX media preparation cancelled");
+            if (!storyboard.osbx) continue;
+            const auto prepared = osbx_lua_prepared_scope_t::find(*storyboard.osbx);
+            if (has_osbx_lua_links(*storyboard.osbx) && !prepared) return std::unexpected("OSBX media needs the current prepared Lua scene");
+            const auto* scene = prepared ? prepared.get() : &*storyboard.osbx;
+            if (!validate_osbx_document(*scene, options_).value) return std::unexpected("Invalid OSBX scene before media preparation");
+            if (!charge(*scene)) return std::unexpected(stop_.stop_requested() ?
+                "OSBX media preparation cancelled" : "OSBX media enumeration exceeds its aggregate count/work/storage bounds");
+            scenes.push_back(scene);
+        }
+        // ALL scene counts are admitted before generating or allocating frames.
+        for (const auto* scene : scenes)
+            if (auto failure = append_scene(*scene)) return std::unexpected(*failure);
+        plan_.samples.assign(samples_.begin(), samples_.end());
+        plan_.logical_storage_bytes = options_.maximum_expanded_storage_bytes - remaining_bytes_;
+        return std::move(plan_);
+    }
+};
+} // namespace
+
+auto storyboard_media_plan_t::from(const song_document_t& song, osbx_validation_options_t options, std::stop_token stop)
+    -> result_t<storyboard_media_plan_t, std::string> {
+    try { return storyboard_media_builder_t{options, stop}.build(song); }
+    catch (const std::bad_alloc&) { return std::unexpected("OSBX media planning allocation failed"); }
+}
+
 auto conversion_result_t::from(conversion_outcome_t&& outcome) -> conversion_result_t {
-    return {.outputs = std::move(outcome.value.outputs), .slice_plans = std::move(outcome.value.slice_plans),
+    return {.outputs = std::move(outcome.value.outputs),
+        .storyboard_images = std::move(outcome.value.storyboard_images),
+        .storyboard_samples = std::move(outcome.value.storyboard_samples),
+        .storyboard_files = std::move(outcome.value.storyboard_files),
+        .stepmania_storyboard_report = std::move(outcome.value.stepmania_storyboard_report),
+        .slice_plans = std::move(outcome.value.slice_plans),
         .cut_audio_plans = std::move(outcome.value.cut_audio_plans),
         .asset_copies = std::move(outcome.value.asset_copies), .silent_files = std::move(outcome.value.silent_files),
         .diagnostics = std::move(outcome.diagnostics)};
@@ -1188,7 +1605,7 @@ auto prepare_osu_skin_samples(conversion_context_t& context, song_document_t& pr
                            "Two sounds would both export as the osu! hitsound sample " + filename);
             return false;
         }
-        context.result.value.asset_copies.push_back({found.asset, filename});
+        context.result.value.asset_copies.push_back({.asset = found.asset, .relative_path = filename});
         prepared.find_audio_asset(found.asset)->source_path = filename;
         for (auto& resource : prepared.resources)
             if (resource.asset == found.asset) resource.name = filename;
@@ -1196,13 +1613,261 @@ auto prepare_osu_skin_samples(conversion_context_t& context, song_document_t& pr
     return true;
 }
 
-auto prepare_conversion(conversion_context_t& context, const song_document_t& song,
-                        bool diagnostics_only = false) -> std::optional<prepared_conversion_t> {
-    if (!context.can_continue() || !validate_request_policies(context, song, diagnostics_only)) {
+template<class Event> auto typed_sample_request(chart_id_t chart, const Event& event)
+    -> std::optional<resource_plan_request_t> {
+    if (!event.sound || (!event.sample_reference && event.provenance.source_field != typed_lua_osu_sample_origin)) return {};
+    resource_plan_request_t request{.chart = chart, .event = event.id, .resource = *event.sound};
+    if (event.sample_reference) {
+        if (const auto* bms = std::get_if<bms_wav_reference_t>(&event.sample_reference->reference)) {
+            request.explicit_bms_index = bms->index;
+            request.source_chart = bms->source_chart.value_or(chart);
+        } else request.expected_hash = std::get<audio_file_reference_t>(event.sample_reference->reference).content_hash;
+    }
+    if (event.sound_channel_event) request.compatibility_key = "retained:" + std::to_string(event.sound_channel_event->value);
+    return request;
+}
+auto typed_sample_requests(const song_document_t& song, std::span<const chart_id_t> charts)
+    -> std::vector<resource_plan_request_t> {
+    std::vector<resource_plan_request_t> requests;
+    for (const auto id : charts) {
+        const auto* chart = song.read_chart(id);
+        if (!chart) continue;
+        for (const auto& measure : chart->measures) {
+            for (const auto& note : measure.notes)
+                if (auto request = typed_sample_request(id, note)) requests.push_back(std::move(*request));
+            for (const auto& event : measure.bgm_events)
+                if (auto request = typed_sample_request(id, event)) requests.push_back(std::move(*request));
+        }
+    }
+    return requests;
+}
+
+// Apply only to the detached conversion document. Preserve one resource per
+// promised explicit WAV identity; ordinary compatible references may reuse.
+struct typed_sample_plan_applier_t {
+    song_document_t& song;
+    format_family_t target;
+    std::map<std::pair<resource_id_t, std::string>, resource_id_t> assigned;
+    std::map<resource_id_t, std::string> first_identifiers;
+
+    auto resource_for(const resource_plan_binding_t& binding) -> result_t<resource_id_t, error_t<failure_code_t>> {
+        const auto key = std::pair{binding.target_resource, binding.identifier};
+        if (const auto previous = assigned.find(key); previous != assigned.end()) return previous->second;
+        auto id = binding.target_resource;
+        const auto source = std::ranges::find(song.resources, id, &resource_entry_t::id);
+        if (source == song.resources.end()) return std::unexpected(error_t{failure_code_t::not_found, "Planned sound disappeared"});
+        if (target == format_family_t::bms && first_identifiers.contains(id) && first_identifiers.at(id) != binding.identifier) {
+            const auto next = id_ceiling_t<resource_id_t>::from(song).next();
+            if (!next) return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Planned resource IDs exhausted"});
+            auto copy = *source; copy.id = *next;
+            song.resources.push_back(std::move(copy));
+            id = *next;
+        }
+        first_identifiers.emplace(binding.target_resource, binding.identifier);
+        auto resource = std::ranges::find(song.resources, id, &resource_entry_t::id);
+        resource->name = binding.filename;
+        if (target == format_family_t::bms) {
+            std::erase_if(resource->target_identities, [](const auto& identity) { return bms_wav_slot_value(identity).has_value(); });
+            resource->target_identities.push_back({.family = format_family_t::bms,
+                .identifier = binding.identifier, .namespace_name = "WAV"});
+        }
+        assigned.emplace(key, id);
+        return id;
+    }
+    auto apply(const resource_plan_binding_t& binding) -> result_t<void, error_t<failure_code_t>> {
+        const auto resource = resource_for(binding);
+        if (!resource) return std::unexpected(resource.error());
+        auto* chart = song.find_chart(binding.chart);
+        if (!chart) return std::unexpected(error_t{failure_code_t::not_found, "Planned difficulty disappeared"});
+        const auto update = [&](auto& event) {
+            if (event.id == binding.event) {
+                event.sound = *resource;
+                event.sample_reference.reset(); // Promise consumed in this detached export.
+            }
+        };
+        for (auto& measure : chart->measures) {
+            for (auto& note : measure.notes) update(note);
+            for (auto& event : measure.bgm_events) update(event);
+        }
+        if (auto* asset = song.find_audio_asset(binding.asset)) asset->source_path = binding.filename;
         return {};
     }
-    const auto charts = selected_chart_ids(context, song);
-    if (!context.result.ok() || !validate_selected_target(context, song, charts)) {
+};
+auto apply_typed_sample_plan(song_document_t& song, const resource_plan_t& plan, format_family_t target)
+    -> result_t<void, error_t<failure_code_t>> {
+    typed_sample_plan_applier_t applier{.song = song, .target = target};
+    for (const auto& binding : plan.bindings)
+        if (const auto result = applier.apply(binding); !result) return result;
+    return {};
+}
+
+template<class Event> auto lower_typed_osu_sample(song_document_t& song, const song_document_t& source, Event& event,
+    const std::optional<osu_sample_context_index_t>& context) -> result_t<void, error_t<failure_code_t>> {
+    if (!event.osu_hitsample || event.provenance.source_field != typed_lua_osu_sample_origin) return {};
+    if (!context) return std::unexpected(error_t{failure_code_t::invalid_data, "Typed osu! sample context is unavailable"});
+    const auto resolved = resolve_osu_sample_resources(source, *event.osu_hitsample, context->at(event.position), event.sound);
+    if (!resolved) return std::unexpected(resolved.error());
+    if (resolved->size() != 1 || resolved->front().second != 100)
+        return std::unexpected(error_t{failure_code_t::unsupported,
+            "This typed osu! descriptor needs multiple voices or scaled audio; the target requires one unit-gain registered sound"});
+    const auto id = resolved->front().first;
+    const auto original = std::ranges::find(source.resources, id, &resource_entry_t::id);
+    const auto prepared = std::ranges::find(song.resources, id, &resource_entry_t::id);
+    if (original == source.resources.end() || prepared == song.resources.end() ||
+        original->asset != prepared->asset || event.sound_channel_event)
+        return std::unexpected(error_t{failure_code_t::unsupported, "Typed osu! source is incompatible with the prepared slice/clip identity"});
+    event.sound = id;
+    event.osu_hitsample.reset(); // Only the detached single-voice target candidate.
+    return {};
+}
+auto lower_chart_typed_osu_samples(song_document_t& song, const song_document_t& source, chart_document_t& chart)
+    -> result_t<void, error_t<failure_code_t>> {
+    const auto context = osu_sample_context_index_t::from(chart);
+    for (auto& measure : chart.measures) {
+        for (auto& note : measure.notes)
+            if (const auto result = lower_typed_osu_sample(song, source, note, context); !result) return result;
+        for (auto& event : measure.bgm_events)
+            if (const auto result = lower_typed_osu_sample(song, source, event, context); !result) return result;
+    }
+    return {};
+}
+auto lower_typed_osu_samples(conversion_context_t& context, song_document_t& song,
+    std::span<const chart_id_t> charts, const song_document_t& source) -> bool {
+    if (context.request.target == format_family_t::osu_mania) return true;
+    for (const auto id : charts) {
+        auto* chart = song.find_chart(id);
+        if (!chart) continue;
+        if (const auto result = lower_chart_typed_osu_samples(song, source, *chart); !result) {
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::unsupported_target, conversion_stage_t::transform,
+                context.request.target, id, result.error().message);
+            return false;
+        }
+    }
+    return true;
+}
+
+auto has_rendered_typed_source(const conversion_payload_t& converted, asset_id_t asset) -> bool {
+    if (std::ranges::any_of(converted.cut_audio_plans, [asset](const auto& plan) { return plan.source.asset == asset; })) return true;
+    for (const auto& plan : converted.slice_plans)
+        if (std::ranges::any_of(plan.value.spans, [asset](const auto& span) { return span.asset == asset; })) return true;
+    return false;
+}
+template<class Event> auto typed_source_was_rendered(const Event& event, const conversion_payload_t& converted) -> bool {
+    if (!event.sample_reference) return false;
+    return event.sound != event.sample_reference->bound_sound ||
+        (std::holds_alternative<audio_file_reference_t>(event.sample_reference->reference) &&
+         has_rendered_typed_source(converted, event.sample_reference->bound_asset));
+}
+auto validate_typed_source_preparation(conversion_context_t& context, const song_document_t& prepared,
+    std::span<const chart_id_t> charts) -> bool {
+    for (const auto id : charts) {
+        const auto* chart = prepared.read_chart(id);
+        if (!chart) continue;
+        const auto rendered = [&](const auto& event) { return typed_source_was_rendered(event, context.result.value); };
+        for (const auto& measure : chart->measures) {
+            if (!std::ranges::any_of(measure.notes, rendered) && !std::ranges::any_of(measure.bgm_events, rendered)) continue;
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::unsupported_target, conversion_stage_t::transform,
+                context.request.target, id,
+                "Typed source identity/hash cannot be verified against rendered slice or cut output; resolve the source explicitly before this transform");
+            return false;
+        }
+    }
+    return true;
+}
+
+template<class Event> auto map_typed_osu_custom_path(const song_document_t& source,
+    const song_document_t& prepared, Event& event) -> result_t<void, error_t<failure_code_t>> {
+    if (!event.osu_hitsample || event.sound || event.provenance.source_field != typed_lua_osu_sample_origin ||
+        event.osu_hitsample->filename.empty()) return {};
+    auto normal = *event.osu_hitsample;
+    normal.whistle = false; normal.finish = false; normal.clap = false;
+    const auto resolved = resolve_osu_sample_resources(source, normal);
+    if (!resolved) return std::unexpected(resolved.error());
+    if (resolved->size() != 1) return std::unexpected(error_t{failure_code_t::unsupported, "Custom normal sample is not one registered source"});
+    const auto resource = std::ranges::find(prepared.resources, resolved->front().first, &resource_entry_t::id);
+    const auto* asset = resource == prepared.resources.end() ? nullptr : prepared.find_audio_asset(resource->asset);
+    if (!asset) return std::unexpected(error_t{failure_code_t::not_found, "Prepared custom sample asset is unavailable"});
+    event.osu_hitsample->filename = text_util::path_utf8(asset->source_path);
+    return {};
+}
+auto map_chart_typed_osu_custom_paths(const song_document_t& source, song_document_t& prepared,
+    chart_document_t& chart) -> result_t<void, error_t<failure_code_t>> {
+    for (auto& measure : chart.measures) {
+        for (auto& note : measure.notes)
+            if (const auto result = map_typed_osu_custom_path(source, prepared, note); !result) return result;
+        for (auto& event : measure.bgm_events)
+            if (const auto result = map_typed_osu_custom_path(source, prepared, event); !result) return result;
+    }
+    return {};
+}
+auto map_typed_osu_custom_paths(conversion_context_t& context, const song_document_t& source,
+    song_document_t& prepared, std::span<const chart_id_t> charts) -> bool {
+    if (context.request.target != format_family_t::osu_mania) return true;
+    for (const auto id : charts) {
+        auto* chart = prepared.find_chart(id);
+        if (!chart) continue;
+        if (const auto result = map_chart_typed_osu_custom_paths(source, prepared, *chart); !result) {
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                context.request.target, id, result.error().message);
+            return false;
+        }
+    }
+    return true;
+}
+
+auto prepare_typed_samples(conversion_context_t& context, song_document_t& prepared,
+    std::span<const chart_id_t> charts, const song_document_t& source_profiles) -> bool {
+    if (context.request.target != format_family_t::bms && context.request.target != format_family_t::bmson &&
+        context.request.target != format_family_t::osu_mania) return true;
+    if (!validate_typed_source_preparation(context, prepared, charts) ||
+        !map_typed_osu_custom_paths(context, source_profiles, prepared, charts) ||
+        !lower_typed_osu_samples(context, prepared, charts, source_profiles)) return false;
+    const auto requests = typed_sample_requests(prepared, charts);
+    if (requests.empty()) return true;
+    const auto plan = resource_plan_t::from(prepared, context.request.target, requests, &source_profiles);
+    if (!plan.value) {
+        for (const auto& diagnostic : plan.diagnostics)
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                context.request.target, diagnostic.location.chart, diagnostic.message);
+        return false;
+    }
+    const auto applied = apply_typed_sample_plan(prepared, *plan.value, context.request.target);
+    if (!applied) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+            conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+            context.request.target, std::nullopt, applied.error().message);
+        return false;
+    }
+    for (const auto& binding : plan.value->bindings) {
+        auto existing = std::ranges::find(context.result.value.asset_copies, binding.asset, &conversion_asset_copy_t::asset);
+        if (existing != context.result.value.asset_copies.end() && (existing->relative_path != binding.filename || (existing->expected_hash && binding.expected_hash &&
+            !text_util::ascii_iequal(*existing->expected_hash, *binding.expected_hash)))) {
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                context.request.target, binding.chart, "Typed audio filename conflicts with an existing output copy");
+            return false;
+        }
+        if (existing == context.result.value.asset_copies.end())
+            context.result.value.asset_copies.push_back({.asset = binding.asset, .relative_path = binding.filename,
+                .expected_hash = binding.expected_hash});
+        else if (binding.expected_hash) existing->expected_hash = binding.expected_hash;
+    }
+    return true;
+}
+
+auto prepare_conversion(conversion_context_t& context, const song_document_t& song,
+                        bool diagnostics_only = false) -> std::optional<prepared_conversion_t> {
+    auto normalized = song;
+    normalize_sample_references(normalized);
+    if (!context.can_continue() || !validate_request_policies(context, normalized, diagnostics_only)) {
+        return {};
+    }
+    const auto charts = selected_chart_ids(context, normalized);
+    if (!context.result.ok() || !validate_selected_target(context, normalized, charts)) {
         return {};
     }
     if (context.execution.progress) {
@@ -1212,14 +1877,14 @@ auto prepare_conversion(conversion_context_t& context, const song_document_t& so
                                    context.request.target == format_family_t::stepmania ? 1 : charts.size();
         context.execution.progress->total.store(count * 2);
     }
-    auto prepared = prepare_document(context, song, charts);
+    auto prepared = prepare_document(context, normalized, charts);
     if (!prepared || !context.result.ok()) {
         context.result.value.outputs.clear();
         return {};
     }
     prepare_bms_osu_layouts(*prepared, context.request, charts);
     if (!prepare_slice_exports(context, *prepared, charts) || !prepare_export_cuts(context, *prepared, charts) ||
-        !prepare_osu_skin_samples(context, *prepared)) {
+        !prepare_osu_skin_samples(context, *prepared) || !prepare_typed_samples(context, *prepared, charts, normalized)) {
         context.result.value = {};
         return {};
     }
@@ -1243,6 +1908,9 @@ auto diagnose_conversion_preparation(const song_document_t& song, const conversi
 auto conversion_result_t::from(const song_document_t& song, const conversion_request_t& request,
                       conversion_limits_t limits, conversion_execution_t execution) -> conversion_outcome_t {
     conversion_outcome_t result{};
+    const auto prepared_links = std::ranges::all_of(request.osbx_prepared, [&](const auto& scene) { return scene.stamp.is_current(song); })
+        ? std::span<const osbx_lua_prepared_scene_t>{request.osbx_prepared} : std::span<const osbx_lua_prepared_scene_t>{};
+    const osbx_lua_prepared_scope_t link_scope{prepared_links};
     conversion_context_t context{request, limits, result, execution};
     auto prepared = prepare_conversion(context, song);
     if (!prepared) return result;

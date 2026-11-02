@@ -42,6 +42,7 @@ template<> struct id_declarations_t<object_id_t> {
             !visit_declared_id_values(song.resources, identities) ||
             !visit_declared_id_values(song.midi_assets, identities) ||
             !visit_declared_id_values(song.generator_recipes, identities) ||
+            // OSBX local string IDs and owning recipe references do not reserve numeric IDs.
             !visit_declared_id_values(song.storyboards, identities) ||
             !visit_declared_id_values(song.sound_groups, identities) ||
             !visit_declared_id_values(song.export_cuts, identities)) return false;
@@ -227,6 +228,8 @@ template<class Id> struct id_ceiling_t {
 
     void reserve_generator_outputs(const generator_recipe_t& recipe) {
         reserve_generated_charts(recipe);
+        if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, storyboard_id_t>)
+            for (const auto& binding : recipe.generated_storyboards) reserve(Id{binding.storyboard.value});
         if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, recipe_id_t>) {
             for (const auto& binding : recipe.generated_scrolls) reserve(Id{binding.value.id.value});
             for (const auto& binding : recipe.generated_sv_recipes) reserve(Id{binding.value.id.value});

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/result.h>
+#include <wormedit/core/storyboard_vocabulary.h>
 
 #include <wormedit/core/arena.h>
 
@@ -15,6 +16,8 @@
 #include <vector>
 
 namespace wormedit {
+
+[[nodiscard]] auto is_valid_easing(std::int32_t easing) noexcept -> bool;
 
 // Frame storage for transient storyboard draw data. Allocations are stable
 // until reset(); reset keeps committed chunks for reuse on the next frame. The
@@ -50,6 +53,16 @@ enum class storyboard_node_kind_t : std::uint8_t {
     command,
     loop,
     retained_line,
+    trigger,
+};
+
+struct storyboard_trigger_t {
+    storyboard_trigger_name_t name;
+    std::optional<std::int64_t> start_time_ms;
+    std::optional<std::int64_t> end_time_ms;
+    std::optional<std::int32_t> group_number;
+    [[nodiscard]] auto is_valid() const noexcept -> bool;
+    auto operator==(const storyboard_trigger_t&) const -> bool = default;
 };
 
 // Loop children keep their OSB-relative timestamps. The evaluator computes
@@ -63,8 +76,27 @@ struct storyboard_node_t {
     std::uint64_t source_order{};
     std::string retained_line;
     std::vector<storyboard_node_t> children;
+    std::optional<storyboard_trigger_t> trigger;
 
     auto operator==(const storyboard_node_t&) const -> bool = default;
+};
+
+enum class storyboard_animation_loop_t : std::uint8_t { loop_forever, loop_once };
+
+// Animation shares the visual object's identity, base filename and command
+// tree. Frame paths/selection are consumed by T-152 and OSBX-10.
+struct storyboard_animation_t {
+    std::uint32_t frame_count{};
+    double frame_delay_ms{};
+    storyboard_animation_loop_t loop_type{storyboard_animation_loop_t::loop_forever};
+    [[nodiscard]] auto is_valid() const noexcept -> bool;
+    // Exact stored binary64 delay and fractional clock; before epoch selects 0.
+    [[nodiscard]] auto frame_index_at(storyboard_time_t time, std::int64_t epoch_ms) const noexcept
+        -> std::optional<std::uint32_t>;
+    // Shared final-extension naming. Result borrows arena until its next reset.
+    [[nodiscard]] static auto frame_path(std::string_view base, std::uint32_t index,
+        storyboard_frame_arena_t& arena) -> result_t<std::string_view, failure_code_t>;
+    auto operator==(const storyboard_animation_t&) const -> bool = default;
 };
 
 struct storyboard_sprite_t {
@@ -76,6 +108,7 @@ struct storyboard_sprite_t {
     double x{};
     double y{};
     std::vector<storyboard_node_t> nodes;
+    std::optional<storyboard_animation_t> animation;
 
     auto operator==(const storyboard_sprite_t&) const -> bool = default;
 };
@@ -87,9 +120,30 @@ struct storyboard_top_level_line_t {
     auto operator==(const storyboard_top_level_line_t&) const -> bool = default;
 };
 
+inline constexpr std::size_t storyboard_default_maximum_path_bytes = 4 * 1024;
+
+struct storyboard_sample_t {
+    std::uint64_t stable_id{};
+    std::uint64_t source_order{};
+    std::int64_t time_ms{};
+    osbx_layer_t layer{osbx_layer_t::background};
+    std::string path;
+    std::optional<std::uint8_t> volume;
+    [[nodiscard]] static auto is_valid_payload(std::string_view path, std::optional<std::uint8_t> volume,
+        std::size_t maximum_path_bytes = storyboard_default_maximum_path_bytes) noexcept -> bool;
+    [[nodiscard]] auto is_valid(std::size_t maximum_path_bytes = storyboard_default_maximum_path_bytes) const noexcept -> bool;
+    [[nodiscard]] static auto effective_volume(std::optional<std::uint8_t> value) noexcept -> std::uint8_t {
+        return value.value_or(100);
+    }
+    [[nodiscard]] auto effective_volume() const noexcept -> std::uint8_t { return effective_volume(volume); }
+    auto operator==(const storyboard_sample_t&) const -> bool = default;
+};
+
 struct storyboard_document_model_t {
     std::vector<storyboard_sprite_t> sprites;
     std::vector<storyboard_top_level_line_t> retained_top_level_lines;
+    std::vector<storyboard_sample_t> samples;
+    [[nodiscard]] auto has_valid_samples(std::size_t maximum_samples = 250'000) const -> bool;
 
     auto operator==(const storyboard_document_model_t&) const -> bool = default;
 };
@@ -106,8 +160,6 @@ enum class storyboard_diagnostic_code_t : std::uint8_t {
     capacity_exceeded,
     time_overflow,
 };
-
-inline constexpr std::size_t storyboard_default_maximum_path_bytes = 4 * 1024;
 
 struct storyboard_diagnostic_t {
     [[nodiscard]] constexpr auto is_error() const noexcept -> bool { return true; }
@@ -142,7 +194,7 @@ struct storyboard_event_t {
     std::uint64_t source_order{};
     std::uint64_t stable_object_id{};
     std::uint64_t stable_node_id{};
-    enum class edge_t : std::uint8_t { begin, end } edge{edge_t::begin};
+    enum class edge_t : std::uint8_t { begin, end, sample } edge{edge_t::begin};
     std::uint64_t schedule_order{};
 
     auto operator==(const storyboard_event_t&) const -> bool = default;
@@ -212,11 +264,18 @@ struct storyboard_evaluation_effect_t {
 };
 
 
+// Shared OSB easing table; clamps progress to [0,1], preserving OSB semantics.
+[[nodiscard]] auto evaluate_storyboard_easing(std::int32_t easing, double progress) noexcept -> double;
+
 // Evaluates one property at an exact OSB millisecond. The last started command
 // in source order wins, and loop iteration selection uses division/modulo.
 [[nodiscard]] auto evaluate_storyboard_property(const storyboard_sprite_t& sprite,
                                                 storyboard_opcode_t opcode, std::int64_t time_ms,
                                                 std::size_t maximum_nesting = 128)
+    -> storyboard_evaluation_effect_t;
+
+[[nodiscard]] auto evaluate_storyboard_property(const storyboard_sprite_t& sprite,
+    storyboard_opcode_t opcode, storyboard_time_t time, std::size_t maximum_nesting = 128)
     -> storyboard_evaluation_effect_t;
 
 // Semantic comparison ignores source-order labels and blank-only formatting

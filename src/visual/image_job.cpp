@@ -8,7 +8,6 @@
 namespace wormedit::visual {
 namespace {
 
-constexpr std::size_t hard_maximum_sources_per_request = 32;
 constexpr std::size_t hard_maximum_image_jobs = 8;
 
 auto is_image_source_current(const image_cache_entry_t& entry, song_id_t project,
@@ -168,8 +167,7 @@ image_job_t::image_job_t(image_cache_t& cache, task_scheduler_t& scheduler,
                   invalid_request_message_,
                   "image decode jobs have not reached cancellation checkpoints",
                   "image decode worker returned no typed result"),
-      cache_(cache), maximum_sources_per_request_(
-                         std::min(maximum_sources_per_request, hard_maximum_sources_per_request)) {}
+      cache_(cache), maximum_sources_per_request_(maximum_sources_per_request) {}
 
 auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
                           std::span<const resolved_visual_asset_t> sources,

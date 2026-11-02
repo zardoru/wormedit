@@ -53,6 +53,7 @@ set(shared_frontend_headers
     wormedit/core/generator_types.h
     wormedit/core/geometry.h
     wormedit/core/id.h
+    wormedit/core/lua_vocabulary.h
     wormedit/core/metadata_inheritance_types.h
     wormedit/core/metadata_limits.h
     wormedit/core/osu_hitsample.h
@@ -60,10 +61,13 @@ set(shared_frontend_headers
     wormedit/core/preview_mix.h
     wormedit/core/resource_vocabulary.h
     wormedit/core/shortcut_vocabulary.h
+    wormedit/core/storyboard_gizmo.h
+    wormedit/core/storyboard_vocabulary.h
     wormedit/core/timing_edit_policy.h
     wormedit/core/timing_links_types.h
     wormedit/core/ui_layout_preferences.h
     wormedit/core/visual_layout.h
+    wormedit/core/video_vocabulary.h
     wormedit/core/vocabulary.h
 )
 file(GLOB_RECURSE frontend_sources

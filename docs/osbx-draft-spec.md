@@ -1,15 +1,55 @@
 # OSBX Lua DSL draft specification
 
-Status: design draft 0.1. Syntax and names may change before implementation.
-Implementation plan: [OSBX task cards](chart-editor-plan/tasks/osbx.md) (T-180–T-192); the open questions at the end are proposed for answers in T-180.
+Status: design draft 0.2. OSBX 0.1 conventions were accepted by the owner on 2026-10-31, including the shear/matrix export amendment. Unimplemented syntax remains a design contract, not a claim of shipped support.
+Implementation plan: [OSBX task cards](chart-editor-plan/tasks/osbx.md) (T-180–T-192); the settled conventions at the end record T-180 / OSBX-0.
 
 OSBX is wormedit's extended osu!-style storyboard source format. It uses a Premake-style Lua DSL to declare or generate storyboards with stable IDs, keyframes, parent/child groups, ordered compound transformations, and 2D affine matrices. The same project DSL may declare chart notes, but storyboard modules and note/difficulty modules can remain separate files and export independently.
 
 Lua evaluates into a typed intermediate document. Preview, visual editing, standard `.osb` export, and video rendering consume that document rather than interpreting source text independently.
 
+## Implemented storyboard path (OSBX-1a–9, 2026-10-31)
+
+On the post-1.0 `storyboard-osbx` branch, groups and image sprites now run through
+Lua declarations → generator diff → one Apply/Undo transaction → native save/load
+→ affine player preview → standard osu! export. Ordered translate, rotate, scale,
+pivot, skew and six-coefficient matrix tracks, opacity/colour, supported easing,
+node provenance and generator ownership persist. Native loading does not execute Lua.
+The evaluator uses signed integer milliseconds and clockwise degrees in a Y-down canvas.
+The preview preserves shear through full affine quads; existing OSB scenes retain their path.
+OSBX image paths also preview without prior resource imports: the presenter owns
+transient decode identities, skips persistent resource IDs, and uses the existing
+bounded asynchronous image decoder/cache. It resolves safe project-relative files
+through shared media inspection. Aliases share decoded sources. Bindings and
+borrowed authored paths clear with document/index or project-directory changes;
+completion generations also invalidate texture content. No transient resource or
+asset is written to the document. Registered resources keep their existing
+resolution and marked-missing policy. Missing/unsafe/undecodable fallback files
+show diagnostics while usable images and lanes keep rendering; invalid graphs,
+frame failures and sprite-cap errors remain structural preview failures.
+
+
+osu! export classifies exact, baked and unsupported sprites and reports baked IDs
+and normalized worst error. Bounded baking checks image-corner error
+≤0.5 px and opacity/colour error ≤1/255 at every integer millisecond in the
+bounded span. Image dimensions and the playback span come from export preflight.
+Shear and explicit matrix operations **always refuse**, naming the operation ID;
+no outputs are returned or published. No rasterization fallback is implemented.
+
+The runnable [Sunshine example](lua-api/examples/storyboard/README.md) includes
+`project.lua`, a small chart, rotating sun rays, an orbiting worm, fades, colour
+and original PNG/SVG artwork. `banner-project.lua` adds a sheared banner as an
+expected refusal case. `tests/lua/osbx_acceptance_tests.cpp` freezes the real
+modules, generates/applies, saves/loads, compares frame matrices at three times,
+exports/reparses `.osb`, compares sprite count and positions within 0.5 px, and
+checks banner refusal and broken-module preservation.
+
+Clips, OSBX animation/sample execution, loops/triggers, scripted links, video and
+StepMania storyboard adapters remain follow-up work. Their syntax elsewhere in
+this draft is a design contract, not part of this implemented subset.
+
 ## Implemented project entry point (T-186)
 
-Project-level loading is independent of the deferred OSBX declaration language.
+Project-level loading shares the host-controlled generator path with the implemented OSBX subset.
 The initial adapter accepts `project.lua` through Compose's existing Lua note-generator
 file picker. Loose note/layer output targets the selected chart. `worm_project "Name"` names the script group;
 it does not rename or create a native project. `include "path.lua"` evaluates modules in
@@ -39,11 +79,11 @@ aggregate asset bytes. Host IO checks cancellation between bounded reads.
 
 ## File roles
 
-Provisional conventions:
+Settled file conventions:
 
 - `project.lua`: optional native project entry point and ordered module includes;
-- `*.osbx.lua`: storyboard-only modules;
-- `*.chart.lua`: chart/difficulty and note modules;
+- `*.osbx.lua`: storyboard-only modules, each file its own entry point;
+- `*.chart.lua`: chart/difficulty and note modules, each file its own entry point;
 - imported MIDI, image, and audio files: declared project assets.
 
 A project can include any number of storyboard and chart modules:
@@ -238,6 +278,8 @@ The exact callable names are provisional. Their emitted typed schema and evaluat
 
 Every emitted song, difficulty, storyboard, node, transform operation, reusable clip, keyframe, and asset has a stable string ID. The DSL may derive an ID from an explicit declaration name when unique. Generated loops should provide stable keys so rerunning a generator can diff objects rather than delete and recreate them.
 
+OSBX node IDs remain strings. Exported OSB sprites receive a `uint64` `stable_id` computed as FNV-1a-64 of the node ID path. A collision rejects the entire export with the responsible paths; export does not silently renumber objects.
+
 Every emitted object records its module/source location and optional generator key. Diagnostics and regeneration diffs point back to this provenance.
 
 ## Coordinate and time systems
@@ -250,9 +292,11 @@ Video frames use rational presentation timestamps. Evaluation derives each times
 
 ## Scene graph and layers
 
-Visual nodes are `group`, `sprite`, or `animation`. Timed storyboard audio uses `sample` nodes. Parent references form an acyclic graph.
+Visual nodes are `group`, `sprite`, or `animation`. Timed storyboard audio uses `sample` nodes. Parent references form an acyclic graph. Complete `animation` and `sample` nodes carry optional canonical metadata (native schema 39). Metadata-absent legacy typed placeholders remain representable but incomplete and refuse execution/export with a node-ID diagnostic. Animation uses the shared exact frame query and preview catalog; Sample exposes cues through the existing schedule, without audio playback. Unsupported media/temporal compositions refuse explicitly.
 
-Standard visual layers are `background`, `fail`, `pass`, and `foreground`. Within a layer, draw order uses explicit order followed by stable declaration order. Cross-layer parenting is invalid in draft 0.1 because inherited transforms and standard OSB conditional ordering would be ambiguous.
+A node may additionally own an explicit inclusive lifetime `{begin_ms, end_ms}` (native schema 30); absence is unbounded. The shared evaluator combines this range with ordinary visibility and inherited parent visibility. An exact end instant is visible, but any positive fractional remainder at `end_ms` is outside the range. Reversed bounds reject; negative, extreme signed millisecond bounds and single-instant ranges are valid. Key editing never silently changes this range. The typed set/clear lifetime edit is undoable; SB-5 exposes it in the inspector. Older schema-29 nodes migrate to an absent, unbounded lifetime.
+
+Standard visual layers are `background`, `fail`, `pass`, and `foreground`. Within a layer, draw order uses explicit order followed by stable declaration order. Cross-layer parenting is invalid in OSBX 0.1 because inherited transforms and standard OSB conditional ordering would be ambiguous.
 
 Groups do not imply an offscreen compositing surface. They apply inherited transforms, opacity, and color to descendants.
 
@@ -287,11 +331,23 @@ Stack order is visible and reorderable in the editor because transform operation
 
 Each transform operation and property track has a default value plus ordered keyframes. A key contains stable ID, time, value, and easing.
 
-Initial easing forms are `step`, `linear`, standard OSB easing values, and cubic Bézier control points. Numeric/vector values interpolate component-wise after easing. Rotation values are continuous authored degrees; the evaluator does not silently choose a shorter wraparound. Raw matrix keyframes interpolate their six coefficients component-wise. Authors should use component transforms for rigid motion.
+Initial easing forms are `step`, `linear`, standard OSB easing values, and cubic Bézier control points. Numeric/vector values interpolate component-wise after easing. Rotation values are continuous authored degrees; the evaluator does not silently choose a shorter wraparound. Raw matrix keyframes interpolate their six coefficients component-wise only; OSBX 0.1 has no decomposed interpolation mode. Authors should use component transforms for rigid motion.
 
-Initial property tracks include opacity, linear RGBA color multiplication, visibility, blend mode, and animation frame/loop state. Reusable clips group transform operations and property tracks and may be instanced with start time, time scale, and parameters. Recursive clip references are invalid.
+Initial property tracks include opacity, linear RGBA color multiplication, visibility and blend mode. Blend modes are `normal` and `additive`; additive requires renderer support in OSBX-3. If the renderer cannot support it, only the owner may narrow 0.1 to `normal`. Animation frame identity is a numeric value on the evaluated draw, safe to retain across frame-arena resets; its selected filename is derived only in the current adapter arena.
 
-Standard OSB loops and triggers receive normalized typed forms. Trigger evaluation takes an explicit preview game state. Offline video export requires a deterministic pass/fail and trigger scenario.
+Reusable clips use `clip { id, ops, tracks, parameters, uses }`, grouping ordered transform operations and property tracks. `use_clip { id, clip, start, time_scale, parameters }` appends an instance to the current node; nested `uses` are ordered literal descriptors with the same fields. A parameter has a unique lexical name and a finite vector default; instance bindings supply literal vectors of the same arity. A numeric template track may select a parameter for its default only. Authored keys/easing retain their ordinary meaning; there are no parameter expressions or implicit outer capture. Raw Lua links inside templates reject, while ordinary linked nodes and prepared children retain their existing ownership.
+
+Node operations run first, followed by ordered clip operations and nested uses. Local time is `(parent_time - start) / time_scale`: before activation the contribution is identity, and afterwards keyed tracks hold normally. Opacity and RGBA multiply, visibility is ANDed, and the last active explicit blend override wins. Absent clip blend leaves the current blend unchanged. Parent/node lifetimes and conditional choice still gate the result. Recursive or missing references, colliding identities, invalid bindings and aggregate expansion/storage/work exhaustion reject before materialization. One immutable compiled owner retains bound tracks and clock maps across evaluator-index copies; frame evaluation creates no second cache, clock or Lua execution.
+
+`time_scale` is the exact stored positive finite binary64 ratio. Clock composition uses checked bounded factors/products and the shared signed64 whole-ms plus reduced uint32 fraction domain; unrepresentable maps reject explicitly. In particular, a decimal scale such as `0.1` can refuse when a mapped endpoint's exact reduced fraction exceeds that capacity. Authored integer keys are never retimed by rounding. Native schema 35→36 adds definitions, uses and selectors, not compiled expansions; earlier records migrate empty defaults and future clip fields under older schemas refuse.
+
+OSB export consumes the same compiled expansion and conservatively bakes used clips under existing error, density and work checks, retaining both conditional branches. Fractional mapped activation/key times and unsupported transform/property combinations refuse instead of disappearing. Selected used-clip StepMania actors return an explicit unsupported storyboard advisory before sidecars; unused definitions and ordinary actor output remain unchanged. Chart export keeps its existing loss-handling route. Clip editing UI remains separately scoped below.
+
+Typed OSBX tracks accept flat `loop { start, count, keys }` and `trigger { name, from, to, keys }` programs (native schema 38), using the existing key/easing owners. A sealed immutable direct-firing scenario is copied, validated and sorted once; binary queries reuse it through track/index/frame/op-space/clip evaluation. It is not inferred from gameplay or the independent fixed Pass/Fail/Neither layer selector. Exact relative clocks, finite capacities and authored tie rules apply. There is no recursive temporal-key grammar or custom scenario UI.
+
+Imported standard OSB `T` blocks are structural containers, separate from that planned OSBX execution model. Supported names are `Passing`, `Failing` and documented `HitSound` combinations of up to two sample-set tokens, an addition and a nonnegative custom sample number in signed32 range. Accepted spelling is retained; unsupported names stay raw with a diagnostic. Optional signed integer start/end and authored signed32 group retain omission and explicit zero/negative values. Header numbers and indentation normalize. Native schema 36→37 adds trigger metadata without renumbering older node kinds or changing ordinary node fields; older records refuse future trigger kind/metadata.
+
+Leading spaces, tabs and underscores are recognized only as indentation. A malformed or unknown trigger header, or any malformed descendant, retains the whole bounded original raw subtree; child commands never become unconditional. Validation counts ignored descendants. Preview, properties and scheduling ignore trigger branches, and loops containing only triggers have no drawable sprite lifetime; genuinely empty/comment-only loops keep their existing envelope. Sample cues, Animation frames and the fractional clock retain their existing owners. A Pass/Fail/Neither layer choice does not fire gameplay triggers. Cut rebasing and conversion to OSBX refuse trigger-bearing content until a supported mapping exists; ordinary OSB/osu! emission preserves its structural blocks and both conditional layers.
 
 ## MIDI and generator API
 
@@ -364,6 +420,8 @@ survives preparation. `ctx.seed` is the full unsigned seed as a decimal string, 
 - `curve.dirac { at, area }`, an impulse primitive described below;
 - `curve.multiply { value, curve }`, which scales another curve and is also the operation used by normalization.
 
+The accepted OSBX parametric defaults are `adaptive`, tolerance `0.002`, and `max_points = 256` for pure evaluators. Ordered stateful evaluation still requires its explicit sampling plan. T-189/T-190 provide the sampling machinery, but the current native `sv_recipe_sampling_t` defaults remain fixed two-point sampling with tolerance `0.001`; the accepted DSL defaults do not change existing native recipes.
+
 Fixed sampling declares an exact point count or exact musical step. For pure evaluators, adaptive sampling recursively subdivides until the piecewise interpolation stays within the declared error tolerance or reaches `max_points`. It always includes both endpoints, uses a specified deterministic traversal/order, and evaluates the same points on every platform. Sampling is transient preview/export state, not stored chart data. Recipe range anchors must be exactly representable at the chart resolution; generated output positions must be exactly representable by the selected target, and export preview offers a target-resolution promotion or explicit quantization policy when they are not.
 
 The output family controls interpretation:
@@ -415,7 +473,7 @@ Require `0 < L_A < L` when solving the other region. A zero-length remainder, no
 
 A Dirac delta is not sampled as an ordinary numeric function: a point sample would have either no integrated effect or an unbounded value. `curve.dirac { at = p0, area = a }` emits a typed scroll impulse with signed area `a`, creating a discontinuity in integrated visual position while consuming no parametric length.
 
-If an export target has no exact impulse, the user may choose an explicit finite box or triangular pulse with a representable width. Its height is derived so its integrated area remains `a`; the generated entry/exit points and approximation error appear in preview. Otherwise export rejects the impulse. Coincident impulses combine only through an explicit policy, and impulses at interval boundaries have documented left/right ownership.
+Under the accepted OSBX 0.1 policy, every target rejects impulses unless the author explicitly chooses a finite box with a representable width. Its height is derived so its integrated area remains `a`; the generated entry/exit points and approximation error appear in preview. There is no implicit pulse approximation or triangular-pulse option in this policy. Existing native SV recipes retain T-162's 1 ms finite-box default; adopting the OSBX opt-in policy must not silently reinterpret those saved recipes. Coincident impulses combine only through an explicit policy, and impulses at interval boundaries have documented left/right ownership.
 
 ### Composition, preview, and recipe editing
 
@@ -427,45 +485,157 @@ Range anchors are visual handles. Dragging either endpoint or the whole interval
 
 ## Visual editing of Lua output
 
-The keyframe and generated-note editors operate on the materialized typed document. Canonically generated DSL modules may be rewritten by the editor. For arbitrary procedural Lua, direct visual edits are stored as project overrides or require an explicit "detach/bake to editable DSL" operation; wormedit must not pretend it can safely rewrite general Lua source. Parametric SV/scroll/speed recipes are the exception described above: their functions and ranges remain directly editable and are never baked merely to display or save them.
+The keyframe and generated-note editors operate on the materialized typed document. Canonically generated DSL modules may be rewritten by the editor, using one call per line and two-space indentation. For arbitrary procedural Lua, direct visual edits are stored as project overrides or require an explicit "detach/bake to editable DSL" operation; wormedit must not pretend it can safely rewrite general Lua source. Parametric SV/scroll/speed recipes are the exception described above: their functions and ranges remain directly editable and are never baked merely to display or save them.
 
-Regeneration shows how procedural output and visual overrides interact. Conflicting overrides require an explicit keep-generated, keep-override, or manual resolution.
+The recorded override format is a per-object JSON patch keyed by stable ID. Regeneration shows how procedural output and visual overrides interact; conflicts require manual resolution. This storage convention is recorded for later implementation and does not add override editing to the Storyboard screen v1 scope below, which uses explicit detach.
 
 ## Standard OSB compatibility export
 
 Standard `.osb` export flattens inherited transforms into descendants and classifies each object range:
 
 - `exact`: maps to standard OSB commands/easing;
-- `baked`: samples compound transforms into supported OSB commands within a chosen error tolerance;
-- `rasterized`: renders an unsupported subtree to an image sequence referenced by OSB;
+- `baked`: samples eligible shear-free compound motion into supported OSB commands within the limits below;
 - `unsupported`: blocks export and identifies the responsible IDs.
 
-Affine shear and some combinations of non-uniform scale and inherited rotation cannot be represented by standard OSB sprite commands. The user chooses approximation, rasterization, or cancellation; export never silently removes the effect.
+Shear and matrix ops block `.osb` export; use video or StepMania export to retain them. A skew op or raw matrix op anywhere on a sprite or in its ancestry makes that object unsupported, even if its current matrix looks representable. Implicit shear from the hierarchy, including combinations of non-uniform scale and inherited rotation, also makes the object unsupported. These cases cannot be approximated or baked for `.osb`.
+
+For eligible shear-free motion only, baking must keep maximum screen-space position error at the sprite corners within 0.5 px on the 640×480 canvas and opacity error within 1/255, using at most 4 keys per 100 ms per property. Exceeding either tolerance or the key budget makes the object unsupported. OSBX 0.1 has no rasterization fallback. Any unsupported object blocks the entire export with responsible IDs and no partial output writes.
 
 Imported OSB source lines and ordering remain available as provenance for loss-aware saves.
 
+## Native SSC actor export (SMX-2/SMX-3, post-1.0 branch)
+
+Native project schema **31** adds `stepmania_export_policy_t.storyboard`
+(`actors`, `video`, `none`) and the existing shared `storyboard_conditional_layer_t`
+(`pass`, `fail`, `neither`). New policies default to actors/pass. The mandatory
+30→31 migration sets existing policies to none/pass and materializes absent/null
+StepMania policies with their previous effective file/timing/profile choices.
+Strict schema-31 codecs require the new fields and reject unknown fields/enums.
+Node lifetimes retain schema-30 semantics. This remains post-1.0 work.
+
+The actor route targets the [pinned SM5.1/ITGmania and Etterna 0.75.1 trees](references/stepmania-storyboard-capabilities.md).
+Etterna SSC Actors mode reuses the same native plan/runtime and folder hooks;
+SMX-3's SOURCE48 service GATE passed all 6,332 tests and 215 changed-C++
+complexity comparisons, including prepared conditional and atomic publication
+regressions. Actual engine theme/background/seek/rate behavior remains unexecuted. Plain SM reports unsupported
+native output except for the separate conservative NotITG SM/XML profile. Video mode
+currently reports unavailable; it writes no pretend video. None intentionally
+omits OSBX. Pass/Fail/Neither selects one shared conditional outcome, without
+gameplay trigger inference; ordinary `.osb` include-all behavior is unchanged.
+
+Etterna Actors mode reports one advisory when authored or prepared scenes contain
+Pass/Fail drawables, naming the chosen fixed state and absence of gameplay-trigger
+interactivity. The warning remains advisory under reject policy and preserves
+existing object classifications and clipping/retained-hook/budget reasons. Ordinary
+background/foreground-only scenes, other profiles, None and Video do not receive it.
+
+Each drawable receives a bounded duplicated ancestor path in canonical global
+draw order. Ordered transforms become wrappers; rotation uses authored degrees.
+Simultaneous two-axis shear and raw affine matrices use two rotations and signed
+diagonal scale, including reflections and rank-zero/rank-one matrices, rather
+than sequential X/Y shear setters. Prepared immutable Lua results supply tracks
+and subtrees. Engine frames run neither the generator nor an OSB parser.
+
+Generated Lua 5.1 samples absolute `GetMusicSeconds()*1000`, with linear/step
+tracks; callback deltas and queued property tweens do not drive scene state.
+Nonlinear baking calls the canonical fractional evaluator/sampler and shared
+`simplify_to_metric`, comparing ordered identities, images, blend, visibility,
+full affine image corners, final clamped opacity and RGB in the existing normalized
+640×480 space (0.5 px and 1/255). Integer-ms source/emission keys are rounded once
+to nine decimals, at most four keys per half-open 100 ms per track; final full-scene
+checks cover the reported inclusive quarter-ms grid across playback and authored
+track tails. This is a sampled-domain result, **not a continuous-time certificate**;
+missing geometry, invalid reconstruction or exhausted work refuses the object.
+
+Direct native actors have no certified canvas clipping or AFT compositing. An
+outward-rounded affine interval containment proof must establish every image
+corner stays inside the logical canvas; an uncertain or clipped object is
+unsupported. Default emitter bounds are 8 MiB Lua, 64 MiB estimated detached scene
+payload, 100,000 actor frames (including reserved layer roots), ancestry depth 128
+and 8,000,000 shared work units. Baking also uses the shared 65,536-input-key bound.
+Accepted activation, playback, key and explicit lifetime times lie within one day
+of zero; actor roots retain a finite keep-alive through that clock domain, while
+drawable visibility follows the requested playback range. Seeking before hook
+activation or beyond the accepted domain is not certified. Engine-rate/seek/restart
+runtime acceptance remains separate from mocked-actor mathematical fixtures.
+
+SSC hooks start in beats, before the playback span, using a song-level timing map
+while retaining chart timing. Multiple scenes share one generated script per BG/FG
+hook. Existing source hooks retain ownership: a conflict produces per-object
+unsupported reports without rejecting an otherwise valid chart, even under reject
+loss policy. Lua artifacts stay outside chart reimport and use the existing atomic
+publication/ownership/source-receipt path with referenced images. Unrelated Lua or
+image destinations are never overwritten merely because overwrite was requested;
+publication safety errors still refuse the package. No actual pinned-engine
+execution certificate is implied by source or golden tests.
+
 ## Preview and keyframe editor
 
-The editor provides a canvas, hierarchy/layer view, asset browser, and expandable keyframe timeline. It supports transform gizmos and pivots, curve/easing inspection, multi-selection, reusable clips, loops/triggers, and snapping to milliseconds, video frames, chart beats, timing anchors, and MIDI events.
+The owner approved the Storyboard screen's v1 scope on 2026-10-31 (SB-0; [question 9](chart-editor-plan/decisions/open-questions.md)). Delivery is post-1.0, alongside the OSBX work, not an extension of the 1.0 freeze. The [screen cards](chart-editor-plan/tasks/storyboard-screen.md) and [mockups](chart-editor-plan/mockups/README.md) define implementation slices and structure.
 
-Preview supports scrub, loop, playback rate, audio, pass/fail state, named trigger scenarios, chart overlays, and Lua generated-result overlays. One deterministic scene evaluator supplies both interactive preview and offline video frames.
+V1 edits one song-level OSBX storyboard at a time. It introduces no difficulty ownership. The osu! writer retains its per-difficulty `[Events]` behavior and refuses storyboard export for multi-chart songs; standalone shared `.osb` writing is not part of this screen.
+
+Imported OSB storyboards display read-only. **Convert to OSBX** (SB-10) explicitly creates a new OSBX storyboard in one Undo step, keeping the original until the user deletes it. Conversion preserves canonical OSB easing, independent X/Y command precedence, held gaps, draw order, image/origin/layer and the original sprite lifetime from the shared OSB preview schedule. Rotation changes from OSB radians to OSBX degrees and RGB bytes become RGBA multipliers. Numeric tracks anchor defaults at the real sprite begin; no artificial `INT64_MIN` keys or extra visible millisecond are introduced. Loops, retained semantic directives (including P blend/flip parameters and triggers), animations, interrupted varying curves and discontinuous shared endpoints refuse explicitly with source-line/sprite diagnostics until a lossless mapping exists. No partial converted scene is published. Finite flat lifetimes survive native save/load and constrain OSB export without extending to the requested playback range; ancestor lifetime or animated-visibility clipping may refuse explicitly. The OSB exporter retains its existing bounded integer-ms baking/error contract; inclusive lifetime edges also match fractional preview. Generator-owned OSBX storyboards also display read-only, naming the owner and offering **Detach from generator** (SB-11). Detach clears the ownership reference and recipe binding in one Undo step. V1 has no override patches over generator-owned output.
+
+The existing generic dock (`src/ui/nuklear/dock.cpp`) supplies the layout: storyboard picker and hierarchy/layers plus an Assets tab on the left, canvas in the centre, inspector on the right, and expandable keyframe timeline at the bottom. The canvas uses osu!'s 640×480 logical space, fit/zoom/pan, selection outlines and transform gizmos. The inspector exposes node properties, the visibly ordered transform stack and property tracks. The timeline provides key selection, add/move/delete and easing inspection/editing.
+
+Scrub, loop, playback rate and audio use the shared transport; canvas evaluation follows its time. Starting an editing gesture pauses playback. A completed gesture is one Undo step; Escape cancels it exactly. Key times are signed integer milliseconds, with millisecond snapping by default and optional beat/chart-grid snapping through the existing snap owner (`snap.h`); there is no independent storyboard beat-rounding implementation. Video-frame snapping waits for video export. Timing-anchor and MIDI-event snapping remain later ambitions.
+
+The **SB-13** preview control provides one shared **Pass**, **Fail** or **Neither** choice, default Pass; Neither hides both conditional layers. Canvas and player preview share this project view state. Export dialogs retain their own explicit saved selection through the same core value; changing preview state does not overwrite export settings. A Custom switch/trigger timeline remains optional later work. Explicit OSBX direct-firing scenarios do not infer gameplay or fire from this fixed layer selector.
+
+Reusable clip editing UI and simultaneous editing of several storyboards remain outside v1; the underlying model supports bounded clips and flat typed temporal programs. Video uses its separate dialog and capability boundary. **SB-14**, backed by OSBX-12, provides hybrid Lua links in the inspector/timeline and scripted-subtree badges: linked ranges are read-only until baked/unlinked, and the last good result survives errors. This does not authorize override patches on generator-owned storyboards.
+
+One deterministic scene evaluator supplies interactive preview and eventual offline video frames. The profiles below answer open question 16 / T-155 (VID-0); VID-1–VID-3 implement them separately from screen v1.
 
 ## Video export
 
-OSBX renders directly to video without first reducing the scene to standard OSB. Export parameters include resolution, rational frame rate, time range, fit/background/alpha policy, deterministic trigger state, and audio mix.
+OSBX renders directly to video without first reducing the scene to standard OSB, retaining shear and matrices. The owner approved these profiles on **2026-10-31** (VID-0 / T-155, [answered question 16](chart-editor-plan/decisions/open-questions.md)). These are implementation requirements, not a claim that video export or the encoders are already available.
 
-The encoder boundary accepts timestamped frames and audio. The first implementation spike should compare:
+The encoder boundary accepts timestamped frames and audio through **linked FFmpeg libraries** (`libavcodec`, `libavformat`, `libavutil`, `libswscale`, `libswresample`), behind a new `WORMEDIT_ENABLE_VIDEO_ENCODER` build option. Existing optional FFmpeg decoding does not imply encoding support; VID-2 adds the option and encoder dependencies. Linking reuses the existing dependency path and gives the export worker direct control of timestamps, errors and cancellation without managing frame/audio pipes. A packaged `ffmpeg` process is a fallback **only if Windows/macOS library packaging fails**, not a dependency discovered on the user's PATH. That fallback adds executable distribution, pipe ownership and process cancellation work; it must retain the same profiles and diagnostics and use an argument vector rather than a shell command built from asset paths. VID-2 records packaging evidence on Windows, macOS and Linux before selecting any fallback.
 
-- linked FFmpeg libraries (`libavcodec`, `libavformat`, `libavutil`, and scaling/resampling helpers);
-- a packaged or discovered `ffmpeg` executable receiving frames/audio through owned pipes.
+| Parameter | Approved v1 behavior |
+|---|---|
+| First profile | MP4, H.264 video + AAC audio when audio is selected. Prefer BSD OpenH264 when available; libx264 is permitted only in builds whose licence allows GPL. |
+| Second profile | WebM, VP9 video + Opus audio when audio is selected. |
+| Resolution, in both profiles | **1920×1080 default**; 3840×2160 (4K UHD), 1280×720 and 640×480 (osu! storyboard native) also offered, subject to verified encoder support below. |
+| Canvas fit | Preserve the 4:3 canvas; pillarbox into 16:9 without stretching or cropping. |
+| Frame rate | Exact rational 30/1 or 60/1 fps. Frame `n` samples scene time `range_start + n × denominator / numerator`; derive timestamps from the index, never repeated rounded increments. |
+| Background/alpha | Opaque black; no alpha output in v1. |
+| Audio mix | None or song only. OSBX-10 exposes Sample cues; mixing them into video remains unsupported. |
+| Conditional layers | Shared Pass, Fail or Neither choice, default Pass. Never include both conditional layers; Neither omits both. StepMania exports use the same choice owned by SB-13. |
+| Range | Whole song or the selected time range from the timeline. |
 
-The choice depends on Windows/macOS/Linux packaging, licensing, encoder availability, cancellation, diagnostics, and build complexity. Process invocation uses an argument vector rather than constructing a shell command from asset paths.
+Preview and export share one time origin for song audio offset, storyboard samples, frame timestamps and export range. Cancellation must not leave a partial file presented as a successful render.
 
-Preview and export share one time origin for chart audio offset, storyboard samples, frame timestamps, and export range. Cancellation must not leave a partial file presented as a successful render.
+### Encoder availability and 4K acceptance (VID-2)
+
+Profile approval is distinct from encoder availability. [FFmpeg n7.1.1's encoder documentation](https://github.com/FFmpeg/FFmpeg/blob/n7.1.1/doc/encoders.texi) requires explicit `--enable-libopenh264` configuration; finding FFmpeg libraries for decoding is insufficient. VID-2 must enumerate the actual linked encoders and muxers, open each selected configuration, and refuse unavailable codec/container/resolution/frame-rate/audio combinations before rendering or publishing output. Record the FFmpeg/OpenH264 versions, enabled encoders and platform packaging results; do not silently substitute a codec, lower resolution or lower frame rate.
+
+For 3840×2160 H.264, 2160p30 needs at least **level 5.1** and 2160p60 needs **level 5.2**. [OpenH264 v2.6.0's README](https://github.com/cisco/openh264/blob/v2.6.0/README.md#encoder-features) advertises encoder support through level 5.2. Its [level table](https://github.com/cisco/openh264/blob/v2.6.0/codec/common/src/common_tables.cpp#L331-L354) allows 36,864 macroblocks/frame at both levels, with 983,040 macroblocks/second at 5.1 and 2,073,600 at 5.2. UHD requires 32,400 macroblocks/frame: 972,000/second at 30 fps and 1,944,000/second at 60 fps. These limits support the level requirements; they do not prove that a particular packaged build can encode either configuration.
+
+VID-2 must render and probe both UHD frame rates with the packaged OpenH264 wrapper, checking dimensions, signalled H.264 level, frame count, duration and audio synchronization. Keep frame skipping disabled so the encoder cannot meet its bitrate by dropping requested frames ([FFmpeg n7.1.1's wrapper](https://github.com/FFmpeg/FFmpeg/blob/n7.1.1/libavcodec/libopenh264enc.c#L58-L67) exposes `allow_skip_frames`, default false). If a configuration fails, offer that 4K configuration through WebM VP9 only, or also through a verified libx264 encoder only in a GPL-compatible build; explicitly record which combinations each package supports. If no permitted encoder supports the selection, refuse it with an actionable diagnostic. Keep 4K in both approved profiles as the product target; a package limitation must be visible rather than presented as full profile support. VP9 at 4K is expected to encode slowly; the export UI should anticipate long renders and retain progress and cancellation.
 
 ## Validation and tests
 
 Validation rejects duplicate/missing IDs, missing assets/parents, cycles, cross-layer parenting, non-finite values, malformed matrices, wrong keyframe value shapes, invalid ranges, and invalid generated references.
+
+OSBX-1a implements structural validation of the typed core scene graph without Lua,
+filesystem access, evaluation or mutation. A malformed matrix has an arity other
+than six or a non-finite coefficient and rejects. Finite singular matrices are
+structurally valid in defaults and keys, without a warning: zero scale and
+component-wise interpolation may produce them. Consumers must handle
+noninvertibility safely rather than assuming every accepted matrix is invertible.
+
+Default configurable structural limits (`osbx_validation_options_t`) are 250,000
+nodes, 250,000 images, 250,000 transform operations and 500,000 keys in the entire
+document, 128 transform nesting levels (root operations have depth 1), 1,024 bytes
+per ID/reference/generator key, and 4,096 bytes per image/provenance path. IDs are
+nonempty UTF-8 without NUL; optional provenance text may be empty. Image paths
+must be project-relative without parent traversal, drive prefixes or backslashes;
+validation checks their spelling, not file existence. Keys within each transform
+or property track must have strictly increasing signed integer millisecond times.
+Exceeding a structural count or nesting budget stops traversal with a typed error.
+
 
 It also rejects duplicate measure IDs, invalid BMS measure-length decimal/fraction strings, invalid meter numerators or denominators, an explicit meter that disagrees with the supplied length, zero/negative/non-finite or overflowing numeric lengths, a rationalization that exceeds fixed iteration/denominator/error limits, non-integral measure capacities, rows outside `[0, capacity)`, `row = capacity` boundary aliases, chart-level timing descriptors nested inside a measure, missing cross-measure anchors, a requested BMSON resolution that would create fractional pulses, malformed osu! sample descriptors, invalid BMS base-36 WAV indices, missing source-chart contexts, unsafe direct paths outside declared project assets, conflicting explicit slots, exhausted target resource spaces, and incompatible attempts to reuse resources with different slice or target semantics.
 
@@ -482,17 +652,38 @@ Required regression coverage:
 - keyframe editing, preview/apply/cancel, visual overrides, regeneration conflicts, undo/redo;
 - fixed-seed Lua generation from structured MIDI;
 - deterministic parametric SV/`SCROLLS`/`SPEEDS` recipes, snapped endpoint/whole-range dragging, stable multiplicative overlap composition, enable/disable/reorder, ordered post-processing, normalization against selected existing segments, impulses and finite-pulse export compilation, save/reload without sampled point clouds, stale preview detection, and preview/apply/cancel;
-- standard OSB exact/baked/rasterized/rejected export paths;
+- standard OSB exact/baked/rejected export paths, bake error/key limits, shear/skew/matrix refusal including ancestry and implicit hierarchy shear, stable-ID collision rejection, and no partial writes;
 - identical scene-evaluation snapshots for preview and offline rendering timestamps;
 - short video renders probed for frame count, duration, and audio synchronization on Windows, macOS, and Linux.
 
-## Open specification questions
+## Settled OSBX 0.1 conventions
 
-- Final extensions and entry-point naming for storyboard and chart modules. `project.lua` is adopted by T-186; its initial generator workflow is specified above.
-- Canonical generated-Lua formatting and the boundary between editable declarations and procedural code.
-- Exact typed forms for reusable clips, loops, and triggers.
-- Whether matrix tracks should add an explicit decomposed interpolation mode.
-- Standard OSB bake error metric, sample limit, and rasterization policy.
-- Initial blend modes and video export profiles.
-- How project overrides should be serialized and merged after regeneration.
-- Default parametric sampling tolerances/point caps and which targets, if any, should receive a standard finite-pulse approximation for impulses.
+The owner accepted all ten defaults on 2026-10-31 (OSBX-0 / T-180), then amended the OSB export rule to refuse shear and matrices. These decisions settle the former specification questions; they do not imply that the dependent features are implemented.
+
+1. **Modules:** `*.osbx.lua` for storyboards and `*.chart.lua` for charts; each file is its own entry point, optionally included from the already adopted `project.lua` (OSBX-5/6).
+2. **Clips:** `clip { id, ops, tracks }`, instanced with `start`, `time_scale`, `params` (OSBX-1b).
+3. **Loops/triggers:** `loop { start, count, keys }`, `trigger { name, from, to, keys }` (OSBX-1c only, off the critical path).
+4. **Matrices:** component-wise key interpolation only, with no decomposed mode (OSBX-2).
+5. **Blend modes:** `normal`, `additive`; renderer support is required, and any reduction to normal-only needs an owner decision (OSBX-1a/3).
+6. **OSB baking:** the [compatibility export](#standard-osb-compatibility-export) limits apply only to shear-free motion. Skew or raw matrix ops on the sprite or in its ancestry, and implicit hierarchy shear always block `.osb`; video and StepMania retain them. No rasterization in 0.1 (OSBX-7).
+7. **Generated source/overrides:** one call per line, two-space indent; per-object JSON patches keyed by stable ID, with manual conflict resolution. Recorded for later work, outside screen v1 overrides.
+8. **Parametric sampling:** adaptive, tolerance 0.002, max_points 256; impulses require an explicit finite box. Existing native sampling defaults and impulse behavior differ as documented above; no code changes are made by this decision.
+9. **Export identity:** string OSBX node IDs map to OSB `uint64 stable_id = FNV-1a-64(node ID path)`; collisions reject (OSBX-7).
+10. **Media node boundaries:** complete Animation metadata and Sample cues use their shared canonical query owners. Incomplete placeholders and unsupported phase/effect/geometry compositions refuse. OSBX Sample playback and video/StepMania media-node support remain outside OSBX-10.
+
+Video profiles belong to the separate VID-0 decision and question 16, not these OSBX conventions. SB-13 provides the fixed preview layer selector; custom simulation remains deferred.
+
+
+## Current temporal and media execution boundaries
+
+Native migrations remain separate: 37→38 adds typed temporal programs; 38→39 adds optional Animation/Sample payloads. Older schemas refuse future fields even when null/empty; current metadata is strict. Scenarios, compiled indexes, clocks and arenas are never persisted.
+
+Loop keys are nonnegative, strictly ordered relative milliseconds. Count is 1..UINT32_MAX and the period is the last key time; a sole key at0 is constant from start, empty blocks refuse. Before the first key, fallback applies. Later-iteration gaps hold the previous final key, and the final iteration stays held. Root and program segments compete by latest effective start; programs win root ties, later authored programs win program ties. Trigger windows include their endpoints; the latest eligible direct firing whose first key has started restarts that block. Supplied source-song firing times map through the existing exact clip clock. No broad HitSound-family or gameplay inference is performed.
+
+Exact symbolic OSB L/T output is conservative: a flat canonical Sprite with one numeric program/property, static remaining properties, supported native easing, no parent/clip/lifetime or competing root keys, and bounded canonical transform stacks. T additionally needs a finite activation window and first key at0. Actual emitted text is reparsed and active relative reconstruction checked; T153's ignored/inactive trigger sample is never proof. Other loops use bounded finite-span baking; trigger-dependent baking requires an explicitly sealed scenario (including intentional empty) and finite span, otherwise it refuses. This is a bounded reconstruction contract, not an engine certification. Selected temporal StepMania actors refuse before sidecars through the existing nonblocking chart advisory route.
+
+An Animation's epoch is its own explicit lifetime beginning, otherwise zero. Final-extension frame paths share one canonical helper and bounded exact binary64/rational selection; Once saturates at the final frame. Lua's virtual-file form freezes every actual numbered image eagerly through the existing asset owner, and a complete template cannot later be changed by the generic image setter. Ordinary static image declarations retain their strict immediate read. No live metadata handle is returned.
+
+The file-free media plan owns concrete frame paths, raw Sample sources and integer indices, precharging aggregate file/storage/work bounds before enumeration. Pure conversion and filesystem publication consume this same plan. Every frame gets a real source receipt/probe and must have provably compatible dimensions. Virtual template geometry is never a physical source receipt. Samples stage through the existing atomic publication/ownership/progress/rollback transaction, separately from authored-event deduplication.
+
+OSB Animation proof independently reparses frame metadata, exact delay and the emitted earliest command epoch; max_digits10 alone is not phase proof. Missing assets, incompatible dimensions, unsupported phase/clip/program/lifetime/shear semantics refuse atomically. Sample output independently verifies time/layer/path/volume and preserves authored duplicates. Non-inert Sample/ancestor effects refuse, rather than silently bypassing clocks or scenarios. Video refuses both new media kinds before load/encode, StepMania keeps its explicit media-kind advisory refusal, OSBX cuts/reverse conversion stay guarded, and no new audio playback or mixer is introduced.

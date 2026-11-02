@@ -9561,6 +9561,9 @@ TEST_CASE("Project rating popover explains invalid input and cancels on revision
     chart_reorder_fixture_t f;
     select_two_project_charts(f.harness);
     click_label(f.harness, "Set rating…");
+    click_label(f.harness, "Unset rating");
+    click_label(f.harness, "Cancel");
+    click_label(f.harness, "Set rating…");
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
     text.text.text = "bad";

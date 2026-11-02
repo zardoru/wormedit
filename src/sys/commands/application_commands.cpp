@@ -67,6 +67,7 @@ constexpr command_name_t command_names[]{
     {"navigation.go_to_sound", application_command_kind_t::navigation_go_to_sound},
     {"view.open_layers", application_command_kind_t::view_open_layers},
     {"document.export_output_group", application_command_kind_t::document_export_output_group},
+    {"document.export_storyboard_video", application_command_kind_t::document_export_storyboard_video},
     {"semantic_layer.create", application_command_kind_t::semantic_layer_create},
     {"view.toggle_sounds", application_command_kind_t::view_toggle_sounds},
     {"edit.toggle_quantize_preview", application_command_kind_t::edit_toggle_quantize_preview},

@@ -1,11 +1,18 @@
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/formats/conversion_publication.h>
+#include "../core/text_util.h"
+#include "../core/checked_math.h"
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/core/timing.h>
+#include <wormedit/core/rational.h>
 
 #include <algorithm>
 #include <set>
+#include <map>
+#include <cmath>
+#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -84,7 +91,8 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
              std::ranges::find(group.charts, *output.chart) == group.charts.end())) {
             return "Converted output has an invalid target, chart, or filename.";
         }
-        const auto relative = file_path ? group.relative_output_path : output_directory / suggested;
+        const auto relative = file_path && (output.chart || converted.outputs.size() == 1)
+                                  ? group.relative_output_path : output_directory / suggested;
         std::string error;
         if (!is_valid_relative(relative) || !destinations.insert(relative).second ||
             !is_safe_existing_components(project_directory, relative, false, error)) {
@@ -105,10 +113,10 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
 auto append_generated_file(const std::filesystem::path& name,
     const std::filesystem::path& project_directory, const std::filesystem::path& directory,
     bool overwrite, conversion_publication_plan_payload_t& plan,
-    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    std::set<std::filesystem::path>& destinations, bool typed_nested = false) -> std::optional<std::string> {
     const auto relative = directory / name;
     std::string error;
-    if (!is_valid_relative(name) || name.has_parent_path() ||
+    if (!is_valid_relative(name) || (typed_nested ? !conversion_publication_plan_payload_t::can_track_path(name) : name.has_parent_path()) ||
         !destinations.insert(relative).second ||
         !is_safe_existing_components(project_directory, relative, false, error))
         return error.empty() ? "Generated asset filenames collide or are invalid." : error;
@@ -117,6 +125,37 @@ auto append_generated_file(const std::filesystem::path& name,
         return "Generated asset exists and overwrite is disabled.";
     if (fs_error) return "Could not inspect generated asset destination.";
     plan.generated_files.push_back(relative);
+    return std::nullopt;
+}
+
+auto validate_declared_copy_promises(const conversion_result_t& converted) -> std::optional<std::string> {
+    std::map<asset_id_t, std::string> hashes;
+    for (const auto& copy : converted.asset_copies) {
+        if (!copy.expected_hash) continue;
+        if (!copy.asset || !text_util::is_sha256_digest(*copy.expected_hash)) return "Invalid frozen audio copy receipt.";
+        const auto hash = text_util::ascii_lowercase(*copy.expected_hash);
+        const auto [found, inserted] = hashes.emplace(copy.asset, hash);
+        if (!inserted && found->second != hash) return "One audio asset has conflicting frozen copy hashes.";
+    }
+    for (const auto& copy : converted.asset_copies)
+        if (const auto found = hashes.find(copy.asset); found != hashes.end() &&
+            (!copy.expected_hash || !text_util::ascii_iequal(found->second, *copy.expected_hash)))
+            return "An audio copy alias omits or changes its frozen content promise.";
+    return {};
+}
+
+auto append_generated_copies(const std::filesystem::path& project_directory,
+    const std::filesystem::path& directory, const conversion_request_t& request,
+    const conversion_result_t& converted, conversion_publication_plan_payload_t& plan,
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    for (const auto& copy : converted.asset_copies) {
+        const auto staged = copy.expected_hash && std::ranges::any_of(request.staged_assets, [&](const auto& item) {
+            return item.asset == copy.asset && item.relative_path == copy.relative_path;
+        });
+        if (!staged)
+            if (auto failure = append_generated_file(copy.relative_path, project_directory, directory,
+                    request.overwrite, plan, destinations, copy.expected_hash.has_value())) return failure;
+    }
     return std::nullopt;
 }
 
@@ -136,10 +175,8 @@ auto append_generated_files(const std::filesystem::path& project_directory,
     for (const auto& name : converted.silent_files)
         if (auto failure = append_generated_file(name, project_directory, directory,
                 request.overwrite, plan, destinations)) return failure;
-    for (const auto& copy : converted.asset_copies)
-        if (auto failure = append_generated_file(copy.relative_path, project_directory, directory,
-                request.overwrite, plan, destinations)) return failure;
-    return std::nullopt;
+    if (auto failure = validate_declared_copy_promises(converted)) return failure;
+    return append_generated_copies(project_directory, directory, request, converted, plan, destinations);
 }
 
 auto validate_pending_assets(const conversion_request_t& request,
@@ -245,7 +282,325 @@ auto append_discovered_asset(const song_document_t& song, const output_group_t& 
     return {};
 }
 
+auto has_storyboard_path_conflict(const std::set<std::filesystem::path>& destinations,
+    const std::filesystem::path& relative) -> bool {
+    const auto name = relative.generic_string();
+    const auto next = destinations.lower_bound(relative);
+    if (next != destinations.end() && (*next == relative || next->generic_string().starts_with(name + "/"))) return true;
+    for (auto parent = relative.parent_path(); !parent.empty(); parent = parent.parent_path()) {
+        if (destinations.contains(parent)) return true;
+        if (parent == parent.root_path()) break;
+    }
+    return false;
+}
+struct storyboard_media_context_t {
+    const std::filesystem::path& project_directory;
+    const output_group_t& group;
+    const conversion_request_t& request;
+    std::set<std::filesystem::path>& destinations;
+    auto append_file(const std::filesystem::path& image, const project_path_copy_request_t* prepared,
+        std::vector<std::filesystem::path>& output) const -> std::optional<std::string> {
+        if (!conversion_publication_plan_payload_t::can_track_path(image))
+            return "Storyboard media has an unsafe package path.";
+        if (!prepared || !prepared->expected_source)
+            return "Storyboard media has no prepared source receipt: " + image.string();
+        const auto source = inspect_project_path_source(*prepared);
+        if (!source) return source.error().message;
+        const auto directory = group.destination_kind == output_destination_kind_t::file
+            ? group.relative_output_path.parent_path() : group.relative_output_path;
+        const auto relative = directory / image;
+        if (has_storyboard_path_conflict(destinations, relative))
+            return "Storyboard media collides with another package file: " + image.string();
+        std::string error;
+        if (!is_safe_existing_components(project_directory, relative, false, error)) return error;
+        std::error_code status;
+        if (std::filesystem::exists(project_directory / relative, status) && !request.overwrite)
+            return "Storyboard media exists and overwrite is disabled: " + image.string();
+        if (status) return "Could not inspect storyboard media destination.";
+        destinations.insert(relative);
+        output.push_back(relative);
+        return std::nullopt;
+    }
+    auto append(std::span<const std::filesystem::path> files,
+        std::span<const project_path_copy_request_t> sources,
+        std::vector<std::filesystem::path>& output) const -> std::optional<std::string> {
+        const auto maximum = osbx_validation_options_t{}.maximum_images;
+        if (files.size() > maximum - std::min(destinations.size(), maximum) || sources.size() > maximum)
+            return "Storyboard media count exceeds its bounds.";
+        std::map<std::filesystem::path, const project_path_copy_request_t*> by_path;
+        for (const auto& source : sources) {
+            const auto [position, inserted] = by_path.emplace(source.relative_path, &source);
+            if (!inserted && position->second->expected_source != source.expected_source)
+                return "Storyboard media has conflicting source receipts.";
+        }
+        for (const auto& image : files) {
+            const auto found = by_path.find(image);
+            if (auto failure = append_file(image, found == by_path.end() ? nullptr : found->second, output)) return failure;
+        }
+        return std::nullopt;
+    }
+};
+
+auto append_storyboard_images(const std::filesystem::path& project_directory,
+    const output_group_t& group, const conversion_request_t& request,
+    const conversion_result_t& converted, conversion_publication_plan_payload_t& plan,
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    const storyboard_media_context_t media{project_directory, group, request, destinations};
+    if (auto failure = media.append(converted.storyboard_images, request.osbx_image_sources, plan.storyboard_images)) return failure;
+    return media.append(converted.storyboard_samples, request.osbx_sample_sources, plan.storyboard_samples);
+}
+
+auto append_storyboard_files(const std::filesystem::path& project_directory,
+    const output_group_t& group, const conversion_request_t& request,
+    const conversion_result_t& converted, conversion_publication_plan_payload_t& plan,
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    const auto directory = group.destination_kind == output_destination_kind_t::file
+        ? group.relative_output_path.parent_path() : group.relative_output_path;
+    for (std::size_t index = 0; index < converted.storyboard_files.size(); ++index) {
+        const auto& file = converted.storyboard_files[index];
+        const auto relative = directory / file.relative_path;
+        if (!conversion_publication_plan_payload_t::can_track_path(file.relative_path))
+            return "Native actor has an unsafe package path";
+        const auto name = relative.generic_string();
+        if (std::ranges::any_of(destinations, [&](const auto& path) {
+            const auto existing = path.generic_string();
+            return name == existing || name.starts_with(existing + "/") || existing.starts_with(name + "/");
+        })) return "Native actor collides with another package file";
+        std::string failure;
+        if (!is_safe_existing_components(project_directory, relative, false, failure)) return failure;
+        std::error_code error;
+        if (std::filesystem::exists(project_directory / relative, error) && !request.overwrite)
+            return "Native actor file exists and overwrite is disabled";
+        if (error) return "Cannot inspect native actor destination";
+        destinations.insert(relative);
+        plan.storyboard_files.push_back({.output_index = index, .project_relative_path = relative});
+    }
+    return std::nullopt;
+}
+
+auto build_storyboard_playback_span(const song_document_t& song, const conversion_request_t& request)
+    -> result_t<osbx_osb_span_t, std::string> {
+    long double begin = 0, end = 0;
+    bool selected = false;
+    for (const auto* chart : song.read_charts()) {
+        if (request.chart && chart->id != *request.chart) continue;
+        if (!request.charts.empty() && !std::ranges::contains(request.charts, chart->id)) continue;
+        const auto timing = timing_index_t::from(*chart);
+        if (!timing.value) return std::unexpected("OSBX playback timing could not be built.");
+        const auto first = timing.value->seconds_at(0, timing_boundary_side_t::before_delays);
+        const auto last = timing.value->seconds_at(timing.value->total_rows, timing_boundary_side_t::after_stops);
+        if (!first || !last) return std::unexpected("OSBX playback endpoints are unavailable.");
+        begin = std::min(begin, to_long_double(*first.seconds) * 1000);
+        end = std::max(end, to_long_double(*last.seconds) * 1000);
+        selected = true;
+    }
+    for (const auto& resource : song.resources) {
+        if (!resource.has_role(resource_role_t::music)) continue;
+        const auto* audio = song.find_audio_asset(resource.asset);
+        if (audio && audio->stream.frame_count && audio->stream.sample_rate)
+            end = std::max(end, static_cast<long double>(*audio->stream.frame_count) *
+                                  1000 / audio->stream.sample_rate);
+    }
+    if (!selected || !std::isfinite(begin) || !std::isfinite(end) ||
+        std::floor(begin) < std::numeric_limits<std::int64_t>::min() ||
+        std::ceil(end) > std::numeric_limits<std::int64_t>::max())
+        return std::unexpected("OSBX playback span is unavailable or outside millisecond limits.");
+    return osbx_osb_span_t{static_cast<std::int64_t>(std::floor(begin)),
+                           static_cast<std::int64_t>(std::ceil(end))};
+}
+
+auto storyboard_source_copy(std::string_view file, const std::filesystem::path& directory)
+    -> result_t<project_path_copy_request_t, std::string> {
+    auto normalized = std::string{file};
+    std::ranges::replace(normalized, '\\', '/');
+    const auto path = text_util::path_from_utf8(normalized).lexically_normal();
+    project_path_copy_request_t copy{.source_directory = directory, .relative_path = path};
+    const auto source = inspect_project_path_source(copy);
+    if (!source) return std::unexpected(source.error().message);
+    copy.expected_source = project_asset_copy_receipt_t::from(path, *source,
+        project_asset_copy_phase_t::copied).published_identity;
+    if (!copy.expected_source) return std::unexpected("Storyboard source could not be identified");
+    return copy;
+}
+auto probe_storyboard_image(const osbx_image_t& image, const project_path_copy_request_t& copy,
+    conversion_request_t& request, const export_image_probe_t& probe, std::stop_token stop) -> std::optional<std::string> {
+    if (!probe) return "OSBX export requires image decoding support to validate image dimensions.";
+    if (stop.stop_requested()) return "OSBX export cancelled before image preparation.";
+    const auto source = inspect_project_path_source(copy);
+    if (!source) return source.error().message;
+    const auto decoded = probe(*source);
+    if (!decoded) return "OSBX image " + image.id + ": " + decoded.error();
+    if (!inspect_project_path_source(copy)) return "OSBX image changed during preparation: " + image.id;
+    request.osbx_image_sizes.push_back({.image_id = image.id,
+        .width = decoded->first, .height = decoded->second, .file = image.file});
+    return std::nullopt;
+}
+auto prepare_storyboard_image(const osbx_image_t& image, conversion_request_t& request,
+    const std::filesystem::path& source_directory, const export_image_probe_t& probe,
+    std::stop_token stop) -> std::optional<std::string> {
+    if (!probe) return "OSBX export requires image decoding support to validate image dimensions.";
+    if (stop.stop_requested()) return "OSBX export cancelled before image preparation.";
+    auto copy = storyboard_source_copy(image.file, source_directory);
+    if (!copy) return "OSBX image " + image.id + ": " + copy.error();
+    if (auto failure = probe_storyboard_image(image, *copy, request, probe, stop)) return failure;
+    request.osbx_image_sources.push_back(std::move(*copy));
+    return std::nullopt;
+}
+class storyboard_media_sources_t {
+    const std::filesystem::path& directory_;
+    std::stop_token stop_;
+    std::uintmax_t remaining_bytes_{conversion_publication_options_t{}.maximum_existing_bytes};
+    std::size_t remaining_storage_;
+    std::set<std::filesystem::path> counted_;
+    auto reserve_storage(std::string_view file) -> bool {
+        const auto overhead = sizeof(project_path_copy_request_t) + sizeof(std::filesystem::path) + sizeof(std::size_t) * 4;
+        if (overhead > remaining_storage_) return false;
+        const auto maximum = (remaining_storage_ - overhead) / sizeof(std::filesystem::path::value_type);
+        auto units = directory_.native().size();
+        if (units > maximum) return false;
+        for (int copy = 0; copy < 3; ++copy)
+            if (!checked_math::account_size(units, file.size(), maximum)) return false;
+        remaining_storage_ -= overhead + units * sizeof(std::filesystem::path::value_type);
+        return true;
+    }
+  public:
+    storyboard_media_sources_t(const std::filesystem::path& directory, std::stop_token stop, std::size_t plan_bytes)
+        : directory_(directory), stop_(stop), remaining_storage_(osbx_validation_options_t{}.maximum_expanded_storage_bytes -
+            std::min(plan_bytes, osbx_validation_options_t{}.maximum_expanded_storage_bytes)) {}
+    auto capture(std::string_view file, std::vector<project_path_copy_request_t>& output) -> std::optional<std::string> {
+        if (stop_.stop_requested()) return "OSBX media preparation cancelled";
+        if (!reserve_storage(file)) return "OSBX media source storage exceeds its bounds";
+        auto copy = storyboard_source_copy(file, directory_);
+        if (!copy) return copy.error();
+        if (!copy->expected_source) return "OSBX media source receipt is missing";
+        if (counted_.insert(copy->relative_path).second) {
+            if (copy->expected_source->size > remaining_bytes_) return "OSBX media source bytes exceed the publication bound";
+            remaining_bytes_ -= copy->expected_source->size;
+        }
+        output.push_back(std::move(*copy));
+        return std::nullopt;
+    }
+};
+using storyboard_image_dimensions_t = std::map<std::pair<std::string,std::string>, std::pair<std::uint32_t,std::uint32_t>>;
+auto animation_dimensions(const storyboard_animation_assets_t& animation, const storyboard_media_plan_t& media,
+    const storyboard_image_dimensions_t& sizes) -> result_t<std::pair<std::uint32_t,std::uint32_t>,std::string> {
+    std::optional<std::pair<std::uint32_t,std::uint32_t>> dimensions;
+    for (const auto index : animation.frames) {
+        if (index >= media.images.size()) return std::unexpected("OSBX Animation frame receipt index is invalid");
+        const auto& image = media.images[index];
+        const auto found = sizes.find(std::pair{image.id,image.file});
+        if (found == sizes.end() || found->second.first == 0 || found->second.second == 0)
+            return std::unexpected("OSBX Animation dimensions are unavailable");
+        if (dimensions && dimensions != found->second)
+            return std::unexpected("OSBX Animation frames have differing dimensions; export cannot certify their shared metric");
+        dimensions = found->second;
+    }
+    if (!dimensions) return std::unexpected("OSBX Animation has no concrete frames");
+    return *dimensions;
+}
+auto validate_animation_dimensions(const storyboard_media_plan_t& media, conversion_request_t& request)
+    -> std::optional<std::string> {
+    storyboard_image_dimensions_t sizes;
+    for (const auto& size : request.osbx_image_sizes) sizes.emplace(std::pair{size.image_id, size.file}, std::pair{size.width,size.height});
+    for (const auto& animation : media.animations) {
+        const auto dimensions = animation_dimensions(animation, media, sizes);
+        if (!dimensions) return dimensions.error();
+        const auto key = std::pair{animation.image.id,animation.image.file};
+        if (const auto base = sizes.find(key); base != sizes.end() && base->second != *dimensions)
+            return "OSBX Animation base/frame dimensions conflict";
+        // Geometry scope proven from every frame, never a virtual file receipt.
+        request.osbx_image_sizes.push_back({.image_id = animation.image.id, .width = dimensions->first,
+            .height = dimensions->second, .file = animation.image.file});
+    }
+    return std::nullopt;
+}
+auto verify_storyboard_receipts(std::span<const project_path_copy_request_t> sources, std::stop_token stop)
+    -> std::optional<std::string> {
+    for (const auto& source : sources) {
+        if (stop.stop_requested()) return "OSBX media preparation cancelled";
+        if (!inspect_project_path_source(source)) return "OSBX media changed during preparation";
+    }
+    return std::nullopt;
+}
+auto prepare_storyboard_media(const storyboard_media_plan_t& media, conversion_request_t& request,
+    const std::filesystem::path& source_directory, const export_image_probe_t& probe,
+    std::stop_token stop) -> std::optional<std::string> {
+    if (!media.images.empty() && !probe) return "OSBX export requires image decoding support to validate image dimensions.";
+    storyboard_media_sources_t sources{source_directory, stop, media.logical_storage_bytes};
+    for (const auto& image : media.images)
+        if (auto failure = sources.capture(image.file, request.osbx_image_sources)) return failure;
+    for (const auto& sample : media.samples)
+        if (auto failure = sources.capture(text_util::path_utf8(sample), request.osbx_sample_sources)) return failure;
+    // All physical sources and byte bounds are admitted before invoking a decoder.
+    for (std::size_t i = 0; i < media.images.size(); ++i)
+        if (auto failure = probe_storyboard_image(media.images[i], request.osbx_image_sources[i], request, probe, stop)) return failure;
+    if (auto failure = validate_animation_dimensions(media, request)) return failure;
+    if (auto failure = verify_storyboard_receipts(request.osbx_image_sources, stop)) return failure;
+    return verify_storyboard_receipts(request.osbx_sample_sources, stop);
+}
+
+auto prepare_native_scene_images(const storyboard_document_t& storyboard, conversion_request_t& request,
+    const std::filesystem::path& source_directory, const export_image_probe_t& probe,
+    std::stop_token stop) -> std::optional<std::string> {
+    const auto prepared = osbx_lua_prepared_scope_t::find(*storyboard.osbx);
+    const auto& scene = prepared ? *prepared : *storyboard.osbx;
+    std::set<std::string> references;
+    for (const auto& node : scene.nodes) if (node.kind == osbx_node_kind_t::sprite && node.image) references.insert(*node.image);
+    for (const auto& image : scene.images) {
+        if (!references.contains(image.id)) continue;
+        const auto failure = prepare_storyboard_image(image, request, source_directory, probe, stop);
+        if (stop.stop_requested()) return "Native storyboard preparation cancelled";
+        if (!failure) continue;
+        for (const auto& node : scene.nodes) {
+            if (node.image != image.id) continue;
+            request.stepmania_storyboard_report.push_back({
+                .node_id = std::to_string(storyboard.id.value) + "/" + node.id, .reason = *failure});
+        }
+    }
+    return std::nullopt;
+}
+
+
 } // namespace
+
+auto prepare_osu_storyboard_export(const song_document_t& song, conversion_request_t& request,
+    const std::filesystem::path& source_directory, const export_image_probe_t& probe,
+    std::stop_token stop) -> std::optional<std::string> {
+    if (request.target != format_family_t::osu_mania ||
+        std::ranges::none_of(song.storyboards, [](const auto& storyboard) { return storyboard.osbx.has_value(); }))
+        return std::nullopt;
+    request.osbx_image_sizes.clear();
+    request.osbx_image_sources.clear();
+    request.osbx_sample_sources.clear();
+    request.osbx_playback_span.reset();
+    const auto span = build_storyboard_playback_span(song, request);
+    if (!span) return span.error();
+    const auto media = storyboard_media_plan_t::from(song, {}, stop);
+    if (!media) return media.error();
+    if (auto failure = prepare_storyboard_media(*media, request, source_directory, probe, stop)) return failure;
+    request.osbx_playback_span = *span;
+    return std::nullopt;
+}
+
+auto prepare_stepmania_storyboard_export(const song_document_t& song, conversion_request_t& request,
+    const std::filesystem::path& source_directory, const export_image_probe_t& probe,
+    std::stop_token stop) -> std::optional<std::string> {
+    if (request.target != format_family_t::stepmania || !request.stepmania ||
+        request.stepmania->storyboard != stepmania_storyboard_mode_t::actors) return std::nullopt;
+    request.osbx_image_sizes.clear();
+    request.osbx_image_sources.clear();
+    request.osbx_sample_sources.clear();
+    request.osbx_playback_span.reset();
+    request.stepmania_storyboard_report.clear();
+    if (stop.stop_requested()) return "Native storyboard preparation cancelled";
+    const auto span = build_storyboard_playback_span(song, request);
+    if (span) request.osbx_playback_span = *span;
+    for (const auto& storyboard : song.storyboards) {
+        if (!storyboard.osbx) continue;
+        if (auto failure = prepare_native_scene_images(storyboard, request, source_directory, probe, stop)) return failure;
+    }
+    return std::nullopt;
+}
 
 auto staged_asset_discovery_t::from(const song_document_t& song, const output_group_t& group,
     const std::filesystem::path& project_directory, std::stop_token stop) -> staged_asset_discovery_outcome_t {
@@ -304,7 +659,12 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
         group.family != request.target || !converted || converted.outputs.empty()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "Project, output group, or conversion result is invalid."));
     }
-    if (group.destination_kind == output_destination_kind_t::file && converted.outputs.size() != 1) {
+    if (group.destination_kind == output_destination_kind_t::file && converted.outputs.size() != 1 &&
+        !(group.family == format_family_t::osu_mania && converted.outputs.size() == 2 &&
+          std::ranges::count_if(converted.outputs, [](const auto& output) { return output.chart.has_value(); }) == 1 &&
+          std::ranges::any_of(converted.outputs, [](const auto& output) {
+              return !output.chart && std::filesystem::path(output.suggested_filename).extension() == ".osb";
+          }))) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "A single chart filename cannot hold multiple outputs."));
     }
     const auto asset_directory = group.destination_kind == output_destination_kind_t::directory
@@ -333,6 +693,10 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
+    if (auto error = append_storyboard_files(project_directory, group, request, converted, plan, destinations))
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), *error));
+    if (auto error = append_storyboard_images(project_directory, group, request, converted, plan, destinations))
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), *error));
     return plan;
 }
 

@@ -10,6 +10,8 @@
 #include "sys/project/output_group_export.h"
 #include "sys/project/project_save_paths.h"
 #include "ui/frontend/file_jobs.h"
+#include "ui/frontend/storyboard.h"
+#include <wormedit/core/osbx_edit.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -19,22 +21,50 @@
 
 namespace wormedit::sys {
 
+using storyboard_import_completion_t = std::function<bool(const ui::storyboard_action_t&, const osbx_place_image_t&)>;
+struct storyboard_image_import_target_t {
+    ui::storyboard_action_t capture;
+    std::optional<osbx_resource_image_t> resource;
+    auto operator==(const storyboard_image_import_target_t&) const -> bool = default;
+};
+class storyboard_import_receipt_t {
+  public:
+    explicit storyboard_import_receipt_t(project_asset_copy_request_t request) : request_(std::move(request)) {}
+    ~storyboard_import_receipt_t();
+    storyboard_import_receipt_t(const storyboard_import_receipt_t&) = delete;
+    auto operator=(const storyboard_import_receipt_t&) -> storyboard_import_receipt_t& = delete;
+    [[nodiscard]] auto create_copy(std::stop_token) -> project_asset_copy_outcome_t;
+    [[nodiscard]] auto validate_link() const -> result_t<void, error_t<failure_code_t>>;
+    void mark_linked() { linked_ = true; }
+  private:
+    project_asset_copy_request_t request_;
+    std::optional<project_asset_copy_receipt_t> copy_;
+    std::optional<project_asset_copy_receipt_t::published_identity_t> validation_identity_;
+    bool linked_{};
+};
+struct resource_copy_result_t {
+    project_asset_copy_outcome_t copied;
+    std::optional<osbx_place_image_t> storyboard;
+    std::shared_ptr<storyboard_import_receipt_t> receipt;
+};
 struct resource_copy_identity_t {
     wormedit::asset_id_t asset;
     wormedit::document_stamp_t document;
     std::filesystem::path source_path;
     std::filesystem::path output_path;
     bool export_copy{};
+    std::optional<storyboard_image_import_target_t> storyboard;
     auto operator==(const resource_copy_identity_t&) const -> bool = default;
 };
 struct resource_copy_request_t {
     resource_copy_identity_t target;
     std::filesystem::path project_directory;
     std::filesystem::path relative_directory{default_project_asset_directory};
+    std::shared_ptr<storyboard_import_receipt_t> storyboard_receipt;
     auto operator==(const resource_copy_request_t&) const -> bool = default;
 };
 using resource_copy_job_t =
-    wormedit::async_job_t<resource_copy_request_t, wormedit::project_asset_copy_outcome_t,
+    wormedit::async_job_t<resource_copy_request_t, resource_copy_result_t,
                           resource_copy_identity_t>;
 using project_save_job_t = async_job_t<project_save_request_t, project_save_report_t, document_stamp_t>;
 
@@ -68,7 +98,8 @@ struct resource_copy_t {
                resource_copy_job_t::work_function_t work = copy_file)
         -> wormedit::async_job_start_outcome_t;
     auto poll(wormedit::document_history_t& history,
-              wormedit::workspace_controller_t& workspace) -> std::optional<std::string>;
+              wormedit::workspace_controller_t& workspace,
+              storyboard_import_completion_t storyboard = {}) -> std::optional<std::string>;
     void cancel();
 
 private:
@@ -96,6 +127,7 @@ public:
     [[nodiscard]] auto view() const -> ui::file_job_view_t;
     [[nodiscard]] auto confirmation_view() const -> output_export_confirmation_view_t;
     [[nodiscard]] auto scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
+    void bind_prepared_storyboards(std::shared_ptr<const std::vector<osbx_lua_prepared_scene_t>>, std::uint64_t session);
     auto start(const song_document_t& document, output_group_export_plan_t plan,
                std::filesystem::path asset_base,
                work_function_t work = run_output_group_export) -> start_outcome_t;
@@ -115,6 +147,7 @@ private:
         std::shared_ptr<std::optional<output_group_export_task_result_t>> receipt;
         std::shared_ptr<output_group_export_request_t> request;
         work_function_t work{};
+        std::optional<std::uint64_t> session;
     };
     struct confirmation_t {
         output_group_export_request_t request;
@@ -123,6 +156,8 @@ private:
         work_function_t work{};
     };
     notification_sink_t notifications_;
+    std::shared_ptr<const std::vector<osbx_lua_prepared_scene_t>> prepared_storyboards_;
+    std::optional<std::uint64_t> prepared_session_;
     std::shared_ptr<job_progress_t> progress_;
     bool cancelling_{};
     task_scheduler_t scheduler_{1, 1, background_scheduler_options()};

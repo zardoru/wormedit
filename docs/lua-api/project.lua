@@ -12,7 +12,9 @@
 -- Paths resolve relative to the including file. Cycles, missing files, absolute paths
 -- and canonical/symlink escapes outside the native project directory reject the batch.
 -- Modules returning API-v1 notes/layers contribute to one current-chart proposal;
--- stable keys must be unique across modules. Helper modules may return ordinary Lua values.
+-- stable keys must be unique across modules. Included chart and storyboard declarations
+-- join the same atomic preview. Storyboard keys must be unique across the bundle;
+-- node IDs remain local to each scene. Helper modules may return ordinary Lua values.
 -- The same returned proposal table is collected once, including a forwarded include result.
 -- @string path Relative Lua source path; no glob expansion.
 -- @return The included chunk's first return value (cached per canonical source file).

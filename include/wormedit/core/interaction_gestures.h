@@ -409,7 +409,8 @@ using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t
                                       proposal_t<pending_resource_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_editor_area_selection_t, document_stamp_t>,
                                       proposal_t<pending_space_range_selection_t, document_stamp_t>,
-                                      proposal_t<hold_gesture_t, document_stamp_t>>;
+                                      proposal_t<hold_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_osbx_edit_gesture_t, document_stamp_t>>;
 
 // A projection contains only render data; paint's visited cells stay in the capture.
 using active_gesture_preview_t = std::variant<
@@ -439,6 +440,8 @@ using active_gesture_preview_t = std::variant<
             return std::move(*range_preview);
         } else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, hold_gesture_t>)
             return proposal_t<hold_gesture_preview_t, document_stamp_t>{.stamp = proposal.stamp, .payload = hold_gesture_preview_t::from(proposal.payload)};
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_osbx_edit_gesture_t>)
+            return std::nullopt; // Storyboard projections read the document-owned payload directly.
         else return proposal;
     }, *active);
 }

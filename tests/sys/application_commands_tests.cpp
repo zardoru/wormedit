@@ -18,6 +18,9 @@
 #include "sys/commands/native_chart_edit_action.h"
 #include "sys/project/output_group_export.h"
 #include "sys/audio/transport_player_actions.h"
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_job.h>
+#endif
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>
@@ -1459,15 +1462,15 @@ TEST_CASE("Application semantic feedback follows successful binding and accepts 
 TEST_CASE("Application tab commands require applied switches and preserve repeated-tab behavior",
           "[sys][application_commands][route-parity]") {
     using namespace wormedit;
-    const auto mode = GENERATE(0, 1, 2); // same tab, disabled tab, stale binding
+    const auto mode = GENERATE(0, 1, 2); // same tab, Storyboard tab, stale binding
     TimingInsertFixture fixture;
     if (mode == 2) --fixture.workspace.document_revision;
     const auto revision = fixture.fixture.history.document.revision;
     const auto result = fixture.invoke(mode == 1 ? application_command_kind_t::workspace_open_storyboard
                                                  : application_command_kind_t::workspace_open_compose);
-    check_layer_command(result.value == (mode == 0));
-    check_layer_command(result.diagnostics.empty() == (mode == 0));
-    check_layer_command(fixture.workspace.active_tab == workspace_tab_t::compose);
+    check_layer_command(result.value == (mode != 2));
+    check_layer_command(result.diagnostics.empty() == (mode != 2));
+    check_layer_command(fixture.workspace.active_tab == (mode == 1 ? workspace_tab_t::storyboard : workspace_tab_t::compose));
     check_layer_command(fixture.fixture.history.document.revision == revision);
     check_layer_command(fixture.fixture.history.undo.empty());
     fixture.center.drain_inbox(notification_time_t{});
@@ -1475,8 +1478,7 @@ TEST_CASE("Application tab commands require applied switches and preserve repeat
     require_layer_command(entries.size() == 1);
     check_layer_command(entries.front().count == 1);
     check_layer_command(entries.front().source == notification_source_t::input);
-    check_layer_command(entries.front().message == (mode == 0 ? "Workspace tab changed."
-        : mode == 1 ? "storyboard editing is not available yet" : stale_action_message("Workspace action")));
+    check_layer_command(entries.front().message == (mode != 2 ? "Workspace tab changed." : stale_action_message("Workspace action")));
 }
 
 TEST_CASE("Application No layer command clears selection and disables other membership operations",
@@ -3498,6 +3500,45 @@ TEST_CASE("Project replacement resets the whole Tap assistant", "[sys][ownership
     views.project.tap_runtime.set_visible(true);
     views.project.tap_runtime.prepare_apply(project_view_reset_song(), false);
     check_transient_transport(!tap.apply_proposal());
+}
+
+TEST_CASE("Project replacement rebuilds borrowed OSBX preview indices at the same saved revision",
+          "[sys][ownership][project-view-reset][osbx]") {
+    using namespace wormedit;
+    auto original = document_history_t::from(project_view_reset_song());
+    original.document.storyboards = {{.id = storyboard_id_t{40}, .name = "Reopened",
+        .osbx = osbx_document_t{.images = {{.id = "image", .file = "missing.png"}},
+            .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite, .image = "image",
+                .ops = {{.id = "position", .kind = osbx_transform_kind_t::translate,
+                    .track = {.default_value = {10, 20}}}}}}}}};
+    auto reopened = document_history_t::from(original.document);
+    reopened.document.storyboards[0].osbx->nodes[0].ops[0].track.default_value[0] = 70;
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+#endif
+    editor_views_t views;
+    ui::player_preview_view_t view;
+    const auto populate = [&](const document_history_t& history) {
+        views.player_preview_presenter.populate(view, history, chart_id_t{1}, true,
+            player_preview_skin_t::mania, 0, 48'000, {}
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+            , image_job
+#endif
+        );
+    };
+    populate(original);
+    require_transient_transport(view.scene_available);
+    require_transient_transport(view.storyboard_sprites.size() == 1);
+    check_transient_transport(view.storyboard_sprites[0].transform[4] == 10);
+
+    views.begin_project_session();
+    populate(reopened);
+
+    require_transient_transport(view.scene_available);
+    require_transient_transport(view.storyboard_sprites.size() == 1);
+    check_transient_transport(view.storyboard_sprites[0].transform[4] == 70);
 }
 
 TEST_CASE("Project replacement closes and clears loaded chart import", "[sys][ownership][project-view-reset]") {

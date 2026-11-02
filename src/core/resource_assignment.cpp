@@ -1936,6 +1936,30 @@ auto stage_scoped_wav_import(document_command_transaction_t& transaction,
 }
 }
 
+auto resolve_bms_sample_reference(const song_document_t& song, const bms_wav_reference_t& reference)
+    -> result_t<std::pair<resource_entry_t, audio_asset_t>, error_t<failure_code_t>> {
+    if (!reference.is_valid() || !reference.source_chart || !song.read_chart(*reference.source_chart))
+        return std::unexpected(error_t{failure_code_t::not_found, "BMS sample source chart is unavailable"});
+    const auto resolve = [&](const song_document_t& catalog)
+        -> result_t<std::pair<resource_entry_t, audio_asset_t>, error_t<failure_code_t>> {
+        const auto slot = bms_wav_slot_value({.family = format_family_t::bms,
+            .identifier = reference.index, .namespace_name = "WAV"});
+        const auto owner = bms_wav_slot_owner(catalog, *slot);
+        const auto resource = std::ranges::find(catalog.resources, owner.resource, &resource_entry_t::id);
+        if (owner.ambiguous || resource == catalog.resources.end() || resource->missing)
+            return std::unexpected(error_t{failure_code_t::conflict, "BMS sample index is missing or ambiguous"});
+        const auto* asset = catalog.find_audio_asset(resource->asset);
+        if (!asset) return std::unexpected(error_t{failure_code_t::not_found, "BMS sample has no audio asset"});
+        return std::pair{*resource, *asset};
+    };
+    if (const auto* owner = song.find_bms_program(*reference.source_chart)) {
+        const auto projection = owner->build_projection();
+        if (!projection.value) return std::unexpected(error_t{failure_code_t::invalid_data, "BMS source projection failed"});
+        return resolve(projection.value->song());
+    }
+    return resolve(song);
+}
+
 auto bms_wav_slot_value(const target_resource_identity_t& identity) -> std::optional<std::size_t> {
     if (!is_bms_wav_identity(identity)) return std::nullopt;
     return decode_supported_wav_identifier(identity.identifier);
@@ -2034,17 +2058,16 @@ auto apply_primary_music_set(document_history_t& history,
     return relink_primary_music(history, *music, paths->second.value_or(paths->first), action);
 }
 
-auto apply_resource_asset_relink(document_history_t& history,
-                                 const relink_resource_asset_action_t& action)
-    -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+namespace {
+auto validate_resource_relink_path(const relink_resource_asset_action_t& action, document_command_result_t& result)
+    -> std::optional<std::filesystem::path> {
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
     if (path.empty() || path.filename().empty() || !text_util::is_valid_bounded_text(path_text, 4096) ||
         (path.has_root_name() && !path.is_absolute())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink path is empty, malformed, or too long");
-        return result;
+        return std::nullopt;
     }
     if (!path.is_absolute() &&
         std::ranges::any_of(path, [](const auto& component) {
@@ -2052,45 +2075,73 @@ auto apply_resource_asset_relink(document_history_t& history,
         })) {
         reject(result, diagnostic_code_t::invalid_id,
                "relative resource paths cannot escape the project directory");
-        return result;
+        return std::nullopt;
     }
-    const auto audio = history.document.find_audio_asset(action.asset);
-    const auto visual = std::ranges::find(history.document.visual_assets, action.asset,
-                                           &visual_asset_t::id);
-    if (!action.asset ||
-        (audio == nullptr &&
-         visual == history.document.visual_assets.end()) ||
-        (audio != nullptr &&
-         visual != history.document.visual_assets.end())) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource asset relink requires one known audio or image asset");
-        return result;
-    }
-    const auto current = audio != nullptr
-                             ? audio->source_path
-                             : visual->source_path;
-    if (current == path) {
-        return result;
-    }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    if (audio != nullptr) {
-        const auto index = static_cast<std::size_t>(audio -
-                                                    history.document.audio_assets.data());
-        proposed.audio_assets[index].source_path = path;
-        for (auto& chart : proposed.charts)
-            chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
-                if (reference.lexically_normal() == current.lexically_normal()) reference = path;
-            });
-        // The user pointed the asset at a file they chose, so its sounds are no longer missing.
-        for (auto& resource : proposed.resources)
-            if (resource.asset == action.asset) resource.missing = false;
-    } else {
-        const auto index = static_cast<std::size_t>(visual -
-                                                    history.document.visual_assets.begin());
-        proposed.visual_assets[index].source_path = path;
-    }
-    return transaction.commit("Relink resource asset");
+    return path;
+}
+void relink_audio_source(song_document_t& proposed, asset_id_t asset,
+    const std::filesystem::path& current, const std::filesystem::path& path) {
+    for (auto& chart : proposed.charts)
+        chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
+            if (reference.lexically_normal() == current.lexically_normal()) reference = path;
+        });
+    const auto retire = [asset](auto& event) {
+        if (event.sample_reference && event.sample_reference->bound_asset == asset &&
+            std::holds_alternative<audio_file_reference_t>(event.sample_reference->reference))
+            event.sample_reference.reset();
+    };
+    for (auto& chart : proposed.charts)
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) retire(note);
+            for (auto& event : measure.bgm_events) retire(event);
+        }
+    for (auto& resource : proposed.resources)
+        if (resource.asset == asset) resource.missing = false;
+}
+}
+auto stage_resource_asset_relink(document_command_transaction_t& transaction,
+    const relink_resource_asset_action_t& action) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t&) -> attempt_t<document_edit_effect_t> {
+        document_command_result_t result{.revision = transaction.current_document().revision, .diagnostics = {}};
+        const auto checked_path = validate_resource_relink_path(action, result);
+        if (!checked_path) return {.diagnostics = std::move(result.diagnostics)};
+        const auto& path = *checked_path;
+        const auto audio = transaction.current_document().find_audio_asset(action.asset);
+        const auto visual = std::ranges::find(transaction.current_document().visual_assets, action.asset,
+                                               &visual_asset_t::id);
+        if (!action.asset ||
+            (audio == nullptr &&
+             visual == transaction.current_document().visual_assets.end()) ||
+            (audio != nullptr &&
+             visual != transaction.current_document().visual_assets.end())) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "resource asset relink requires one known audio or image asset");
+            return {.diagnostics = std::move(result.diagnostics)};
+        }
+        const auto current = audio != nullptr
+                                 ? audio->source_path
+                                 : visual->source_path;
+        if (current == path) {
+            return {.value = document_edit_effect_t{.changed = false, .command_label = "Relink resource asset"}};
+        }
+        auto& proposed = transaction.document();
+        if (audio != nullptr) {
+            const auto index = static_cast<std::size_t>(audio -
+                                                        transaction.current_document().audio_assets.data());
+            proposed.audio_assets[index].source_path = path;
+            relink_audio_source(proposed, action.asset, current, path);
+        } else {
+            const auto index = static_cast<std::size_t>(visual -
+                                                        transaction.current_document().visual_assets.begin());
+            proposed.visual_assets[index].source_path = path;
+        }
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Relink resource asset"}};
+    });
+}
+auto apply_resource_asset_relink(document_history_t& history,
+    const relink_resource_asset_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction{history};
+    return transaction.finish_execution(stage_resource_asset_relink(transaction, action));
 }
 
 namespace {
@@ -2328,7 +2379,8 @@ auto prepare_assigned_bga_kinds(const song_document_t& document, chart_document_
 
 template <typename Current>
 auto assign_selected_resource(resource_assignment_scan_t& scan,
-    editor_selection_object_t object, Current& current, bool retained_sound_link) -> bool {
+    editor_selection_object_t object, Current& current, bool retained_sound_link,
+    std::optional<sample_reference_binding_t>* provenance = nullptr) -> bool {
     if (++scan.visited > scan.maximum_objects) {
         reject(scan.result, diagnostic_code_t::invalid_resolution,
                "resource assignment chart scan exceeds its configured cap");
@@ -2342,13 +2394,14 @@ auto assign_selected_resource(resource_assignment_scan_t& scan,
                "resource assignment target has an ambiguous typed identity");
         return false;
     }
-    if (current == scan.resource) return true;
+    if (current == scan.resource && (!provenance || !*provenance)) return true;
     if (retained_sound_link) {
         reject(scan.result, diagnostic_code_t::unsupported_feature,
                "edit the retained BMSON sound channel before changing its resource");
         return false;
     }
     current = scan.resource;
+    if (provenance) provenance->reset();
     scan.changed = true;
     return true;
 }
@@ -2359,11 +2412,11 @@ auto scan_resource_assignment_targets(chart_document_t& chart, resource_assignme
         for (auto& note : measure.notes)
             if (!assign_selected_resource(scan,
                     {editor_selection_object_kind_t::note, note.id}, note.sound,
-                    note.sound_channel_event.has_value())) return false;
+                    note.sound_channel_event.has_value(), &note.sample_reference)) return false;
         for (auto& event : measure.bgm_events)
             if (!assign_selected_resource(scan,
                     {editor_selection_object_kind_t::bgm_event, event.id}, event.sound,
-                    event.sound_channel_event.has_value())) return false;
+                    event.sound_channel_event.has_value(), &event.sample_reference)) return false;
     }
     for (auto& event : chart.bga_events)
         if (!assign_selected_resource(scan,

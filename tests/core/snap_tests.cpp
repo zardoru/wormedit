@@ -1,11 +1,44 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/storyboard_vocabulary.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
 #include <array>
+#include <limits>
 
 using namespace wormedit;
+
+namespace {
+void check_whole_and_tied_storyboard_times() {
+    CHECK(snap_storyboard_key_time({.milliseconds = 2}).value() == 2);
+    CHECK(snap_storyboard_key_time({.milliseconds = 2, .remainder = 1, .denominator = 2}).value() == 2);
+}
+} // namespace
+
+TEST_CASE("storyboard key snapping uses exact nearest milliseconds with earlier ties",
+          "[unit][core][snap][storyboard]") {
+    check_whole_and_tied_storyboard_times();
+    CHECK(snap_storyboard_key_time({.milliseconds = -2, .remainder = 1, .denominator = 2}).value() == -2);
+    CHECK(snap_storyboard_key_time({.milliseconds = -2, .remainder = 2, .denominator = 3}).value() == -1);
+    CHECK(snap_storyboard_key_time({.milliseconds = -2, .remainder = 1, .denominator = 3}).value() == -2);
+    CHECK(snap_storyboard_key_time({.milliseconds = 0, .remainder = 2, .denominator = 3}).value() == 1);
+    CHECK(snap_storyboard_key_time({.milliseconds = 0, .remainder = 2147483648u,
+        .denominator = 4294967295u}).value() == 1);
+}
+
+TEST_CASE("storyboard key snapping refuses invalid clocks and checked boundary overflow",
+          "[unit][core][snap][storyboard]") {
+    CHECK(snap_storyboard_key_time({.denominator = 0}).error() == failure_code_t::invalid_request);
+    CHECK(snap_storyboard_key_time({.remainder = 3, .denominator = 3}).error() == failure_code_t::invalid_request);
+    constexpr auto low = std::numeric_limits<std::int64_t>::min();
+    constexpr auto high = std::numeric_limits<std::int64_t>::max();
+    CHECK(snap_storyboard_key_time({.milliseconds = low, .remainder = 1, .denominator = 2}).value() == low);
+    CHECK(snap_storyboard_key_time({.milliseconds = low, .remainder = 2, .denominator = 3}).value() == low + 1);
+    CHECK(snap_storyboard_key_time({.milliseconds = high, .remainder = 1, .denominator = 2}).value() == high);
+    CHECK(snap_storyboard_key_time({.milliseconds = high, .remainder = 2, .denominator = 3}).error() ==
+        failure_code_t::arithmetic_overflow);
+}
 
 namespace {
 

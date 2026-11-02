@@ -110,6 +110,10 @@ struct chart_preview_t {
         const workspace_controller_t& workspace,
         sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
         sdl_preview_output_t& preview_output) -> std::string;
+    [[nodiscard]] static auto source_frame_at_audio_milliseconds(std::int64_t milliseconds,
+        std::uint32_t sample_rate) -> std::uint64_t;
+    [[nodiscard]] auto loop_region_at_audio_milliseconds(std::int64_t begin_ms, std::int64_t end_ms,
+        const song_document_t&, const workspace_controller_t&) const -> std::optional<audio::preview_loop_region_t>;
     [[nodiscard]] auto audio_milliseconds(
         const song_document_t& document, const workspace_controller_t& workspace,
         const audio::preview_session_t& session) const -> std::optional<std::int64_t>;

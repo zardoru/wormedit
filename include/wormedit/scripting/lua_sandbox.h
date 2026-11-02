@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/result.h>
+#include <wormedit/core/sample_reference.h>
 #include <cstddef>
 #include <functional>
 #include <cstdint>
@@ -43,6 +44,8 @@ using lua_sandbox_context_t = std::vector<lua_sandbox_node_t>;
 // Explicit host capability used only while freezing project.lua. Ordinary sessions have none.
 struct lua_project_file_t {
     std::string path, content, asset_id;
+    std::optional<audio_stream_info_t> audio_stream;
+    std::optional<std::string> audio_probe_error; // Required only by typed audio_file use.
     auto operator==(const lua_project_file_t&) const -> bool = default;
 };
 using lua_project_reader_t = std::function<result_t<lua_project_file_t, error_t<failure_code_t>>(

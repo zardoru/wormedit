@@ -18,7 +18,7 @@ auto import_resource_role(const wormedit::ui::workspace_action_t& action)
     return std::nullopt;
 }
 
-auto inspect_imported_resource(const std::filesystem::path& path, wormedit::resource_role_t role)
+auto inspect_imported_resource([[maybe_unused]] const std::filesystem::path& path, wormedit::resource_role_t role)
     -> std::variant<imported_resource_metadata_t, std::string> {
     imported_resource_metadata_t metadata;
     if (role == wormedit::resource_role_t::bga) {

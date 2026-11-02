@@ -3,6 +3,8 @@
 #include <wormedit/core/bms_program_edit.h>
 
 namespace wormedit {
+[[nodiscard]] auto stage_resource_asset_relink(document_command_transaction_t&, const relink_resource_asset_action_t&)
+    -> attempt_t<document_edit_effect_t>;
 [[nodiscard]] auto bms_occupied(const song_document_t& document, std::string_view name_space,
     std::size_t base, std::span<const resource_id_t> ignored = {}) -> std::vector<bool>;
 [[nodiscard]] auto stage_resource_asset_import(document_command_transaction_t& transaction,

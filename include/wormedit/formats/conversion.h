@@ -1,11 +1,14 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/osbx_lua_link.h>
 #include <wormedit/core/export_cut_transform.h>
 #include <wormedit/core/job_progress.h>
 #include <stop_token>
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/bms_export_profile.h>
+#include <wormedit/core/osbx_osb_export.h>
+#include <wormedit/core/resource_file_copy.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -45,6 +48,18 @@ struct conversion_request_t {
     // Independent of target_profile's existing BMS lane-map selection.
     std::optional<bms_export_profile_t> bms_profile;
     export_audio_settings_t audio;
+    // Validated media geometry and the actual song/output playback domain.
+    // Pure conversion never opens image files.
+    // Worker-prepared, strongly owned transient snapshots. Never persisted.
+    std::vector<osbx_lua_prepared_scene_t> osbx_prepared;
+    std::vector<osbx_osb_image_size_t> osbx_image_sizes;
+    std::optional<osbx_osb_span_t> osbx_playback_span;
+    // Used only by filesystem preflight/publication, never by pure conversion.
+    std::vector<project_path_copy_request_t> osbx_image_sources;
+    // Raw storyboard Sample sources: same publication receipts, no image probe.
+    std::vector<project_path_copy_request_t> osbx_sample_sources;
+    // Advisory native-storyboard preflight losses do not reject the chart.
+    std::vector<osbx_osb_report_t> stepmania_storyboard_report;
 };
 
 enum class conversion_stage_t {
@@ -104,11 +119,41 @@ struct conversion_limits_t {
 struct conversion_asset_copy_t {
     asset_id_t asset;
     std::filesystem::path relative_path;
+    std::optional<std::string> expected_hash; // Immutable original encoded-source bytes, when declared.
+    [[nodiscard]] auto validate_staged_file(const std::filesystem::path& path, std::stop_token stop = {}) const
+        -> result_t<void, error_t<failure_code_t>>;
     auto operator==(const conversion_asset_copy_t&) const -> bool = default;
+};
+
+// Owned, file-free package enumeration shared by pure conversion and source
+// preparation. Frame indices refer to images, never to movable borrowed text.
+struct storyboard_animation_assets_t {
+    osbx_image_t image;
+    std::vector<std::size_t> frames;
+    auto operator==(const storyboard_animation_assets_t&) const -> bool = default;
+};
+struct storyboard_media_plan_t {
+    std::vector<osbx_image_t> images;
+    std::vector<std::filesystem::path> samples;
+    std::vector<storyboard_animation_assets_t> animations;
+    std::size_t logical_storage_bytes{}; // Shared logical plan/receipt workspace bound.
+    [[nodiscard]] static auto from(const song_document_t&, osbx_validation_options_t = {}, std::stop_token = {})
+        -> result_t<storyboard_media_plan_t, std::string>;
+    auto operator==(const storyboard_media_plan_t&) const -> bool = default;
+};
+
+struct conversion_artifact_t {
+    std::filesystem::path relative_path;
+    std::string bytes;
+    auto operator==(const conversion_artifact_t&) const -> bool = default;
 };
 
 struct conversion_payload_t {
     std::vector<conversion_output_t> outputs;
+    std::vector<std::filesystem::path> storyboard_images;
+    std::vector<std::filesystem::path> storyboard_samples;
+    std::vector<conversion_artifact_t> storyboard_files;
+    std::vector<osbx_osb_report_t> stepmania_storyboard_report;
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_outcome_t> slice_plans;
     std::vector<export_cut_audio_plan_t> cut_audio_plans;
@@ -122,6 +167,10 @@ struct conversion_result_t {
         conversion_limits_t limits = {}, conversion_execution_t execution = {}) -> conversion_outcome_t;
     [[nodiscard]] static auto from(conversion_outcome_t&& outcome) -> conversion_result_t;
     std::vector<conversion_output_t> outputs;
+    std::vector<std::filesystem::path> storyboard_images;
+    std::vector<std::filesystem::path> storyboard_samples;
+    std::vector<conversion_artifact_t> storyboard_files;
+    std::vector<osbx_osb_report_t> stepmania_storyboard_report;
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_outcome_t> slice_plans;
     std::vector<export_cut_audio_plan_t> cut_audio_plans;

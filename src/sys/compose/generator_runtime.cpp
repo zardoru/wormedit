@@ -238,7 +238,7 @@ auto make_generator_limits(const generator_job_request_t& request,const generato
     limits.cancellation=stop;
     const auto script_name=recipe.source_path.filename().string();
     if (uses_project_source(request) || scripting::lua_project_source_t::is_frozen(recipe.source) ||
-        script_name.ends_with(".chart.lua")) limits.maximum_result_bytes=limits.maximum_memory_bytes;
+        script_name.ends_with(".chart.lua") || script_name.ends_with(".osbx.lua")) limits.maximum_result_bytes=limits.maximum_memory_bytes;
     return limits;
 }
 auto prepare_generator_evaluation(generator_job_result_t& result,const generator_job_request_t& request,
@@ -281,6 +281,10 @@ auto generator_runtime_t::evaluate(const generator_job_request_t& request, std::
             result.status = result.proposal.value->payload.recipe.generated_charts.empty()
                 ? "Generator preview ready. Apply commits one command; Cancel discards it."
                 : "Difficulty preview ready. Apply commits one command.";
+            const auto& diff = result.proposal.value->payload.storyboards;
+            if (diff.added || diff.changed || diff.removed || diff.unchanged)
+                result.status = "Storyboards: " + std::to_string(diff.added) + " added, " +
+                    std::to_string(diff.changed) + " changed, " + std::to_string(diff.removed) + " removed. Apply commits one command.";
             return result;
         });
 #else

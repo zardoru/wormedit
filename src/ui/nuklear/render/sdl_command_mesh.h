@@ -1,13 +1,32 @@
 #pragma once
 
-#include <wormedit/nuklear_config.h>
+#include "ui/frontend/timing_preview.h"
 #include <SDL3/SDL.h>
 #include <cstddef>
 #include <optional>
 #include <span>
 #include <vector>
+#include <wormedit/nuklear_config.h>
 
 namespace wormedit::ui::nuklear {
+
+// Applies explicit blend at submission, restoring the borrowed SDL state on exit.
+class sdl_blend_scope_t {
+  public:
+    sdl_blend_scope_t(SDL_Renderer*, SDL_Texture*, image_blend_t);
+    ~sdl_blend_scope_t();
+    sdl_blend_scope_t(const sdl_blend_scope_t&) = delete;
+    auto operator=(const sdl_blend_scope_t&) -> sdl_blend_scope_t& = delete;
+    auto is_ready() const -> bool {
+        return ready_;
+    }
+
+  private:
+    SDL_Renderer* renderer_{};
+    SDL_Texture* texture_{};
+    SDL_BlendMode previous_{};
+    bool ready_{}, changed_{};
+};
 
 // Canonical converted layout used by Nuklear's SDL geometry adapter.
 struct sdl_command_vertex_t {
@@ -23,6 +42,7 @@ struct sdl_command_batch_t {
     SDL_Texture* texture{};
     SDL_Rect clip{};
     std::size_t first_index{}, index_count{};
+    image_blend_t blend{image_blend_t::inherit};
 };
 struct sdl_command_mesh_limits_t {
     std::size_t maximum_vertices{65536}, maximum_indices{196608}, maximum_batches{1024};

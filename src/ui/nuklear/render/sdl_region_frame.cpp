@@ -1,4 +1,5 @@
 #include "ui/nuklear/render/sdl_region_frame.h"
+#include "ui/nuklear/render/image_quad.h"
 #include <algorithm>
 
 namespace wormedit::ui::nuklear {
@@ -86,9 +87,11 @@ auto sdl_region_frame_t::collect(nk_context* context, nk_buffer* commands) -> bo
         if (batches_.size() >= 1024) return false;
         const auto clip = command->clip_rect;
         batches_.push_back({.texture = static_cast<SDL_Texture*>(command->texture.ptr),
-            .clip = {static_cast<int>(clip.x), static_cast<int>(clip.y),
-                     static_cast<int>(clip.w), static_cast<int>(clip.h)},
-            .first_index = offset, .index_count = command->elem_count});
+                            .clip = {static_cast<int>(clip.x), static_cast<int>(clip.y),
+                                     static_cast<int>(clip.w), static_cast<int>(clip.h)},
+                            .first_index = offset,
+                            .index_count = command->elem_count,
+                            .blend = worm_ui_nuklear_image_quad_blend(command->userdata)});
         offset += command->elem_count;
     }
     return !active;

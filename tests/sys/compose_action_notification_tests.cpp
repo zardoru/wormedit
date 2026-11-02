@@ -36,12 +36,6 @@
 #include <thread>
 #include <source_location>
 
-// Native drop hit testing is unrelated to the action dispatcher in this
-// headless target; no rendered metadata pane can accept a file drop.
-wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t, float, float) {
-    return {};
-}
-
 using namespace wormedit;
 using namespace wormedit::sys;
 
@@ -3181,8 +3175,8 @@ TEST_CASE("Lua recipe Apply requires the exact successful worker draft", "[compo
     auto& chart = fixture.history.document.charts.front();
     sv_recipe_t recipe{.id = recipe_id_t{1}, .name = "Lua",
         .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}},
-        .curve = sv_recipe_curve_t::lua_expression, .expression_source = "return 1"};
-    recipe.lua = sv_recipe_lua_t{.source_reference = "curve.lua"};
+        .curve = sv_recipe_curve_t::lua_expression, .lua = sv_recipe_lua_t{.source = {.frozen_source = "return 1"}}};
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source, .source_reference = "curve.lua"}};
     chart.sv_recipes.push_back(recipe);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM);
     action.compose_recipe_id = recipe.id;
@@ -3214,7 +3208,7 @@ TEST_CASE("switching away from Lua still requires a verified worker draft", "[co
     auto& chart = fixture.history.document.charts.front();
     sv_recipe_t recipe{.id = recipe_id_t{1}, .name = "Lua",
         .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}},
-        .curve = sv_recipe_curve_t::lua_expression, .expression_source = "return 1"};
+        .curve = sv_recipe_curve_t::lua_expression, .lua = sv_recipe_lua_t{.source = {.frozen_source = "return 1"}}};
     chart.sv_recipes.push_back(recipe);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM);
     action.compose_recipe_id = recipe.id;

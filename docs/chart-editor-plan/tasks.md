@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Storyboard screen: approved scope and SB-1–SB-14 implementation cards](tasks/storyboard-screen.md)
+
 - [Granular timing links](tasks/timing-links.md)
 
 - [State ownership and lifetime consolidation](tasks/state-ownership.md)

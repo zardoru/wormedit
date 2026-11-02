@@ -317,3 +317,21 @@ TEST_CASE("Opaque SDL region oversized borrowed meshes fall back before copying 
     expect_region(!fixture.cache->prepare(fixture.request));
     expect_region(fixture.cache->work().retained_cpu_bytes == 0 && fixture.cache->work().tiles.retained_bytes == 0);
 }
+
+TEST_CASE("SDL regions refuse explicit blend requests and preserve default cache eligibility",
+          "[ui][region-cache][blend]") {
+    region_fixture_t fixture;
+    expect_region(fixture.warm());
+    for (const auto blend :
+         {wormedit::ui::image_blend_t::normal, wormedit::ui::image_blend_t::additive}) {
+        fixture.batches[0].blend = blend;
+        fixture.begin();
+        expect_region(!(fixture.cache->prepare(fixture.request)));
+        expect_region(!fixture.cache->submit(0));
+        SDL_BlendMode mode{};
+        expect_region(SDL_GetRenderDrawBlendMode(fixture.renderer, &mode));
+        expect_region(mode == SDL_BLENDMODE_BLEND);
+    }
+    fixture.batches[0].blend = wormedit::ui::image_blend_t::inherit;
+    expect_region(fixture.warm());
+}

@@ -24,12 +24,24 @@ if(UNIX)
 endif()
 
 add_executable(wormedit_core_tests
+    core/keyframe_simplify_tests.cpp
+    core/osbx_export_metric_tests.cpp
     core/async_job_tests.cpp
     core/lane_occupancy_tests.cpp
     ../src/common/static_interval_index.cpp
     sys/bga_lane_workflow_tests.cpp
     sys/stem_window_tests.cpp
     sys/document_edit_feedback_tests.cpp
+    sys/storyboard_hierarchy_tests.cpp
+    sys/storyboard_inspector_tests.cpp
+    sys/storyboard_timeline_tests.cpp
+    sys/storyboard_gizmo_tests.cpp
+    sys/storyboard_lua_links_tests.cpp
+    ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+    ../src/sys/storyboard/storyboard_inspector_view.cpp
+    ../src/sys/storyboard/storyboard_timeline_view.cpp
+    ../src/sys/storyboard/storyboard_scene_presenter.cpp
+    ../src/sys/storyboard/storyboard_canvas_view.cpp
     ../src/sys/compose/views/compose_resource_presenter.cpp
     ../src/sys/compose/actions/compose_area_actions.cpp
     ../src/sys/compose/actions/compose_quantize.cpp
@@ -62,6 +74,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/compose/views/recipe_form.cpp
     ../src/sys/compose/recipe_evaluation_runtime.cpp
+    ../src/sys/storyboard/osbx_lua_link_runtime.cpp
     ../src/sys/compose/generator_runtime.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/app/application_defaults.cpp
@@ -117,6 +130,7 @@ add_executable(wormedit_core_tests
     sys/compose_speed_spans_tests.cpp
     sys/compose_clipboard_selection_tests.cpp
     sys/recipe_form_tests.cpp
+    sys/osbx_lua_link_runtime_tests.cpp
     sys/generator_runtime_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
@@ -190,6 +204,11 @@ add_executable(wormedit_core_tests
     core/shortcut_profile_startup_tests.cpp
     core/arena_tests.cpp
     core/notifications_tests.cpp
+    core/osbx_document_tests.cpp
+    core/osbx_edit_tests.cpp
+    core/storyboard_canvas_tests.cpp
+    core/storyboard_gizmo_tests.cpp
+    core/osb_to_osbx_tests.cpp
     core/storyboard_tests.cpp
     core/sv_recipe_tests.cpp
     core/sv_recipe_impulse_tests.cpp
@@ -218,11 +237,13 @@ add_executable(wormedit_core_tests
     formats/bms_program_migration_tests.cpp
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
+    formats/resource_plan_tests.cpp
     formats/conversion_tests.cpp
     formats/slice_spans_tests.cpp
     formats/conversion_publication_tests.cpp
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
+    formats/native_project_osbx_tests.cpp
     formats/native_project_delta_tests.cpp
     formats/native_project_impulse_tests.cpp
     formats/native_project_generator_tests.cpp
@@ -230,6 +251,7 @@ add_executable(wormedit_core_tests
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
+    formats/stepmania_storyboard_tests.cpp
     formats/song_preview_tests.cpp
     formats/native_project_export_cut_tests.cpp
     formats/fixture_validation_tests.cpp
@@ -278,6 +300,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
         ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/offline_preview_mix.cpp
         ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_open.cpp
         ../src/sys/app/application_defaults.cpp
@@ -399,6 +422,10 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
 endif()
 
 if(WORMEDIT_ENABLE_IMAGE_DECODER)
+    add_executable(wormedit_storyboard_raster_tests core/storyboard_raster_tests.cpp)
+    target_link_libraries(wormedit_storyboard_raster_tests PRIVATE wormedit::storyboard_raster Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_storyboard_raster_tests TEST_PREFIX "storyboard-raster."
+        PROPERTIES LABELS unit LABELS visual DISCOVERY_MODE PRE_TEST)
     add_executable(wormedit_visual_tests
         visual/image_decoder_tests.cpp
         visual/image_job_tests.cpp
@@ -438,7 +465,13 @@ endif()
 if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
     add_executable(wormedit_player_preview_delivery_tests
         sys/player_preview_presenter_tests.cpp
+        sys/storyboard_gizmo_tests.cpp
         ../src/sys/audio/player_preview_presenter.cpp
+        ../src/sys/storyboard/storyboard_scene_presenter.cpp
+        ../src/sys/storyboard/storyboard_canvas_view.cpp
+        ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+        ../src/sys/storyboard/storyboard_inspector_view.cpp
+        ../src/sys/storyboard/storyboard_timeline_view.cpp
     )
     target_compile_definitions(wormedit_player_preview_delivery_tests PRIVATE
         WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
@@ -453,6 +486,10 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
         wormedit::video_decoder
         Catch2::Catch2WithMain
     )
+    if(WORMEDIT_ENABLE_LUA)
+        target_sources(wormedit_player_preview_delivery_tests PRIVATE ../src/sys/storyboard/osbx_lua_link_runtime.cpp)
+        target_link_libraries(wormedit_player_preview_delivery_tests PRIVATE wormedit::scripting)
+    endif()
     catch_discover_tests(wormedit_player_preview_delivery_tests
         TEST_PREFIX "player-preview-delivery."
         PROPERTIES LABELS integration LABELS visual LABELS video
@@ -462,7 +499,13 @@ endif()
 
 add_executable(wormedit_player_preview_status_tests
     sys/player_preview_status_tests.cpp
+    sys/storyboard_canvas_view_tests.cpp
     ../src/sys/audio/player_preview_presenter.cpp
+    ../src/sys/storyboard/storyboard_scene_presenter.cpp
+    ../src/sys/storyboard/storyboard_canvas_view.cpp
+    ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+    ../src/sys/storyboard/storyboard_inspector_view.cpp
+    ../src/sys/storyboard/storyboard_timeline_view.cpp
 )
 target_include_directories(wormedit_player_preview_status_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
@@ -622,6 +665,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
+        ../src/sys/storyboard/storyboard_scene_presenter.cpp
     )
     target_include_directories(wormedit_player_preview_texture_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
@@ -633,6 +677,24 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             SDL3::SDL3
             Catch2::Catch2WithMain
     )
+    if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
+        target_sources(wormedit_player_preview_texture_tests PRIVATE
+            ../src/sys/audio/player_preview_presenter.cpp
+            ../src/sys/storyboard/storyboard_canvas_view.cpp
+            ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+            ../src/sys/storyboard/storyboard_inspector_view.cpp
+            ../src/sys/storyboard/storyboard_timeline_view.cpp)
+        target_compile_definitions(wormedit_player_preview_texture_tests PRIVATE
+            WORMEDIT_HAS_IMAGE_DECODER=1 WORMEDIT_HAS_VIDEO_DECODER=1)
+        target_link_libraries(wormedit_player_preview_texture_tests PRIVATE
+            wormedit::visual_decoder wormedit::video_decoder)
+        if(TARGET wormedit_scripting)
+            target_link_libraries(wormedit_player_preview_texture_tests PRIVATE wormedit::scripting)
+            target_compile_definitions(wormedit_player_preview_texture_tests PRIVATE
+                WORMEDIT_PREVIEW_LUA_ACCEPTANCE=1
+                WORMEDIT_LUA_EXAMPLE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/lua-api/examples")
+        endif()
+    endif()
     catch_discover_tests(wormedit_player_preview_texture_tests
         TEST_PREFIX "player-preview-texture."
         PROPERTIES LABELS integration LABELS frontend LABELS visual
@@ -647,6 +709,9 @@ if(WORMEDIT_ENABLE_LUA)
         lua/lua_curve_tests.cpp
         lua/lua_document_api_tests.cpp
         lua/lua_project_tests.cpp
+        lua/osbx_lua_tests.cpp
+        lua/osbx_lua_link_tests.cpp
+        lua/osbx_acceptance_tests.cpp
         lua/chart_lua_tests.cpp
         lua/lua_generator_tests.cpp
         lua/lua_manual_tutorial_tests.cpp
@@ -662,6 +727,9 @@ if(WORMEDIT_ENABLE_LUA)
     target_compile_definitions(wormedit_lua_tests PRIVATE
         WORMEDIT_LUA_EXAMPLE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/lua-api/examples"
         WORMEDIT_MANUAL_TUTORIAL_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/manual/fixtures/tutorial")
+    if(TARGET wormedit_audio_decoder)
+        target_compile_definitions(wormedit_lua_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
+    endif()
     catch_discover_tests(wormedit_lua_tests
         TEST_PREFIX "lua."
         PROPERTIES LABELS lua TIMEOUT 10
@@ -681,12 +749,24 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/preferences/external_player.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/offline_preview_mix.cpp
         ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_save_paths.cpp
         ../src/sys/project/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/storyboard_tab_event_harness_tests.cpp
+        ui/storyboard_workflow_event_harness_tests.cpp
+        ui/storyboard_video_export_event_harness_tests.cpp
+        ui/storyboard_canvas_event_harness_tests.cpp
+        ui/storyboard_hierarchy_event_harness_tests.cpp
+        ui/storyboard_inspector_event_harness_tests.cpp
+        ui/storyboard_timeline_event_harness_tests.cpp
+        ui/storyboard_gizmo_event_harness_tests.cpp
+        ui/storyboard_transport_event_harness_tests.cpp
+        ui/storyboard_scenario_event_harness_tests.cpp
+        ui/storyboard_lua_links_event_harness_tests.cpp
         ui/bms_program_event_harness_tests.cpp
         ui/walkthrough_bms_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
@@ -788,6 +868,12 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/generator_runtime.cpp
         ../src/sys/compose/views/generator_view.cpp
         ../src/sys/compose/recipe_evaluation_runtime.cpp
+    ../src/sys/storyboard/osbx_lua_link_runtime.cpp
+        ../src/sys/storyboard/storyboard_runtime.cpp
+        ../src/sys/storyboard/storyboard_scene_presenter.cpp
+        ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+        ../src/sys/storyboard/storyboard_inspector_view.cpp
+        ../src/sys/storyboard/storyboard_timeline_view.cpp
         ../src/sys/compose/actions/compose_transform_actions.cpp
         ../src/sys/compose/actions/compose_bga_actions.cpp
         ../src/sys/compose/actions/compose_measure_commands.cpp
@@ -902,10 +988,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_frame_timing_tests
         ../src/sys/app/application_frame_view.cpp
+        ../src/sys/storyboard/storyboard_runtime.cpp
         ../src/sys/audio/tap_timing_runtime.cpp
         ../src/sys/compose/views/compose_waveform_overlays.cpp
         ../src/sys/project/workspace_frame_view.cpp
         ../src/sys/audio/player_preview_presenter.cpp
+        ../src/sys/storyboard/storyboard_scene_presenter.cpp
+        ../src/sys/storyboard/storyboard_canvas_view.cpp
+        ../src/sys/storyboard/storyboard_hierarchy_view.cpp
+        ../src/sys/storyboard/storyboard_inspector_view.cpp
+        ../src/sys/storyboard/storyboard_timeline_view.cpp
         ../src/sys/metadata/metadata_view.cpp
         ../src/sys/metadata/metadata_actions.cpp
         sys/compare_view_tests.cpp
@@ -924,6 +1016,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/app/application_command_state.cpp
         sys/presentation_latency_tests.cpp
         sys/transport_status_tests.cpp
+        sys/storyboard_transport_tests.cpp
+        sys/storyboard_scenario_tests.cpp
+        sys/storyboard_workflow_tests.cpp
         sys/compose_notification_tests.cpp
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp
@@ -974,50 +1069,67 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::ui_frontend wormedit_ui_notifications wormedit_ui_arrow_glyph wormedit_ui_interval_index
         nlohmann_json::nlohmann_json
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    # Dispatch and projection fixtures share decoder-independent application owners.
+    target_sources(wormedit_frame_timing_tests PRIVATE
+        ../src/sys/compose/actions/compose_actions.cpp
+        ../src/sys/compose/actions/compose_resource_actions.cpp
+        ../src/sys/compose/actions/compose_marker_actions.cpp
+        ../src/sys/compose/actions/compose_bookmark_actions.cpp
+        ../src/sys/compose/actions/compose_export_cut_actions.cpp
+        ../src/sys/compose/actions/compose_measure_actions.cpp
+        ../src/sys/compose/actions/compose_recipe_actions.cpp
+        ../src/sys/compose/actions/compose_generator_actions.cpp
+        ../src/sys/compose/generator_runtime.cpp
+        ../src/sys/compose/views/generator_view.cpp
+        ../src/sys/compose/recipe_evaluation_runtime.cpp
+        ../src/sys/storyboard/osbx_lua_link_runtime.cpp
+        ../src/sys/compose/actions/compose_transform_actions.cpp
+        ../src/sys/compose/actions/compose_bga_actions.cpp
+        ../src/sys/compose/actions/compose_measure_commands.cpp
+        ../src/sys/compose/actions/compose_selection_transform.cpp
+        ../src/sys/compose/compose_label_search.cpp
+        ../src/sys/bookmarks/bookmark_rename_commands.cpp
+        ../src/sys/resources/resource_job_state.cpp
+        ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/offline_preview_mix.cpp
+        ../src/sys/audio/audio_slicer_runtime.cpp
+        ../src/sys/project/project_save_paths.cpp
+        ../src/sys/project/output_group_export.cpp
+        ../src/sys/metadata/metadata_asset_runtime.cpp
+        ../src/sys/metadata/metadata_drop_state.cpp
+        ../src/sys/preferences/options_runtime.cpp
+        ../src/sys/preferences/preferences_runtime.cpp
+        ../src/sys/commands/platform_shortcut_profile.cpp
+        ../src/sys/commands/shortcut_rows.cpp
+        ../src/sys/compose/actions/compose_sound_actions.cpp
+        ../src/sys/commands/application_command_dispatch.cpp
+        ../src/sys/commands/application_commands.cpp
+        ../src/sys/audio/transport_player_actions.cpp
+        ../src/sys/app/application_defaults.cpp
+        ../src/sys/compose/input/compose_input.cpp
+        ../src/sys/compose/input/compose_waveform_fit_input.cpp
+        ../src/sys/compose/input/compose_timing_input.cpp
+        ../src/sys/compose/input/compose_export_cut_input.cpp
+        ../src/sys/compose/input/compose_resource_input.cpp
+        ../src/sys/compose/input/compose_navigation_input.cpp
+        ../src/sys/compose/actions/compose_note_to_bgm.cpp
+        ../src/sys/compose/input/compose_minimap_navigation.cpp
+        ../src/sys/bookmarks/bookmark_commands.cpp
+        ../src/sys/compose/input/compose_navigation.cpp
+        ../src/sys/compose/input/compose_playhead_skip.cpp
+        ../src/sys/compose/compose_bgm_bar.cpp
+    )
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/compose_action_notification_tests.cpp
-            ../src/sys/compose/actions/compose_actions.cpp
-            ../src/sys/compose/actions/compose_resource_actions.cpp
-            ../src/sys/compose/actions/compose_marker_actions.cpp
-            ../src/sys/compose/actions/compose_bookmark_actions.cpp
-            ../src/sys/compose/actions/compose_export_cut_actions.cpp
-            ../src/sys/compose/actions/compose_measure_actions.cpp
-            ../src/sys/compose/actions/compose_recipe_actions.cpp
-            ../src/sys/compose/actions/compose_generator_actions.cpp
-            ../src/sys/compose/generator_runtime.cpp
-            ../src/sys/compose/views/generator_view.cpp
-            ../src/sys/compose/recipe_evaluation_runtime.cpp
-            ../src/sys/compose/actions/compose_transform_actions.cpp
-            ../src/sys/compose/actions/compose_bga_actions.cpp
-            ../src/sys/compose/actions/compose_measure_commands.cpp
-            ../src/sys/compose/actions/compose_selection_transform.cpp
-            ../src/sys/compose/compose_label_search.cpp
-            ../src/sys/bookmarks/bookmark_rename_commands.cpp
-            ../src/sys/resources/resource_job_state.cpp
-            ../src/sys/audio/preview_audio_export.cpp
-            ../src/sys/audio/audio_slicer_runtime.cpp
-            ../src/sys/project/project_save_paths.cpp
-            ../src/sys/project/output_group_export.cpp
-            ../src/sys/metadata/metadata_asset_runtime.cpp
-            ../src/sys/metadata/metadata_drop_state.cpp
             sys/minimap_center_tests.cpp
             sys/compose_beat_fit_tests.cpp
             sys/compose_onset_snap_tests.cpp
             sys/application_commands_tests.cpp
-            ../src/sys/preferences/options_runtime.cpp
-            ../src/sys/preferences/preferences_runtime.cpp
-            ../src/sys/commands/platform_shortcut_profile.cpp
-            ../src/sys/commands/shortcut_rows.cpp
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp
             sys/bmson_projection_cache_tests.cpp
-            ../src/sys/compose/actions/compose_sound_actions.cpp
-            ../src/sys/commands/application_command_dispatch.cpp
-            ../src/sys/commands/application_commands.cpp
-            ../src/sys/audio/transport_player_actions.cpp
-            ../src/sys/app/application_defaults.cpp
             ../src/sys/audio/waveform_view.cpp
             ../src/sys/audio/waveform_analysis_runtime.cpp
             ../src/sys/audio/audio_source_registration.cpp
@@ -1025,18 +1137,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/audio/metronome.cpp
             sys/audio_notification_tests.cpp
             ../src/sys/audio/bmson_waveform_view.cpp
-            ../src/sys/compose/input/compose_input.cpp
-            ../src/sys/compose/input/compose_waveform_fit_input.cpp
-            ../src/sys/compose/input/compose_timing_input.cpp
-            ../src/sys/compose/input/compose_export_cut_input.cpp
-            ../src/sys/compose/input/compose_resource_input.cpp
-            ../src/sys/compose/input/compose_navigation_input.cpp
-            ../src/sys/compose/actions/compose_note_to_bgm.cpp
-            ../src/sys/compose/input/compose_minimap_navigation.cpp
-            ../src/sys/bookmarks/bookmark_commands.cpp
-            ../src/sys/compose/input/compose_navigation.cpp
-            ../src/sys/compose/input/compose_playhead_skip.cpp
-            ../src/sys/compose/compose_bgm_bar.cpp)
+        )
         target_sources(wormedit_frame_timing_tests PRIVATE
             ../src/sys/audio/chart_preview_state.cpp
             ../src/sys/audio/export_cut_preview.cpp
@@ -1060,10 +1161,18 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/commands/shortcut_rows.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
         sys/frame_projection_arena_tests.cpp
+        sys/storyboard_timeline_allocation_tests.cpp
+        sys/storyboard_gizmo_tests.cpp
+        ../src/sys/storyboard/storyboard_gizmo_view.cpp
+        ../src/sys/storyboard/storyboard_scene_presenter.cpp
+        ../src/sys/storyboard/storyboard_canvas_view.cpp
+        ../src/sys/storyboard/storyboard_timeline_view.cpp
+        ../src/sys/storyboard/storyboard_inspector_view.cpp
         sys/resource_notification_tests.cpp
         ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/offline_preview_mix.cpp
         ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_save_paths.cpp
         ../src/sys/project/output_group_export.cpp
@@ -1092,6 +1201,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
     target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    if(WORMEDIT_ENABLE_IMAGE_DECODER)
+        target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE wormedit::visual_decoder)
+        target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+    endif()
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
             wormedit::audio_decoder)
@@ -1139,6 +1252,12 @@ target_link_libraries(wormedit_convert_tests
         nlohmann_json::nlohmann_json
 )
 add_dependencies(wormedit_convert_tests wormedit-convert)
+if(WORMEDIT_ENABLE_LUA)
+    target_compile_definitions(wormedit_convert_tests PRIVATE WORMEDIT_TEST_HAS_LUA=1)
+endif()
+if(WORMEDIT_ENABLE_IMAGE_DECODER)
+    target_compile_definitions(wormedit_convert_tests PRIVATE WORMEDIT_TEST_HAS_IMAGE_DECODER=1)
+endif()
 catch_discover_tests(wormedit_convert_tests
     TEST_PREFIX "wormedit_convert."
     PROPERTIES LABELS unit LABELS tools
@@ -1195,3 +1314,131 @@ foreach(consumer IN ITEMS wormedit_frontend_event_harness_tests wormedit_frame_t
         target_link_libraries(${consumer} PRIVATE nlohmann_json::nlohmann_json)
     endif()
 endforeach()
+
+# These targets share the gizmo projection with the application presenter.
+foreach(consumer IN ITEMS wormedit_core_tests wormedit_player_preview_status_tests
+        wormedit_player_preview_delivery_tests wormedit_player_preview_texture_tests
+        wormedit_frontend_event_harness_tests wormedit_frame_timing_tests)
+    if(TARGET ${consumer})
+        target_sources(${consumer} PRIVATE ../src/sys/storyboard/storyboard_gizmo_view.cpp)
+    endif()
+endforeach()
+
+# These consumers project the shared transport readout; the core-only targets do not.
+foreach(consumer IN ITEMS wormedit_frontend_event_harness_tests wormedit_frame_timing_tests)
+    if(TARGET ${consumer})
+        target_sources(${consumer} PRIVATE ../src/sys/storyboard/storyboard_transport_view.cpp)
+    endif()
+endforeach()
+if(TARGET wormedit_frontend_event_harness_tests)
+    target_sources(wormedit_frontend_event_harness_tests PRIVATE
+        ../src/sys/storyboard/storyboard_canvas_view.cpp)
+endif()
+
+# Separate allocator probe, following the tap-tempo/frame allocation test pattern.
+add_executable(wormedit_osbx_evaluator_tests core/osbx_evaluator_tests.cpp)
+target_link_libraries(wormedit_osbx_evaluator_tests PRIVATE wormedit::core Catch2::Catch2WithMain)
+catch_discover_tests(wormedit_osbx_evaluator_tests TEST_PREFIX "core."
+    PROPERTIES LABELS "unit;core;osbx" DISCOVERY_MODE PRE_TEST)
+
+add_executable(wormedit_osbx_osb_export_tests core/osbx_osb_export_tests.cpp)
+target_link_libraries(wormedit_osbx_osb_export_tests PRIVATE wormedit::core Catch2::Catch2WithMain)
+catch_discover_tests(wormedit_osbx_osb_export_tests TEST_PREFIX "core."
+    PROPERTIES LABELS "unit;core;osbx" DISCOVERY_MODE PRE_TEST)
+
+# Compile the same source without the enabled target's private macro/deps.
+# This must remain valid with audio/image/video decoders and FFmpeg all OFF.
+add_executable(wormedit_video_encoder_unavailable_tests
+    media/video_encoder_unavailable_tests.cpp ../src/media/ffmpeg_video_encoder.cpp)
+target_compile_definitions(wormedit_video_encoder_unavailable_tests PRIVATE WORMEDIT_HAS_VIDEO_ENCODER=0)
+target_link_libraries(wormedit_video_encoder_unavailable_tests PRIVATE wormedit::core Catch2::Catch2WithMain)
+wormedit_enable_warnings(wormedit_video_encoder_unavailable_tests)
+catch_discover_tests(wormedit_video_encoder_unavailable_tests TEST_PREFIX "video-encoder-unavailable."
+    PROPERTIES LABELS "unit;media" DISCOVERY_MODE PRE_TEST)
+
+if(WORMEDIT_VIDEO_ENCODER_AVAILABLE AND TARGET wormedit_storyboard_raster AND TARGET wormedit_audio_decoder)
+    add_executable(wormedit_video_encoder_tests media/video_encoder_tests.cpp)
+    target_link_libraries(wormedit_video_encoder_tests PRIVATE
+        wormedit::video_encoder wormedit::storyboard_raster wormedit::audio_decoder
+        PkgConfig::WORMEDIT_VIDEO_ENCODER_FFMPEG Catch2::Catch2WithMain)
+    wormedit_enable_warnings(wormedit_video_encoder_tests)
+    catch_discover_tests(wormedit_video_encoder_tests TEST_PREFIX "video-encoder."
+        PROPERTIES LABELS "integration;media;video-encoder" TIMEOUT 600 DISCOVERY_MODE PRE_TEST)
+elseif(WORMEDIT_VIDEO_ENCODER_AVAILABLE)
+    message(STATUS "Enabled encoder integration fixtures need the existing audio decoder and storyboard raster targets")
+endif()
+
+# Keep strict C++23 warnings while using Catch's supported line-based names.
+# Its counter-based default is diagnosed as a C2y extension by Clang 23.
+foreach(encoder_test IN ITEMS wormedit_video_encoder_unavailable_tests wormedit_video_encoder_tests)
+    if(TARGET ${encoder_test})
+        target_compile_definitions(${encoder_test} PRIVATE CATCH_CONFIG_NO_COUNTER=1)
+    endif()
+endforeach()
+
+# One image probe serves the copy worker and existing Compose BGA actions.
+foreach(consumer IN ITEMS wormedit_frontend_event_harness_tests wormedit_frame_timing_tests
+        wormedit_frame_projection_arena_tests wormedit_bga_actions_tests)
+    if(TARGET ${consumer})
+        target_sources(${consumer} PRIVATE ../src/sys/resources/image_import_probe.cpp)
+    endif()
+endforeach()
+# The frame tests also exercise real Storyboard copy/completion failures.
+if(TARGET wormedit_frame_timing_tests AND TARGET wormedit_visual_decoder)
+    target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::visual_decoder)
+    target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+endif()
+
+# Project export controls share the real frontend event harness.
+if(TARGET wormedit_frontend_event_harness_tests)
+    target_sources(wormedit_frontend_event_harness_tests PRIVATE
+        ui/project_export_event_harness_tests.cpp)
+endif()
+
+# The retained asset catalog shares the existing visual/BGA owners.
+foreach(consumer IN ITEMS wormedit_core_tests wormedit_frontend_event_harness_tests
+        wormedit_frame_timing_tests wormedit_frame_projection_arena_tests
+        wormedit_player_preview_delivery_tests wormedit_player_preview_status_tests
+        wormedit_player_preview_texture_tests)
+    if(TARGET ${consumer})
+        target_sources(${consumer} PRIVATE ../src/sys/storyboard/storyboard_assets_view.cpp)
+        target_link_libraries(${consumer} PRIVATE wormedit::visual_assets)
+        get_target_property(consumer_sources ${consumer} SOURCES)
+        foreach(dependency IN ITEMS ../src/sys/resources/bga_list_view.cpp
+                ../src/sys/resources/bms_catalog_bindings.cpp)
+            if(NOT dependency IN_LIST consumer_sources)
+                target_sources(${consumer} PRIVATE ${dependency})
+            endif()
+        endforeach()
+    endif()
+endforeach()
+target_sources(wormedit_core_tests PRIVATE sys/storyboard_assets_tests.cpp)
+if(TARGET wormedit_frontend_event_harness_tests)
+    target_sources(wormedit_frontend_event_harness_tests PRIVATE
+        ui/storyboard_assets_event_harness_tests.cpp)
+endif()
+
+# VID-3 uses the same asynchronous file-job shell and validated encoder boundary.
+# Also compile the real domain owner with both decoder macros absent.
+add_executable(wormedit_storyboard_video_unavailable_tests
+    sys/storyboard_video_export_tests.cpp ../src/sys/storyboard/storyboard_video_export.cpp)
+target_include_directories(wormedit_storyboard_video_unavailable_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_compile_definitions(wormedit_storyboard_video_unavailable_tests PRIVATE CATCH_CONFIG_NO_COUNTER=1)
+target_link_libraries(wormedit_storyboard_video_unavailable_tests PRIVATE
+    wormedit::core wormedit::video_encoder Catch2::Catch2WithMain)
+wormedit_enable_warnings(wormedit_storyboard_video_unavailable_tests)
+catch_discover_tests(wormedit_storyboard_video_unavailable_tests TEST_PREFIX "storyboard-video-unavailable."
+    PROPERTIES LABELS "unit;sys;storyboard-video" DISCOVERY_MODE PRE_TEST)
+if(WORMEDIT_VIDEO_ENCODER_AVAILABLE AND TARGET wormedit_storyboard_raster AND TARGET wormedit_audio_decoder)
+    add_executable(wormedit_storyboard_video_tests sys/storyboard_video_export_tests.cpp
+        ../src/sys/storyboard/storyboard_video_export.cpp ../src/sys/audio/offline_preview_mix.cpp
+        ../src/sys/audio/audio_source_registration.cpp)
+    target_include_directories(wormedit_storyboard_video_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_definitions(wormedit_storyboard_video_tests PRIVATE
+        CATCH_CONFIG_NO_COUNTER=1 WORMEDIT_HAS_IMAGE_DECODER=1 WORMEDIT_HAS_AUDIO_DECODER=1)
+    target_link_libraries(wormedit_storyboard_video_tests PRIVATE wormedit::video_encoder
+        wormedit::storyboard_raster wormedit::audio_decoder Catch2::Catch2WithMain)
+    wormedit_enable_warnings(wormedit_storyboard_video_tests)
+    catch_discover_tests(wormedit_storyboard_video_tests TEST_PREFIX "storyboard-video."
+        PROPERTIES LABELS "integration;sys;storyboard-video" TIMEOUT 600 DISCOVERY_MODE PRE_TEST)
+endif()

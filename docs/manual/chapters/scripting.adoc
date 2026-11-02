@@ -29,6 +29,10 @@ the tutorial project so you can run it before changing it.
 |A `.chart.lua` file
 |Generator dock → *Lua note generator*
 
+|Build an OSBX storyboard
+|A `.osbx.lua` file, optionally included from `project.lua`
+|Generator dock → *Lua note generator*
+
 |Generate SV spans or explicit points on the selected chart
 |A `.lua` file returning `sv_spans` or `sv_points`
 |Generator dock → *Lua note generator*
@@ -514,3 +518,105 @@ loops forever stops with an error instead of hanging. Wormedit removes `io`, `os
 and similar functions, and has no debugger. To inspect a value, stop the script with it:
 `error(("measure %s has %d rows"):format(m.id, m.row_count))`. The
 link:lua-api/index.html[Lua API reference] lists every limit and available library.
+
+[#scripting-storyboards]
+== Generate a storyboard
+
+Select a `.osbx.lua` file in the existing *Lua note generator* inspector and press *Run*.
+For example:
+
+[source,lua]
+----
+storyboard "intro"
+group "root"
+transform.translate {320, 240}
+opacity {key {0, value=0}, key {1000, value=1}}
+----
+
+The preview summary lists storyboards added, changed and removed. *Apply* commits the scenes
+and any chart output together as one Undo step. The storyboard declaration's string is its
+stable key: rerunning with `storyboard "intro"` updates that same storyboard in place.
+Changing or omitting a key removes its previous generated scene and creates any new keys.
+If you edit or delete a generated scene by hand, regeneration refuses and names the storyboard;
+detach the generator before taking over its content. A failed run keeps the last applied scene.
+
+A `project.lua` may include both `.chart.lua` and `.osbx.lua` modules. Storyboard keys must be
+unique across the whole bundle, while node IDs are local to each scene. Project image declarations
+are shared with included scenes, with canonical paths and hashes captured for frozen replay.
+Saving and reopening retain the binding and frozen script without executing Lua.
+See the link:lua-api/modules/storyboard.html[storyboard API] for images, groups, sprites,
+ordered transforms and property keyframes.
+
+=== Try the Sunshine scene
+
+The link:lua-api/sources/storyboard/project.lua[Sunshine project] combines
+`intro.chart.lua` with `main.osbx.lua`. Copy the complete
+`lua-api/sources/storyboard/` directory from the installed manual, or
+`docs/lua-api/examples/storyboard/` from a source checkout, including `assets/`.
+Save a new four-key `.wormedit` project in that folder. Choose `project.lua` in the
+Lua generator inspector, then *Run* and *Apply*. The generated Sunshine difficulty
+and its storyboard arrive together. Select that difficulty and use
+*View → Player preview*; move the Compose cursor through the first two measures to
+inspect the rotating sun rays, orbiting sunglasses worm, fades and colour change.
+Times and keys in storyboard scripts are signed integer milliseconds; rotations
+and skew use clockwise degrees on the 640 by 480 canvas.
+
+Images are project-relative PNG files. Prior image imports are optional: the player
+preview resolves declared files through its asynchronous image cache without
+adding resources to the document. Missing, unsafe or broken image files show a
+diagnostic while usable images and lanes keep rendering.
+A group supplies the parent transform and
+opacity/colour to its children. Ordered `transform.translate`, `rotate`, `scale`,
+`pivot`, `skew` and `matrix` calls form a stack; changing their order changes the
+result. The example offsets the worm under a rotating group, so its path curves
+instead of following a straight line. The Lua API reference describes key easing
+and `keys.simplify` for reducing generated linear key lists.
+
+For the full preview scene, choose `banner-project.lua` instead of `project.lua`
+in a fresh copy of the project. It adds a separate `banner.osbx.lua` scene with a
+sheared WORMEDIT banner. Save and reopen to retain the materialized scenes and
+frozen recipe. Reopening does not run Lua. A broken included module keeps the last
+applied storyboard and chart intact; fix the named source line and run again.
+
+=== Export to osu!
+
+Export the Sunshine difficulty to osu!mania through the usual output workflow.
+Wormedit writes a companion `.osb` and copies the referenced images. The bake
+report names sprites that need sampling: the worm's rotating-parent orbit is one
+example. Supported translate, rotate, scale, fade and colour commands map directly
+where possible; compound motion is sampled and checked against the evaluator.
+The accepted error budget is at most 0.5 pixels at image corners and 1/255 for
+opacity and colour, checked at integer milliseconds across the export span.
+
+Shear (`transform.skew`) and explicit affine matrices (`transform.matrix`) cannot
+be carried by `.osb` and block the whole osu! export. This includes a matrix that
+happens to describe a simple transform. No chart, storyboard or image output is
+published on that refusal. The banner edition deliberately demonstrates it: the
+message names `banner/op/2`. Use the edition without the banner for osu! export;
+the player preview retains the banner and its shear. Exporting never silently
+removes an unsupported operation. Video and StepMania storyboard output use separate export routes and capability
+checks.
+
+
+=== Loops, direct triggers and media declarations
+
+The storyboard API also accepts flat `loop` and `trigger` descriptors in existing
+tracks. Loops use relative keys and a checked repeat count. Triggers consume an
+explicit direct-firing scenario supplied by the caller; the preview's fixed
+Pass/Fail/Neither layer choice does not fire gameplay triggers. A custom trigger
+timeline and gameplay simulation are not provided by these controls.
+
+`animation("logo", {file="logo.png", frame_count=4, frame_delay_ms=100})` freezes
+`logo0.png` through `logo3.png` using the existing project asset owner. The base
+name is virtual. Keep that complete template fixed; a later generic image
+assignment is refused. The animation begins at its own explicit lifetime start,
+otherwise zero. `sample("cue", {path="cue.wav", time_ms=500, volume=80})` declares
+a separate storyboard cue. Omitted volume means100. Cue queries do not provide
+audio playback; ordinary chart BGM declarations retain their existing owner.
+
+Read export diagnostics. Exact loop/trigger output has a conservative structural
+proof; other supported curves may need bounded baking. Trigger baking requires
+an explicit scenario and finite span. Animation requires complete numbered assets
+with compatible dimensions and independently verified phase. Unsupported effects,
+phase or geometry refuse the entire publication. Video and StepMania currently
+refuse these new media-node routes explicitly. No engine parity is implied.

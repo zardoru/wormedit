@@ -258,3 +258,56 @@ TEST_CASE("async job moves current work and generations for single and multiple 
         check_async(!assigned.poll());
     }
 }
+
+TEST_CASE("opted async request with retained delivery exposes the worker success after stop", "[unit][async-job][cancel-policy]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1,1}; std::latch entered{1}, release{1}; bool stopped{};
+    job_t job{scheduler,1,"invalid","capacity","missing"};
+    const auto started = job.request(capture({.value = 42, .started = &entered, .release = &release, .cancelled = &stopped}),
+        71, work, task_cancel_result_policy_t::retain_running_result);
+    require_async(static_cast<bool>(started)); entered.wait();
+    job.cancel(async_job_cancel_policy_t::retain_completion); release.count_down();
+    const auto result = job.wait(); require_async(result.has_value()); require_async(result->has_value());
+    check_async(stopped); check_async(result->value().identity == 71); check_async(*result->value().payload == 42);
+    check_async(!job.poll());
+}
+TEST_CASE("ordinary async cancellation still discards an opted request completion", "[unit][async-job][cancel-policy]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1,1}; std::latch entered{1}, release{1}, finished{1};
+    job_t job{scheduler,1,"invalid","capacity","missing"};
+    require_async(static_cast<bool>(job.request(capture({.value = 42, .started = &entered, .release = &release, .finished = &finished}),
+        71, work, task_cancel_result_policy_t::retain_running_result)));
+    entered.wait(); job.cancel(); release.count_down(); finished.wait(); scheduler.shutdown();
+    check_async(!job.is_busy()); check_async(!job.poll()); check_async(!job.wait());
+}
+TEST_CASE("latest-only supersession still discards the opted prior worker result", "[unit][async-job][cancel-policy]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1,2}; std::latch entered{1}, release{1}; bool stopped{};
+    job_t job{scheduler,2,"invalid","capacity","missing"};
+    require_async(static_cast<bool>(job.request(capture({.value = 1, .started = &entered, .release = &release, .cancelled = &stopped}),
+        11, work, task_cancel_result_policy_t::retain_running_result)));
+    entered.wait(); const auto next = job.request(capture({.value = 2}), 22, work); release.count_down();
+    require_async(static_cast<bool>(next)); const auto result = job.wait();
+    require_async(result.has_value()); require_async(result->has_value());
+    check_async(stopped); check_async(result->value().identity == 22); check_async(*result->value().payload == 2);
+    check_async(!job.poll());
+}
+
+namespace {
+auto precise_cancelled_work(const request_t& request, std::stop_token stop) -> job_t::work_outcome_t {
+    (void)work(request, stop);
+    return std::unexpected(wormedit::error_t{wormedit::failure_code_t::io_failed, std::string{"exact returned failure"}});
+}
+}
+TEST_CASE("opted async request retains the precise worker failure after cancellation", "[unit][async-job][cancel-policy]") {
+    using namespace wormedit;
+    task_scheduler_t scheduler{1,1}; std::latch entered{1}, release{1};
+    job_t job{scheduler,1,"invalid","capacity","missing"};
+    require_async(static_cast<bool>(job.request(capture({.started = &entered, .release = &release}),
+        81, precise_cancelled_work, task_cancel_result_policy_t::retain_running_result)));
+    entered.wait(); job.cancel(async_job_cancel_policy_t::retain_completion); release.count_down();
+    const auto result = job.wait(); require_async(result.has_value()); require_async(!result->has_value());
+    check_async(result->error().identity == 81);
+    check_async(result->error().cause.code == failure_code_t::io_failed);
+    check_async(result->error().cause.message == "exact returned failure");
+}

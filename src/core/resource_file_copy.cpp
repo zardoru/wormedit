@@ -497,6 +497,62 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
 
 } // namespace
 
+auto inspect_project_path_source(const project_path_copy_request_t& request)
+    -> result_t<std::filesystem::path, error_t<failure_code_t>> {
+    namespace fs = std::filesystem;
+    if (!request.source_directory.is_absolute() || !is_valid_relative(request.relative_path) ||
+        request.relative_path != request.relative_path.lexically_normal() || request.maximum_bytes == 0)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            "Project-relative copy source is invalid."});
+    if (!is_existing_copy_directory_safe(request.source_directory, request.relative_path.parent_path()))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            "Copy source contains an unavailable or symlink directory."});
+    const auto source = request.source_directory / request.relative_path;
+    std::error_code error;
+    const auto status = fs::symlink_status(source, error);
+    if (error || fs::is_symlink(status) || !fs::is_regular_file(status))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::unavailable,
+            "Copy source is unavailable or is not a regular file: " + request.relative_path.string()});
+    if (fs::file_size(source, error) > request.maximum_bytes || error)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            "Copy source exceeds its byte limit."});
+    if (request.expected_source && published_identity(source) != request.expected_source)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict,
+            "Copy source changed after media preparation: " + request.relative_path.string()});
+    return source;
+}
+
+auto create_project_path_copy(const project_path_copy_request_t& request,
+    const std::filesystem::path& staging_directory, std::stop_token stop)
+    -> result_t<void, error_t<failure_code_t>> {
+    if (stop.stop_requested())
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "Copy cancelled."});
+    const auto source = inspect_project_path_source(request);
+    if (!source) return std::unexpected(source.error());
+    if (!staging_directory.is_absolute() ||
+        !is_existing_copy_directory_safe(staging_directory, {}))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            "Copy staging directory is unsafe."});
+    std::filesystem::path directory;
+    auto prepared = prepare_copy_directory(staging_directory, request.relative_path.parent_path(),
+                                            false, directory);
+    if (!prepared) return prepared;
+    const auto destination = staging_directory / request.relative_path;
+    const project_asset_copy_request_t copy{.project_directory = staging_directory,
+        .source_path = *source, .maximum_bytes = request.maximum_bytes,
+        .validate_temporary = [&](const auto&) { return inspect_project_path_source(request).has_value(); }};
+    // Reuse the bounded, flushed, byte-verified no-replace primitive. No asset
+    // identity is assigned, and registered-asset entry points keep their contract.
+    auto result = publish_copy(copy, {*source, directory, request.relative_path, destination}, stop);
+    if (!result) return std::unexpected(result.error());
+    return {};
+}
+
+auto project_asset_copy_receipt_t::published_identity_t::from(const std::filesystem::path& path)
+    -> std::optional<published_identity_t> {
+    return wormedit::published_identity(path);
+}
+
 auto project_asset_copy_receipt_t::from(const std::filesystem::path& relative_path,
                                         const std::filesystem::path& absolute_path,
                                         project_asset_copy_phase_t status)

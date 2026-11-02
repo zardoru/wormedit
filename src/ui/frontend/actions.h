@@ -8,6 +8,7 @@
 #include <wormedit/core/timing_edit_policy.h>
 #include <wormedit/core/preview_mix.h>
 #include "workspace_types.h"
+#include "storyboard.h"
 #include "file_jobs.h"
 #include "lane_keys.h"
 #include "options_notifications.h"
@@ -508,6 +509,7 @@ struct workspace_action_t {
     song_id_t close_project_id;
     uint64_t close_revision;
     wormedit::ui::project_chart_action_t project_chart;
+    storyboard_action_t storyboard;
     wormedit::ui::project_settings_action_t project_settings;
     wormedit::ui::project_output_group_action_t project_output_group;
     wormedit::ui::chart_import_action_t chart_import;

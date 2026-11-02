@@ -92,6 +92,8 @@ struct editor_views_t {
 
     void begin_project_session() {
         project = {};
+        // Borrowed storyboard indices cannot survive reopening the same saved revision.
+        player_preview_presenter = {};
         // Cancel captures while retaining application input settings.
         compose_viewport_input.escape();
         compose_navigation_input.cancel();

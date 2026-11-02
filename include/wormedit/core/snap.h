@@ -2,14 +2,21 @@
 
 #include <wormedit/core/position_types.h>
 #include <wormedit/core/measure.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <optional>
 #include <span>
 
 namespace wormedit {
+struct storyboard_time_t;
 struct chart_document_t;
 struct measure_index_t;
+
+// Storyboard keys use signed integer milliseconds. Nearest millisecond, with
+// exact half ties going earlier, matching the chart grid's tie policy.
+[[nodiscard]] auto snap_storyboard_key_time(storyboard_time_t time) noexcept
+    -> result_t<std::int64_t, failure_code_t>;
 
 // The one place pointer and cursor positions are rounded onto the edit grid. Every object class
 // (notes, holds, timing markers, areas, resources, BGM, recipes) goes through these helpers, so

@@ -135,6 +135,33 @@ StepMania exports copy the song audio next to the chart file. A project with mor
 resource cannot be exported to them, even if the resources refer to the same file; Wormedit reports
 the refusal without publishing partial files.
 
+=== OSBX storyboards in SSC (post-1.0 branch)
+
+In a StepMania target's editor, *Storyboard* offers *Actors*, *Video* and *None*.
+*Actors* exports native Lua alongside SSC for the pinned StepMania 5.1/ITGmania route;
+choose the StepMania 5.1 implementation policy. *Video* currently reports that its route is
+unavailable and exports the chart without a video. *None* exports without an OSBX storyboard.
+New policies start with Actors. Projects saved before schema 31 migrate to None, including
+targets whose old optional StepMania policy was absent; saving does not silently add actors.
+
+The accompanying *Conditional layer* choice is the shared *Pass*, *Fail* or *Neither*
+setting, default Pass. Neither excludes both conditional layers. It selects one export outcome,
+without reading gameplay meters or changing ordinary `.osb` exports of both conditional layers.
+
+Actor export preserves supported transform stacks, origins, inherited tint/opacity and global
+layer order, using the current song clock on every update. Images and generated
+`wormedit-storyboard/background/default.lua` or `foreground/default.lua` are published together
+with the SSC. Existing source BG/FG hooks are preserved; conflicts and unsupported objects are
+listed as storyboard losses while the chart still exports. File ownership, changed sources or
+other publication errors can still refuse the package safely.
+
+Native canvas clipping has no certified implementation: objects whose image corners cannot be
+proved to stay inside the logical canvas are omitted with a warning. Nonlinear tracks use the
+shared bake metric, with an explicit sampled time range in the report; samples do not prove
+the error between samples. Large scenes and animations outside the bounded song-clock domain
+can also be refused per object. This route has source-pinned engine semantics and mathematical
+fixtures; those fixtures do not certify playback in an actual engine build or theme.
+
 == Try it without an external song
 
 First open the bundled `fixtures/comparison/comparison.wormedit` beside this HTML manual

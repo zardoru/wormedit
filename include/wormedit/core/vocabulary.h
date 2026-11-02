@@ -5,6 +5,7 @@
 // indices and editor state stay out, so the frontend and C++ view types can include this alone.
 
 #include <wormedit/core/id.h>
+#include <wormedit/core/storyboard_vocabulary.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -204,13 +205,18 @@ enum class stepmania_implementation_profile_t {
     unspecified,
     stepmania_5_1,
     etterna_0_75_1,
+    notitg_v4,
 };
+
+enum class stepmania_storyboard_mode_t : std::uint8_t { actors, video, none };
 
 struct stepmania_export_policy_t {
     stepmania_profile_t file_profile{stepmania_profile_t::ssc};
     stepmania_timing_syntax_t timing_syntax{stepmania_timing_syntax_t::native_warps};
     stepmania_implementation_profile_t implementation_profile{
         stepmania_implementation_profile_t::unspecified};
+    stepmania_storyboard_mode_t storyboard{stepmania_storyboard_mode_t::actors};
+    storyboard_conditional_layer_t conditional_layer{storyboard_conditional_layer_t::pass};
     auto operator==(const stepmania_export_policy_t&) const -> bool = default;
 };
 

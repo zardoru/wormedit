@@ -16,4 +16,5 @@
 :shot-select-layer-tools-revision: c369248
 :shot-sound-import-review-revision: c369248
 :shot-start-screen-revision: c369248
+:shot-storyboards-revision: 064fd9f+dirty
 :shot-timing-bpm-edit-revision: c369248

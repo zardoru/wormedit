@@ -240,7 +240,7 @@ TEST_CASE("Lua impulse boxing postprocess and composition consume an immutable b
     const auto chart = make_impulse_chart();
     auto recipe = make_impulse_recipe();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "function(p) return 1 end";
+    recipe.set_frozen_source("function(p) return 1 end");
     recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::multiply, .value = {2, 1}}};
     impulse_script_counts_t counts;
     const impulse_script_backend_t backend(counts);

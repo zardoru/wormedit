@@ -21,6 +21,7 @@ namespace wormedit::native_project_internal {
 [[nodiscard]] auto encode_native_value(const midi_asset_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const generator_recipe_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const sv_recipe_definition_t&) -> nlohmann::json;
+// Includes OSBX content and its owning recipe reference using the project codec.
 [[nodiscard]] auto encode_native_value(const storyboard_document_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const chart_document_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const export_cut_t&) -> nlohmann::json;

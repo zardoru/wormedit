@@ -245,3 +245,16 @@ TEST_CASE("history availability cache invalidates same-id same-revision reloads 
     document = std::move(reloaded);
     CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns, 2).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
 }
+
+TEST_CASE("file notification target survives document replacement without a chart lookup", "[sys][notifications][video]") {
+    notification_center_t center{[] { return 0ns; }};
+    center.post({.severity = notification_severity_t::success, .source = notification_source_t::export_,
+        .message = "Video complete", .target = notification_file_t{.path = "/tmp/clip.webm"}});
+    center.drain_inbox(0ns);
+    notification_history_runtime_t runtime; runtime.visible = true;
+    const auto view = ui::notification_history_view_t::from(runtime, center, song_document_t{}, 0ns);
+    REQUIRE(view.rows.size() == 1);
+    CHECK(view.rows.front().target == WORM_UI_NOTIFICATION_TARGET_FILE);
+    CHECK_FALSE(runtime.apply({WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER, view.rows.front().id}, center));
+    CHECK(find_notification(center, view.rows.front().id) != nullptr);
+}

@@ -1,5 +1,132 @@
 # Status: resume checklist
 
+## Current local acceptance (2026-11-02)
+
+SOURCE71's full GATE passes build, all 6,515 tests, whitespace and 221 changed-C++ comparisons. The disabled Lua/four-codec build passes all 5,490 tests and the full 724-TU raw/strict scan. Enabled header coverage is reconciled across 837 unchanged units and six passing rechecks; no allowances increased. The actual 1280/800 screen, decoded Animation advance, atomic Animation/Sample and baked tutorial packages, 853 event cases, six documentation checks, and warning-free manual/LDoc are verified. SOURCE72 updates only these acceptance records. Nightshift stores the authoritative managed task GATEs, goal transitions and saved PR follow-up receipts; do not infer publication from this source checkpoint. All source writers are released, and the unrelated dirty fixture remains intact.
+
+
+## Earlier SOURCE70 integration checkpoint (2026-11-02; acceptance was pending)
+
+All remaining source writers are released. Parent SOURCE67 full build and all6,515 tests pass; the real screen workflow reaches native roundtrip and osu! bake output. A reproduced720px selected-key clipping defect is fixed and checked at800/1280. Full843-unit complexity found four new test-only violations; cohesive assertion helpers preserve all cases, six fresh revised-TU comparisons pass, and837 unchanged units retain exact-input evidence. No allowances changed. Current API/spec prose, canonical schema39 teaching fixture and revision-stamped Storyboards manual are integrated. Six SOURCE70 documentation tests and the manual/LDoc build pass without warnings. Disabled Lua/codecs, three distinct fresh service GATEs and Nightshift manual/task/goal finalization are still pending. Preserve all prior failure receipts and the unrelated dirty.agent fixture. No commit or publication yet.
+
+
+## Current SOURCE56 acceptance (2026-11-02)
+
+SB-11, reusable OSBX clips (OSBX-1b), T-152, required fixed SB-13 choices and
+T-153 are accepted. Each passed its own fresh service GATE: build, all 6,425
+tests, whitespace and 218 changed-C++ complexity comparisons. The full
+four-codecs-disabled build and all 5,595 tests pass. Complete 841-unit header
+coverage combines 833 byte-identical accepted units and eight newly measured
+test-helper refactors; SOURCE55's original 14-function complexity failure stays
+recorded as a failure. No baseline/config allowance changed. All 292 test
+declarations and behavioral assertions in the eight refactored units remain.
+The 2,046 source inputs and unrelated fixture stayed fixed during acceptance.
+Evidence: `/tmp/cohort56-service-acceptance.json`,
+`/tmp/cohort56-parent-verification.json`.
+
+Actual isolated 1280/800 Pass/Fail, overlay/hidden-tab Neither and
+Detach/Undo/Redo captures were inspected. SOURCE56's executable is byte-identical
+to those captures. All own processes stopped. Long generator module text clips
+in the narrow hierarchy banner; SB-12 must fix and regress it before final screen
+acceptance (`/tmp/sb12-parent-narrow-banner-preflight.json`). Schema 37 preserves
+strict clips/Animation/Sample/trigger migrations; Sample audio mixing and Custom
+trigger simulation are not claimed. Clip exact-clock capacity/refusal limits
+and conservative export restrictions are documented.
+
+Continue the SAME Nightshift runs, coordinator and codex/gpt-6.1-sol/medium/priority
+settings. Existing saved deadlines are 10:41/10:42 UTC; no more extension is
+inferred. Three tasks remain: OSBX-1c typed loops/triggers, OSBX-10 Animation/Sample
+nodes, and final SB-12 workflow/captures/manual. Begin fresh managed read-only
+preflights, request minimal exact scopes, and serialize shared model/evaluator/
+native schema writers. T-151 supplies cues/schedule, not Sample audio playback.
+Parent keeps common registration/status/coherent verification. Never restore
+HEAD over the protected dirty `.agent` fixture. No old token or admission reopens;
+no goal completion, commit, push or PR is claimed.
+
+## Earlier SOURCE48 acceptance (2026-11-02)
+
+OSBX-11/T-188, SMX-3, T-151 and SB-7/SB-8/SB-9/SB-14 are accepted on
+`storyboard-osbx`. Each passed its own fresh service GATE: build, all 6,332 tests,
+whitespace and all 215 changed-C++ complexity comparisons. Raw checks on 220
+units and five extra header consumers pass without raised allowances. Explicit
+resource-plan/Lua, storyboard/native and event-harness filters pass 151, 92 and
+836 cases. The 2,042 source inputs, unrelated fixture and complete worktree status
+remained unchanged during acceptance. Receipts: `/tmp/cohort48-service-acceptance.json`.
+
+Current isolated 1280×720 and 800×720 layouts, the Lua form/cancellation and a
+staged gizmo Translate/Escape sequence were inspected; Escape restores exact
+canvas pixels. All owned capture processes are stopped. Schema 35 Samples expose
+scheduled cues without adding audio mixing; typed chart-Lua note/BGM references
+use the canonical allocator/consumer and frozen-copy transaction owners. Etterna
+uses the shared native actor route; these host regressions certify no real-engine
+runtime or new Windows package.
+
+This is historical SOURCE48 evidence. SOURCE56 supersedes the pending-state list;
+accepted task records and old source slots remain closed.
+
+
+## Earlier SOURCE42 acceptance (2026-11-02)
+
+T-150, SMX-4 and VID-3 are accepted in the shared `storyboard-osbx` checkout.
+Each task passed its own fresh service GATE against the same frozen SOURCE42:
+build, all 6,308 tests, whitespace and 215 changed-C++ complexity comparisons.
+The 2,042 input hashes and unrelated tracked `.agent` fixture remained unchanged
+through all three runs. The all-codecs-disabled build and all 5,482 configured
+tests also passed; no complexity allowance or configuration was raised.
+
+T-150 parses/emits Animation metadata and persists it through schema 34 while
+retaining preview omission and OSBX conversion refusal until the later cards.
+SMX-4 adds the conservative NotITG foreground SM/XML/Lua profile; pinned API,
+golden and mathematical fixtures are evidence, not an actual engine certificate.
+VID-3 provides the background Storyboard/File video export workflow. Actual
+1080p/UHD exports passed independent frame/audio probes and inspected frames;
+isolated real-window checks covered both actions, progress with tab switching,
+cancel, replacement refusal and Show in folder. The new VID-3 Windows UI/package
+was not certified by the earlier VID-2 Windows smoke.
+
+Service receipts and log locations are consolidated in
+`/tmp/cohort42-service-acceptance.json`; detailed prerequisite evidence is in
+`/tmp/cohort42-pre-gate-evidence.json`. Accepted task records are frozen.
+Both existing Nightshift goals still have unfinished tasks and integration/manual
+acceptance gates. Resume through their existing coordinator and saved settings;
+no old source admission transfers to a new attempt. No commit, push or PR was made.
+
+## OSBX branch acceptance (2026-10-31)
+
+OSBX-9 is locally implemented and verified on `storyboard-osbx` in the
+shared checkout. Main's 1.0 freeze and the owner's single post-1.0 PR policy remain.
+The [Sunshine example](../../docs/lua-api/examples/storyboard/README.md) includes a
+chart, rotating sun/worm scene, original PNG/SVG assets and a separate sheared-banner
+negative variant. Lua → Apply → save/load → three affine frames → osu! export/reparse
+passes 206 assertions; unsupported banner publication creates no directory, and a
+broken module leaves the native document/Undo unchanged.
+
+The real-window pass exposed missing image registration in the preview. The
+coordinator approved a presenter-owned, transient source catalog using the existing
+safe media resolver and async image decoder/cache. It never mutates document
+resources; aliases share sources, persistent IDs are skipped, and document/project
+rebinds plus completion content identities prevent stale decoded pixels/textures.
+Recoverable image errors are visible without hiding usable images or lanes. Focused
+delivery tests pass 147 assertions/8 cases; texture/quad/layout tests pass 14,716/17.
+Matching LLVM 23.1.3 GATE passes build, all 5,773 tests, whitespace and 67 changed
+translation-unit complexity checks; eight explicit visual-header consumers pass
+without changed allowances. The warning-free manual build and six documentation
+checks are recorded in `/tmp/osbx9-manual-final.log` and
+`/tmp/osbx9-documentation-final.log`. Post-fix isolated Xvfb captures were inspected:
+`/tmp/osbx9-postfix-preview-early.png` (0.5 s),
+`/tmp/osbx9-postfix-preview-middle.png` (1.5 s),
+`/tmp/osbx9-postfix-preview-late.png` (3 s), and
+`/tmp/osbx9-postfix-missing-image.png` (diagnostic plus retained images/lanes).
+Gate log: `/tmp/osbx9-gate-final.log`; detailed stage logs:
+`/tmp/wormedit-gate.m0hUp1/`. Ctest's tracked
+`.agent/osu-stepmania-publication/song.wormedit` side effect is restored to its
+pre-run bytes. Coordinator review/finalization is next; no commit, push or PR is
+part of this implementation handoff.
+
+Continue with the coordinator-selected remaining OSBX/SB/VID/SMX cards; clips,
+animation/sample execution, Lua links, video and StepMania storyboard output remain
+separate work. No starter project with pre-imported images is required.
+
 ## Independent review follow-ups (owner, 2026-10-30)
 
 [T-785](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) is locally done:

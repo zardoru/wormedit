@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -50,9 +51,15 @@ struct notification_chart_position_t {
     auto operator==(const notification_chart_position_t&) const -> bool = default;
 };
 
-// "Go to" destination: nothing, an exact chart position, or a document object.
+struct notification_file_t {
+    std::filesystem::path path;
+    auto operator==(const notification_file_t&) const -> bool = default;
+};
+
+// Transient action destination: chart position/object, or a published local file.
+// File actions open the parent directory only on an explicit user click.
 using notification_target_t =
-    std::variant<std::monostate, notification_chart_position_t, object_id_t>;
+    std::variant<std::monostate, notification_chart_position_t, object_id_t, notification_file_t>;
 
 // Maps one diagnostic to its "Go to" target. When supplied it is authoritative:
 // std::monostate posts the diagnostic without Go to. Without one, a diagnostic

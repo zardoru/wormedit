@@ -62,7 +62,7 @@ TEST_CASE("a recipe ending at the chart end and a Lua expression recipe both get
         linear_recipe(10, {measure_id_t{2}, 0}, {measure_id_t{2}, 960}, {1, 1}, {2, 1}));
     auto expression = linear_recipe(11, {measure_id_t{1}, 0}, {measure_id_t{1}, 480}, {1, 1}, {1, 1});
     expression.curve = sv_recipe_curve_t::lua_expression;
-    expression.expression_source = "return 1";
+    expression.set_frozen_source("return 1");
     chart.sv_recipes.push_back(expression);
     const auto result = project(chart);
     REQUIRE(result.areas.size() == 2);

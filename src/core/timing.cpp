@@ -2666,7 +2666,7 @@ auto count_preview_inputs(const chart_document_t& chart, preview_schedule_option
             count_preview_note(note, options, linked_playable_groups, counts);
         }
         for (const auto& bgm : measure.bgm_events) {
-            if (!bgm.sound) {
+            if (!bgm.sound && !bgm.osu_hitsample) {
                 continue;
             }
             if (counts.bgm < options.maximum_bgm_events) {
@@ -2726,7 +2726,7 @@ auto append_preview_note(preview_event_context_t& context, const note_t& note) -
 }
 
 auto append_preview_bgm(preview_event_context_t& context, const bgm_event_t& bgm) -> bool {
-    if (!bgm.sound) {
+    if (!bgm.sound && !bgm.osu_hitsample) {
         return true;
     }
     const auto frame = position_frame(context.timing, context.rows.row_of(bgm.position),
@@ -2744,7 +2744,7 @@ auto append_preview_bgm(preview_event_context_t& context, const bgm_event_t& bgm
         std::ranges::find(context.chart.bgm_source_lanes, bgm.source_lane, &bgm_source_lane_t::id);
     context.schedule.bgm.push_back({.sample_frame = *frame,
                                     .object = bgm.id,
-                                    .resource = *bgm.sound,
+                                    .resource = bgm.sound.value_or(resource_id_t{}),
                                     .source_order = lane == context.chart.bgm_source_lanes.end()
                                                         ? std::numeric_limits<std::size_t>::max()
                                                         : lane->source_order,

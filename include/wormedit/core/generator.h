@@ -12,10 +12,12 @@ struct generator_note_t {
     auto operator==(const generator_note_t&) const -> bool = default;
 };
 struct generator_layer_t { std::string key; semantic_layer_t value; auto operator==(const generator_layer_t&) const -> bool = default; };
+using generator_storyboard_t = generator_binding_t<osbx_document_t>;
 struct generator_output_t {
     std::vector<generator_note_t> notes;
     std::vector<generator_layer_t> layers;
     std::vector<generator_chart_binding_t> charts;
+    std::vector<generator_storyboard_t> storyboards;
     std::vector<generator_scroll_binding_t> scrolls;
     std::vector<generator_sv_binding_t> sv_recipes;
     std::vector<std::string> rationalizations;
@@ -29,7 +31,7 @@ struct generator_preview_t {
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&) const
         -> diagnosed_t<std::optional<std::string>>;
     generator_recipe_t recipe;
-    generator_diff_t notes, layers, charts, sv;
+    generator_diff_t notes, layers, charts, sv, storyboards;
     std::vector<std::string> rationalizations;
     bool keep_recipe{true};
     [[nodiscard]] auto bind_output(const document_history_t&, generator_output_t,
@@ -37,12 +39,17 @@ struct generator_preview_t {
     [[nodiscard]] auto stage_outputs(document_command_transaction_t&, const generator_recipe_t& old) const -> diagnostic_list_t;
     [[nodiscard]] auto bind_charts(const document_history_t&, std::vector<generator_chart_binding_t>,
         const generator_recipe_t& old, std::uint64_t& next) -> diagnostic_list_t;
+    [[nodiscard]] auto bind_storyboards(const document_history_t&, std::vector<generator_storyboard_t>,
+        const generator_recipe_t& old, std::uint64_t& next) -> diagnostic_list_t;
+    [[nodiscard]] auto stage_storyboards(document_command_transaction_t&, const generator_recipe_t& old) const
+        -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_charts(document_command_transaction_t&, const generator_recipe_t& old) const
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] static auto propose(const document_history_t&, generator_recipe_t,
         generator_output_t, bool keep_recipe = true, std::uint64_t identity_floor = 0) -> generator_outcome_t;
 };
+[[nodiscard]] auto validate_generator_storyboards(const generator_recipe_t&) -> diagnostic_list_t;
 [[nodiscard]] auto apply_generator(document_history_t&, const generator_proposal_t&) -> document_command_result_t;
-// Removes only recipe ownership; ordinary chart notes/layers remain editable.
+// Removes recipe ownership; materialized chart and storyboard content remains editable.
 [[nodiscard]] auto detach_generator(document_history_t&, recipe_id_t) -> document_command_result_t;
 } // namespace wormedit

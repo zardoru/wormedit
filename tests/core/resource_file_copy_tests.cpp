@@ -471,3 +471,50 @@ TEST_CASE("project asset copies plan inspect and discard a custom relative direc
     CHECK_FALSE(std::filesystem::exists(copied->absolute_path));
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
 }
+
+namespace {
+void check_path_copy(bool condition) { CHECK(condition); }
+void require_path_copy(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("Path-based storyboard copies retain subdirectories and refuse unsafe sources",
+          "[unit][core][resource-copy][osbx]") {
+    temporary_directory_t source;
+    temporary_directory_t staging;
+    std::filesystem::create_directory(source.path / "images");
+    write_text(source.path / "images/sprite.png", "image bytes");
+    wormedit::project_path_copy_request_t request{.source_directory = source.path, .relative_path = "images/sprite.png"};
+    SECTION("bounded byte-verified copy needs no asset identity") {
+        require_path_copy(static_cast<bool>(wormedit::create_project_path_copy(request, staging.path)));
+        check_path_copy(static_cast<bool>(read_text(staging.path / "images/sprite.png") == "image bytes"));
+        write_text(source.path / "images/sprite.png", "changed bytes");
+        check_path_copy(!static_cast<bool>(wormedit::create_project_path_copy(request, staging.path)));
+        check_path_copy(static_cast<bool>(read_text(staging.path / "images/sprite.png") == "image bytes"));
+    }
+    SECTION("parent traversal and byte limits refuse before writing") {
+        request.relative_path = "../sprite.png";
+        check_path_copy(!static_cast<bool>(wormedit::create_project_path_copy(request, staging.path)));
+        request.relative_path = "images/sprite.png";
+        request.maximum_bytes = 1;
+        check_path_copy(!static_cast<bool>(wormedit::create_project_path_copy(request, staging.path)));
+        check_path_copy(static_cast<bool>(std::filesystem::is_empty(staging.path)));
+    }
+    SECTION("a changed prepared source refuses the first copy") {
+        request.expected_source = wormedit::project_asset_copy_receipt_t::from(
+            request.relative_path, source.path / request.relative_path,
+            wormedit::project_asset_copy_phase_t::copied).published_identity;
+        require_path_copy(request.expected_source.has_value());
+        write_text(source.path / request.relative_path, "different image geometry");
+        const auto copied = wormedit::create_project_path_copy(request, staging.path);
+        check_path_copy(!copied.has_value());
+        check_path_copy(std::filesystem::is_empty(staging.path));
+    }
+#if !defined(_WIN32)
+    SECTION("source symlinks refuse") {
+        std::filesystem::create_symlink(source.path / "images/sprite.png", source.path / "alias.png");
+        request.relative_path = "alias.png";
+        check_path_copy(!static_cast<bool>(wormedit::create_project_path_copy(request, staging.path)));
+        check_path_copy(static_cast<bool>(std::filesystem::is_empty(staging.path)));
+    }
+#endif
+}

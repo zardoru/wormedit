@@ -826,8 +826,7 @@ auto workspace_bms_branch_outline_view_t::from(const chart_document_t& chart,
 
 auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
     // The Timing screen is retired: Compose's timing focus mode carries its functions.
-    return index_of(tab).has_value() && tab != workspace_tab_t::storyboard &&
-           tab != workspace_tab_t::timing;
+    return index_of(tab).has_value() && tab != workspace_tab_t::timing;
 }
 
 auto workspace_controller_t::from(const song_document_t& document, const workspace_limits_t& limits)
@@ -974,7 +973,7 @@ auto apply_action(workspace_action_context_t& context, const workspace_switch_ta
         context.reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
     } else if (!is_workspace_tab_enabled(action.tab)) {
         context.reject(diagnostic_code_t::unsupported_feature,
-                       "storyboard editing is not available yet");
+                       "This workspace tab is unavailable.");
     } else {
         context.proposal.active_tab = action.tab;
     }
@@ -1458,9 +1457,8 @@ auto build_requested_workspace_tab(workspace_view_build_context_t& context, work
     case workspace_tab_t::timing: return build_timing_tab(context);
     case workspace_tab_t::compose: return build_compose_tab(context, branch_cache);
     case workspace_tab_t::storyboard:
-        context.view.tab_view = workspace_storyboard_view_t{.enabled = false,
-            .placeholder = "Storyboard editing is not available yet.",
-            .storyboard_count = context.document.storyboards.size()};
+        context.view.tab_view = workspace_storyboard_view_t{
+            .enabled = true, .maximum_storyboards = context.workspace.limits.maximum_storyboards};
         return true;
     case workspace_tab_t::audio_slices: return build_audio_slices_tab(context);
     case workspace_tab_t::compare_validate: return build_compare_validate_tab(context, cached_diagnostics);

@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace wormedit {
 
@@ -36,6 +37,8 @@ struct osu_sample_context_t {
     std::int64_t volume{100};
 };
 
+struct osu_hitsample_query_t;
+
 struct osu_hitsample_t {
     bool whistle{};
     bool finish{};
@@ -46,6 +49,8 @@ struct osu_hitsample_t {
     std::int64_t volume{};
     std::string filename;
 
+    [[nodiscard]] auto query(osu_sample_context_t context = {}, bool custom_normal = false) const
+        -> osu_hitsample_query_t;
     [[nodiscard]] auto is_valid() const -> bool {
         const auto valid_set = [](osu_sample_set_t set) {
             return set >= osu_sample_set_t::automatic && set <= osu_sample_set_t::drum;
@@ -58,6 +63,17 @@ struct osu_hitsample_t {
         return (whistle ? 2 : 0) | (finish ? 4 : 0) | (clap ? 8 : 0);
     }
     auto operator==(const osu_hitsample_t&) const -> bool = default;
+};
+
+struct osu_hitsample_voice_t {
+    std::string filename; // Explicit custom normal, otherwise use fallback name.
+    osu_skin_sample_t fallback;
+    auto operator==(const osu_hitsample_voice_t&) const -> bool = default;
+};
+struct osu_hitsample_query_t {
+    std::int64_t volume{100};
+    std::vector<osu_hitsample_voice_t> voices;
+    auto operator==(const osu_hitsample_query_t&) const -> bool = default;
 };
 
 enum class hitsound_field_t { whistle, finish, clap, normal_set, addition_set };

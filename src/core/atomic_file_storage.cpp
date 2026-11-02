@@ -1,6 +1,9 @@
 #include <wormedit/core/atomic_file_storage.h>
 
+#include "checked_math.h"
+
 #include <algorithm>
+#include <limits>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -104,11 +107,12 @@ auto create_exclusive_file(const std::filesystem::path& path, native_file_t& han
     return true;
 }
 
-auto write_all(native_file_t handle, std::string_view bytes, int& error_value) -> bool {
+auto write_all(native_file_t handle, std::string_view bytes, int& error_value, std::stop_token stop) -> bool {
     std::size_t offset{};
     while (offset < bytes.size()) {
-#ifdef _WIN32
+        if (stop.stop_requested()) return false;
         const auto remaining = std::min<std::size_t>(bytes.size() - offset, 1U << 20U);
+#ifdef _WIN32
         DWORD written{};
         if (!WriteFile(handle, bytes.data() + offset, static_cast<DWORD>(remaining), &written,
                        nullptr) ||
@@ -118,7 +122,7 @@ auto write_all(native_file_t handle, std::string_view bytes, int& error_value) -
         }
         offset += written;
 #else
-        const auto written = ::write(handle, bytes.data() + offset, bytes.size() - offset);
+        const auto written = ::write(handle, bytes.data() + offset, remaining);
         if (written < 0 && errno == EINTR) {
             continue;
         }
@@ -166,6 +170,41 @@ auto close_file(native_file_t& handle, int& error_value) -> bool {
     return closed;
 }
 
+auto seek_file(native_file_t handle, std::int64_t position, int& error_value) -> bool {
+#ifdef _WIN32
+    LARGE_INTEGER offset;
+    offset.QuadPart = position;
+    if (SetFilePointerEx(handle, offset, nullptr, FILE_BEGIN)) return true;
+    error_value = static_cast<int>(GetLastError());
+#else
+    if (::lseek(handle, static_cast<off_t>(position), SEEK_SET) >= 0) return true;
+    error_value = errno;
+#endif
+    return false;
+}
+
+// The temporary owner remains responsible for exclusive creation and cleanup.
+auto create_temporary(temporary_file_t& temporary, const std::filesystem::path& destination)
+    -> atomic_file_save_outcome_t {
+    static std::atomic<std::uint64_t> sequence{1};
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        temporary.path = make_temporary_path(destination, sequence.fetch_add(1, std::memory_order_relaxed));
+        int error{};
+        if (create_exclusive_file(temporary.path, temporary.handle, error)) {
+            temporary.owned = true;
+            return {};
+        }
+#ifdef _WIN32
+        const auto collision = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
+#else
+        const auto collision = error == EEXIST;
+#endif
+        if (!collision) return std::unexpected("could not create same-directory temporary file: " +
+            std::error_code(error, native_error_category()).message());
+    }
+    return std::unexpected("could not allocate a unique temporary file path");
+}
+
 auto atomic_replace(const std::filesystem::path& temporary,
                     const std::filesystem::path& destination, std::string& error,
                     bool replace_existing = true) -> bool {
@@ -196,74 +235,101 @@ auto atomic_replace(const std::filesystem::path& temporary,
 struct prepared_atomic_file_t::storage_t {
     temporary_file_t temporary;
     std::filesystem::path destination;
+    std::uint64_t maximum_bytes{}, position{}, extent{};
+    std::stop_token stop;
+    std::string failure;
+
+    auto is_ready() -> bool {
+        if (stop.stop_requested()) failure = "File preparation cancelled.";
+        return failure.empty();
+    }
+    auto finish() -> atomic_file_save_outcome_t {
+        if (!is_ready()) return std::unexpected(failure);
+        int error{};
+        if (!flush_file(temporary.handle, error))
+            return std::unexpected("could not flush temporary file: " +
+                std::error_code(error, native_error_category()).message());
+        if (!close_file(temporary.handle, error))
+            return std::unexpected("could not close temporary file: " +
+                std::error_code(error, native_error_category()).message());
+        return {};
+    }
 };
 prepared_atomic_file_t::prepared_atomic_file_t(std::unique_ptr<storage_t> storage) : storage_(std::move(storage)) {}
 prepared_atomic_file_t::prepared_atomic_file_t(prepared_atomic_file_t&&) noexcept = default;
 auto prepared_atomic_file_t::operator=(prepared_atomic_file_t&&) noexcept -> prepared_atomic_file_t& = default;
 prepared_atomic_file_t::~prepared_atomic_file_t() = default;
 
+auto prepared_atomic_file_t::stream_t::write(std::span<const std::byte> bytes)
+    -> atomic_file_save_outcome_t {
+    auto& storage = storage_;
+    if (!storage.is_ready()) return std::unexpected(storage.failure);
+    if (bytes.size() > storage.maximum_bytes - storage.position) {
+        storage.failure = "file exceeds its byte limit";
+        return std::unexpected(storage.failure);
+    }
+    int error{};
+    const std::string_view text{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+    if (!write_all(storage.temporary.handle, text, error, storage.stop)) {
+        storage.failure = storage.stop.stop_requested() ? "File preparation cancelled." :
+            "could not write temporary file: " + std::error_code(error, native_error_category()).message();
+        return std::unexpected(storage.failure);
+    }
+    storage.position += bytes.size();
+    storage.extent = std::max(storage.extent, storage.position);
+    return {};
+}
+auto prepared_atomic_file_t::stream_t::seek(std::int64_t offset, seek_origin_t origin)
+    -> result_t<std::int64_t, std::string> {
+    auto& storage = storage_;
+    if (!storage.is_ready()) return std::unexpected(storage.failure);
+    std::uint64_t base{};
+    switch (origin) {
+    case seek_origin_t::begin: break;
+    case seek_origin_t::current: base = storage.position; break;
+    case seek_origin_t::end: base = storage.extent; break;
+    }
+    const auto position = checked_math::checked_add(static_cast<std::int64_t>(base), offset);
+    if (!position || *position < 0 || static_cast<std::uint64_t>(*position) > storage.maximum_bytes) {
+        storage.failure = "file seek exceeds its byte limit";
+        return std::unexpected(storage.failure);
+    }
+    int error{};
+    if (!seek_file(storage.temporary.handle, *position, error)) {
+        storage.failure = "could not seek temporary file: " + std::error_code(error, native_error_category()).message();
+        return std::unexpected(storage.failure);
+    }
+    storage.position = static_cast<std::uint64_t>(*position);
+    return *position;
+}
+auto prepared_atomic_file_t::stream_t::size() const noexcept -> std::uint64_t { return storage_.extent; }
+
 auto prepared_atomic_file_t::from(const std::filesystem::path& path, std::string_view bytes,
     std::size_t maximum_bytes, validator_t validate, std::stop_token stop)
     -> result_t<prepared_atomic_file_t, std::string> {
-    std::string message;
-    if (path.empty() || path.filename().empty()) {
-        message = "destination must name a file";
-        return std::unexpected(std::move(message));
-    }
-    if (bytes.size() > maximum_bytes) {
-        message = "file exceeds its byte limit";
-        return std::unexpected(std::move(message));
-    }
-    static std::atomic<std::uint64_t> temporary_sequence{1};
+    if (bytes.size() > maximum_bytes) return std::unexpected("file exceeds its byte limit");
+    return from_stream(path, maximum_bytes, [bytes](stream_t& stream) {
+        return stream.write(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    }, std::move(validate), stop);
+}
+auto prepared_atomic_file_t::from_stream(const std::filesystem::path& path,
+    std::size_t maximum_bytes, producer_t produce, validator_t validate, std::stop_token stop)
+    -> result_t<prepared_atomic_file_t, std::string> {
+    if (path.empty() || path.filename().empty()) return std::unexpected("destination must name a file");
+    if (!produce) return std::unexpected("File producer is required.");
+    if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
     auto storage = std::make_unique<storage_t>();
     storage->destination = path;
-    auto& temporary = storage->temporary;
-    if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
-    bool created{};
-    for (int attempt = 0; attempt < 32; ++attempt) {
-        const auto sequence = temporary_sequence.fetch_add(1, std::memory_order_relaxed);
-        temporary.path = make_temporary_path(path, sequence);
-        int error{};
-        if (create_exclusive_file(temporary.path, temporary.handle, error)) {
-            created = true;
-            temporary.owned = true;
-            break;
-        }
-#ifdef _WIN32
-        const auto collision = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
-#else
-        const auto collision = error == EEXIST;
-#endif
-        if (!collision) {
-            message = "could not create same-directory temporary file: " +
-                      std::error_code(error, native_error_category()).message();
-            return std::unexpected(std::move(message));
-        }
-    }
-    if (!created) {
-        message = "could not allocate a unique temporary file path";
-        return std::unexpected(std::move(message));
-    }
-
-    int error{};
-    if (!write_all(temporary.handle, bytes, error)) {
-        message = "could not write temporary file: " +
-                  std::error_code(error, native_error_category()).message();
-        return std::unexpected(std::move(message));
-    }
-    if (!flush_file(temporary.handle, error)) {
-        message = "could not flush temporary file: " +
-                  std::error_code(error, native_error_category()).message();
-        return std::unexpected(std::move(message));
-    }
-    if (!close_file(temporary.handle, error)) {
-        message = "could not close temporary file: " +
-                  std::error_code(error, native_error_category()).message();
-        return std::unexpected(std::move(message));
-    }
+    storage->maximum_bytes = std::min<std::uint64_t>(maximum_bytes, std::numeric_limits<std::int64_t>::max());
+    storage->stop = stop;
+    const auto created = create_temporary(storage->temporary, path);
+    if (!created) return std::unexpected(created.error());
+    stream_t stream{*storage};
+    if (auto result = produce(stream); !result) return std::unexpected(std::move(result.error()));
+    if (auto result = storage->finish(); !result) return std::unexpected(std::move(result.error()));
     if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
     if (validate) {
-        if (auto verified = validate(temporary.path); !verified) return std::unexpected(std::move(verified.error()));
+        if (auto result = validate(storage->temporary.path); !result) return std::unexpected(std::move(result.error()));
     }
     if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
     return prepared_atomic_file_t{std::move(storage)};
@@ -271,6 +337,7 @@ auto prepared_atomic_file_t::from(const std::filesystem::path& path, std::string
 
 auto prepared_atomic_file_t::publish(bool replace_existing) -> atomic_file_save_outcome_t {
     if (!storage_) return std::unexpected("Prepared file is no longer available.");
+    if (!storage_->is_ready()) return std::unexpected(storage_->failure);
     std::string message;
     if (!atomic_replace(storage_->temporary.path, storage_->destination, message, replace_existing)) {
         return std::unexpected(std::move(message));

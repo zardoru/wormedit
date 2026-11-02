@@ -69,14 +69,6 @@ auto is_valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sampl
            is_valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
 }
 
-auto is_valid_storyboard_instance(const storyboard_draw_instance_t& instance) -> bool {
-    return instance.stable_id != 0 && instance.layer_order <= 4 && !instance.layer.empty() &&
-           !instance.origin.empty() && !instance.path.empty() && std::isfinite(instance.x) &&
-           std::isfinite(instance.y) && std::isfinite(instance.scale_x) &&
-           std::isfinite(instance.scale_y) && std::isfinite(instance.rotation_radians) &&
-           std::isfinite(instance.opacity) && std::isfinite(instance.red) &&
-           std::isfinite(instance.green) && std::isfinite(instance.blue);
-}
 
 auto append_tree(const std::vector<player_preview_note_source_t>& notes, std::size_t leaf_base)
     -> std::vector<double> {
@@ -252,7 +244,7 @@ auto is_valid_scene_request(const player_preview_index_t& index,
            request.maximum_composition_operations != 0 &&
            request.maximum_storyboard_instances != 0 &&
            request.storyboard_instances.size() <= request.maximum_storyboard_instances &&
-           std::ranges::all_of(request.storyboard_instances, is_valid_storyboard_instance) &&
+           std::ranges::all_of(request.storyboard_instances, &storyboard_draw_instance_t::is_valid) &&
            is_valid_skin(request.skin) && is_valid_direction(request.direction) &&
            is_valid_visual_fit_policy(request.visual_fit) && !index.layouts.empty() &&
            is_valid_visual_layers(request.visual_layers, request.sample_frame) &&

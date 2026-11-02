@@ -932,17 +932,16 @@ TEST_CASE("Shared Lua recipes retain source and descriptor metadata through edit
     auto song = shared_recipe_song();
     auto& source = song.charts.front().sv_recipes.front();
     source.curve = sv_recipe_curve_t::lua_expression;
-    source.expression_source = "return function(p, ctx) return 1 + p end";
-    source.lua = sv_recipe_lua_t{.entry_point = "curve", .source_reference = "recipes/rise.lua",
-        .parameters = {{.name = "height", .value = {2, 1}}}, .seed = 17};
+    source.set_frozen_source("return function(p, ctx) return 1 + p end");
+    source.lua = sv_recipe_lua_t{.source = {.frozen_source = source.script().frozen_source, .entry_point = "curve", .source_reference = "recipes/rise.lua", .parameters = {{.name = "height", .value = {2, 1}}}, .seed = 17}};
     auto history = document_history_t::from(song);
     expect(paste_chart_clipboard(history, chart_id_t{10}, copy_shared_recipe(history.document), {measure_id_t{12}, 0}).applied);
     auto edited = history.document.charts.front().sv_recipes.back();
-    edited.expression_source = "return function(p, ctx) return 2 + p end";
-    edited.lua->seed = 99;
+    edited.set_frozen_source("return function(p, ctx) return 2 + p end");
+    edited.lua->source.seed = 99;
     expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
     check_recipe(history.document.charts.front().sv_recipes.front().lua == edited.lua);
-    check_recipe(history.document.charts.front().sv_recipes.front().expression_source == edited.expression_source);
+    check_recipe(history.document.charts.front().sv_recipes.front().script().frozen_source == edited.script().frozen_source);
     expect(undo_document_command(history));
     check_recipe(history.document.charts.front().sv_recipes.front().lua == source.lua);
 }

@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <array>
+#include <latch>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -295,4 +297,106 @@ TEST_CASE("task casts check payload types and reject failed outcomes",
         failure_code_t::task_failed, "failed with payload", task_value_t::from(value)));
     CHECK_FALSE(task_value_cast<int>(failed));
     CHECK(failed.error().payload.as<int>() == value);
+}
+
+namespace {
+enum class retained_callback_mode_t { success, failure, exception };
+struct retained_callback_t {
+    std::latch entered{1}, release{1}, stopped{1};
+    std::atomic<bool> released{}, observed_stop{};
+    std::atomic<int> unclaimed_runs{};
+    void unblock() { if (!released.exchange(true)) release.count_down(); }
+    auto run(retained_callback_mode_t mode, std::stop_token stop) -> task_outcome_t {
+        std::stop_callback notification{stop, [&] { stopped.count_down(); }};
+        entered.count_down(); release.wait(); observed_stop.store(stop.stop_requested());
+        if (mode == retained_callback_mode_t::exception) throw std::runtime_error{"after stop"};
+        const auto value = task_value_t::from(std::make_shared<const int>(42));
+        if (mode == retained_callback_mode_t::failure)
+            return std::unexpected(task_failure_t::from(failure_code_t::io_failed, "precise worker failure", value));
+        return value;
+    }
+};
+struct retained_graph_t {
+    retained_callback_t callback;
+    task_scheduler_t scheduler{1,3};
+    task_graph_handle_t handle;
+    task_id_t running{}, dependent{}, queued{};
+    retained_graph_t(task_cancel_result_policy_t policy, retained_callback_mode_t mode = retained_callback_mode_t::success) {
+        task_graph_t graph{3};
+        const auto first = graph.create_task({}, [&, mode](auto, std::stop_token stop) { return callback.run(mode, stop); }, policy);
+        REQUIRE(first); running = *first;
+        const std::array dependencies{running};
+        const auto child = graph.create_task(dependencies, [&](auto, std::stop_token) {
+            ++callback.unclaimed_runs; return task_outcome_t{};
+        }, policy);
+        REQUIRE(child); dependent = *child;
+        const auto extra = graph.create_task({}, [&](auto, std::stop_token) {
+            ++callback.unclaimed_runs; return task_outcome_t{};
+        }, policy);
+        REQUIRE(extra); queued = *extra;
+        const auto submitted = scheduler.begin(std::move(graph)); REQUIRE(submitted); handle = *submitted;
+        callback.entered.wait();
+    }
+    ~retained_graph_t() { callback.unblock(); scheduler.shutdown(); }
+    void cancel_and_finish() { handle.cancel(); callback.unblock(); REQUIRE(handle.wait()); }
+};
+void check_cancelled_task(const task_graph_handle_t& handle, task_id_t task) {
+    const auto outcome = handle.outcome(task);
+    REQUIRE(outcome);
+    REQUIRE_FALSE(*outcome);
+    CHECK(outcome->error().cause.code == failure_code_t::cancelled);
+}
+}
+
+TEST_CASE("default running callback success is still overridden by explicit cancellation", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::discard_running_result}; fixture.cancel_and_finish();
+    const auto outcome = fixture.handle.outcome(fixture.running); REQUIRE(outcome); REQUIRE_FALSE(*outcome);
+    CHECK(outcome->error().cause.code == failure_code_t::cancelled);
+    CHECK(fixture.callback.observed_stop.load());
+}
+TEST_CASE("opted running callback preserves success while observing the existing stop token", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result}; fixture.cancel_and_finish();
+    const auto outcome = fixture.handle.outcome(fixture.running); REQUIRE(outcome); REQUIRE(*outcome);
+    const auto payload = task_value_cast<int>(*outcome); REQUIRE(payload); CHECK(*payload == 42);
+    CHECK(fixture.callback.observed_stop.load());
+}
+TEST_CASE("opted running callback retains its exact failure and payload after cancellation", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result, retained_callback_mode_t::failure};
+    fixture.cancel_and_finish();
+    const auto outcome = fixture.handle.outcome(fixture.running); REQUIRE(outcome); REQUIRE_FALSE(*outcome);
+    CHECK(outcome->error().cause.code == failure_code_t::io_failed);
+    CHECK(outcome->error().cause.message == "precise worker failure");
+    const auto payload = outcome->error().payload.as<int>(); REQUIRE(payload); CHECK(*payload == 42);
+}
+TEST_CASE("opted running callback keeps the existing typed exception conversion", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result, retained_callback_mode_t::exception};
+    fixture.cancel_and_finish();
+    const auto outcome = fixture.handle.outcome(fixture.running); REQUIRE(outcome); REQUIRE_FALSE(*outcome);
+    CHECK(outcome->error().cause.code == failure_code_t::task_threw);
+    CHECK(outcome->error().cause.message == "after stop");
+}
+TEST_CASE("retained running success cannot invoke queued or dependency-blocked work", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result}; fixture.cancel_and_finish();
+    check_cancelled_task(fixture.handle, fixture.queued);
+    check_cancelled_task(fixture.handle, fixture.dependent);
+    CHECK(fixture.callback.unclaimed_runs.load() == 0);
+    CHECK(fixture.scheduler.outstanding_tasks() == 0);
+}
+TEST_CASE("retained cancellation releases full graph capacity for the next submission", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result}; fixture.cancel_and_finish();
+    task_graph_t next{3};
+    for (int index = 0; index < 3; ++index)
+        REQUIRE(next.create_task({}, [](auto, std::stop_token) { return task_outcome_t{}; }));
+    const auto submitted = fixture.scheduler.begin(std::move(next)); REQUIRE(submitted); REQUIRE(submitted->wait());
+    CHECK(fixture.scheduler.outstanding_tasks() == 0);
+}
+TEST_CASE("scheduler shutdown overrides even an opted running success", "[unit][core][task-graph][cancel-policy]") {
+    retained_graph_t fixture{task_cancel_result_policy_t::retain_running_result};
+    std::jthread shutdown{[&] { fixture.scheduler.shutdown(); }};
+    fixture.callback.stopped.wait(); fixture.callback.unblock(); shutdown.join();
+    REQUIRE(fixture.handle.wait());
+    const auto outcome = fixture.handle.outcome(fixture.running); REQUIRE(outcome); REQUIRE_FALSE(*outcome);
+    CHECK(outcome->error().cause.code == failure_code_t::scheduler_stopped);
+    CHECK(fixture.callback.unclaimed_runs.load() == 0);
+    CHECK(fixture.scheduler.outstanding_tasks() == 0);
 }

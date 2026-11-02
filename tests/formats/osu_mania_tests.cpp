@@ -1617,7 +1617,7 @@ Sprite,Foreground,Centre,"broken.png"
     CHECK_FALSE(invalid.value.has_value());
     CHECK(has_code(invalid, wormedit::osu_mania_parse_diagnostic_code_t::invalid_storyboard));
 
-    constexpr std::string_view unsupported_trigger = R"osu(osu file format v14
+    constexpr std::string_view supported_trigger = R"osu(osu file format v14
 [General]
 Mode:3
 [Difficulty]
@@ -1629,9 +1629,9 @@ Sprite,Foreground,Centre,"a.png",0,0
 [TimingPoints]
 0,500,4,0,0,100,1,0
 )osu";
-    const auto trigger_block = parse_inline(unsupported_trigger);
-    CHECK_FALSE(trigger_block.value.has_value());
-    CHECK(has_code(trigger_block,
+    const auto trigger_block = parse_inline(supported_trigger);
+    REQUIRE(trigger_block.value.has_value());
+    CHECK_FALSE(has_code(trigger_block,
                    wormedit::osu_mania_parse_diagnostic_code_t::unsupported_storyboard));
 
     std::string deeply_nested = "osu file format v14\n[General]\nMode:3\n[Difficulty]\n"
@@ -2414,4 +2414,288 @@ TEST_CASE("Native schema 26 migration lifts retained osu sample fields with fres
     check_sample_control_context(loaded, loaded.measures.front().notes.front().position,
         osu_sample_set_t::drum, 25);
     CHECK(migrated.value->schema_version == current_document_schema_version);
+}
+
+namespace {
+void check_osu_osbx(bool condition) { CHECK(condition); }
+void require_osu_osbx(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("osu! OSBX writer emits validated sprites and grouped conversion diagnostics",
+          "[unit][format][osu-mania][storyboard][osbx]") {
+    auto imported = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n", "64,192,1000,1,0,0:0:0:0:\n"));
+    require_osu_osbx(static_cast<bool>(imported.value));
+    auto& song = *imported.value;
+    wormedit::osbx_document_t scene{
+        .images = {{.id = "image", .file = "sprite.png"}},
+        .nodes = {{.id = "sprite", .kind = wormedit::osbx_node_kind_t::sprite,
+                   .image = "image"}}};
+    song.storyboards = {{.id = wormedit::storyboard_id_t{1}, .osbx = scene}};
+    const std::array sizes{wormedit::osbx_osb_image_size_t{.image_id = "image", .width = 64, .height = 48}};
+    wormedit::osu_mania_write_options_t options;
+    options.osbx.image_sizes = sizes;
+    options.osbx.playback_span = wormedit::osbx_osb_span_t{0, 2000};
+
+    SECTION("exact scene emits a reparsable OSB") {
+        const auto written = wormedit::write_osu_storyboard(song, options);
+        require_osu_osbx(static_cast<bool>(written.value));
+        const auto parsed = wormedit::parse_osb(*written.value);
+        require_osu_osbx(static_cast<bool>(parsed.value));
+        check_osu_osbx(static_cast<bool>(parsed.value->sprites.size() == 1));
+        check_osu_osbx(static_cast<bool>(written.diagnostics.empty()));
+        check_osu_osbx(static_cast<bool>(write_inline(song, options).value.has_value()));
+    }
+    SECTION("baked orbit reports its ID and normalized error") {
+        auto& nodes = song.storyboards.front().osbx->nodes;
+        nodes.front().parent = "parent";
+        nodes.front().ops = {{.id = "offset", .track = {.default_value = {100, 0}}}};
+        nodes.push_back({.id = "parent", .ops = {{.id = "turn",
+            .kind = wormedit::osbx_transform_kind_t::rotate,
+            .track = {.default_value = {0}, .keys = {{.id = "a", .value = {0}},
+                {.id = "b", .time_ms = 2000, .value = {90}}}}}}});
+        const auto written = wormedit::write_osu_storyboard(song, options);
+        require_osu_osbx(static_cast<bool>(written.value));
+        const auto parsed = wormedit::parse_osb(*written.value);
+        require_osu_osbx(static_cast<bool>(parsed.value));
+        check_osu_osbx(static_cast<bool>(parsed.value->sprites.size() == 1));
+        require_osu_osbx(static_cast<bool>(written.diagnostics.size() == 1));
+        check_osu_osbx(static_cast<bool>(written.diagnostics.front().severity == wormedit::diagnostic_severity_t::warning));
+        check_osu_osbx(static_cast<bool>(written.diagnostics.front().message.find("sprite") != std::string::npos));
+        check_osu_osbx(static_cast<bool>(written.diagnostics.front().message.find("normalized error") != std::string::npos));
+    }
+    SECTION("ancestor skew groups sprite IDs and preserves op and owner") {
+        auto& nodes = song.storyboards.front().osbx->nodes;
+        nodes.front().parent = "parent";
+        nodes.push_back({.id = "other", .kind = wormedit::osbx_node_kind_t::sprite,
+                         .parent = "parent", .image = "image"});
+        nodes.push_back({.id = "parent", .ops = {{.id = "skew-op",
+            .kind = wormedit::osbx_transform_kind_t::skew,
+            .track = {.default_value = {10, 0}}}}});
+        const auto written = wormedit::write_osu_storyboard(song, options);
+        check_osu_osbx(!static_cast<bool>(written.value));
+        require_osu_osbx(static_cast<bool>(written.diagnostics.size() == 1));
+        const auto& message = written.diagnostics.front().message;
+        for (const auto text : {"sprite", "other", "skew-op", "parent",
+             "no .osb equivalent: remove it, or export video or StepMania instead"})
+            check_osu_osbx(static_cast<bool>(message.find(text) != std::string::npos));
+        check_osu_osbx(static_cast<bool>(message.find("skew-op") == message.rfind("skew-op")));
+    }
+    SECTION("implicit shear names its contributing op stack") {
+        song.storyboards.front().osbx->nodes.front().ops = {
+            {.id = "rotate-op", .kind = wormedit::osbx_transform_kind_t::rotate,
+             .track = {.default_value = {45}}},
+            {.id = "stretch-op", .kind = wormedit::osbx_transform_kind_t::scale,
+             .track = {.default_value = {2, 1}}}};
+        const auto written = wormedit::write_osu_storyboard(song, options);
+        check_osu_osbx(!written.value.has_value());
+        require_osu_osbx(!written.diagnostics.empty());
+        const auto& message = written.diagnostics.front().message;
+        check_osu_osbx(message.find("stretch-op") != std::string::npos);
+        check_osu_osbx(message.find("rotate-op") != std::string::npos);
+        check_osu_osbx(message.find("no .osb equivalent: remove it, or export video or StepMania instead") != std::string::npos);
+    }
+    SECTION("missing geometry and playback context refuse without output") {
+        options.osbx.image_sizes = {};
+        check_osu_osbx(!static_cast<bool>(wormedit::write_osu_storyboard(song, options).value));
+        options.osbx.playback_span.reset();
+        check_osu_osbx(!static_cast<bool>(wormedit::write_osu_storyboard(song, options).value));
+    }
+}
+
+namespace {
+using namespace wormedit;
+void check_inherited_bgm_osu_voices(const song_document_t& song) {
+    const auto written = write_inline(song);
+    REQUIRE(written.value);
+    CHECK(written.value->find("Sample,0,1,\"soft-hitnormal2.wav\",70") != std::string::npos);
+    CHECK(written.value->find("Sample,0,1,\"soft-hitclap2.wav\",70") != std::string::npos);
+    CHECK(write_inline(song).value == written.value);
+}
+void check_single_normal_bgm_voice(const song_document_t& song) {
+    const auto custom_normal = write_inline(song);
+    REQUIRE(custom_normal.value);
+    const auto first = custom_normal.value->find("Sample,0,1,\"soft-hitnormal2.wav\",70");
+    REQUIRE(first != std::string::npos);
+    CHECK(custom_normal.value->find("Sample,0,1,\"soft-hitnormal2.wav\",70", first + 1) == std::string::npos);
+}
+void check_custom_bgm_voice_volume(const song_document_t& song) {
+    const auto custom = write_inline(song);
+    REQUIRE(custom.value);
+    CHECK(custom.value->find("Sample,0,1,\"custom.wav\",25") != std::string::npos);
+}
+}
+
+TEST_CASE("BGM osu descriptors serialize canonical inherited voices and reject missing audio", "[osu][resource_plan]") {
+    using namespace wormedit;
+    const auto parsed = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,2,2,70,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n");
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    auto& chart = song.charts.front();
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{90001},
+        .position = {chart.measures.front().id, 0}, .source_lane = object_id_t{90002},
+        .osu_hitsample = osu_hitsample_t{.clap = true}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{90002}, .name = "Typed"});
+    const auto missing = write_inline(song);
+    CHECK_FALSE(missing.value);
+    REQUIRE_FALSE(missing.diagnostics.empty());
+    song.audio_assets.push_back({.id = asset_id_t{90003}, .source_path = "soft-hitnormal2.wav"});
+    song.audio_assets.push_back({.id = asset_id_t{90004}, .source_path = "soft-hitclap2.wav"});
+    song.resources.push_back({.id = resource_id_t{90005}, .name = "soft-hitnormal2.wav", .asset = asset_id_t{90003}, .roles = {resource_role_t::sample}});
+    song.resources.push_back({.id = resource_id_t{90006}, .name = "soft-hitclap2.wav", .asset = asset_id_t{90004}, .roles = {resource_role_t::sample}});
+    check_inherited_bgm_osu_voices(song);
+    auto& event = song.charts.front().measures.front().bgm_events.back();
+    event.sound = resource_id_t{90005};
+    check_single_normal_bgm_voice(song);
+    event.sound.reset();
+    song.audio_assets.push_back({.id = asset_id_t{90007}, .source_path = "custom.wav"});
+    song.resources.push_back({.id = resource_id_t{90008}, .name = "custom.wav", .asset = asset_id_t{90007}, .roles = {resource_role_t::sample}});
+    event.osu_hitsample->filename = "custom.wav";
+    event.osu_hitsample->volume = 25;
+    check_custom_bgm_voice_volume(song);
+    event.osu_hitsample->filename = "../unsafe.wav";
+    CHECK_FALSE(write_inline(song).value);
+}
+
+
+namespace {
+void check_embedded_animation_reexport(const wormedit::song_document_t& song,
+    const wormedit::storyboard_document_model_t& model) {
+    const auto written = write_inline(song);
+    REQUIRE(written.value);
+    CHECK(written.value->find("Animation,Foreground,Centre,\"a.png\",320,240,3,16.5,LoopOnce") != std::string::npos);
+    const auto reparsed = parse_inline(*written.value);
+    REQUIRE(reparsed.value);
+    REQUIRE(reparsed.value->storyboards.front().model);
+    CHECK(wormedit::storyboard_semantically_equal(model, *reparsed.value->storyboards.front().model));
+}
+}
+TEST_CASE("embedded osu Animation retains structured metadata and nested commands on reexport", "[osu][storyboard][animation]") {
+    const auto parsed = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[Events]\nAnimation,Foreground,Centre,\"a.png\",320,240,3,16.5,LoopOnce\n L,0,2\n  F,0,0,100,0,1\n"
+        "[TimingPoints]\n0,500,4,1,1,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n");
+    REQUIRE(parsed.value);
+    REQUIRE(parsed.value->storyboards.size() == 1);
+    REQUIRE(parsed.value->storyboards.front().model);
+    const auto& model = *parsed.value->storyboards.front().model;
+    REQUIRE(model.sprites.size() == 1);
+    REQUIRE(model.sprites.front().animation);
+    CHECK(model.sprites.front().animation->frame_delay_ms == 16.5);
+    check_embedded_animation_reexport(*parsed.value, model);
+}
+
+namespace {
+void require_sample_osu(bool value) { REQUIRE(value); }
+void check_sample_osu(bool value) { CHECK(value); }
+}
+TEST_CASE("sample-only native OSB embeds once while osu import keeps its existing BGM owner", "[osu-mania][storyboard][sample]") {
+    auto imported = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n");
+    require_sample_osu(static_cast<bool>(imported.value));
+    const auto sample = wormedit::parse_osb("Sample,500,0,\"kick.wav\",80\n");
+    require_sample_osu(static_cast<bool>(sample.value));
+    imported.value->storyboards = {{.id = wormedit::storyboard_id_t{1}, .model = *sample.value}};
+    const auto written = write_inline(*imported.value);
+    require_sample_osu(static_cast<bool>(written.value));
+    const auto first = written.value->find("Sample,500,0,\"kick.wav\",80");
+    require_sample_osu(static_cast<bool>(first != std::string::npos));
+    check_sample_osu(static_cast<bool>(written.value->find("Sample,500,0,\"kick.wav\",80", first + 1) == std::string::npos));
+    const auto reparsed = parse_inline(*written.value);
+    require_sample_osu(static_cast<bool>(reparsed.value));
+    std::size_t events = 0;
+    for (const auto& measure : reparsed.value->charts.front().measures) events += measure.bgm_events.size();
+    check_sample_osu(static_cast<bool>(events == 1));
+}
+
+TEST_CASE("separately authored OSB Samples are not deduplicated against imported BGM", "[osu-mania][storyboard][sample]") {
+    auto imported = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[Events]\nSample,500,0,\"kick.wav\",80\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n");
+    require_sample_osu(imported.value.has_value());
+    const auto sample = wormedit::parse_osb("Sample,500,0,\"kick.wav\",80\n");
+    require_sample_osu(sample.value.has_value());
+    imported.value->storyboards = {{.id = wormedit::storyboard_id_t{1}, .model = *sample.value}};
+    const auto written = write_inline(*imported.value);
+    require_sample_osu(written.value.has_value());
+    const auto first = written.value->find("Sample,500,0,\"kick.wav\",80");
+    require_sample_osu(first != std::string::npos);
+    const auto second = written.value->find("Sample,500,0,\"kick.wav\",80", first + 1);
+    check_sample_osu(second != std::string::npos);
+}
+
+namespace {
+auto trigger_inline_source(std::string_view commands) -> std::string {
+    const auto source = read_fixture("versioned-stable-v14.osu");
+    std::string text;
+    for (const auto value : source) text.push_back(static_cast<char>(value));
+    const auto timing = text.find("[TimingPoints]");
+    REQUIRE(timing != std::string::npos);
+    text.insert(timing, "[Events]\nSprite,Foreground,Centre,under_score.png,0,0\n" + std::string(commands) + "\n");
+    return text;
+}
+auto checked_trigger_inline_emission(const wormedit::song_document_t& song) -> std::string {
+    const auto written = write_inline(song);
+    REQUIRE(written.value);
+    return *written.value;
+}
+}
+TEST_CASE("osu embedded Events retain typed underscore trigger containment", "[osu-mania][storyboard][trigger]") {
+    const auto parsed = parse_inline(trigger_inline_source("_T,Passing,0,100\n__F,0,0,10,0,1\n"));
+    REQUIRE(parsed.value);
+    REQUIRE_FALSE(parsed.value->storyboards.empty());
+    const auto& model = *parsed.value->storyboards.front().model;
+    REQUIRE(model.sprites.front().nodes.front().trigger);
+    CHECK(model.sprites.front().nodes.front().children.size() == 1);
+    const auto written = checked_trigger_inline_emission(*parsed.value);
+    const auto reparsed = parse_inline(written);
+    REQUIRE(reparsed.value);
+    CHECK(wormedit::storyboard_semantically_equal(model, *reparsed.value->storyboards.front().model));
+}
+TEST_CASE("osu embedded malformed trigger keeps raw children with a diagnostic", "[osu-mania][storyboard][trigger]") {
+    const auto parsed = parse_inline(trigger_inline_source("_T,Passing,0,100\n__F,invalid,0,10,0,1\n__M,0,0,10,0,0,1,1\n"));
+    REQUIRE(parsed.value);
+    REQUIRE_FALSE(parsed.diagnostics.empty());
+    const auto& model = *parsed.value->storyboards.front().model;
+    CHECK(model.sprites.front().nodes.size() == 3);
+    CHECK(model.sprites.front().nodes.back().kind == wormedit::storyboard_node_kind_t::retained_line);
+    CHECK(wormedit::compile_storyboard_schedule(model).value->events.empty());
+    const auto written = checked_trigger_inline_emission(*parsed.value);
+    CHECK(written.find("__F,invalid,0,10,0,1") != std::string::npos);
+}
+TEST_CASE("osu retained trigger descendants cannot inject section headers", "[osu-mania][storyboard][trigger]") {
+    auto parsed = parse_inline(trigger_inline_source("_T,Unknown\n__[TimingPoints]\n"));
+    REQUIRE(parsed.value);
+    CHECK_FALSE(write_inline(*parsed.value).value);
+}
+
+namespace {
+void check_authored_sample_payloads(const wormedit::storyboard_document_model_t& model) {
+    REQUIRE(model.samples.size() == 3);
+    for (const auto& sample : model.samples) {
+        CHECK(sample.path == "cue.wav"); CHECK(sample.time_ms == 100); CHECK(sample.volume == 80);
+    }
+}
+void check_authored_sample_identities(const wormedit::storyboard_document_model_t& model) {
+    const auto schedule = wormedit::compile_storyboard_schedule(model);
+    REQUIRE(schedule.value);
+    REQUIRE(schedule.value->events.size() == 3);
+    CHECK(schedule.value->events[0].stable_object_id != schedule.value->events[1].stable_object_id);
+    CHECK(schedule.value->events[1].stable_object_id != schedule.value->events[2].stable_object_id);
+}
+}
+TEST_CASE("osu companion merge retains Sample events from every OSBX scene without deduplicating authored cues",
+          "[formats][osu][osbx][sample]") {
+    using namespace wormedit;
+    osbx_node_t cue{.id = "cue", .kind = osbx_node_kind_t::sample,
+        .sample = osbx_sample_t{.time_ms = 100, .path = "cue.wav", .volume = 80}};
+    auto second = cue; second.id = "second";
+    song_document_t song{.id = song_id_t{1}, .storyboards = {
+        {.id = storyboard_id_t{2}, .osbx = osbx_document_t{.nodes = {cue, second}}},
+        {.id = storyboard_id_t{3}, .osbx = osbx_document_t{.nodes = {cue}}}}};
+    osu_mania_write_options_t options;
+    options.osbx.playback_span = osbx_osb_span_t{0, 200};
+    const auto written = write_osu_storyboard(song, options);
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(written.value);
+    const auto parsed = parse_osb(*written.value);
+    REQUIRE(parsed.value);
+    check_authored_sample_payloads(*parsed.value);
+    check_authored_sample_identities(*parsed.value);
 }

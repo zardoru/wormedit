@@ -29,7 +29,7 @@ TEST_CASE("notification history rejects invalid public row fields", "[notificati
     SECTION("identity") { row.id = 0; }
     SECTION("source") { row.source = static_cast<wormedit::notification_source_t>(9); }
     SECTION("severity") { row.severity = static_cast<wormedit::notification_severity_t>(5); }
-    SECTION("target") { row.target = static_cast<WormUiNotificationTargetAvailability>(4); }
+    SECTION("target") { row.target = static_cast<WormUiNotificationTargetAvailability>(5); }
     CHECK_FALSE(notification_history_view_valid(view));
 }
 
@@ -227,4 +227,10 @@ TEST_CASE("history context switch preserves moved geometry filter and detail scr
     render_notification_panel(&overlay.context, {true, {row}}, state, action, 1000, 700, false);
     check_history_context_geometry(overlay.context, state, moved);
     CHECK(action.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+}
+
+TEST_CASE("notification history accepts the transient file target", "[notifications][frontend][video]") {
+    auto row = history_row(); row.target = WORM_UI_NOTIFICATION_TARGET_FILE;
+    wormedit::ui::notification_history_view_t view{true, {row}};
+    CHECK(notification_history_view_valid(view));
 }

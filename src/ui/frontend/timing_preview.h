@@ -7,15 +7,29 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <tuple>
+#include <algorithm>
 
 namespace wormedit::ui {
+// Inherit preserves existing UI texture state; explicit modes apply to one draw only.
+enum class image_blend_t { inherit, normal, additive };
+constexpr auto is_valid_image_blend(image_blend_t blend) -> bool {
+    switch (blend) {
+    case image_blend_t::inherit:
+    case image_blend_t::normal:
+    case image_blend_t::additive:
+        return true;
+    }
+    return false;
+}
+
 enum class timing_stage_action_t { none, begin, update, move, confirm, cancel, remove, quick_insert };
 
 // Real composition work bound: one entry for each supported visual layer kind.
 inline constexpr std::size_t player_preview_visual_layer_limit = 6;
 // Bounds on actual scene evaluation and rendering work, independent of view storage.
 inline constexpr std::size_t maximum_preview_notes = 4096;
-inline constexpr std::size_t maximum_preview_storyboard_instances = 27;
+inline constexpr std::size_t maximum_preview_storyboard_instances = 1024;
 enum class player_preview_visual_diagnostic_t { none, video_frame_late, video_decode_failed };
 enum class external_player_action_kind_t { none, open, play_start, play_here, stop };
 
@@ -201,20 +215,33 @@ struct player_preview_visual_layer_view_t {
     uint32_t image_width{};
     uint32_t image_height{};
     std::span<const uint8_t> rgba_pixels{};
+    [[nodiscard]] auto operator==(const player_preview_visual_layer_view_t& other) const -> bool {
+        return std::tie(object_id, resource_id, event_sample_frame, kind, draw_order, source_order,
+            video_clock_ready, video_elapsed_sample_frames, video_time_numerator, video_time_denominator,
+            static_image, video_frame, image_ready, image_pending, diagnostic, diagnostic_text,
+            image_content_id, image_width, image_height) ==
+            std::tie(other.object_id, other.resource_id, other.event_sample_frame, other.kind, other.draw_order,
+                other.source_order, other.video_clock_ready, other.video_elapsed_sample_frames,
+                other.video_time_numerator, other.video_time_denominator, other.static_image, other.video_frame,
+                other.image_ready, other.image_pending, other.diagnostic, other.diagnostic_text,
+                other.image_content_id, other.image_width, other.image_height) &&
+            std::ranges::equal(rgba_pixels, other.rgba_pixels);
+    }
 };
 
 struct player_preview_storyboard_sprite_view_t {
+    wormedit::storyboard_id_t storyboard;
+    std::string_view node_id;
     uint64_t stable_id{};
     wormedit::resource_id_t resource_id{};
     size_t source_order{};
     uint8_t layer_order{};
-    double x{};
-    double y{};
+    std::array<double, 6> transform{1, 0, 0, 1, 0, 0};
+    double logical_width{640};
+    double logical_height{480};
     double origin_x{};
     double origin_y{};
-    double scale_x{};
-    double scale_y{};
-    double rotation_radians{};
+    image_blend_t blend{image_blend_t::inherit};
     double opacity{};
     double red{};
     double green{};
@@ -225,6 +252,16 @@ struct player_preview_storyboard_sprite_view_t {
     uint32_t image_width{};
     uint32_t image_height{};
     std::span<const uint8_t> rgba_pixels{};
+    [[nodiscard]] auto operator==(const player_preview_storyboard_sprite_view_t& other) const -> bool {
+        return std::tie(storyboard, node_id, stable_id, resource_id, source_order, layer_order, transform,
+            logical_width, logical_height, origin_x, origin_y, blend, opacity, red, green, blue,
+            image_ready, image_pending, image_content_id, image_width, image_height) ==
+            std::tie(other.storyboard, other.node_id, other.stable_id, other.resource_id, other.source_order,
+            other.layer_order, other.transform, other.logical_width, other.logical_height, other.origin_x,
+            other.origin_y, other.blend, other.opacity, other.red, other.green, other.blue, other.image_ready,
+            other.image_pending, other.image_content_id, other.image_width, other.image_height) &&
+            std::ranges::equal(rgba_pixels, other.rgba_pixels);
+    }
 };
 
 struct player_preview_view_t {

@@ -287,3 +287,17 @@ TEST_CASE("Asset-only preview music receives a transient identity without docume
     const auto ambiguous = audio::preview_music_selection_t::from(fixture.song, chart);
     check_cut_audio(!ambiguous.ok() && !ambiguous.value);
 }
+
+TEST_CASE("cut-source preparation includes custom descriptor-only BGM assets", "[resource_plan][audio][export-cut]") {
+    cut_audio_fixture_t fixture;
+    fixture.song.resources.clear();
+    fixture.song.charts = {{.id = chart_id_t{20}, .measures = {{.id = measure_id_t{21},
+        .bgm_events = {{.id = object_id_t{22}, .position = {measure_id_t{21}, 0}, .source_lane = object_id_t{23},
+            .osu_hitsample = osu_hitsample_t{.filename = "source.wav"}}}}},
+        .bgm_source_lanes = {{.id = object_id_t{23}, .name = "Typed BGM"}}}};
+    const auto prepared = prepare_export_cut_sources(fixture.song, fixture.directory);
+    REQUIRE(prepared.ok());
+    REQUIRE(prepared.value.size() == 1);
+    CHECK(prepared.value.front().asset == asset_id_t{1});
+    CHECK(prepared.value.front().native_frame_count > 0);
+}

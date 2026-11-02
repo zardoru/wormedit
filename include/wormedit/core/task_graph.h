@@ -69,6 +69,11 @@ template <typename value_t>
 using task_function_t =
     std::function<task_outcome_t(std::span<const task_outcome_t>, std::stop_token)>;
 
+// An opted running callback cooperates through the existing stop token and
+// owns its returned outcome (for example, an atomic publication commit).
+// Cancellation still prevents queued/dependent work; shutdown always wins.
+enum class task_cancel_result_policy_t { discard_running_result, retain_running_result };
+
 class task_graph_handle_t;
 class task_scheduler_t;
 
@@ -85,7 +90,9 @@ class task_graph_t {
     auto operator=(const task_graph_t&) -> task_graph_t& = delete;
 
     [[nodiscard]] auto create_task(std::span<const task_id_t> dependencies,
-                                   task_function_t function) -> result_t<task_id_t, error_t<failure_code_t>>;
+                                   task_function_t function,
+                                   task_cancel_result_policy_t policy = task_cancel_result_policy_t::discard_running_result)
+        -> result_t<task_id_t, error_t<failure_code_t>>;
     [[nodiscard]] auto size() const noexcept -> std::size_t;
 
   private:

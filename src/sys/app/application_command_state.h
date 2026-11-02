@@ -2,6 +2,7 @@
 #include "sys/compose/compose_clipboard_workflow.h"
 #include "sys/compose/actions/compose_quantize_state.h"
 #include "sys/bms_program_runtime.h"
+#include "sys/storyboard/storyboard_runtime.h"
 #include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/compose/actions/compose_audition_requests.h"
 #include "sys/compose/actions/compose_action_outcome.h"
@@ -24,6 +25,7 @@
 #include <set>
 #include <tuple>
 #include <unordered_map>
+namespace wormedit { struct lua_source_descriptor_t; }
 namespace wormedit::sys { class recipe_evaluation_runtime_t; }
 namespace wormedit::sys {
 class generator_runtime_t;
@@ -33,6 +35,10 @@ enum class external_player_action_t;
 // Application-lifetime callbacks are one unit. Replacing a project resets chart state,
 // while this complete bundle stays in place.
 struct application_command_services_t {
+    std::function<compose_action_outcome_t(const ui::storyboard_action_t&, const lua_source_descriptor_t&)>
+        load_storyboard_lua;
+    std::function<compose_action_outcome_t(const ui::storyboard_action_t&)> import_storyboard_image;
+    std::function<compose_action_outcome_t()> open_storyboard_video;
     std::function<bool(wormedit::chart_id_t, std::span<const wormedit::layer_id_t>)>
         transport_set_layer_assist;
     std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
@@ -54,6 +60,8 @@ struct application_command_services_t {
     std::function<compose_action_outcome_t(std::uint64_t)> transport_seek;
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<compose_action_outcome_t(std::int64_t)> transport_seek_audio_milliseconds;
+    std::function<compose_action_outcome_t(std::int64_t, std::int64_t, bool)>
+        transport_set_loop_audio_milliseconds;
     std::function<void()> transport_stop;
     std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t, std::uint64_t, bool)>
         transport_set_loop_selection;
@@ -199,6 +207,7 @@ struct application_command_state_t {
     bool system_clipboard_has_bms_editor_text{};
 
     struct project_t {
+        storyboard_runtime_t storyboard;
         bms_program_runtime_t bms_program;
         compose_auditions_t auditions;
 

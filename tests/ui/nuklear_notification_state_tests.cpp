@@ -311,3 +311,37 @@ TEST_CASE("notification wrapped detail stays inside a small viewport above statu
     CHECK(rendered_message_bytes(overlay.context) >= 200);
     CHECK(message_commands_fit_view(overlay.context, 400, 200));
 }
+
+TEST_CASE("successful file notifications use the canonical bounded toast projection", "[notifications][frontend][video]") {
+    notification_center_t center{[] { return 0ns; }};
+    center.post({.severity = notification_severity_t::success, .source = notification_source_t::export_,
+        .message = "Video complete", .target = notification_file_t{.path = "/tmp/clip.webm"}});
+    center.post(notification_severity_t::info, notification_source_t::system, "Ordinary information");
+    center.post({.severity = notification_severity_t::hint, .source = notification_source_t::export_,
+        .message = "Not a completion", .target = notification_file_t{.path = "/tmp/hint.webm"}});
+    center.drain_inbox(0ns);
+    const auto view = ui::notification_view_t::from(center, 7999ms);
+    REQUIRE(view.toasts.size() == 1);
+    CHECK(view.toasts.front().severity == notification_severity_t::success);
+    CHECK(view.toasts.front().show_in_folder);
+    CHECK(ui::notification_view_t::from(center, 8s).toasts.empty());
+}
+
+TEST_CASE("toast folder clicks retain exclusive press release ownership", "[notifications][frontend][video]") {
+    auto state = one_toast_state(); state.folder_bounds[0] = {410, 455, 180, 20};
+    CHECK(notification_pointer_edge(state, 440, 460, 1, true, true));
+    CHECK(notification_take_action(state).kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+    CHECK(notification_pointer_edge(state, 440, 460, 1, false, true));
+    const auto action = notification_take_action(state);
+    CHECK(action.kind == WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER);
+    CHECK(action.id == 42);
+    CHECK(notification_take_action(state).kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+}
+
+TEST_CASE("toast folder press cancelled outside cannot become a document gesture", "[notifications][frontend][video]") {
+    auto state = one_toast_state(); state.folder_bounds[0] = {410, 455, 180, 20};
+    REQUIRE(notification_pointer_edge(state, 440, 460, 1, true, true));
+    CHECK(notification_pointer_edge(state, 20, 20, 1, false, true));
+    CHECK(notification_take_action(state).kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+    CHECK_FALSE(notification_pointer_owned(state, 20, 20, false));
+}

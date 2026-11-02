@@ -3,6 +3,8 @@
 #include "sys/compose/recipe_evaluation_runtime.h"
 #include "../support/temporary_directory.h"
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/formats/native_project.h>
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <latch>
 
@@ -149,7 +151,7 @@ TEST_CASE("a Lua expression recipe keeps its source and parameters through the f
           "[unit][sys][recipe-form]") {
     auto recipe = sample_recipe();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "return 1 + t";
+    recipe.set_frozen_source("return 1 + t");
     auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
     CHECK(form.curve == wormedit::sv_recipe_curve_t::lua_expression);
     form.sampling_mode = wormedit::sv_recipe_sampling_mode_t::adaptive;
@@ -157,7 +159,7 @@ TEST_CASE("a Lua expression recipe keeps its source and parameters through the f
     const auto edited = recipe_from_form(form, recipe);
     REQUIRE(edited.has_value());
     CHECK(edited->curve == sv_recipe_curve_t::lua_expression);
-    CHECK(edited->expression_source == "return 1 + t");
+    CHECK(edited->script().frozen_source == "return 1 + t");
     CHECK(edited->parameters == recipe.parameters);
     CHECK(edited->sampling.max_points == 32);
 }
@@ -379,16 +381,16 @@ TEST_CASE("ordinary recipe form edits preserve the stored postprocess order", "[
 namespace {
 void check_lua_form_edit(const std::optional<sv_recipe_t>& edited, const sv_recipe_t& original) {
     REQUIRE(edited);
-    CHECK(edited->lua->parameters.front().value == signed_rational_t{-7, 3});
-    CHECK(edited->lua->seed == UINT64_MAX);
+    CHECK(edited->lua->source.parameters.front().value == signed_rational_t{-7, 3});
+    CHECK(edited->lua->source.seed == UINT64_MAX);
     CHECK(edited->lua->inputs == original.lua->inputs);
-    CHECK(edited->expression_source == original.expression_source);
+    CHECK(edited->script().frozen_source == original.script().frozen_source);
 }
 void check_builtin_switch(const ui::timing_recipe_form_t& form, const sv_recipe_t& original) {
     const auto edited = recipe_from_form(form, original);
     REQUIRE(edited);
     CHECK_FALSE(edited->lua);
-    CHECK(edited->expression_source.empty());
+    CHECK(edited->script().frozen_source.empty());
 }
 auto require_prepared_preview(const std::optional<recipe_form_outcome_t>& preview)
     -> const recipe_form_report_t& {
@@ -403,9 +405,9 @@ auto require_prepared_preview(const std::optional<recipe_form_outcome_t>& previe
 void check_frozen_module(const recipe_form_report_t& report, const std::string& source,
     const ui::timing_recipe_form_t& requested) {
     REQUIRE(report.candidate.lua);
-    CHECK(report.candidate.expression_source == source);
-    CHECK(report.candidate.lua->source_reference == std::filesystem::path{"curve.lua"});
-    CHECK(report.candidate.lua->source_hash == native_project_content_checksum(source));
+    CHECK(report.candidate.script().frozen_source == source);
+    CHECK(report.candidate.lua->source.source_reference == std::filesystem::path{"curve.lua"});
+    CHECK(report.candidate.lua->source.source_hash == native_project_content_checksum(source));
     REQUIRE(report.requested_form);
     CHECK(*report.requested_form == requested);
 }
@@ -426,11 +428,8 @@ void check_loaded_recipe_apply(document_history_t& history, const recipe_form_ou
 TEST_CASE("Lua form preserves frozen source and hidden input hashes while editing settings", "[unit][sys][recipe-form]") {
     auto recipe = sample_recipe();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "function curve(p) return p end";
-    recipe.lua = sv_recipe_lua_t{.entry_point = "curve", .source_reference = text_util::path_from_utf8("scripts/曲線.lua"),
-        .source_hash = "frozen", .parameters = {{"gain", {3, 2}}},
-        .inputs = {{asset_id_t{4}, "input-hash"}}, .seed = 92,
-        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
+    recipe.set_frozen_source("function curve(p) return p end");
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source, .entry_point = "curve", .source_reference = text_util::path_from_utf8("scripts/曲線.lua"), .source_hash = "frozen", .parameters = {{"gain", {3, 2}}}, .seed = 92}, .inputs = {{asset_id_t{4}, "input-hash"}}, .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
     auto form = ui::timing_recipe_form_t::from(recipe);
     CHECK(recipe_from_form(form, recipe) == recipe);
     set(form.lua_parameters.front().value, "-7", "3");
@@ -554,8 +553,7 @@ TEST_CASE("recipe evaluation retries the newest draft after shared scheduler adm
 TEST_CASE("recipe form refill retains Lua vector storage across curve changes", "[unit][sys][recipe-form]") {
     auto recipe = sample_recipe();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.lua = sv_recipe_lua_t{.entry_point = "curve", .parameters = {{"gain", {3, 2}}},
-        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source, .entry_point = "curve", .parameters = {{"gain", {3, 2}}}}, .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
     auto form = ui::timing_recipe_form_t::from(recipe);
     const auto expected = form;
     const auto* parameters = form.lua_parameters.data();
@@ -572,31 +570,44 @@ TEST_CASE("recipe form refill retains Lua vector storage across curve changes", 
     CHECK(form.lua_cycles.data() == cycles);
 }
 
-TEST_CASE("legacy inline Lua forms keep the default empty entry point", "[unit][sys][recipe-form]") {
+namespace {
+auto legacy_inline_history() -> document_history_t {
     auto history = form_history();
-    auto recipe = history.document.charts.front().sv_recipes.front();
+    auto& recipe = history.document.charts.front().sv_recipes.front();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "function(p) return 1+p end";
-    recipe.lua.reset();
+    recipe.set_frozen_source("function(p) return 1+p end");
+    const auto written = write_native_project(history.document);
+    REQUIRE(written.value);
+    auto encoded = nlohmann::json::parse(*written.value);
+    // Legacy native records may omit metadata while retaining expression_source.
+    // The new C++ owner represents that source with effective default metadata.
+    encoded["document"]["charts"][0]["sv_recipes"][0].erase("lua");
+    auto loaded = parse_native_project(encoded.dump());
+    INFO((loaded.diagnostics.empty() ? "no diagnostic" : loaded.diagnostics.front().message));
+    REQUIRE(loaded.value);
+    return document_history_t::from(std::move(*loaded.value));
+}
+} // namespace
+
+TEST_CASE("legacy inline Lua forms keep the default empty entry point", "[unit][sys][recipe-form]") {
+    auto history = legacy_inline_history();
+    auto recipe = history.document.charts.front().sv_recipes.front();
     const auto form = ui::timing_recipe_form_t::from(recipe);
     CHECK(form.lua_entry_point[0] == '\0');
     const auto rebuilt = recipe_from_form(form, recipe);
     REQUIRE(rebuilt);
     REQUIRE(rebuilt->lua);
-    CHECK(rebuilt->lua->entry_point.empty());
+    CHECK(rebuilt->lua->source.entry_point.empty());
 }
 
 TEST_CASE("frozen Lua source evaluates without implicitly reloading a file", "[unit][sys][recipe-form][recipe-runtime]") {
-    auto history = form_history();
+    auto history = legacy_inline_history();
     auto& chart = history.document.charts.front();
     auto& recipe = chart.sv_recipes.front();
-    recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "function(p) return 1+p end";
-    recipe.lua.reset();
     auto form = ui::timing_recipe_form_t::from(recipe);
-    SECTION("legacy recipe without a descriptor") {}
+    SECTION("legacy metadata defaults") {}
     SECTION("clearing the reload origin retains frozen source") {
-        recipe.lua = sv_recipe_lua_t{.source_reference = "missing.lua"};
+        recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source, .source_reference = "missing.lua"}};
         form = ui::timing_recipe_form_t::from(recipe);
         form.lua_source_reference[0] = '\0';
     }

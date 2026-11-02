@@ -150,6 +150,12 @@ auto migrate_v6_to_v7(nlohmann::json& document) -> std::string {
     return {};
 }
 
+auto make_legacy_stepmania_policy(const std::filesystem::path& path) -> nlohmann::json {
+    const auto file_profile = path.extension() == ".sm" || path == "sm" ? std::uint64_t{0} : std::uint64_t{1};
+    return {{"file_profile", file_profile}, {"timing_syntax", std::uint64_t{1}},
+            {"implementation_profile", std::uint64_t{0}}};
+}
+
 auto migrate_v7_to_v8(nlohmann::json& document) -> std::string {
     if (!document.contains("output_groups"))
         return {};
@@ -169,11 +175,7 @@ auto migrate_v7_to_v8(nlohmann::json& document) -> std::string {
             return "StepMania output group path must be a string";
         const auto path =
             std::filesystem::path{group.at("relative_output_path").get<std::string>()};
-        const auto file_profile =
-            path.extension() == ".sm" || path == "sm" ? std::uint64_t{0} : std::uint64_t{1};
-        group["stepmania"] = {{"file_profile", file_profile},
-                              {"timing_syntax", std::uint64_t{1}},
-                              {"implementation_profile", std::uint64_t{0}}};
+        group["stepmania"] = make_legacy_stepmania_policy(path);
     }
     return {};
 }
@@ -503,7 +505,163 @@ auto migrate_v27_to_v28(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 27> released_migrations{{
+// Schema29 adds optional OSBX and owning_generator_recipe storyboard fields.
+// OSBX-6 shares this unreleased schema for recipe binding additions. Absent
+// fields default empty at decode, including in projects saved before OSBX-6.
+// OSBX-12 folds optional track/subtree Lua descriptors into this unreleased
+// version too. Missing links decode empty; prepared output is never persisted.
+auto migrate_v28_to_v29(nlohmann::json&) -> std::string { return {}; }
+
+// Schema30 adds optional inclusive OSBX node lifetimes. Older scenes retain
+// their unbounded visibility; absence decodes empty without inventing a range.
+auto migrate_v29_to_v30(nlohmann::json&) -> std::string { return {}; }
+
+// Schema31 makes the native storyboard route explicit. Older packages retain
+// their previous chart-only behavior, including legacy missing/null SM policies.
+auto migrate_legacy_storyboard_policy(nlohmann::json& group) -> std::string {
+    if (!group.is_object()) return "output group must be an object";
+    if (!group.contains("stepmania") || group.at("stepmania").is_null()) {
+        if (group.value("family", std::uint64_t{}) != std::uint64_t{2}) {
+            group["stepmania"] = nullptr;
+            return {};
+        }
+        if (!group.contains("relative_output_path") || !group.at("relative_output_path").is_string())
+            return "StepMania output group path must be a string";
+        const auto path = std::filesystem::path{group.at("relative_output_path").get<std::string>()};
+        group["stepmania"] = make_legacy_stepmania_policy(path);
+    }
+    auto& policy = group["stepmania"];
+    if (!policy.is_object()) return "StepMania policy must be an object";
+    if (policy.contains("storyboard") || policy.contains("conditional_layer"))
+        return "schema30 cannot contain schema31 storyboard policy fields";
+    policy["storyboard"] = static_cast<unsigned>(stepmania_storyboard_mode_t::none);
+    policy["conditional_layer"] = static_cast<unsigned>(storyboard_conditional_layer_t::pass);
+    return {};
+}
+auto migrate_v30_to_v31(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups")) return {};
+    if (!document.at("output_groups").is_array()) return "document output_groups must be an array";
+    for (auto& group : document.at("output_groups"))
+        if (auto failure = migrate_legacy_storyboard_policy(group); !failure.empty()) return failure;
+    return {};
+}
+
+// Schema32 retains optional typed sample provenance and BGM osu descriptors.
+// Absent fields decode empty; every preexisting sound/descriptor remains intact.
+auto migrate_v31_to_v32(nlohmann::json&) -> std::string { return {}; }
+
+// Schema33 adds the explicit NotITG profile. No existing policy is rewritten.
+auto migrate_v32_to_v33(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups")) return {};
+    if (!document.at("output_groups").is_array()) return "document output_groups must be an array";
+    for (const auto& group : document.at("output_groups")) {
+        if (!group.is_object()) return "output group must be an object";
+        if (!group.contains("stepmania") || group.at("stepmania").is_null()) continue;
+        const auto& policy = group.at("stepmania");
+        if (!policy.is_object() || !policy.contains("implementation_profile"))
+            return "schema32 StepMania policy must name its implementation profile";
+        const auto& profile = policy.at("implementation_profile");
+        if (!profile.is_number_integer() || profile.get<std::int64_t>() < 0 ||
+            profile.get<std::int64_t>() > static_cast<std::int64_t>(stepmania_implementation_profile_t::etterna_0_75_1))
+            return "schema32 cannot contain a schema33 implementation profile";
+    }
+    return {};
+}
+
+// Schema34 adds optional OSB Animation metadata. Older visual records remain
+// Sprite objects; no existing fields or policies are rewritten.
+auto migrate_v33_to_v34(nlohmann::json&) -> std::string { return {}; }
+
+auto migrate_v34_to_v35(nlohmann::json& document) -> std::string {
+    if (!document.contains("storyboards")) return {};
+    if (!document.at("storyboards").is_array()) return "document storyboards must be an array";
+    for (auto& storyboard : document.at("storyboards")) {
+        if (!storyboard.is_object()) return "storyboard must be an object";
+        if (!storyboard.contains("model") || storyboard.at("model").is_null()) continue;
+        auto& model = storyboard.at("model");
+        if (!model.is_object() || model.contains("samples"))
+            return "schema34 storyboard model cannot contain schema35 samples";
+        model["samples"] = nlohmann::json::array();
+    }
+    return {};
+}
+
+// Inspect every persisted OSBX owner, including generator content witnesses.
+// Earlier schema records may not smuggle future clip fields into a migration.
+auto refuse_future_clip_fields(const nlohmann::json& value, bool osbx = false) -> std::string {
+    if (value.is_object()) {
+        for (const auto& [key, child] : value.items()) {
+            if (osbx && (key == "clips" || key == "uses" || key == "parameter"))
+                return "schema35 cannot contain schema36 clip fields";
+            if (auto error = refuse_future_clip_fields(child, osbx || key == "osbx"); !error.empty()) return error;
+        }
+    } else if (value.is_array()) {
+        for (const auto& child : value)
+            if (auto error = refuse_future_clip_fields(child, osbx); !error.empty()) return error;
+    }
+    return {};
+}
+auto migrate_v35_to_v36(nlohmann::json& document) -> std::string {
+    return refuse_future_clip_fields(document);
+}
+
+auto refuse_future_osb_trigger_nodes(const nlohmann::json& nodes) -> std::string {
+    if (!nodes.is_array()) return "storyboard nodes must be an array";
+    for (const auto& node : nodes) {
+        if (!node.is_object() || node.contains("trigger")) return "schema36 cannot contain schema37 trigger metadata";
+        if (node.contains("kind") && node.at("kind").is_number_integer() && node.at("kind") > 2)
+            return "schema36 cannot contain schema37 trigger kinds";
+        if (node.contains("children"))
+            if (auto error = refuse_future_osb_trigger_nodes(node.at("children")); !error.empty()) return error;
+    }
+    return {};
+}
+auto migrate_v36_to_v37(nlohmann::json& document) -> std::string {
+    if (!document.contains("storyboards")) return {};
+    for (const auto& storyboard : document.at("storyboards")) {
+        if (!storyboard.contains("model") || storyboard.at("model").is_null()) continue;
+        const auto& model = storyboard.at("model");
+        if (!model.contains("sprites")) continue;
+        for (const auto& sprite : model.at("sprites")) {
+            if (!sprite.contains("nodes")) continue;
+            if (auto error = refuse_future_osb_trigger_nodes(sprite.at("nodes")); !error.empty()) return error;
+        }
+    }
+    return {};
+}
+
+auto refuse_future_osbx_programs(const nlohmann::json& value, bool osbx = false) -> std::string {
+    if (value.is_object()) {
+        for (const auto& [key, child] : value.items()) {
+            if (osbx && key == "program") return "schema37 cannot contain schema38 temporal program fields";
+            if (auto error = refuse_future_osbx_programs(child, osbx || key == "osbx"); !error.empty()) return error;
+        }
+    } else if (value.is_array()) {
+        for (const auto& child : value)
+            if (auto error = refuse_future_osbx_programs(child, osbx); !error.empty()) return error;
+    }
+    return {};
+}
+auto migrate_v37_to_v38(nlohmann::json& document) -> std::string { return refuse_future_osbx_programs(document); }
+
+auto refuse_future_osbx_media(const nlohmann::json& value, bool osbx = false) -> std::string {
+    if (value.is_object()) {
+        if (osbx && value.contains("nodes") && value.at("nodes").is_array()) {
+            for (const auto& node : value.at("nodes"))
+                if (node.is_object() && (node.contains("animation") || node.contains("sample")))
+                    return "schema38 cannot contain schema39 OSBX media fields";
+        }
+        for (const auto& [key, child] : value.items())
+            if (auto error = refuse_future_osbx_media(child, osbx || key == "osbx"); !error.empty()) return error;
+    } else if (value.is_array()) {
+        for (const auto& child : value)
+            if (auto error = refuse_future_osbx_media(child, osbx); !error.empty()) return error;
+    }
+    return {};
+}
+auto migrate_v38_to_v39(nlohmann::json& document) -> std::string { return refuse_future_osbx_media(document); }
+
+constexpr std::array<migration_t, 38> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -531,6 +689,17 @@ constexpr std::array<migration_t, 27> released_migrations{{
     {25, &migrate_v25_to_v26},
     {26, &migrate_v26_to_v27},
     {27, &migrate_v27_to_v28},
+    {28, &migrate_v28_to_v29},
+    {29, &migrate_v29_to_v30},
+    {30, &migrate_v30_to_v31},
+    {31, &migrate_v31_to_v32},
+    {32, &migrate_v32_to_v33},
+    {33, &migrate_v33_to_v34},
+    {34, &migrate_v34_to_v35},
+    {35, &migrate_v35_to_v36},
+    {36, &migrate_v36_to_v37},
+    {37, &migrate_v37_to_v38},
+    {38, &migrate_v38_to_v39},
 }};
 
 } // namespace

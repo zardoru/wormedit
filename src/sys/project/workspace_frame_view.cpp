@@ -58,6 +58,7 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
         , args.player_video_job
 #endif
+        , &flattened.view.storyboard, flattened.query_session_generation, args.interaction
     );
 }
 

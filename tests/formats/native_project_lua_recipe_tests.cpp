@@ -25,8 +25,7 @@ auto make_lua_recipe_song() -> song_document_t {
         .name = "Lua rise",
         .range = {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}},
         .curve = sv_recipe_curve_t::lua_expression,
-        .expression_source = "return function(p, ctx) return 1 + p end",
-        .lua = sv_recipe_lua_t{},
+        .lua = sv_recipe_lua_t{.source = {.frozen_source = "return function(p, ctx) return 1 + p end"}},
     });
     song.charts.push_back(std::move(chart));
     return song;
@@ -45,12 +44,12 @@ TEST_CASE("native Lua recipe descriptors retain frozen authoring inputs",
     song.midi_assets.push_back({.id = asset_id_t{30}, .source_path = "reference.mid",
                                 .ticks_per_quarter = 480});
     auto& descriptor = *song.charts.front().sv_recipes.front().lua;
-    descriptor.entry_point = "sample";
-    descriptor.source_reference = "recipes/rise.lua";
-    descriptor.source_hash = std::string(64, 'a');
-    descriptor.parameters = {{.name = "height", .value = {-3, 2}}};
+    descriptor.source.entry_point = "sample";
+    descriptor.source.source_reference = "recipes/rise.lua";
+    descriptor.source.source_hash = std::string(64, 'a');
+    descriptor.source.parameters = {{.name = "height", .value = {-3, 2}}};
     descriptor.inputs = {{.asset = asset_id_t{30}, .content_hash = std::string(64, 'b')}};
-    descriptor.seed = std::numeric_limits<std::uint64_t>::max();
+    descriptor.source.seed = std::numeric_limits<std::uint64_t>::max();
     descriptor.mode = sv_recipe_lua_mode_t::ordered;
     descriptor.cycles = {{.emission_count = 1}, {.emission_count = 1}};
     const auto encoded = written_json(song);
@@ -74,8 +73,8 @@ TEST_CASE("schema sixteen Lua recipes migrate to pure API one descriptors",
     REQUIRE(loaded.value);
     const auto& recipe = loaded.value->charts.front().sv_recipes.front();
     REQUIRE(recipe.lua);
-    CHECK(*recipe.lua == sv_recipe_lua_t{});
-    CHECK(recipe.expression_source == song.charts.front().sv_recipes.front().expression_source);
+    CHECK(*recipe.lua == sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source}});
+    CHECK(recipe.script().frozen_source == song.charts.front().sv_recipes.front().script().frozen_source);
 }
 
 TEST_CASE("schema sixteen migration reaches scoped native Lua recipes",
@@ -116,7 +115,7 @@ TEST_CASE("schema sixteen non-Lua recipes migrate without a Lua descriptor",
     auto song = make_lua_recipe_song();
     auto& recipe = song.charts.front().sv_recipes.front();
     recipe.curve = sv_recipe_curve_t::linear;
-    recipe.expression_source.clear();
+    recipe.set_frozen_source({});
     recipe.lua.reset();
     auto encoded = written_json(song);
     encoded["document"]["schema_version"] = 16U;
@@ -207,4 +206,21 @@ TEST_CASE("Schema22 migration adds SV definitions even without generator metadat
         document, 23, native_project_internal::default_migrations());
     REQUIRE(migrated);
     CHECK(document.at("sv_recipe_definitions") == json::array());
+}
+
+TEST_CASE("native Lua metadata omissions retain frozen source and compatible defaults", "[unit][format][native-project][lua]") {
+    const auto original = make_lua_recipe_song();
+    auto encoded = written_json(original);
+    auto& stored = encoded["document"]["charts"][0]["sv_recipes"][0];
+    std::uint64_t seed{};
+    SECTION("omitted object") { stored.erase("lua"); }
+    SECTION("null object") { stored["lua"] = nullptr; }
+    SECTION("empty metadata") { stored["lua"] = json::object(); }
+    SECTION("partial metadata") { stored["lua"] = {{"seed",17}}; seed = 17; }
+    const auto loaded = parse_native_project(encoded.dump());
+    INFO((loaded.diagnostics.empty() ? "no diagnostic" : loaded.diagnostics.front().message));
+    REQUIRE(loaded.value);
+    const auto& recipe = loaded.value->charts.front().sv_recipes.front();
+    CHECK(recipe.script().frozen_source == original.charts.front().sv_recipes.front().script().frozen_source);
+    CHECK(recipe.script().seed == seed);
 }

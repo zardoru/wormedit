@@ -270,9 +270,9 @@ void refresh_workspace_commands(command_state_updates_t& updates,
     }};
     for (const auto& [id, tab] : tabs) {
         const bool timing_alias = id == "workspace.open_timing";
-        updates.set({std::string{id}}, tab != workspace_tab_t::storyboard,
-            workspace.active_tab == tab &&
-                timing_alias == application_state.project.compose_view.compose_timing_focus);
+        updates.set({std::string{id}}, is_workspace_tab_enabled(tab),
+            workspace.active_tab == tab && (tab != workspace_tab_t::compose ||
+                timing_alias == application_state.project.compose_view.compose_timing_focus));
     }
     updates.set({"timing.toggle_lock"},
         workspace.active_tab == workspace_tab_t::compose &&
@@ -395,6 +395,8 @@ auto refresh_application_command_states(
     updates.set({"navigation.go_to_sound"}, sound_picker_command_available(compose_ready, pending));
     refresh_compose_dock_commands(updates, compose_ready, pending, application_state);
     updates.set({"document.export_output_group"}, project_export_available(chart, compose_state, application_state));
+    updates.set({"document.export_storyboard_video"},
+        static_cast<bool>(application_state.services.open_storyboard_video) && !history.document.storyboards.empty());
     refresh_quantize_commands(updates, compose_ready, pending, compose_state, history, application_state);
     updates.set({"navigation.previous_bookmark"}, compose_ready);
     updates.set({"navigation.next_bookmark"}, compose_ready);
@@ -1064,6 +1066,12 @@ auto compose_quantize_command(command_context_t& context) -> command_result_t {
     return outcome;
 }
 
+auto storyboard_video_export_command(command_context_t& context) -> command_result_t {
+    const auto& open = context.environment.editor.commands.services.open_storyboard_video;
+    if (!open) return compose_action_outcome_t::blocked("Video export is unavailable in this application.");
+    return open();
+}
+
 auto project_export_command(command_context_t& context) -> command_result_t {
     const auto* chart = selected_chart(context.environment.document.history,
                                        context.environment.document.workspace);
@@ -1597,6 +1605,8 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
         return {.operation = open_bookmark_chooser_command};
     case command_kind_t::document_export_output_group:
         return {.operation = project_export_command};
+    case command_kind_t::document_export_storyboard_video:
+        return {.operation = storyboard_video_export_command};
     case command_kind_t::edit_toggle_quantize_preview:
     case command_kind_t::edit_apply_quantize:
         return {.operation = compose_quantize_command, .uses_producer_rebind_policy = true};

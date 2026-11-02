@@ -1,6 +1,7 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/storyboard_vocabulary.h>
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,17 @@
 #include <numeric>
 
 namespace wormedit {
+
+auto snap_storyboard_key_time(storyboard_time_t time) noexcept
+    -> result_t<std::int64_t, failure_code_t> {
+    if (!time.is_valid()) return std::unexpected(failure_code_t::invalid_request);
+    // Avoid multiplying the remainder: uint32 clocks may use the full range.
+    const bool round_up = time.remainder > time.denominator - time.remainder;
+    if (!round_up) return time.milliseconds;
+    if (time.milliseconds == std::numeric_limits<std::int64_t>::max())
+        return std::unexpected(failure_code_t::arithmetic_overflow);
+    return time.milliseconds + 1;
+}
 
 auto fitting_snap_denominator(const chart_document_t& chart, const measure_index_t& index,
                                std::span<const local_position_t> positions)

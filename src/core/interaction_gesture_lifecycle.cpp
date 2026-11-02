@@ -1199,6 +1199,8 @@ auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
 auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
                             const editor_interaction_action_t& action) -> bool {
     switch (kind) {
+    case editor_gesture_kind_t::storyboard_edit:
+        return is_gesture_action<update_osbx_edit_gesture_action_t>(action);
     case editor_gesture_kind_t::hold:
         return is_hold_gesture_action_allowed(state, action);
     case editor_gesture_kind_t::duration:
@@ -1229,6 +1231,8 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
 
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
     switch (kind) {
+    case editor_gesture_kind_t::storyboard_edit:
+        return "finish or cancel the active storyboard edit gesture first";
     case editor_gesture_kind_t::hold:
         return "finish or cancel the active hold input gesture first";
     case editor_gesture_kind_t::duration:
@@ -1272,6 +1276,7 @@ auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
            is_applying_action<update_resource_paint_gesture_action_t>(action) ||
            is_applying_action<update_note_duration_gesture_action_t>(action) ||
            is_applying_action<update_note_move_gesture_action_t>(action) ||
+           is_applying_action<update_osbx_edit_gesture_action_t>(action) ||
            (state.gesture<wormedit::pending_space_range_selection_t>() &&
             is_gesture_action<space_range_selection_action_t>(action));
 }
@@ -1295,6 +1300,8 @@ static auto dispatch_gesture_action(document_history_t& history, editor_interact
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_interaction_action_t& action)
     -> editor_interaction_result_t {
+    const bool document_owned = state.gesture_kind() == editor_gesture_kind_t::storyboard_edit ||
+        is_gesture_action<begin_osbx_edit_gesture_action_t, update_osbx_edit_gesture_action_t>(action);
     const auto* area = std::get_if<update_editor_area_selection_action_t>(&action);
     const auto selection_action = is_gesture_action<select_editor_notes_action_t, select_editor_objects_action_t,
         select_editor_lane_action_t, select_bms_canvas_measure_action_t, space_range_selection_action_t>(action) ||
@@ -1304,7 +1311,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     auto result = dispatch_gesture_action(history, state, action);
     if (before && result.accepted && !result.document_changed && history.next_history_sequence == sequence)
         history.selections.record(history, std::move(*before), editor_selection_snapshot_t::from(state));
-    result.ensure_view(history, state);
+    if (!document_owned) result.ensure_view(history, state);
     return result;
 }
 

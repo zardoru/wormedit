@@ -6,6 +6,7 @@ inline constexpr std::size_t maximum_generator_parameters = 256;
 inline constexpr std::size_t maximum_generator_notes = 16384;
 inline constexpr std::size_t maximum_generator_layers = 256;
 inline constexpr std::size_t maximum_generator_charts = 32;
+inline constexpr std::size_t maximum_generator_storyboards = 32;
 inline constexpr std::size_t maximum_generator_measures = 4096;
 inline constexpr std::size_t maximum_generator_recipes = 256;
 struct generator_diff_t { std::size_t added{}, changed{}, removed{}, unchanged{}; };

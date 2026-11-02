@@ -12,6 +12,7 @@
 |Close project |`+Ctrl+W+`
 |Save Project |`+Ctrl+S+`
 |New Chart |`+Ctrl+Shift+N+`
+|Export Storyboard Video… |unbound
 |Export Output Group… |`+Ctrl+E+`
 |===
 

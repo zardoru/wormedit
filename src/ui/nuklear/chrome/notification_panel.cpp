@@ -27,15 +27,16 @@ void render_row_buttons(nk_context* context, const wormedit::ui::notification_hi
     nk_layout_row_dynamic(context, 26, 3);
     if (nk_button_label(context, "Copy details"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS, row.id);
-    const bool positional = row.target == WORM_UI_NOTIFICATION_TARGET_POSITION;
+    const bool file = row.target == WORM_UI_NOTIFICATION_TARGET_FILE;
+    const bool positional = row.target == WORM_UI_NOTIFICATION_TARGET_POSITION || file;
     const bool missing = row.target == WORM_UI_NOTIFICATION_TARGET_MISSING;
     if (!positional && !missing) nk_widget_disable_begin(context);
-    const char* label = row.target == WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL
+    const char* label = file ? "Show in folder" : row.target == WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL
         ? "Sin posición en el chart" : "Go to";
     const bool go = nk_button_label(context, label) != 0;
     if (!positional && !missing) nk_widget_disable_end(context);
     if (go && (positional || missing))
-        emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_GO_TO, row.id);
+        emit_notification_action(action, file ? WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER : WORM_UI_NOTIFICATION_ACTION_GO_TO, row.id);
     if (nk_button_label(context, "Dismiss"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS, row.id);
 }
@@ -115,7 +116,7 @@ auto notification_history_view_valid(const wormedit::ui::notification_history_vi
     for (const auto& row : view.rows) {
         if (row.id == 0 || static_cast<std::size_t>(row.severity) >= std::size(severity_names) ||
             static_cast<std::size_t>(row.source) >= std::size(source_names) ||
-            row.target < WORM_UI_NOTIFICATION_NO_TARGET || row.target > WORM_UI_NOTIFICATION_TARGET_MISSING)
+            row.target < WORM_UI_NOTIFICATION_NO_TARGET || row.target > WORM_UI_NOTIFICATION_TARGET_FILE)
             return false;
     }
     return true;

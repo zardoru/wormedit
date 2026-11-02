@@ -147,7 +147,7 @@ class audition_resolver_index_t {
             for (const auto& event : measure.bgm_events) {
                 add_semantic({event.id, event.sound,
                               event.sound_channel_event.value_or(object_id_t{}), false,
-                              note_kind_t::tap, event.position, lane_id_t{}, std::nullopt, false});
+                              note_kind_t::tap, event.position, lane_id_t{}, std::nullopt, event.osu_hitsample.has_value()});
             }
         }
     }

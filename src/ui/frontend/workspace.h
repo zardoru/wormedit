@@ -1,6 +1,7 @@
 #pragma once
 
 #include "workspace_types.h"
+#include "storyboard.h"
 #include "file_jobs.h"
 #include "lane_keys.h"
 #include "options_notifications.h"
@@ -86,6 +87,7 @@ struct workspace_view_t {
     wormedit::ui::metadata_view_t metadata;
     wormedit::ui::timing_view_t timing;
     wormedit::ui::compose_view_t compose;
+    storyboard_view_t storyboard;
     wormedit::ui::audio_slices_view_t audio_slices;
     compare_view_t compare;
     wormedit::ui::player_preview_view_t player_preview;

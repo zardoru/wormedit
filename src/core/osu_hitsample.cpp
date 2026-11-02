@@ -41,4 +41,18 @@ auto osu_skin_sample_t::stem() const -> std::string {
     if (index > 1) result += std::to_string(index);
     return result;
 }
+auto osu_hitsample_t::query(osu_sample_context_t context, bool custom_normal) const -> osu_hitsample_query_t {
+    osu_hitsample_query_t result{.volume = volume == 0 ? context.volume : volume};
+    if (!is_valid()) return result;
+    const auto normal = normal_set == osu_sample_set_t::automatic ? context.normal_set : normal_set;
+    const auto addition = addition_set == osu_sample_set_t::automatic ? normal : addition_set;
+    const auto index = custom_index == 0 ? context.custom_index : custom_index;
+    if (!custom_normal) result.voices.push_back({.filename = filename,
+        .fallback = {.set = normal, .kind = osu_sample_kind_t::hitnormal, .index = index}});
+    const std::array additions{std::pair{whistle, osu_sample_kind_t::hitwhistle},
+        std::pair{finish, osu_sample_kind_t::hitfinish}, std::pair{clap, osu_sample_kind_t::hitclap}};
+    for (const auto& [enabled, kind] : additions)
+        if (enabled) result.voices.push_back({.fallback = {.set = addition, .kind = kind, .index = index}});
+    return result;
+}
 }

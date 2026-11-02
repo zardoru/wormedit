@@ -63,6 +63,23 @@ if(WORMEDIT_INSTALL_MANUAL AND WORMEDIT_ASCIIDOCTOR)
     else()
         install(CODE "message(FATAL_ERROR \"Set WORMEDIT_ASCIIDOCTOR_NOTICE_FILE for the bundled stylesheet.\")")
     endif()
+    # The selected source highlighter also embeds its MIT-licensed theme CSS.
+    if(wormedit_notice_ruby)
+        execute_process(COMMAND "${wormedit_notice_ruby}" -rrubygems -e
+            "puts Gem::Specification.find_by_name('rouge').full_gem_path"
+            OUTPUT_VARIABLE wormedit_rouge_gem OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+    endif()
+    find_file(WORMEDIT_ROUGE_NOTICE_FILE NAMES LICENSE LICENSE.md copyright
+        PATHS "${wormedit_rouge_gem}" /usr/share/doc/ruby-rouge
+            /usr/share/licenses/ruby-rouge /usr/share/licenses/rouge
+        NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH
+        DOC "Copyright/license notice for the Rouge HTML theme")
+    if(WORMEDIT_ROUGE_NOTICE_FILE)
+        wormedit_install_notices(Rouge "${WORMEDIT_ROUGE_NOTICE_FILE}")
+    else()
+        install(CODE "message(FATAL_ERROR \"Set WORMEDIT_ROUGE_NOTICE_FILE for the bundled theme.\")")
+    endif()
     wormedit_install_notices(LDoc "${wormedit_ldoc_SOURCE_DIR}/COPYRIGHT")
     wormedit_install_notices(Penlight "${wormedit_penlight_SOURCE_DIR}/LICENSE.md")
     wormedit_install_notices(LuaFileSystem "${wormedit_lfs_SOURCE_DIR}/LICENSE")
@@ -113,6 +130,22 @@ if(TARGET PkgConfig::WORMEDIT_FFMPEG)
         file(GLOB wormedit_ffmpeg_source_archives "${wormedit_ffmpeg_notice_dir}/ffmpeg-*.tar.xz")
         if(NOT wormedit_ffmpeg_source_archives)
             message(FATAL_ERROR "FFmpeg notices must include the corresponding ffmpeg-*.tar.xz source archive")
+        endif()
+        if(WORMEDIT_VIDEO_ENCODER_AVAILABLE AND NOT WORMEDIT_FFMPEG_LOCAL_ONLY)
+            # One pinned receipt validator serves both SDK builders and packages.
+            # Local-only FFmpeg remains an explicit non-redistribution escape.
+            find_program(wormedit_notice_bash NAMES bash REQUIRED)
+            get_filename_component(wormedit_video_sdk_prefix
+                "${wormedit_ffmpeg_notice_dir}/../.." ABSOLUTE)
+            execute_process(COMMAND "${wormedit_notice_bash}"
+                "${CMAKE_SOURCE_DIR}/packaging/build-video-codecs-sdk.sh"
+                verify "${wormedit_video_sdk_prefix}"
+                RESULT_VARIABLE wormedit_video_receipt_status
+                OUTPUT_VARIABLE wormedit_video_receipt_output
+                ERROR_VARIABLE wormedit_video_receipt_error)
+            if(NOT wormedit_video_receipt_status EQUAL 0)
+                message(FATAL_ERROR "Video SDK redistribution receipts invalid: ${wormedit_video_receipt_output}${wormedit_video_receipt_error}")
+            endif()
         endif()
         install(DIRECTORY "${wormedit_ffmpeg_notice_dir}/"
             DESTINATION "${wormedit_notice_root}/ffmpeg")
@@ -166,3 +199,6 @@ if(WIN32 AND MINGW)
         install(CODE "message(FATAL_ERROR \"Set WORMEDIT_MINGW_NOTICES_DIR for this MinGW SDK.\")")
     endif()
 endif()
+
+# storybrew keyframe simplification, MIT, Copyright (c) 2020 Damnae.
+wormedit_install_notices(storybrew "${CMAKE_CURRENT_LIST_DIR}/notices/storybrew-MIT.txt")

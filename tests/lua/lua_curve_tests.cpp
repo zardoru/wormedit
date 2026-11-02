@@ -14,7 +14,7 @@ auto chart() -> chart_document_t {
 }
 auto recipe(std::string source) -> sv_recipe_t {
     sv_recipe_t result{.id=recipe_id_t{20}, .name="Lua", .range={{measure_id_t{11},0},{measure_id_t{12},0}},
-        .curve=sv_recipe_curve_t::lua_expression, .expression_source=std::move(source)};
+        .curve=sv_recipe_curve_t::lua_expression, .lua = sv_recipe_lua_t{.source = {.frozen_source = std::move(source)}}};
     result.sampling.fixed_point_count=3;
     return result;
 }
@@ -28,7 +28,7 @@ auto start(const lua_curve_backend_t& backend, const sv_recipe_t& value)
 auto ordered_document() -> chart_document_t {
     auto document=chart();
     auto value=recipe("local n=0; return function(p,ctx) n=n+1; return n end");
-    value.lua=sv_recipe_lua_t{.mode=sv_recipe_lua_mode_t::ordered,.cycles={{2},{1}}};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source}, .mode=sv_recipe_lua_mode_t::ordered, .cycles={{2},{1}}};
     document.sv_recipes.push_back(std::move(value));
     return document;
 }
@@ -86,7 +86,7 @@ TEST_CASE("Lua curve module factories receive frozen parameters and snapshots", 
         assert(ctx.seed=='18446744073709551615' and ctx.seed_integer==nil)
         return function(p,ctx) return offset+p+ctx.baseline end
     end})");
-    value.lua=sv_recipe_lua_t{.entry_point="curve", .parameters={{"offset",{3,2}}}, .seed=UINT64_MAX};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source, .entry_point="curve", .parameters={{"offset",{3,2}}}, .seed=UINT64_MAX}};
     lua_curve_backend_t backend;
     auto session=start(backend,value);
     const auto evaluated=session->evaluate({.p=0.5L,.baseline=2});
@@ -100,7 +100,7 @@ TEST_CASE("Lua curve pure mode rejects retained state and ordered mode retains s
     auto pure=start(backend,value);
     CHECK_FALSE(pure->evaluate({}).ok());
     CHECK_FALSE(pure->finish().empty());
-    value.lua=sv_recipe_lua_t{.mode=sv_recipe_lua_mode_t::ordered,.cycles={{2},{1}}};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source}, .mode=sv_recipe_lua_mode_t::ordered, .cycles={{2},{1}}};
     auto ordered=start(backend,value);
     CHECK(ordered->evaluate({.cycle_index=1,.emission_index=1,.cycle_emission_index=1}).value==11);
     CHECK(ordered->evaluate({.cycle_index=1,.emission_index=2,.cycle_emission_index=2}).value==12);
@@ -144,7 +144,7 @@ TEST_CASE("Lua curve compile and export builds reset ordered sessions", "[lua-cu
 
 TEST_CASE("Lua curve seeded ordered replay is deterministic and fresh builds reset it", "[lua-curve]") {
     auto value=recipe("function(p,ctx) return math.random(1,1000000) end");
-    value.lua=sv_recipe_lua_t{.seed=42,.mode=sv_recipe_lua_mode_t::ordered,.cycles={{3}}};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source, .seed=42}, .mode=sv_recipe_lua_mode_t::ordered, .cycles={{3}}};
     lua_curve_backend_t backend;
     CHECK(seeded_run(backend,value)==seeded_run(backend,value));
 }
@@ -152,7 +152,7 @@ TEST_CASE("Lua curve seeded ordered replay is deterministic and fresh builds res
 TEST_CASE("Lua curve diagnostics preserve source locations and reject invalid results", "[lua-curve]") {
     lua_curve_backend_t backend;
     auto value=recipe("function()\nerror('broken')\nend");
-    value.lua=sv_recipe_lua_t{.source_reference="scripts/curve.lua"};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source, .source_reference="scripts/curve.lua"}};
     auto session=start(backend,value);
     const auto failed=session->evaluate({});
     REQUIRE_FALSE(failed.ok()); REQUIRE_FALSE(failed.diagnostics.empty());
@@ -173,11 +173,10 @@ TEST_CASE("Lua curve replay shares the complete build instruction budget", "[lua
 TEST_CASE("Lua curve backend checks frozen source hashes without reading references", "[lua-curve]") {
     lua_curve_backend_t backend;
     auto value=recipe("function() return 1 end");
-    value.lua=sv_recipe_lua_t{.source_reference="missing/source.lua",
-        .source_hash=native_project_content_checksum(value.expression_source)};
+    value.lua=sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source, .source_reference="missing/source.lua", .source_hash=native_project_content_checksum(value.script().frozen_source)}};
     auto good=start(backend,value);
     CHECK(good->evaluate({}).ok());
-    value.expression_source="function() return 2 end";
+    value.set_frozen_source("function() return 2 end");
     const auto bad=backend.start(chart(),value);
     CHECK_FALSE(bad.ok()); CHECK_FALSE(bad.value);
 }
@@ -187,7 +186,7 @@ TEST_CASE("pure Lua one plus p matches built-in linear recipe inspection", "[lua
     const auto scripted = recipe("function(p) return 1+p end");
     auto linear = scripted;
     linear.curve = sv_recipe_curve_t::linear;
-    linear.expression_source.clear();
+    linear.set_frozen_source({});
     linear.lua.reset();
     linear.parameters.value_from = {1, 1};
     linear.parameters.value_to = {2, 1};
@@ -203,8 +202,7 @@ TEST_CASE("pure Lua one plus p matches built-in linear recipe inspection", "[lua
 TEST_CASE("Documented SV examples run and replay through the curve backend", "[lua-curve][documentation]") {
     const auto factory = GENERATE(false, true);
     auto value = recipe(lua_documentation_example(factory ? "factory.lua" : "curve.lua"));
-    value.lua = sv_recipe_lua_t{.entry_point = factory ? "rise" : "",
-        .parameters = {{"height", {4, 1}}}};
+    value.lua = sv_recipe_lua_t{.source = {.frozen_source = value.script().frozen_source, .entry_point = factory ? "rise" : "", .parameters = {{"height", {4, 1}}}}};
     lua_curve_backend_t backend;
     auto session = start(backend, value);
     const auto result = session->evaluate({.p = 0.5L, .baseline = 2});

@@ -1054,3 +1054,17 @@ TEST_CASE("Rejection feedback posts one diagnostic or one fallback warning", "[n
                entry.target == notification_target_t{object_id_t{42}};
     }) == 1);
 }
+
+TEST_CASE("worker file notifications retain their owning transient path through the inbox", "[notifications][video]") {
+    notification_center_t center{[] { return 0ns; }};
+    std::filesystem::path destination{"/tmp/video/clip.webm"};
+    center.post({.severity = notification_severity_t::success, .source = notification_source_t::export_,
+        .message = "Video exported", .target = notification_file_t{.path = destination}});
+    destination = "/tmp/changed.webm";
+    center.drain_inbox(0ns);
+    const auto entries = center.borrowed_snapshot(notification_capacity);
+    REQUIRE(entries.size() == 1);
+    REQUIRE(std::holds_alternative<notification_file_t>(entries.front().target));
+    CHECK(std::get<notification_file_t>(entries.front().target).path == "/tmp/video/clip.webm");
+    CHECK(entries.front().severity == notification_severity_t::success);
+}

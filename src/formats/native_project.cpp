@@ -292,6 +292,26 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_binding_t, key, lane, focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(input_profile_t, profile_id, bindings, stage_count,
                                    requires_focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(semantic_layer_t, id, name, color, visible, locked)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_stream_info_t, sample_rate, channels, frame_count,
+                                   seekable)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_wav_reference_t, index, source_chart)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_file_reference_t, declared_name, path, content_hash, asset, stream)
+void to_json(json& value, const sample_reference_binding_t& binding) {
+    value = {{"bound_sound", binding.bound_sound}, {"bound_asset", binding.bound_asset}};
+    std::visit([&](const auto& reference) {
+        using T = std::decay_t<decltype(reference)>;
+        value["kind"] = std::is_same_v<T, bms_wav_reference_t> ? "bms_wav" : "audio_file";
+        value["reference"] = reference;
+    }, binding.reference);
+}
+void from_json(const json& value, sample_reference_binding_t& binding) {
+    value.at("bound_sound").get_to(binding.bound_sound);
+    value.at("bound_asset").get_to(binding.bound_asset);
+    const auto kind = value.at("kind").get<std::string>();
+    if (kind == "bms_wav") binding.reference = value.at("reference").get<bms_wav_reference_t>();
+    else if (kind == "audio_file") binding.reference = value.at("reference").get<audio_file_reference_t>();
+    else throw std::invalid_argument("Unknown typed sample reference kind");
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osu_hitsample_t, whistle, finish, clap, normal_set,
                                   addition_set, custom_index, volume, filename)
 void to_json(json& value, const note_t& note) {
@@ -309,6 +329,7 @@ void to_json(json& value, const note_t& note) {
         value["sound_channel_event"] = *note.sound_channel_event;
     }
     if (note.osu_hitsample) value["osu_hitsample"] = *note.osu_hitsample;
+    if (note.sample_reference) value["sample_reference"] = *note.sample_reference;
 }
 
 void from_json(const json& value, note_t& note) {
@@ -323,6 +344,7 @@ void from_json(const json& value, note_t& note) {
     value.at("branch").get_to(note.branch);
     value.at("provenance").get_to(note.provenance);
     note.osu_hitsample = value.value("osu_hitsample", std::optional<osu_hitsample_t>{});
+    note.sample_reference = value.value("sample_reference", std::optional<sample_reference_binding_t>{});
     note.sound_channel_event.reset();
     if (const auto linked = value.find("sound_channel_event"); linked != value.end()) {
         linked->get_to(note.sound_channel_event);
@@ -338,6 +360,8 @@ void to_json(json& value, const bgm_event_t& event) {
                  {"branch", event.branch},
                  {"provenance", event.provenance}};
     value["end"] = event.end;
+    if (event.osu_hitsample) value["osu_hitsample"] = *event.osu_hitsample;
+    if (event.sample_reference) value["sample_reference"] = *event.sample_reference;
     if (event.sound_channel_event.has_value()) {
         value["sound_channel_event"] = *event.sound_channel_event;
     }
@@ -353,6 +377,8 @@ void from_json(const json& value, bgm_event_t& event) {
     value.at("structural_slot").get_to(event.structural_slot);
     value.at("branch").get_to(event.branch);
     value.at("provenance").get_to(event.provenance);
+    event.osu_hitsample = value.value("osu_hitsample", std::optional<osu_hitsample_t>{});
+    event.sample_reference = value.value("sample_reference", std::optional<sample_reference_binding_t>{});
     event.end.reset();
     if (const auto end = value.find("end"); end != value.end()) end->get_to(event.end);
     event.sound_channel_event.reset();
@@ -407,11 +433,31 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_parameters_t, value_from, value_to,
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_sampling_t, mode, fixed_point_count, fixed_step_rows,
                                    tolerance, max_points)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_postprocess_t, kind, mode, solve, value)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_parameter_t, name, value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lua_parameter_t, name, value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_input_t, asset, content_hash)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_cycle_t, emission_count)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_t, api_version, entry_point, source_reference,
-                                   source_hash, parameters, inputs, seed, mode, cycles)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lua_source_descriptor_t, frozen_source, api_version, entry_point,
+                                   source_reference, source_hash, parameters, seed)
+void to_json(json& value, const sv_recipe_lua_t& lua) {
+    const auto& source = lua.source;
+    value = {{"api_version", source.api_version}, {"entry_point", source.entry_point},
+        {"source_reference", source.source_reference}, {"source_hash", source.source_hash},
+        {"parameters", source.parameters}, {"seed", source.seed}, {"inputs", lua.inputs},
+        {"mode", lua.mode}, {"cycles", lua.cycles}};
+}
+void from_json(const json& value, sv_recipe_lua_t& lua) {
+    lua = {};
+    auto& source = lua.source;
+    source.api_version = value.value("api_version", source.api_version);
+    source.entry_point = value.value("entry_point", source.entry_point);
+    source.source_reference = value.value("source_reference", source.source_reference);
+    source.source_hash = value.value("source_hash", source.source_hash);
+    source.parameters = value.value("parameters", source.parameters);
+    source.seed = value.value("seed", source.seed);
+    lua.inputs = value.value("inputs", lua.inputs);
+    lua.mode = value.value("mode", lua.mode);
+    lua.cycles = value.value("cycles", lua.cycles);
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_impulse_t, at, area)
 // expression_source is schema 2; schema 1 documents gain an empty one in migrate_v1_to_v2.
 void to_json(json& value, const sv_recipe_t& recipe) {
@@ -427,7 +473,7 @@ void to_json(json& value, const sv_recipe_t& recipe) {
         {"curve", recipe.curve},
         {"parameters", recipe.parameters},
         {"sampling", recipe.sampling},
-        {"expression_source", recipe.expression_source},
+        {"expression_source", recipe.script().frozen_source},
         {"lua", recipe.lua},
         {"transition_duration", recipe.transition_duration},
         {"transition_is_seconds", recipe.transition_is_seconds},
@@ -449,8 +495,9 @@ void from_json(const json& value, sv_recipe_t& recipe) {
     value.at("curve").get_to(recipe.curve);
     value.at("parameters").get_to(recipe.parameters);
     value.at("sampling").get_to(recipe.sampling);
-    value.at("expression_source").get_to(recipe.expression_source);
-    value.at("lua").get_to(recipe.lua);
+    recipe.lua = value.value("lua", std::optional<sv_recipe_lua_t>{});
+    const auto frozen = value.value("expression_source", std::string{});
+    if (!frozen.empty()) recipe.set_frozen_source(frozen);
     value.at("transition_duration").get_to(recipe.transition_duration);
     value.at("transition_is_seconds").get_to(recipe.transition_is_seconds);
     value.at("postprocess").get_to(recipe.postprocess);
@@ -464,8 +511,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bookmark_t, id, label, anchor, position, audio_milliseconds)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(section_t, id, label, anchor, beat_span, audio_millisecond_span)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bga_event_t, id, position, resource, kind, provenance)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_stream_info_t, sample_rate, channels, frame_count,
-                                   seekable)
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(target_resource_identity_t, family, identifier, namespace_name)
 } // namespace wormedit
 
@@ -536,23 +582,272 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, forma
                                    preview_override)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_command_t, opcode, easing, start_time_ms, end_time_ms,
                                    from, to, value_count, source_order)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_node_t, kind, command, loop_start_time_ms,
-                                   loop_iteration_count, source_order, retained_line, children)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_sprite_t, stable_id, source_order, layer, origin,
-                                   path, x, y, nodes)
+void to_json(json& value, const storyboard_trigger_t& trigger) {
+    if (!trigger.is_valid()) throw std::invalid_argument("Invalid storyboard trigger");
+    value = {{"name", trigger.name.value}, {"start_time_ms", trigger.start_time_ms},
+        {"end_time_ms", trigger.end_time_ms}, {"group_number", trigger.group_number}};
+}
+void from_json(const json& value, storyboard_trigger_t& trigger) {
+    if (!value.is_object() || value.size() != 4) throw std::invalid_argument("Malformed storyboard trigger");
+    const auto name = storyboard_trigger_name_t::from(value.at("name").get<std::string>());
+    if (!name) throw std::invalid_argument("Unsupported storyboard trigger name");
+    trigger = {.name = *name};
+    if (!value.at("start_time_ms").is_null()) trigger.start_time_ms = strict_signed_64(value.at("start_time_ms"));
+    if (!value.at("end_time_ms").is_null()) trigger.end_time_ms = strict_signed_64(value.at("end_time_ms"));
+    if (!value.at("group_number").is_null()) {
+        const auto number = strict_signed_64(value.at("group_number"));
+        if (number < std::numeric_limits<std::int32_t>::min() || number > std::numeric_limits<std::int32_t>::max())
+            throw std::out_of_range("Storyboard trigger group exceeds signed32");
+        trigger.group_number = static_cast<std::int32_t>(number);
+    }
+    if (!trigger.is_valid()) throw std::invalid_argument("Invalid storyboard trigger bounds");
+}
+void to_json(json& value, const storyboard_node_t& node);
+void from_json(const json& value, storyboard_node_t& node);
+void to_json(json& value, const storyboard_node_t& node) {
+    value = {{"kind", node.kind}, {"command", node.command}, {"loop_start_time_ms", node.loop_start_time_ms},
+        {"loop_iteration_count", node.loop_iteration_count}, {"source_order", node.source_order},
+        {"retained_line", node.retained_line}, {"children", node.children}};
+    if (node.trigger) value["trigger"] = *node.trigger;
+}
+void from_json(const json& value, storyboard_node_t& node) {
+    value.at("kind").get_to(node.kind);
+    value.at("command").get_to(node.command);
+    node.loop_start_time_ms = strict_signed_64(value.at("loop_start_time_ms"));
+    node.loop_iteration_count = strict_unsigned<std::uint64_t>(value.at("loop_iteration_count"));
+    node.source_order = strict_unsigned<std::uint64_t>(value.at("source_order"));
+    value.at("retained_line").get_to(node.retained_line);
+    value.at("children").get_to(node.children);
+    node.trigger.reset();
+    if (value.contains("trigger")) node.trigger = value.at("trigger").get<storyboard_trigger_t>();
+    if ((node.kind == storyboard_node_kind_t::trigger) != node.trigger.has_value())
+        throw std::invalid_argument("Storyboard trigger kind/metadata mismatch");
+}
+void to_json(json& value, const storyboard_animation_t& animation) {
+    if (!animation.is_valid()) throw std::invalid_argument("Invalid storyboard animation metadata");
+    value = {{"frame_count", animation.frame_count}, {"frame_delay_ms", animation.frame_delay_ms},
+        {"loop_type", animation.loop_type}};
+}
+void from_json(const json& value, storyboard_animation_t& animation) {
+    if (!value.is_object() || value.size() != 3 || !value.at("frame_delay_ms").is_number())
+        throw std::invalid_argument("Malformed storyboard animation metadata");
+    animation.frame_count = strict_unsigned<std::uint32_t>(value.at("frame_count"));
+    value.at("frame_delay_ms").get_to(animation.frame_delay_ms);
+    value.at("loop_type").get_to(animation.loop_type);
+    if (!animation.is_valid()) throw std::invalid_argument("Invalid storyboard animation metadata");
+}
+void to_json(json& value, const storyboard_sprite_t& sprite) {
+    value = {{"stable_id", sprite.stable_id}, {"source_order", sprite.source_order},
+        {"layer", sprite.layer}, {"origin", sprite.origin}, {"path", sprite.path},
+        {"x", sprite.x}, {"y", sprite.y}, {"nodes", sprite.nodes}};
+    if (sprite.animation) value["animation"] = *sprite.animation;
+}
+void from_json(const json& value, storyboard_sprite_t& sprite) {
+    value.at("stable_id").get_to(sprite.stable_id);
+    value.at("source_order").get_to(sprite.source_order);
+    value.at("layer").get_to(sprite.layer);
+    value.at("origin").get_to(sprite.origin);
+    value.at("path").get_to(sprite.path);
+    value.at("x").get_to(sprite.x);
+    value.at("y").get_to(sprite.y);
+    value.at("nodes").get_to(sprite.nodes);
+    sprite.animation = value.value("animation", std::optional<storyboard_animation_t>{});
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_top_level_line_t, source_order, text)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_document_model_t, sprites, retained_top_level_lines)
+void to_json(json& value, const storyboard_sample_t& sample) {
+    if (!sample.is_valid()) throw std::invalid_argument("Invalid storyboard Sample");
+    value = {{"stable_id", sample.stable_id}, {"source_order", sample.source_order}, {"time_ms", sample.time_ms},
+        {"layer", sample.layer}, {"path", sample.path}, {"volume", sample.volume}};
+}
+void from_json(const json& value, storyboard_sample_t& sample) {
+    if (!value.is_object() || value.size() != 6) throw std::invalid_argument("Malformed storyboard Sample");
+    sample.stable_id = strict_unsigned<std::uint64_t>(value.at("stable_id"));
+    sample.source_order = strict_unsigned<std::uint64_t>(value.at("source_order"));
+    sample.time_ms = strict_signed_64(value.at("time_ms"));
+    sample.layer = static_cast<osbx_layer_t>(strict_unsigned<std::uint32_t>(value.at("layer")));
+    value.at("path").get_to(sample.path);
+    sample.volume.reset();
+    if (!value.at("volume").is_null()) sample.volume = strict_unsigned<std::uint8_t>(value.at("volume"));
+    if (!sample.is_valid()) throw std::invalid_argument("Invalid storyboard Sample");
+}
+void to_json(json& value, const storyboard_document_model_t& model) {
+    if (!model.has_valid_samples()) throw std::invalid_argument("Invalid storyboard Sample identities");
+    value = {{"sprites", model.sprites}, {"retained_top_level_lines", model.retained_top_level_lines}, {"samples", model.samples}};
+}
+void from_json(const json& value, storyboard_document_model_t& model) {
+    if (!value.is_object() || value.size() != 3) throw std::invalid_argument("Malformed storyboard model");
+    if (!value.at("samples").is_array() || value.at("samples").size() > storyboard_parse_options_t{}.maximum_nodes)
+        throw std::invalid_argument("Storyboard Sample collection exceeds its node limit");
+    value.at("sprites").get_to(model.sprites);
+    value.at("retained_top_level_lines").get_to(model.retained_top_level_lines);
+    value.at("samples").get_to(model.samples);
+    if (!model.has_valid_samples()) throw std::invalid_argument("Invalid storyboard Sample identities");
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_metadata_t, title, artist, ordered_search_tags,
                                    format_groups, preview)
+
+// OSBX uses the same native value representation in project files and deltas.
+void to_json(json& value, const osbx_step_easing_t&) { value = json::object(); }
+void from_json(const json& value, osbx_step_easing_t&) {
+    if (!value.is_object() || !value.empty()) throw std::invalid_argument("invalid step easing");
+}
+void to_json(json& value, const osbx_linear_easing_t&) { value = json::object(); }
+void from_json(const json& value, osbx_linear_easing_t&) {
+    if (!value.is_object() || !value.empty()) throw std::invalid_argument("invalid linear easing");
+}
+void to_json(json& value, const osbx_osb_easing_t& easing) { value = {{"value", easing.value}}; }
+void from_json(const json& value, osbx_osb_easing_t& easing) {
+    const auto number = strict_signed_64(value.at("value"));
+    if (number < std::numeric_limits<std::int32_t>::min() || number > std::numeric_limits<std::int32_t>::max())
+        throw std::out_of_range("OSBX easing exceeds its integer range");
+    easing.value = static_cast<std::int32_t>(number);
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_cubic_bezier_t, x1, y1, x2, y2)
+void to_json(json& value, const osbx_easing_t& easing) {
+    value = {{"type", easing.index()}};
+    std::visit([&](const auto& data) { value["data"] = data; }, easing);
+}
+void from_json(const json& value, osbx_easing_t& easing) {
+    const auto& data = value.at("data");
+    switch (strict_unsigned<std::uint32_t>(value.at("type"))) {
+    case 0: easing = data.get<osbx_step_easing_t>(); break;
+    case 1: easing = data.get<osbx_linear_easing_t>(); break;
+    case 2: easing = data.get<osbx_osb_easing_t>(); break;
+    case 3: easing = data.get<osbx_cubic_bezier_t>(); break;
+    default: throw std::invalid_argument("unknown OSBX easing type");
+    }
+}
+template<class Value> void to_json(json& value, const osbx_key_t<Value>& key) {
+    value = {{"id", key.id}, {"time_ms", key.time_ms}, {"value", key.value}, {"easing", key.easing}};
+}
+template<class Value> void from_json(const json& value, osbx_key_t<Value>& key) {
+    value.at("id").get_to(key.id);
+    key.time_ms = strict_signed_64(value.at("time_ms"));
+    value.at("value").get_to(key.value);
+    value.at("easing").get_to(key.easing);
+}
+template<class Value> void to_json(json& value, const osbx_key_program_t<Value>& program) {
+    std::visit([&](const auto& block) {
+        using block_t = std::decay_t<decltype(block)>;
+        value = {{"id", block.id}, {"keys", block.keys}};
+        if constexpr (std::is_same_v<block_t, osbx_loop_t<Value>>) {
+            value["kind"] = "loop"; value["start_ms"] = block.start_ms; value["count"] = block.count;
+        } else { value["kind"] = "trigger"; value["trigger"] = block.trigger; }
+    }, program.data);
+}
+template<class Value> void from_json(const json& value, osbx_key_program_t<Value>& program) {
+    const auto kind = value.at("kind").get<std::string>();
+    if (kind == "loop") {
+        if (value.size() != 5) throw std::invalid_argument("Malformed loop program shape");
+        osbx_loop_t<Value> block{.id = value.at("id").get<std::string>(),
+            .start_ms = strict_signed_64(value.at("start_ms")), .count = strict_unsigned<std::uint32_t>(value.at("count"))};
+        value.at("keys").get_to(block.keys); program.data = std::move(block);
+    } else if (kind == "trigger") {
+        if (value.size() != 4) throw std::invalid_argument("Malformed trigger program shape");
+        osbx_trigger_t<Value> block{.id = value.at("id").get<std::string>(), .trigger = value.at("trigger").get<storyboard_trigger_t>()};
+        value.at("keys").get_to(block.keys); program.data = std::move(block);
+    } else throw std::invalid_argument("Unknown temporal program kind");
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_lua_sampling_t, mode, tolerance, max_points, fixed_point_count)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_lua_link_t, id, source)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_lua_track_link_t, link, begin_ms, end_ms, sampling)
+template<class Value> void to_json(json& value, const osbx_track_t<Value>& track) {
+    value = {{"default_value", track.default_value}, {"keys", track.keys}, {"lua", track.lua}};
+    if (track.parameter) value["parameter"] = *track.parameter;
+    if (!track.program.empty()) value["program"] = track.program;
+}
+template<class Value> void from_json(const json& value, osbx_track_t<Value>& track) {
+    value.at("default_value").get_to(track.default_value);
+    value.at("keys").get_to(track.keys);
+    track.lua = value.value("lua", std::optional<osbx_lua_track_link_t>{});
+    track.parameter = value.value("parameter", std::optional<std::string>{});
+    track.program.clear();
+    if (value.contains("program")) value.at("program").get_to(track.program);
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_transform_op_t, id, kind, track, children)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_tracks_t, opacity, color, visibility, blend)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_provenance_t, file, line, generator_key)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_lifetime_t, begin_ms, end_ms)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_clip_parameter_t, name, default_value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_clip_binding_t, name, value)
+void to_json(json& value, const osbx_clip_instance_t& use) {
+    value = {{"id", use.id}, {"clip", use.clip}, {"start_ms", use.start_ms},
+        {"time_scale", use.time_scale}, {"parameters", use.parameters}};
+}
+void from_json(const json& value, osbx_clip_instance_t& use) {
+    value.at("id").get_to(use.id); value.at("clip").get_to(use.clip);
+    use.start_ms = strict_signed_64(value.at("start_ms"));
+    use.time_scale = value.at("time_scale").get<double>();
+    value.at("parameters").get_to(use.parameters);
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_clip_tracks_t, opacity, color, visibility, blend)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_clip_t, id, ops, tracks, parameters, uses)
+void to_json(json& value, const osbx_sample_t& sample) {
+    if (!sample.is_valid()) throw std::invalid_argument("Invalid OSBX Sample metadata");
+    value = {{"time_ms", sample.time_ms}, {"path", sample.path}};
+    if (sample.volume) value["volume"] = *sample.volume;
+}
+void from_json(const json& value, osbx_sample_t& sample) {
+    if (!value.is_object() || value.size() < 2 || value.size() > 3)
+        throw std::invalid_argument("Malformed OSBX Sample metadata");
+    for (const auto& [key, unused] : value.items()) {
+        (void)unused;
+        if (key != "time_ms" && key != "path" && key != "volume")
+            throw std::invalid_argument("Unknown OSBX Sample metadata field");
+    }
+    sample.time_ms = strict_signed_64(value.at("time_ms"));
+    value.at("path").get_to(sample.path);
+    sample.volume.reset();
+    if (value.contains("volume")) sample.volume = strict_unsigned<std::uint8_t>(value.at("volume"));
+    if (!sample.is_valid()) throw std::invalid_argument("Invalid OSBX Sample metadata");
+}
+void to_json(json& value, const osbx_node_t& node) {
+    value = {{"id", node.id}, {"kind", node.kind}, {"parent", node.parent}, {"layer", node.layer},
+        {"order", node.order}, {"image", node.image}, {"origin", node.origin}, {"ops", node.ops},
+        {"tracks", node.tracks}, {"provenance", node.provenance}, {"children_link", node.children_link},
+        {"lifetime", node.lifetime}};
+    if (!node.uses.empty()) value["uses"] = node.uses;
+    if (node.animation) value["animation"] = *node.animation;
+    if (node.sample) value["sample"] = *node.sample;
+}
+void from_json(const json& value, osbx_node_t& node) {
+    value.at("id").get_to(node.id); value.at("kind").get_to(node.kind);
+    value.at("parent").get_to(node.parent); value.at("layer").get_to(node.layer);
+    value.at("order").get_to(node.order); value.at("image").get_to(node.image);
+    value.at("origin").get_to(node.origin); value.at("ops").get_to(node.ops);
+    value.at("tracks").get_to(node.tracks); value.at("provenance").get_to(node.provenance);
+    node.children_link = value.value("children_link", std::optional<osbx_lua_link_t>{});
+    node.lifetime = value.value("lifetime", std::optional<osbx_lifetime_t>{});
+    node.uses = value.value("uses", std::vector<osbx_clip_instance_t>{});
+    node.animation.reset(); node.sample.reset();
+    if (value.contains("animation")) node.animation = value.at("animation").get<storyboard_animation_t>();
+    if (value.contains("sample")) node.sample = value.at("sample").get<osbx_sample_t>();
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_image_t, id, file)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osbx_canvas_t, width, height)
+void to_json(json& value, const osbx_document_t& document) {
+    value = {{"api_version", document.api_version}, {"canvas", document.canvas},
+        {"images", document.images}, {"nodes", document.nodes}};
+    if (!document.clips.empty()) value["clips"] = document.clips;
+}
+void from_json(const json& value, osbx_document_t& document) {
+    value.at("api_version").get_to(document.api_version); value.at("canvas").get_to(document.canvas);
+    value.at("images").get_to(document.images); value.at("nodes").get_to(document.nodes);
+    document.clips = value.value("clips", std::vector<osbx_clip_t>{});
+}
 
 void to_json(json& value, const storyboard_document_t& storyboard) {
     value = json{{"id", storyboard.id},
                  {"name", storyboard.name},
                  {"retained_source_lines", storyboard.retained_source_lines},
                  {"model", storyboard.model}};
+    value["osbx"] = storyboard.osbx;
+    value["owning_generator_recipe"] = storyboard.owning_generator_recipe;
 }
 
 void from_json(const json& value, storyboard_document_t& storyboard) {
+    storyboard.osbx = value.value("osbx", std::optional<osbx_document_t>{});
+    storyboard.owning_generator_recipe = value.value("owning_generator_recipe", std::optional<recipe_id_t>{});
     value.at("id").get_to(storyboard.id);
     value.at("name").get_to(storyboard.name);
     value.at("retained_source_lines").get_to(storyboard.retained_source_lines);
@@ -762,6 +1057,15 @@ void from_json(const json& value, generator_chart_content_t& content) {
     content.sv_recipes.reset();
     if (value.contains("sv_recipes")) content.sv_recipes = value.at("sv_recipes").get<std::vector<sv_recipe_t>>();
 }
+void to_json(json& value, const generator_storyboard_binding_t& binding) {
+    // Reuse the OSBX numeric-shape boundary for canvas and track floating-point values.
+    value = json{{"key", binding.key}, {"storyboard", binding.storyboard}, {"osbx", binding.value}};
+}
+void from_json(const json& value, generator_storyboard_binding_t& binding) {
+    value.at("key").get_to(binding.key);
+    value.at("storyboard").get_to(binding.storyboard);
+    value.at("osbx").get_to(binding.value);
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_identity_t, key, value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_binding_t, key, chart, content, identities)
 
@@ -790,6 +1094,7 @@ void to_json(json& value, const generator_recipe_t& recipe) {
                  {"generated_notes", recipe.generated_notes},
                  {"generated_layers", recipe.generated_layers},
                  {"generated_charts", recipe.generated_charts},
+                 {"generated_storyboards", recipe.generated_storyboards},
                  {"generated_scrolls", recipe.generated_scrolls},
                  {"generated_sv_recipes", recipe.generated_sv_recipes}};
 }
@@ -812,6 +1117,8 @@ void from_json(const json& value, generator_recipe_t& recipe) {
     recipe.generated_sv_recipes.clear();
     if (value.contains("generated_scrolls")) value.at("generated_scrolls").get_to(recipe.generated_scrolls);
     if (value.contains("generated_sv_recipes")) value.at("generated_sv_recipes").get_to(recipe.generated_sv_recipes);
+    recipe.generated_storyboards.clear();
+    if (value.contains("generated_storyboards")) value.at("generated_storyboards").get_to(recipe.generated_storyboards);
     recipe.generated_charts.clear();
     if (value.contains("generated_charts")) value.at("generated_charts").get_to(recipe.generated_charts);
 }
@@ -819,13 +1126,16 @@ void from_json(const json& value, generator_recipe_t& recipe) {
 void to_json(json& value, const stepmania_export_policy_t& policy) {
     value = json{{"file_profile", policy.file_profile},
                  {"timing_syntax", policy.timing_syntax},
-                 {"implementation_profile", policy.implementation_profile}};
+                 {"implementation_profile", policy.implementation_profile},
+                 {"storyboard", policy.storyboard}, {"conditional_layer", policy.conditional_layer}};
 }
 
 void from_json(const json& value, stepmania_export_policy_t& policy) {
     value.at("file_profile").get_to(policy.file_profile);
     value.at("timing_syntax").get_to(policy.timing_syntax);
     value.at("implementation_profile").get_to(policy.implementation_profile);
+    value.at("storyboard").get_to(policy.storyboard);
+    value.at("conditional_layer").get_to(policy.conditional_layer);
 }
 
 void to_json(json& value, const export_audio_settings_t& audio) {
@@ -1376,7 +1686,9 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
                  is_enum_at_most(group.stepmania->timing_syntax,
                                  stepmania_timing_syntax_t::legacy_negative_stop) &&
                  is_enum_at_most(group.stepmania->implementation_profile,
-                                 stepmania_implementation_profile_t::etterna_0_75_1));
+                                 stepmania_implementation_profile_t::notitg_v4) &&
+                 is_enum_at_most(group.stepmania->storyboard, stepmania_storyboard_mode_t::none) &&
+                 is_enum_at_most(group.stepmania->conditional_layer, storyboard_conditional_layer_t::neither));
             return static_cast<std::size_t>(group.family) < format_family_count &&
                    is_enum_at_most(group.destination_kind, output_destination_kind_t::file) &&
                    is_enum_at_most(group.existing_files, existing_files_policy_t::keep) &&
@@ -1512,7 +1824,7 @@ class json_limit_sax_t final : public nlohmann::json_sax<json> {
 
 auto is_signed_numeric_field(std::string_view key, bool signed_array) -> bool {
     return key == "numerator" || key == "selected_value" || key == "value" ||
-           key == "audio_milliseconds" || key == "start_time_ms" || key == "end_time_ms" ||
+           key == "audio_milliseconds" || key == "time_ms" || key == "start_time_ms" || key == "end_time_ms" ||
            key == "loop_start_time_ms" || signed_array;
 }
 
@@ -1542,9 +1854,58 @@ auto is_unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t
     return !is_uint32_schema_field(key) || at_most(std::numeric_limits<std::uint32_t>::max());
 }
 
+auto strict_osbx_numeric_shape(const json& value, std::string_view key = {}) -> bool {
+    if (value.is_number()) {
+        if (key == "time_ms" || key == "start_ms" || key == "begin_ms" || key == "end_ms" || key == "numerator") {
+            (void)strict_signed_64(value);
+            return true;
+        }
+        if (key == "time_scale") return value.is_number_float() && std::isfinite(value.get<double>());
+        if (key == "order") {
+            const auto number = strict_signed_64(value);
+            return number >= std::numeric_limits<int>::min() && number <= std::numeric_limits<int>::max();
+        }
+        if (key == "seed" || key == "denominator") {
+            (void)strict_unsigned<std::uint64_t>(value);
+            return true;
+        }
+        if (key == "max_points" || key == "fixed_point_count" || key == "mode" || key == "api_version") {
+            (void)strict_unsigned<std::uint32_t>(value);
+            return true;
+        }
+        if (key == "line") {
+            (void)strict_unsigned<std::size_t>(value);
+            return true;
+        }
+        return !value.is_number_float() || std::isfinite(value.get<double>());
+    }
+    if (value.is_array()) return std::ranges::all_of(value, [](const auto& item) {
+        return strict_osbx_numeric_shape(item);
+    });
+    if (value.is_object()) return std::ranges::all_of(value.items(), [](const auto& item) {
+        return strict_osbx_numeric_shape(item.value(), item.key());
+    });
+    return true;
+}
+
+auto strict_trigger_numeric_shape(const json& value) -> bool {
+    if (!value.is_object()) return false;
+    for (const auto key : {"start_time_ms", "end_time_ms", "group_number"}) {
+        if (!value.contains(key)) return false;
+        const auto& field = value.at(key);
+        if (field.is_null()) continue;
+        const auto number = strict_signed_64(field);
+        if (std::string_view(key) == "group_number" &&
+            (number < std::numeric_limits<std::int32_t>::min() || number > std::numeric_limits<std::int32_t>::max())) return false;
+    }
+    return true;
+}
+
 auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)
     -> bool {
-    if (key == "x" || key == "y" || key == "ogg_quality") {
+    if (key == "osbx") return strict_osbx_numeric_shape(value);
+    if (key == "trigger") return strict_trigger_numeric_shape(value);
+    if (key == "x" || key == "y" || key == "ogg_quality" || key == "frame_delay_ms") {
         return value.is_number_float() && std::isfinite(value.get<double>());
     }
     if (key == "from" || key == "to") {
@@ -1584,6 +1945,7 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
 
 enum class schema_shape_context_t {
     ordinary,
+    osbx,
     storyboards,
     storyboard_entry,
     charts,
@@ -1597,7 +1959,7 @@ auto schema_shape_equal(const json& input, const json& canonical,
 
 auto is_allows_legacy_generator_shape(const json& input, const json& canonical) -> bool {
     std::size_t missing{};
-    for (const auto key : {"generated_charts", "generated_scrolls", "generated_sv_recipes"})
+    for (const auto key : {"generated_charts", "generated_scrolls", "generated_sv_recipes", "generated_storyboards"})
         if (!input.contains(key) && canonical.contains(key) && canonical.at(key).empty()) ++missing;
     return missing != 0 && input.size() + missing == canonical.size();
 }
@@ -1610,9 +1972,45 @@ auto can_use_legacy_chart_shape(const json& input, const json& canonical) -> boo
     return missing != 0 && input.size() + missing == canonical.size();
 }
 
+auto can_use_legacy_storyboard_shape(const json& input, const json& canonical) -> bool {
+    std::size_t missing{};
+    for (const auto key : {"model", "osbx", "owning_generator_recipe"})
+        if (!input.contains(key) && canonical.contains(key) && canonical.at(key).is_null()) ++missing;
+    return missing != 0 && input.size() + missing == canonical.size();
+}
+
+auto is_sv_lua_metadata_shape(const json& value) -> bool {
+    return value.is_object() && value.contains("api_version") && value.contains("cycles") &&
+        value.contains("inputs") && value.contains("source_hash");
+}
+
+auto can_use_legacy_lua_metadata_shape(const json& input, const json& canonical) -> bool {
+    if (!is_sv_lua_metadata_shape(canonical)) return false;
+    const json defaults = sv_recipe_lua_t{};
+    std::size_t missing{};
+    for (const auto& [key,value] : defaults.items())
+        if (!input.contains(key) && canonical.at(key) == value) ++missing;
+    return missing != 0 && input.size() + missing == canonical.size();
+}
+
+auto can_use_legacy_lua_recipe_shape(const json& input, const json& canonical) -> bool {
+    return canonical.contains("expression_source") && canonical.contains("sampling") &&
+        canonical.contains("lua") && !input.contains("lua") && input.size() + 1 == canonical.size();
+}
+
+auto can_use_legacy_osbx_link_shape(const json& input, const json& canonical) -> bool {
+    std::size_t missing{};
+    for (const auto key : {"lua", "children_link", "lifetime"})
+        if (!input.contains(key) && canonical.contains(key) && canonical.at(key).is_null()) ++missing;
+    return missing != 0 && input.size() + missing == canonical.size();
+}
+
 auto is_allows_legacy_object_shape(const json& input, const json& canonical,
                                 schema_shape_context_t context) -> bool {
     if (is_allows_legacy_generator_shape(input, canonical)) return true;
+    if (can_use_legacy_lua_recipe_shape(input,canonical) || can_use_legacy_lua_metadata_shape(input,canonical)) return true;
+    if (context == schema_shape_context_t::osbx && can_use_legacy_osbx_link_shape(input,canonical)) return true;
+    if (context == schema_shape_context_t::storyboard_entry && can_use_legacy_storyboard_shape(input, canonical)) return true;
     if (context == schema_shape_context_t::chart_entry && can_use_legacy_chart_shape(input, canonical))
         return true;
     if (input.size() + 1 != canonical.size()) {
@@ -1623,10 +2021,6 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
         return canonical.at("flatten_bms_branches") == false;
     if (input.contains("schema_version") && !input.contains("sv_recipe_definitions") &&
         canonical.contains("sv_recipe_definitions") && canonical.at("sv_recipe_definitions").empty()) return true;
-    if (context == schema_shape_context_t::storyboard_entry) {
-        return !input.contains("model") && canonical.contains("model") &&
-               canonical.at("model").is_null();
-    }
     if (context == schema_shape_context_t::bgm_event_entry) {
         return !input.contains("end") && canonical.contains("end");
     }
@@ -1634,7 +2028,8 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     return !input.contains("key_color") && canonical.contains("key_color");
 }
 
-auto object_child_context(std::string_view key) -> schema_shape_context_t {
+auto object_child_context(std::string_view key, schema_shape_context_t parent) -> schema_shape_context_t {
+    if (key == "osbx" || parent == schema_shape_context_t::osbx) return schema_shape_context_t::osbx;
     if (key == "storyboards") {
         return schema_shape_context_t::storyboards;
     }
@@ -1648,6 +2043,7 @@ auto object_child_context(std::string_view key) -> schema_shape_context_t {
 }
 
 auto array_child_context(schema_shape_context_t context) -> schema_shape_context_t {
+    if (context == schema_shape_context_t::osbx) return context;
     if (context == schema_shape_context_t::storyboards) {
         return schema_shape_context_t::storyboard_entry;
     }
@@ -1660,19 +2056,30 @@ auto array_child_context(schema_shape_context_t context) -> schema_shape_context
     return schema_shape_context_t::ordinary;
 }
 
+auto is_empty_clip_default(std::string_view key, const json& value, const json& canonical) -> bool {
+    if (key == "clips") return canonical.contains("api_version") && canonical.contains("nodes") && value.is_array() && value.empty();
+    if (key == "uses") return canonical.contains("kind") && canonical.contains("ops") && value.is_array() && value.empty();
+    return key == "parameter" && canonical.contains("default_value") && canonical.contains("keys") && value.is_null();
+}
+
 auto object_schema_shape_equal(const json& input, const json& canonical,
                               schema_shape_context_t context) -> bool {
     if (!input.is_object() || !canonical.is_object()) {
         return false;
     }
     const auto legacy_shape = is_allows_legacy_object_shape(input, canonical, context);
-    if (input.size() != canonical.size() && !legacy_shape) {
+    std::size_t empty_clip_defaults{};
+    if (context == schema_shape_context_t::osbx)
+        for (const auto& [key, value] : input.items())
+            if (!canonical.contains(key) && is_empty_clip_default(key, value, canonical)) ++empty_clip_defaults;
+    if (input.size() != canonical.size() + empty_clip_defaults && !legacy_shape) {
         return false;
     }
     for (const auto& [key, value] : input.items()) {
         const auto expected = canonical.find(key);
+        if (expected == canonical.end() && context == schema_shape_context_t::osbx && is_empty_clip_default(key, value, canonical)) continue;
         if (expected == canonical.end() ||
-            !schema_shape_equal(value, *expected, object_child_context(key))) {
+            !schema_shape_equal(value, *expected, object_child_context(key,context))) {
             return false;
         }
     }
@@ -1695,6 +2102,7 @@ auto array_schema_shape_equal(const json& input, const json& canonical,
 
 auto schema_shape_equal(const json& input, const json& canonical,
                        schema_shape_context_t context = schema_shape_context_t::ordinary) -> bool {
+    if (input.is_null() && is_sv_lua_metadata_shape(canonical)) return canonical == json(sv_recipe_lua_t{});
     if (input.is_object() || canonical.is_object()) {
         return object_schema_shape_equal(input, canonical, context);
     }
@@ -1802,6 +2210,18 @@ auto native_project_internal::validate_native_document(const song_document_t& so
     return result.diagnostics;
 }
 
+namespace {
+void omit_empty_legacy_sample_defaults(json& document) {
+    // Current C++ values carry an empty collection even when their in-memory
+    // schema stamp predates Samples. Only writer-generated empty defaults are
+    // removed; supplied old JSON with a future field still fails migration.
+    for (auto& storyboard : document.at("storyboards")) {
+        auto& model = storyboard.at("model");
+        if (model.is_object() && model.at("samples").empty()) model.erase("samples");
+    }
+}
+} // namespace
+
 auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_outcome_t {
     native_project_write_outcome_t result{};
@@ -1809,6 +2229,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
     if (!result.ok()) return result;
     try {
         json serialized_document = song;
+        if (song.schema_version < 35) omit_empty_legacy_sample_defaults(serialized_document);
         if (song.schema_version < native_project_schema_version) {
             const auto migrated = native_project_internal::migrate_document(
                 serialized_document, native_project_schema_version,

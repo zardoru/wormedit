@@ -218,3 +218,28 @@ TEST_CASE("Cut preview audio renders effective chart Music instead of a differen
     REQUIRE(prepared->file->publish(false));
     check_effective_preview_audio(path);
 }
+
+namespace {
+void check_descriptor_bgm_schedule(const preview_schedule_t& schedule) {
+    REQUIRE(schedule.bgm.size() == 1);
+    CHECK(schedule.bgm.front().object == object_id_t{10});
+    CHECK_FALSE(schedule.bgm.front().resource);
+}
+}
+
+TEST_CASE("descriptor-only BGM participates in preview count append and caps", "[resource_plan][audio]") {
+    chart_document_t chart{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3},
+        .bgm_events = {{.id = object_id_t{10}, .position = {measure_id_t{3}, 0},
+            .source_lane = object_id_t{20}, .osu_hitsample = osu_hitsample_t{.clap = true}}}}},
+        .bgm_source_lanes = {{.id = object_id_t{20}, .name = "BGM"}},
+        .bpms = {{.id = object_id_t{21}, .position = {measure_id_t{3}, 0}, .beats_per_minute = {120, 1}}}};
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto schedule = preview_schedule_t::from(chart, *timing.value);
+    REQUIRE(schedule.value);
+    check_descriptor_bgm_schedule(*schedule.value);
+    const auto capped = preview_schedule_t::from(chart, *timing.value, {.maximum_bgm_events = 0});
+    CHECK_FALSE(capped.value);
+    REQUIRE_FALSE(capped.diagnostics.empty());
+    CHECK(capped.diagnostics.front().code == timing_error_code_t::capacity_exceeded);
+}

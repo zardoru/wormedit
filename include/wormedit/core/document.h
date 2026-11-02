@@ -8,8 +8,10 @@
 #include <wormedit/core/result.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
+#include <wormedit/core/osbx_document.h>
 #include <wormedit/core/vocabulary.h>
 #include <wormedit/core/osu_hitsample.h>
+#include <wormedit/core/sample_reference.h>
 #include <wormedit/core/song_preview.h>
 #include <wormedit/core/export_cut.h>
 #include <wormedit/core/export_audio.h>
@@ -226,6 +228,7 @@ struct note_t {
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
     std::optional<osu_hitsample_t> osu_hitsample;
+    std::optional<sample_reference_binding_t> sample_reference;
     auto operator==(const note_t&) const -> bool = default;
 };
 
@@ -244,6 +247,8 @@ struct bgm_event_t {
     source_provenance_t provenance;
     std::vector<layer_id_t> semantic_layers;
     std::optional<local_position_t> end{};
+    std::optional<osu_hitsample_t> osu_hitsample;
+    std::optional<sample_reference_binding_t> sample_reference;
     auto operator==(const bgm_event_t&) const -> bool = default;
 };
 
@@ -408,12 +413,6 @@ struct sv_recipe_postprocess_t {
     auto operator==(const sv_recipe_postprocess_t&) const -> bool = default;
 };
 
-struct sv_recipe_lua_parameter_t {
-    std::string name;
-    signed_rational_t value;
-    auto operator==(const sv_recipe_lua_parameter_t&) const -> bool = default;
-};
-
 struct sv_recipe_lua_input_t {
     asset_id_t asset;
     std::string content_hash;
@@ -427,14 +426,8 @@ struct sv_recipe_lua_cycle_t {
 };
 
 struct sv_recipe_lua_t {
-    std::uint32_t api_version{1};
-    std::string entry_point;
-    // Optional reload origin; expression_source remains the frozen source snapshot.
-    std::optional<std::filesystem::path> source_reference;
-    std::string source_hash;
-    std::vector<sv_recipe_lua_parameter_t> parameters;
+    lua_source_descriptor_t source;
     std::vector<sv_recipe_lua_input_t> inputs;
-    std::uint64_t seed{};
     sv_recipe_lua_mode_t mode{sv_recipe_lua_mode_t::pure};
     std::vector<sv_recipe_lua_cycle_t> cycles;
     auto operator==(const sv_recipe_lua_t&) const -> bool = default;
@@ -458,9 +451,16 @@ struct sv_recipe_t {
     sv_recipe_curve_t curve{sv_recipe_curve_t::linear};
     sv_recipe_parameters_t parameters;
     sv_recipe_sampling_t sampling;
-    // Lua source for the lua_expression curve; empty for every other curve.
-    std::string expression_source;
     std::optional<sv_recipe_lua_t> lua;
+    void set_frozen_source(std::string source) {
+        if (!lua && source.empty()) return;
+        if (!lua) lua.emplace();
+        lua->source.frozen_source = std::move(source);
+    }
+    [[nodiscard]] auto script() const -> const lua_source_descriptor_t& {
+        static const lua_source_descriptor_t empty;
+        return lua ? lua->source : empty;
+    }
     // StepMania SPEEDS transition behavior. It is ignored for SV/SCROLLS.
     std::optional<rational_t> transition_duration;
     std::optional<bool> transition_is_seconds;
@@ -541,14 +541,6 @@ enum class asset_kind_t {
     video,
     storyboard,
     midi,
-};
-
-struct audio_stream_info_t {
-    std::uint32_t sample_rate{};
-    std::uint32_t channels{};
-    std::optional<std::uint64_t> frame_count;
-    bool seekable{false};
-    auto operator==(const audio_stream_info_t&) const -> bool = default;
 };
 
 struct audio_asset_t {
@@ -1018,6 +1010,13 @@ struct generator_chart_binding_t {
     auto operator==(const generator_chart_binding_t&) const -> bool = default;
 };
 
+struct generator_storyboard_binding_t {
+    std::string key;
+    storyboard_id_t storyboard;
+    osbx_document_t value;
+    auto operator==(const generator_storyboard_binding_t&) const -> bool = default;
+};
+
 struct generator_recipe_t {
     recipe_id_t id;
     std::string api_version;
@@ -1033,6 +1032,7 @@ struct generator_recipe_t {
     std::vector<generator_note_binding_t> generated_notes;
     std::vector<generator_layer_binding_t> generated_layers;
     std::vector<generator_chart_binding_t> generated_charts;
+    std::vector<generator_storyboard_binding_t> generated_storyboards;
     std::vector<generator_scroll_binding_t> generated_scrolls;
     std::vector<generator_sv_binding_t> generated_sv_recipes;
     auto operator==(const generator_recipe_t&) const -> bool = default;
@@ -1043,6 +1043,9 @@ struct storyboard_document_t {
     std::string name;
     std::vector<std::string> retained_source_lines;
     std::optional<storyboard_document_model_t> model;
+    std::optional<osbx_document_t> osbx;
+    std::optional<recipe_id_t> owning_generator_recipe;
+    auto operator==(const storyboard_document_t&) const -> bool = default;
 };
 
 
@@ -1119,7 +1122,7 @@ struct bookmark_list_order_t {
     auto operator==(const bookmark_list_order_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 28;
+inline constexpr std::uint32_t current_document_schema_version = 39;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;
@@ -1156,6 +1159,8 @@ struct song_document_t {
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
+    // Shared OSB/OSBX image lookup. An unregistered project-relative file has no resource ID.
+    [[nodiscard]] auto storyboard_resource(std::string_view path) const -> resource_id_t;
     [[nodiscard]] auto find_export_cut(object_id_t id) -> export_cut_t*;
     [[nodiscard]] auto find_export_cut(object_id_t id) const -> const export_cut_t*;
     // The chart's preview override, otherwise the song preview.
@@ -1186,6 +1191,9 @@ enum class branch_projection_t {
 
 // Editor targets explicitly name their family as well as ID. Presence, even when empty,
 // means selected objects only; the legacy objects list retains its chart-wide semantics.
+// Retire provenance whose effective sound/catalog witness changed. Never rebinds sound.
+void normalize_sample_references(song_document_t& document);
+
 struct quantize_selection_t {
     std::vector<object_id_t> notes;
     std::vector<object_id_t> bgm_events;

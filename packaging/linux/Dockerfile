@@ -3,7 +3,7 @@ FROM ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf7
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git gpg-agent software-properties-common python3 ruby-asciidoctor \
-    build-essential pkg-config patchelf file desktop-file-utils zlib1g-dev \
+    build-essential pkg-config nasm patch patchelf file desktop-file-utils zlib1g-dev \
     libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
     libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
     wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev libudev-dev \
@@ -27,23 +27,35 @@ RUN curl -fL --retry 3 https://github.com/AppImage/appimagetool/releases/downloa
     && mv squashfs-root appimagetool && rm appimagetool.AppImage
 RUN curl -fL --retry 3 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 -o runtime-x86_64 \
     && echo '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64' | sha256sum -c -
+COPY build-video-codecs-sdk.sh ffmpeg-openh264-level.patch /opt/tools/
+RUN bash /opt/tools/build-video-codecs-sdk.sh build /opt/video-codecs-build /opt/ffmpeg 3
 COPY build-lame-sdk.sh /opt/tools/build-lame-sdk.sh
 RUN bash /opt/tools/build-lame-sdk.sh /opt/lame-build /opt/ffmpeg 3
-# A small LGPL FFmpeg with the shared LGPL LAME MP3 encoder.
+# LGPL FFmpeg with the shared LAME/OpenH264/libvpx/Opus codecs and receipts.
 RUN curl -fL --retry 3 https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz -o ffmpeg-9.0.2.tar.xz \
     && echo '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e  ffmpeg-9.0.2.tar.xz' | sha256sum -c - \
     && tar -xf ffmpeg-9.0.2.tar.xz \
+    && bash /opt/tools/build-video-codecs-sdk.sh patch-ffmpeg /opt/tools/ffmpeg-9.0.2 /opt/ffmpeg/share/wormedit-ffmpeg \
     && cd ffmpeg-9.0.2 \
     && export LD_LIBRARY_PATH=/opt/ffmpeg/lib \
+    && export PKG_CONFIG_LIBDIR=/opt/ffmpeg/lib/pkgconfig PKG_CONFIG_PATH= \
+    && flags_text=$(bash /opt/tools/build-video-codecs-sdk.sh ffmpeg-flags) \
+    && printf '%s\n' './configure --prefix=/opt/ffmpeg --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-autodetect --disable-network --disable-avdevice --disable-avfilter --disable-encoders --enable-libmp3lame --enable-encoder=libmp3lame --disable-muxers --enable-muxer=mp3 --disable-gpl --disable-nonfree --disable-version3 --extra-cflags=-I/opt/ffmpeg/include --extra-ldflags=-L/opt/ffmpeg/lib --disable-x86asm' "$flags_text" > /opt/ffmpeg/share/wormedit-ffmpeg/ffmpeg-build.commands \
     && ./configure --prefix=/opt/ffmpeg --enable-shared --disable-static \
        --disable-programs --disable-doc --disable-debug --disable-autodetect \
        --disable-network --disable-avdevice --disable-avfilter --disable-encoders \
        --enable-libmp3lame --enable-encoder=libmp3lame --disable-muxers --enable-muxer=mp3 \
-       --extra-cflags=-I/opt/ffmpeg/include --extra-ldflags=-L/opt/ffmpeg/lib --disable-x86asm \
-    && make -j3 && make install \
+       --disable-gpl --disable-nonfree --disable-version3 \
+       --extra-cflags=-I/opt/ffmpeg/include --extra-ldflags=-L/opt/ffmpeg/lib --disable-x86asm $flags_text \
+       > /opt/ffmpeg/share/wormedit-ffmpeg/ffmpeg-build.log 2>&1 \
+    && printf '%s\n' 'make V=1 -j3' 'make install' >> /opt/ffmpeg/share/wormedit-ffmpeg/ffmpeg-build.commands \
+    && make V=1 -j3 >> /opt/ffmpeg/share/wormedit-ffmpeg/ffmpeg-build.log 2>&1 \
+    && make install >> /opt/ffmpeg/share/wormedit-ffmpeg/ffmpeg-build.log 2>&1 \
     && mkdir -p /opt/ffmpeg/share/wormedit-ffmpeg \
-    && cp COPYING.LGPLv2.1 LICENSE.md config.h ffbuild/config.log /opt/ffmpeg/share/wormedit-ffmpeg/ \
+    && cp COPYING.LGPLv2.1 LICENSE.md config.h config_components.h ffbuild/config.log ffbuild/config.mak /opt/ffmpeg/share/wormedit-ffmpeg/ \
     && cp ../ffmpeg-9.0.2.tar.xz /opt/ffmpeg/share/wormedit-ffmpeg/ \
+    && bash /opt/tools/build-video-codecs-sdk.sh seal /opt/ffmpeg \
+    && bash /opt/tools/build-video-codecs-sdk.sh verify /opt/ffmpeg \
     && cd .. && rm -rf ffmpeg-9.0.2 ffmpeg-9.0.2.tar.xz
 COPY linux/runtime-downloads.txt linux/fetch-runtime-notices.sh /opt/tools/
 RUN bash /opt/tools/fetch-runtime-notices.sh
@@ -52,7 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends g++-14 \
     && rm -rf /var/lib/apt/lists/*
 ENV CC=gcc-14 CXX=g++-14
 # Ubuntu separates the CLI from the Ruby library package installed above.
-RUN apt-get update && apt-get install -y --no-install-recommends asciidoctor \
+RUN apt-get update && apt-get install -y --no-install-recommends asciidoctor ruby-rouge \
     && rm -rf /var/lib/apt/lists/*
 ENV PATH=/opt/bin:$PATH PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig LD_LIBRARY_PATH=/opt/ffmpeg/lib
 WORKDIR /work

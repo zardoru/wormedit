@@ -2,10 +2,13 @@
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_storage.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/sv_recipe.h>
 #include "../support/timing_links_fixture.h"
@@ -14,7 +17,9 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -556,7 +561,7 @@ TEST_CASE("BMSON BMS slicing preserves silent gameplay with one shared binding",
     require_conversion(song.has_value());
     const auto original = wormedit::write_bmson(*song).value;
     const auto result = wormedit::convert_document(*song, bms_slice_request(*song));
-    for (const auto& diagnostic : result.diagnostics) INFO(diagnostic.message);
+    for (const auto& diagnostic : result.diagnostics) { INFO(diagnostic.message); }
     require_conversion(static_cast<bool>(result));
     check_conversion(result.silent_files.size() == 1);
     check_conversion(result.slice_plans.front().value.spans.size() == 4);
@@ -704,14 +709,14 @@ TEST_CASE("conversion canonical warnings retain output and atomic metadata", "[f
     using namespace wormedit;
     conversion_outcome_t outcome{};
     outcome.value.outputs.push_back({.suggested_filename = "chart.bms", .bytes = "bytes", .reimport_validated = true});
-    outcome.value.asset_copies.push_back({asset_id_t{7}, "assets/a.wav"});
+    outcome.value.asset_copies.push_back({.asset = asset_id_t{7}, .relative_path = "assets/a.wav"});
     outcome.value.silent_files.emplace_back("silent.wav");
     outcome.diagnostics.push_back({.severity = diagnostic_severity_t::warning, .loss = true});
     check_conversion(outcome.ok());
     const auto legacy = conversion_result_t::from(std::move(outcome));
     check_conversion(static_cast<bool>(legacy));
     check_conversion(legacy.outputs.front().bytes == "bytes" && legacy.outputs.front().reimport_validated);
-    check_conversion(legacy.asset_copies.front() == conversion_asset_copy_t{asset_id_t{7}, "assets/a.wav"});
+    check_conversion(legacy.asset_copies.front() == conversion_asset_copy_t{.asset = asset_id_t{7}, .relative_path = "assets/a.wav"});
     check_conversion(legacy.silent_files.front() == "silent.wav" && legacy.diagnostics.front().loss);
 }
 
@@ -1103,4 +1108,631 @@ TEST_CASE("Conversion preview groups cut omissions without blocking export", "[f
     REQUIRE(converted.ok());
     REQUIRE(converted.value.outputs.size() == 1);
     CHECK(converted.diagnostics.size() == 1);
+}
+
+namespace {
+void check_conversion_osbx(bool condition) { CHECK(condition); }
+void require_conversion_osbx(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("OSBX osu packages contain one separate validated storyboard and atomic diagnostics",
+          "[unit][format][conversion][osbx]") {
+    using namespace wormedit;
+    constexpr std::string_view source = "osu file format v14\n[General]\nMode:3\n"
+        "[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,0,0,100,1,0\n"
+        "[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_conversion_osbx(static_cast<bool>(parsed.value));
+    auto song = std::move(*parsed.value);
+    osbx_document_t scene{
+        .images = {{.id = "image", .file = "sprite.png"}},
+        .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite, .parent = "parent",
+                   .image = "image", .ops = {{.id = "offset", .track = {.default_value = {100, 0}}}}}}};
+    osbx_transform_op_t turn{.id = "turn", .kind = osbx_transform_kind_t::rotate,
+        .track = {.default_value = {0}, .keys = {{.id = "a", .value = {0}},
+            {.id = "b", .time_ms = 2000, .value = {90}}}}};
+    scene.nodes.push_back({.id = "parent", .ops = {turn}});
+    song.storyboards = {{.id = storyboard_id_t{1}, .osbx = std::move(scene)}};
+    conversion_request_t request{.target = format_family_t::osu_mania,
+        .osbx_image_sizes = {{.image_id = "image", .width = 64, .height = 48}},
+        .osbx_playback_span = osbx_osb_span_t{0, 2000}};
+
+    SECTION("bounded bake is a warning even with the default reject-loss policy") {
+        const auto converted = convert_document(song, request);
+        for (const auto& diagnostic : converted.diagnostics) INFO(diagnostic.message);
+        require_conversion_osbx(static_cast<bool>(converted));
+        require_conversion_osbx(static_cast<bool>(converted.outputs.size() == 2));
+        std::size_t storyboards{};
+        for (const auto& output : converted.outputs) {
+            check_conversion_osbx(static_cast<bool>(output.reimport_validated));
+            if (std::filesystem::path(output.suggested_filename).extension() == ".osb") {
+                ++storyboards;
+                const auto model = parse_osb(output.bytes);
+                require_conversion_osbx(static_cast<bool>(model.value));
+                check_conversion_osbx(static_cast<bool>(model.value->sprites.size() == 1));
+            } else check_conversion_osbx(static_cast<bool>(output.bytes.find("Sprite,") == std::string::npos));
+        }
+        check_conversion_osbx(static_cast<bool>(storyboards == 1));
+        check_conversion_osbx(static_cast<bool>(std::ranges::any_of(converted.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.severity == diagnostic_severity_t::warning && !diagnostic.loss &&
+                diagnostic.message.find("sprite baked; worst normalized error") != std::string::npos;
+        })));
+    }
+    SECTION("skew refuses the entire output set") {
+        song.storyboards.front().osbx->nodes.back().ops = {{.id = "bad-skew",
+            .kind = osbx_transform_kind_t::skew, .track = {.default_value = {10, 0}}}};
+        const auto converted = convert_document(song, request);
+        check_conversion_osbx(!static_cast<bool>(converted));
+        check_conversion_osbx(static_cast<bool>(converted.outputs.empty()));
+        check_conversion_osbx(static_cast<bool>(std::ranges::any_of(converted.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.message.find("bad-skew") != std::string::npos;
+        })));
+    }
+    SECTION("multiple generated scenes share one package despite repeated local IDs") {
+        auto second = song.storyboards.front();
+        second.id = storyboard_id_t{2};
+        second.osbx->images.front().file = "second.png";
+        song.storyboards.push_back(std::move(second));
+        const auto converted = convert_document(song, request);
+        for (const auto& diagnostic : converted.diagnostics) INFO(diagnostic.message);
+        require_conversion_osbx(static_cast<bool>(converted));
+        require_conversion_osbx(converted.outputs.size() == 2);
+        const auto output = std::ranges::find_if(converted.outputs, [](const auto& item) {
+            return std::filesystem::path(item.suggested_filename).extension() == ".osb";
+        });
+        require_conversion_osbx(output != converted.outputs.end());
+        const auto model = parse_osb(output->bytes);
+        require_conversion_osbx(model.value.has_value());
+        require_conversion_osbx(model.value->sprites.size() == 2);
+        check_conversion_osbx(model.value->sprites[0].path == "sprite.png");
+        check_conversion_osbx(model.value->sprites[1].path == "second.png");
+    }
+    SECTION("storyboard counts against the shared output limit") {
+        const auto converted = convert_document(song, request, {.maximum_outputs = 1});
+        check_conversion_osbx(!static_cast<bool>(converted));
+        check_conversion_osbx(static_cast<bool>(converted.outputs.empty()));
+        check_conversion_osbx(static_cast<bool>(std::ranges::any_of(converted.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.code == conversion_diagnostic_code_t::output_limit;
+        })));
+    }
+}
+
+TEST_CASE("Legacy OSB-only conversion keeps embedded bytes without OSBX media preflight",
+          "[unit][format][conversion][osbx][storyboard]") {
+    using namespace wormedit;
+    constexpr std::string_view source = "osu file format v14\n[General]\nMode:3\n"
+        "[Difficulty]\nCircleSize:4\n[Events]\nSprite,Foreground,Centre,missing.png,320,240\n"
+        " F,0,0,2000,1,1\n[TimingPoints]\n0,500,4,0,0,100,1,0\n"
+        "[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_conversion_osbx(parsed.value.has_value());
+    const auto expected = write_osu_mania(*parsed.value);
+    require_conversion_osbx(expected.value.has_value());
+    conversion_request_t request{.target = format_family_t::osu_mania};
+    check_conversion_osbx(!prepare_osu_storyboard_export(*parsed.value, request, {}, {}).has_value());
+    check_conversion_osbx(!request.osbx_playback_span.has_value());
+    const auto converted = convert_document(*parsed.value, request);
+    require_conversion_osbx(static_cast<bool>(converted));
+    require_conversion_osbx(converted.outputs.size() == 1);
+    check_conversion_osbx(converted.outputs.front().bytes == *expected.value);
+    check_conversion_osbx(converted.storyboard_images.empty());
+}
+
+namespace {
+auto native_storyboard_request() -> wormedit::conversion_request_t {
+    using namespace wormedit;
+    return {.target = format_family_t::stepmania, .stepmania = stepmania_export_policy_t{},
+        .loss_policy = loss_policy_t::reject,
+        .osbx_image_sizes = {{.image_id = "image", .width = 64, .height = 48}},
+        .osbx_playback_span = osbx_osb_span_t{0, 2000}};
+}
+auto native_storyboard_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    auto song = stepmania_song();
+    song.storyboards = {{.id = storyboard_id_t{1}, .osbx = osbx_document_t{
+        .images = {{.id = "image", .file = "sprite.png"}},
+        .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite, .image = "image",
+            .ops = {{.id = "position", .track = {.default_value = {320,240}}}}}}}}};
+    return song;
+}
+class native_children_backend_t final : public wormedit::osbx_lua_backend_t {
+    wormedit::osbx_layer_t layer_;
+  public:
+    explicit native_children_backend_t(wormedit::osbx_layer_t layer = wormedit::osbx_layer_t::background) : layer_(layer) {}
+    auto prepare_track(const wormedit::osbx_lua_track_link_t&, std::size_t) const
+        -> wormedit::diagnosed_t<std::vector<wormedit::osbx_key_t<>>> override { return {}; }
+    auto prepare_children(const wormedit::osbx_lua_link_t&) const
+        -> wormedit::diagnosed_t<wormedit::osbx_document_t> override {
+        auto scene = *native_storyboard_song().storyboards.front().osbx;
+        scene.nodes.front().layer = layer_;
+        return {.value = std::move(scene)};
+    }
+};
+}
+
+TEST_CASE("SSC native storyboards carry supplemental Lua outside chart reimport", "[formats][conversion][stepmania][storyboard]") {
+    const auto song = native_storyboard_song();
+    const auto converted = wormedit::convert_document(song, native_storyboard_request());
+    for (const auto& diagnostic : converted.diagnostics) INFO(diagnostic.message);
+    require_conversion_osbx(static_cast<bool>(converted));
+    require_conversion_osbx(static_cast<bool>(converted.outputs.size() == 1));
+    require_conversion_osbx(static_cast<bool>(converted.storyboard_files.size() == 1));
+    check_conversion_osbx(static_cast<bool>(converted.outputs.front().reimport_validated));
+    check_conversion_osbx(static_cast<bool>(converted.outputs.front().bytes.find("=wormedit-storyboard/background=1=0=0=1") != std::string::npos));
+    check_conversion_osbx(static_cast<bool>(converted.storyboard_files.front().bytes.find("GAMESTATE:GetSongPosition()") != std::string::npos));
+    require_conversion_osbx(static_cast<bool>(converted.stepmania_storyboard_report.size() == 1));
+    check_conversion_osbx(static_cast<bool>(converted.stepmania_storyboard_report.front().classification == wormedit::osbx_osb_class_t::exact));
+}
+
+TEST_CASE("SSC native clipping and retained hooks never reject the gameplay chart", "[formats][conversion][stepmania][storyboard]") {
+    auto song = native_storyboard_song();
+    song.storyboards.front().osbx->nodes.front().ops.front().track.default_value = {-100,0};
+    const auto clipped = wormedit::convert_document(song, native_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(clipped));
+    require_conversion_osbx(static_cast<bool>(clipped.outputs.size() == 1));
+    check_conversion_osbx(static_cast<bool>(clipped.storyboard_files.empty()));
+    require_conversion_osbx(static_cast<bool>(clipped.stepmania_storyboard_report.size() == 1));
+    check_conversion_osbx(static_cast<bool>(clipped.stepmania_storyboard_report.front().classification == wormedit::osbx_osb_class_t::unsupported));
+    song = native_storyboard_song();
+    song.metadata.format_group_for(wormedit::format_family_t::stepmania).ordered_fields.emplace_back("BGCHANGES", "0=original.png=1=0=0=1");
+    const auto retained = wormedit::convert_document(song, native_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(retained));
+    require_conversion_osbx(static_cast<bool>(retained.outputs.size() == 1));
+    check_conversion_osbx(static_cast<bool>(retained.storyboard_files.empty()));
+    check_conversion_osbx(static_cast<bool>(retained.outputs.front().bytes.find("#BGCHANGES:0=original.png=1=0=0=1;") != std::string::npos));
+    check_conversion_osbx(static_cast<bool>(retained.outputs.front().bytes.find("wormedit-storyboard") == std::string::npos));
+}
+
+TEST_CASE("SSC actor bundles include multiple scenes under one hook", "[formats][conversion][stepmania][storyboard]") {
+    auto song = native_storyboard_song();
+    auto other = song.storyboards.front();
+    other.id = wormedit::storyboard_id_t{2};
+    song.storyboards.push_back(std::move(other));
+    const auto converted = wormedit::convert_document(song, native_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(converted));
+    require_conversion_osbx(static_cast<bool>(converted.storyboard_files.size() == 1));
+    check_conversion_osbx(static_cast<bool>(converted.stepmania_storyboard_report.size() == 2));
+    const auto& chart = converted.outputs.front().bytes;
+    const auto tag = chart.find("#BGCHANGES:");
+    require_conversion_osbx(static_cast<bool>(tag != std::string::npos));
+    check_conversion_osbx(static_cast<bool>(chart.find("#BGCHANGES:", tag + 1) == std::string::npos));
+    check_conversion_osbx(static_cast<bool>(converted.storyboard_files.front().bytes.find("unpack(layers)") != std::string::npos));
+}
+
+TEST_CASE("SSC retained hook losses include immutable prepared subtree children", "[formats][conversion][stepmania][storyboard]") {
+    using namespace wormedit;
+    const auto implementation = GENERATE(stepmania_implementation_profile_t::stepmania_5_1,
+        stepmania_implementation_profile_t::etterna_0_75_1);
+    auto request = native_storyboard_request();
+    request.stepmania->implementation_profile = implementation;
+    auto song = native_storyboard_song();
+    osbx_lua_link_t link;
+    link.id = "children-link";
+    link.source.source_reference = "children.lua";
+    link.source.frozen_source = "return function(ctx) end";
+    link.source.source_hash = native_project_content_checksum(link.source.frozen_source);
+    song.storyboards.front().osbx->nodes = {{.id = "group", .kind = osbx_node_kind_t::group, .children_link = link}};
+    const native_children_backend_t backend;
+    const auto prepared = prepare_osbx_lua_scenes(song, backend);
+    for (const auto& scene : prepared)
+        for (const auto& diagnostic : scene.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_conversion_osbx(prepared.size() == 1 && prepared.front().complete);
+    const osbx_lua_prepared_scope_t scope{prepared};
+    song.metadata.format_group_for(format_family_t::stepmania).ordered_fields.emplace_back("BGCHANGES", "0=original.png=1=0=0=1");
+    const auto converted = convert_document(song, request);
+    require_conversion_osbx(static_cast<bool>(converted));
+    check_conversion_osbx(converted.storyboard_files.empty());
+    require_conversion_osbx(converted.stepmania_storyboard_report.size() == 1);
+    check_conversion_osbx(converted.stepmania_storyboard_report.front().classification == osbx_osb_class_t::unsupported);
+    check_conversion_osbx(converted.stepmania_storyboard_report.front().reason.find("Retained source") != std::string::npos);
+}
+
+TEST_CASE("SSC video mode reports unavailable and none mode omits native artifacts", "[formats][conversion][stepmania][storyboard]") {
+    auto request = native_storyboard_request();
+    request.stepmania->storyboard = wormedit::stepmania_storyboard_mode_t::video;
+    const auto video = wormedit::convert_document(native_storyboard_song(), request);
+    require_conversion_osbx(static_cast<bool>(video));
+    check_conversion_osbx(static_cast<bool>(video.storyboard_files.empty()));
+    require_conversion_osbx(static_cast<bool>(video.stepmania_storyboard_report.size() == 1));
+    check_conversion_osbx(static_cast<bool>(video.stepmania_storyboard_report.front().reason.find("not yet available") != std::string::npos));
+    request.stepmania->storyboard = wormedit::stepmania_storyboard_mode_t::none;
+    const auto none = wormedit::convert_document(native_storyboard_song(), request);
+    require_conversion_osbx(static_cast<bool>(none));
+    check_conversion_osbx(static_cast<bool>(none.storyboard_files.empty()));
+    check_conversion_osbx(static_cast<bool>(none.stepmania_storyboard_report.empty()));
+}
+
+TEST_CASE("typed unresolved source promises reject conversion without changing the input", "[conversion][resource_plan]") {
+    using namespace wormedit;
+    auto song = stepmania_song();
+    auto& chart = song.charts.front();
+    const auto id = chart.id;
+    const auto measure = chart.measures.front().id;
+    song.audio_assets.push_back({.id = asset_id_t{90001}, .source_path = "one.wav"});
+    song.audio_assets.push_back({.id = asset_id_t{90002}, .source_path = "two.wav"});
+    song.resources.push_back({.id = resource_id_t{90003}, .name = "one.wav", .asset = asset_id_t{90001}, .roles = {resource_role_t::bgm}});
+    song.resources.push_back({.id = resource_id_t{90004}, .name = "two.wav", .asset = asset_id_t{90002}, .roles = {resource_role_t::bgm}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{90005}, .name = "Typed"});
+    for (std::uint64_t i = 0; i < 2; ++i)
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{90006 + i}, .position = {measure, i * 120},
+            .source_lane = object_id_t{90005}, .sound = resource_id_t{90003 + i},
+            .sample_reference = sample_reference_binding_t{.reference = bms_wav_reference_t{.index = "0A"},
+                .bound_sound = resource_id_t{90003 + i}, .bound_asset = asset_id_t{90001 + i}}});
+    const auto before = write_native_project(song);
+    REQUIRE(before.value);
+    const auto converted = convert_document(song, {.target = format_family_t::osu_mania,
+        .chart = id, .loss_policy = loss_policy_t::allow});
+    CHECK_FALSE(converted);
+    CHECK(converted.outputs.empty());
+    CHECK(std::ranges::any_of(converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("BMS sample") != std::string::npos;
+    }));
+    CHECK(write_native_project(song).value == before.value);
+}
+
+
+namespace {
+auto typed_osu_conversion_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    const auto profile = make_bms_7k_profile();
+    song_document_t song{.id = song_id_t{1},
+        .audio_assets = {{.id = asset_id_t{10}, .source_path = "normal-hitnormal.wav"}},
+        .resources = {{.id = resource_id_t{11}, .name = "normal-hitnormal.wav", .asset = asset_id_t{10},
+            .roles = {resource_role_t::sample, resource_role_t::bgm}}},
+        .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{30}}},
+            .lane_layouts = {{.id = object_id_t{31}, .position = {measure_id_t{30}, 0}, .layout = profile.layout}},
+            .input_profile = profile.input,
+            .bgm_source_lanes = {{.id = object_id_t{32}, .name = "Typed"}},
+            .bpms = {{.id = object_id_t{33}, .position = {measure_id_t{30}, 0}, .beats_per_minute = {120, 1}}}}}};
+    const osu_hitsample_t descriptor{.normal_set = osu_sample_set_t::normal, .custom_index = 1, .volume = 100};
+    auto& measure = song.charts.front().measures.front();
+    measure.notes.push_back({.id = object_id_t{34}, .position = {measure.id, 0}, .lane = profile.layout.lanes.front().id,
+        .provenance = {.source_field = std::string(typed_lua_osu_sample_origin)}, .osu_hitsample = descriptor});
+    measure.bgm_events.push_back({.id = object_id_t{35}, .position = {measure.id, 120}, .source_lane = object_id_t{32},
+        .provenance = {.source_field = std::string(typed_lua_osu_sample_origin)}, .osu_hitsample = descriptor});
+    return song;
+}
+}
+
+namespace {
+using namespace wormedit;
+void check_detached_typed_sample_lowering(const song_document_t& song, format_family_t target,
+    const std::string& before) {
+    const auto result = convert_document(song, {.target = target, .chart = chart_id_t{2}, .loss_policy = loss_policy_t::allow});
+    INFO(static_cast<int>(target));
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    REQUIRE(result.outputs.size() == 1);
+    CHECK_FALSE(result.outputs.front().bytes.empty());
+    CHECK(write_native_project(song).value == before);
+    CHECK(song.charts.front().measures.front().notes.front().osu_hitsample.has_value());
+    CHECK(song.charts.front().measures.front().bgm_events.front().osu_hitsample.has_value());
+}
+void check_typed_sample_refusal(const song_document_t& song, format_family_t target, const std::string& before) {
+    const auto result = convert_document(song, {.target = target, .chart = chart_id_t{2}, .loss_policy = loss_policy_t::allow});
+    CHECK_FALSE(result);
+    CHECK(result.outputs.empty());
+    CHECK_FALSE(result.diagnostics.empty());
+    CHECK(write_native_project(song).value == before);
+}
+}
+
+TEST_CASE("typed Lua single unit-gain osu note and BGM lower only on the detached target", "[conversion][resource_plan]") {
+    using namespace wormedit;
+    auto song = typed_osu_conversion_song();
+    SECTION("explicit unit gain") {}
+    SECTION("inherited unit gain") {
+        song.charts.front().measures.front().notes.front().osu_hitsample->volume = 0;
+        song.charts.front().measures.front().bgm_events.front().osu_hitsample->volume = 0;
+    }
+    SECTION("custom registered normal") {
+        song.charts.front().measures.front().notes.front().osu_hitsample->filename = "normal-hitnormal.wav";
+        song.charts.front().measures.front().bgm_events.front().osu_hitsample->filename = "normal-hitnormal.wav";
+    }
+    const auto before = write_native_project(song);
+    REQUIRE(before.value);
+    for (const auto target : {format_family_t::bms, format_family_t::bmson})
+        check_detached_typed_sample_lowering(song, target, *before.value);
+}
+
+TEST_CASE("typed Lua unrepresentable osu contributions reject without bytes or source changes", "[conversion][resource_plan]") {
+    using namespace wormedit;
+    auto song = typed_osu_conversion_song();
+    auto& descriptor = *song.charts.front().measures.front().bgm_events.front().osu_hitsample;
+    SECTION("scaled gain") { descriptor.volume = 80; }
+    SECTION("missing component") { descriptor.clap = true; }
+    SECTION("two resolved contributions") {
+        descriptor.clap = true;
+        song.audio_assets.push_back({.id = asset_id_t{20}, .source_path = "normal-hitclap.wav"});
+        song.resources.push_back({.id = resource_id_t{21}, .name = "normal-hitclap.wav", .asset = asset_id_t{20}, .roles = {resource_role_t::sample}});
+    }
+    SECTION("two contributions to the same registered resource") {
+        descriptor.clap = true;
+        descriptor.filename = "normal-hitclap.wav";
+        song.audio_assets.push_back({.id = asset_id_t{20}, .source_path = "normal-hitclap.wav"});
+        song.resources.push_back({.id = resource_id_t{21}, .name = "normal-hitclap.wav", .asset = asset_id_t{20}, .roles = {resource_role_t::sample}});
+    }
+    const auto before = write_native_project(song);
+    REQUIRE(before.value);
+    for (const auto target : {format_family_t::bms, format_family_t::bmson})
+        check_typed_sample_refusal(song, target, *before.value);
+}
+
+TEST_CASE("NotITG SM foreground bundles XML and Lua sidecars outside chart reimport", "[formats][conversion][notitg]") {
+    using namespace wormedit;
+    auto song = native_storyboard_song();
+    song.charts.front().scrolls.clear();
+    song.charts.front().speeds.clear();
+    song.charts.front().warps.clear();
+    song.charts.front().pauses.clear();
+    song.storyboards.front().osbx->nodes.front().layer = osbx_layer_t::foreground;
+    auto request = native_storyboard_request();
+    request.stepmania->file_profile = stepmania_profile_t::sm;
+    request.stepmania->implementation_profile = stepmania_implementation_profile_t::notitg_v4;
+    const auto converted = convert_document(song, request);
+    for (const auto& diagnostic : converted.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_conversion_osbx(static_cast<bool>(converted));
+    require_conversion_osbx(converted.outputs.size() == 1);
+    check_conversion_osbx(converted.outputs.front().suggested_filename.ends_with(".sm"));
+    check_conversion_osbx(converted.outputs.front().reimport_validated);
+    check_conversion_osbx(converted.outputs.front().bytes.find("#FGCHANGES:") != std::string::npos);
+    check_conversion_osbx(converted.outputs.front().bytes.find("wormedit-storyboard/main.xml") != std::string::npos);
+    require_conversion_osbx(converted.storyboard_files.size() == 3);
+    check_conversion_osbx(converted.stepmania_storyboard_report.front().classification == osbx_osb_class_t::exact);
+}
+
+TEST_CASE("NotITG unverified backgrounds and owned foreground hooks keep chart output", "[formats][conversion][notitg]") {
+    using namespace wormedit;
+    auto song = native_storyboard_song();
+    song.charts.front().scrolls.clear();
+    song.charts.front().speeds.clear();
+    song.charts.front().warps.clear();
+    song.charts.front().pauses.clear();
+    auto request = native_storyboard_request();
+    request.stepmania->file_profile = stepmania_profile_t::sm;
+    request.stepmania->implementation_profile = stepmania_implementation_profile_t::notitg_v4;
+    const auto background = convert_document(song, request);
+    for (const auto& diagnostic : background.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_conversion_osbx(static_cast<bool>(background));
+    check_conversion_osbx(background.storyboard_files.empty());
+    check_conversion_osbx(background.stepmania_storyboard_report.front().reason.find("background lifecycle") != std::string::npos);
+    song.storyboards.front().osbx->nodes.front().layer = osbx_layer_t::foreground;
+    song.metadata.format_group_for(format_family_t::stepmania).ordered_fields.emplace_back("FGCHANGES", "0=original.xml=1=0=0=1");
+    const auto retained = convert_document(song, request);
+    require_conversion_osbx(static_cast<bool>(retained));
+    check_conversion_osbx(retained.storyboard_files.empty());
+    check_conversion_osbx(retained.outputs.front().bytes.find("#FGCHANGES:0=original.xml") != std::string::npos);
+}
+
+namespace {
+auto etterna_storyboard_request(wormedit::storyboard_conditional_layer_t choice = wormedit::storyboard_conditional_layer_t::pass)
+    -> wormedit::conversion_request_t {
+    auto request = native_storyboard_request();
+    request.stepmania->implementation_profile = wormedit::stepmania_implementation_profile_t::etterna_0_75_1;
+    request.stepmania->conditional_layer = choice;
+    return request;
+}
+auto etterna_layered_song() -> wormedit::song_document_t {
+    auto song = native_storyboard_song();
+    auto& scene = *song.storyboards.front().osbx;
+    for (const auto [id, layer] : std::array{
+            std::pair{"passed", wormedit::osbx_layer_t::pass}, std::pair{"failed", wormedit::osbx_layer_t::fail},
+            std::pair{"front", wormedit::osbx_layer_t::foreground}}) {
+        auto node = scene.nodes.front(); node.id = id; node.layer = layer;
+        node.ops.front().id = std::string{id} + "-position";
+        scene.nodes.push_back(std::move(node));
+    }
+    return song;
+}
+void check_etterna_hooks(const wormedit::conversion_result_t& converted) {
+    require_conversion_osbx(static_cast<bool>(converted));
+    require_conversion_osbx(converted.outputs.size() == 1);
+    const auto& output = converted.outputs.front();
+    check_conversion_osbx(output.reimport_validated);
+    check_conversion_osbx(output.bytes.find("#BGCHANGES:-2=wormedit-storyboard/background=1=0=0=1;") != std::string::npos);
+    check_conversion_osbx(output.bytes.find("#FGCHANGES:-2=wormedit-storyboard/foreground=1=0=0=1;") != std::string::npos);
+    require_conversion_osbx(converted.storyboard_files.size() == 2);
+}
+void check_etterna_choice(const wormedit::conversion_result_t& converted, wormedit::storyboard_conditional_layer_t choice) {
+    std::string actors;
+    for (const auto& file : converted.storyboard_files) actors += file.bytes;
+    check_conversion_osbx((actors.find("id=\"passed\"") != std::string::npos) == (choice == wormedit::storyboard_conditional_layer_t::pass));
+    check_conversion_osbx((actors.find("id=\"failed\"") != std::string::npos) == (choice == wormedit::storyboard_conditional_layer_t::fail));
+    check_conversion_osbx(actors.find("id=\"front\"") != std::string::npos);
+    check_conversion_osbx(actors.find("GAMESTATE:GetSongPosition()") != std::string::npos);
+}
+}
+
+TEST_CASE("Etterna native SSC carries both exact preroll hooks with one fixed conditional choice", "[formats][conversion][stepmania][storyboard][etterna]") {
+    const auto choice = GENERATE(wormedit::storyboard_conditional_layer_t::pass,
+        wormedit::storyboard_conditional_layer_t::fail, wormedit::storyboard_conditional_layer_t::neither);
+    const auto song = etterna_layered_song();
+    const auto before = wormedit::write_native_project(song).value;
+    const auto converted = wormedit::convert_document(song, etterna_storyboard_request(choice));
+    check_etterna_hooks(converted); check_etterna_choice(converted, choice);
+    check_conversion_osbx(wormedit::write_native_project(song).value == before);
+}
+
+TEST_CASE("Etterna retained BG ownership leaves foreground actors and gameplay available", "[formats][conversion][stepmania][storyboard][etterna]") {
+    using namespace wormedit;
+    auto song = etterna_layered_song();
+    song.metadata.format_group_for(format_family_t::stepmania).ordered_fields.emplace_back("BGCHANGES", "0=original.png=1=0=0=1");
+    const auto result = convert_document(song, etterna_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(result)); require_conversion_osbx(result.outputs.size() == 1);
+    check_conversion_osbx(result.outputs.front().bytes.find("#BGCHANGES:0=original.png=1=0=0=1;") != std::string::npos);
+    check_conversion_osbx(result.outputs.front().bytes.find("#FGCHANGES:-2=wormedit-storyboard/foreground") != std::string::npos);
+    require_conversion_osbx(result.storyboard_files.size() == 1);
+    check_conversion_osbx(result.storyboard_files.front().relative_path == "wormedit-storyboard/foreground/default.lua");
+    check_conversion_osbx(std::ranges::any_of(result.stepmania_storyboard_report, [](const auto& report) {
+        return report.classification == osbx_osb_class_t::unsupported && report.reason.find("Retained source") != std::string::npos;
+    }));
+}
+
+TEST_CASE("Etterna unsupported actor motion remains an advisory even with chart loss rejection", "[formats][conversion][stepmania][storyboard][etterna]") {
+    auto song = native_storyboard_song();
+    song.storyboards.front().osbx->nodes.front().ops.front().track.default_value = {-100,0};
+    const auto result = wormedit::convert_document(song, etterna_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(result)); require_conversion_osbx(result.outputs.size() == 1);
+    check_conversion_osbx(result.outputs.front().reimport_validated);
+    check_conversion_osbx(result.storyboard_files.empty());
+    require_conversion_osbx(result.stepmania_storyboard_report.size() == 1);
+    check_conversion_osbx(result.stepmania_storyboard_report.front().classification == wormedit::osbx_osb_class_t::unsupported);
+}
+
+TEST_CASE("Etterna actors none and unavailable video stay separate policies", "[formats][conversion][stepmania][storyboard][etterna]") {
+    auto request = etterna_storyboard_request();
+    const auto actors = wormedit::convert_document(native_storyboard_song(), request);
+    require_conversion_osbx(static_cast<bool>(actors)); check_conversion_osbx(!actors.storyboard_files.empty());
+    request.stepmania->storyboard = wormedit::stepmania_storyboard_mode_t::none;
+    const auto none = wormedit::convert_document(native_storyboard_song(), request);
+    require_conversion_osbx(static_cast<bool>(none)); check_conversion_osbx(none.storyboard_files.empty());
+    request.stepmania->storyboard = wormedit::stepmania_storyboard_mode_t::video;
+    const auto video = wormedit::convert_document(native_storyboard_song(), request);
+    require_conversion_osbx(static_cast<bool>(video)); check_conversion_osbx(video.storyboard_files.empty());
+    require_conversion_osbx(video.stepmania_storyboard_report.size() == 1);
+    check_conversion_osbx(video.stepmania_storyboard_report.front().reason.find("not yet available") != std::string::npos);
+}
+
+namespace {
+auto etterna_choice_advisories(const wormedit::conversion_result_t& result) -> std::ptrdiff_t {
+    return std::ranges::count_if(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("Etterna storyboard conditional state ") != std::string::npos;
+    });
+}
+void check_fixed_etterna_choice(const wormedit::conversion_result_t& result, std::string_view name) {
+    require_conversion_osbx(static_cast<bool>(result));
+    check_conversion_osbx(etterna_choice_advisories(result) == 1);
+    const auto found = std::ranges::find_if(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("Etterna storyboard conditional state ") != std::string::npos;
+    });
+    require_conversion_osbx(found != result.diagnostics.end());
+    check_conversion_osbx(found->severity == wormedit::diagnostic_severity_t::warning);
+    check_conversion_osbx(found->code == wormedit::conversion_diagnostic_code_t::target_diagnostic);
+    check_conversion_osbx(found->message.find(std::string{name} + " is fixed for export") != std::string::npos);
+    check_conversion_osbx(found->message.find("no gameplay-trigger interactivity") != std::string::npos);
+}
+}
+TEST_CASE("Etterna fixed conditional choice is advisory under reject policy for every shared state", "[formats][conversion][stepmania][storyboard][etterna]") {
+    using namespace wormedit;
+    const auto [choice, label] = GENERATE(std::pair{storyboard_conditional_layer_t::pass, "Pass"},
+        std::pair{storyboard_conditional_layer_t::fail, "Fail"}, std::pair{storyboard_conditional_layer_t::neither, "Neither"});
+    auto song = etterna_layered_song();
+    auto second = song.storyboards.front(); second.id = storyboard_id_t{2}; song.storyboards.push_back(std::move(second));
+    const auto result = convert_document(song, etterna_storyboard_request(choice));
+    check_fixed_etterna_choice(result, label);
+    require_conversion_osbx(result.outputs.size() == 1);
+    check_conversion_osbx(result.outputs.front().reimport_validated);
+    check_conversion_osbx(std::ranges::all_of(result.stepmania_storyboard_report, [](const auto& report) {
+        return report.classification == osbx_osb_class_t::exact;
+    }));
+}
+TEST_CASE("Etterna ordinary layers and other routes do not receive a conditional advisory", "[formats][conversion][stepmania][storyboard][etterna]") {
+    using namespace wormedit;
+    const auto ordinary = convert_document(native_storyboard_song(), etterna_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(ordinary)); check_conversion_osbx(etterna_choice_advisories(ordinary) == 0);
+    const auto shared = convert_document(etterna_layered_song(), native_storyboard_request());
+    require_conversion_osbx(static_cast<bool>(shared)); check_conversion_osbx(etterna_choice_advisories(shared) == 0);
+    for (const auto mode : {stepmania_storyboard_mode_t::none, stepmania_storyboard_mode_t::video}) {
+        auto request = etterna_storyboard_request(); request.stepmania->storyboard = mode;
+        const auto result = convert_document(etterna_layered_song(), request);
+        require_conversion_osbx(static_cast<bool>(result)); check_conversion_osbx(etterna_choice_advisories(result) == 0);
+    }
+}
+TEST_CASE("Etterna fixed-choice advisory does not replace retained source loss reasons", "[formats][conversion][stepmania][storyboard][etterna]") {
+    using namespace wormedit;
+    auto song = etterna_layered_song();
+    song.metadata.format_group_for(format_family_t::stepmania).ordered_fields.emplace_back("BGCHANGES", "0=original.png=1=0=0=1");
+    const auto result = convert_document(song, etterna_storyboard_request());
+    check_fixed_etterna_choice(result, "Pass");
+    check_conversion_osbx(std::ranges::any_of(result.stepmania_storyboard_report, [](const auto& report) {
+        return report.classification == osbx_osb_class_t::unsupported && report.reason.find("Retained source") != std::string::npos;
+    }));
+}
+TEST_CASE("Etterna conditional advisory sees the canonical prepared subtree", "[formats][conversion][stepmania][storyboard][etterna]") {
+    using namespace wormedit;
+    auto song = native_storyboard_song();
+    osbx_lua_link_t link{.id = "children", .source = {.frozen_source = "return function(ctx) end", .source_reference = "children.lua"}};
+    link.source.source_hash = native_project_content_checksum(link.source.frozen_source);
+    song.storyboards.front().osbx->nodes = {{.id = "group", .kind = osbx_node_kind_t::group,
+        .layer = osbx_layer_t::pass, .children_link = link}};
+    const native_children_backend_t backend{osbx_layer_t::pass};
+    const auto prepared = prepare_osbx_lua_scenes(song, backend);
+    require_conversion_osbx(prepared.size() == 1 && prepared.front().complete);
+    const osbx_lua_prepared_scope_t scope{prepared};
+    auto request = etterna_storyboard_request();
+    request.osbx_image_sizes.clear();
+    for (const auto& image : prepared.front().scene->images)
+        request.osbx_image_sizes.push_back({.image_id = image.id, .width = 64, .height = 48});
+    const auto result = convert_document(song, request);
+    check_fixed_etterna_choice(result, "Pass");
+    for (const auto& report : result.stepmania_storyboard_report) UNSCOPED_INFO(report.reason);
+    check_conversion_osbx(!result.storyboard_files.empty());
+}
+
+namespace {
+auto animation_conversion_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    constexpr std::string_view source = "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_conversion_osbx(parsed.value.has_value());
+    auto song = *parsed.value;
+    osbx_node_t animation{.id = "hero", .kind = osbx_node_kind_t::animation, .image = "frames",
+        .lifetime = osbx_lifetime_t{.begin_ms = 0, .end_ms = 2000}};
+    animation.animation = storyboard_animation_t{.frame_count = 2, .frame_delay_ms = 100};
+    osbx_node_t sample{.id = "cue", .kind = osbx_node_kind_t::sample};
+    sample.sample.emplace(); sample.sample->time_ms = 100; sample.sample->path = "tone.wav";
+    song.storyboards = {{.id = storyboard_id_t{1}, .osbx = osbx_document_t{
+        .images = {{.id = "frames", .file = "hero.png"}}, .nodes = {animation, sample}}}};
+    return song;
+}
+}
+
+TEST_CASE("OSBX media package enumeration is owned file-free and bounded before frame allocation", "[conversion][osbx][animation][sample]") {
+    using namespace wormedit;
+    auto song = animation_conversion_song();
+    auto media = storyboard_media_plan_t::from(song);
+    require_conversion_osbx(media.has_value());
+    require_conversion_osbx(media->images.size() == 2);
+    check_conversion_osbx(media->images[0].file == "hero0.png");
+    check_conversion_osbx(media->images[1].file == "hero1.png");
+    check_conversion_osbx(media->samples == std::vector<std::filesystem::path>{"tone.wav"});
+    check_conversion_osbx(storyboard_media_plan_t::from(song) == media);
+    auto moved = std::move(*media);
+    check_conversion_osbx(moved.animations.front().frames == std::vector<std::size_t>{0,1});
+    song.storyboards.front().osbx->nodes.front().animation->frame_count = INT32_MAX;
+    check_conversion_osbx(!storyboard_media_plan_t::from(song));
+}
+
+TEST_CASE("OSBX Animation and Sample conversion emits one authored object and concrete asset lists", "[conversion][osbx][animation][sample]") {
+    using namespace wormedit;
+    const auto song = animation_conversion_song();
+    conversion_request_t request{.target = format_family_t::osu_mania,
+        .osbx_image_sizes = {{.image_id = "frames", .width = 2, .height = 1, .file = "hero0.png"},
+            {.image_id = "frames", .width = 2, .height = 1, .file = "hero1.png"},
+            {.image_id = "frames", .width = 2, .height = 1, .file = "hero.png"}},
+        .osbx_playback_span = osbx_osb_span_t{0,2000}};
+    const auto result = convert_document(song, request);
+    require_conversion_osbx(static_cast<bool>(result));
+    const auto storyboard = std::ranges::find_if(result.outputs, [](const auto& output) {
+        return std::filesystem::path{output.suggested_filename}.extension() == ".osb";
+    });
+    require_conversion_osbx(storyboard != result.outputs.end());
+    const auto parsed = parse_osb(storyboard->bytes);
+    require_conversion_osbx(parsed.value.has_value());
+    check_conversion_osbx(parsed.value->sprites.size() == 1 && parsed.value->sprites.front().animation.has_value());
+    check_conversion_osbx(parsed.value->samples.size() == 1);
+    check_conversion_osbx(result.storyboard_images == std::vector<std::filesystem::path>{"hero0.png","hero1.png"});
+    check_conversion_osbx(result.storyboard_samples == std::vector<std::filesystem::path>{"tone.wav"});
+}
+
+TEST_CASE("OSBX media plan refuses storage exhaustion and cancellation before path generation", "[conversion][osbx][animation][bounds]") {
+    using namespace wormedit;
+    const auto song = animation_conversion_song();
+    check_conversion_osbx(!storyboard_media_plan_t::from(song, {.maximum_expanded_storage_bytes = 1}));
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    const auto refused = storyboard_media_plan_t::from(song, {}, cancelled.get_token());
+    require_conversion_osbx(!refused.has_value());
+    check_conversion_osbx(refused.error().find("cancelled") != std::string::npos);
 }

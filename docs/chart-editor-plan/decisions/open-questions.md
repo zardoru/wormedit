@@ -35,8 +35,11 @@
    - **Answered (2026-09-30):** Ship Pump 5K (pump-single) and Solo 6K (dance-solo) (T-284).
    - **Blocks:** 5K/6K arrow profiles. Do not start it until the user answers.
 9. Should the later storyboard editor initially target standalone shared `.osb` files, difficulty-specific `[Events]`, or both in its first release?
-   - **Provisional default (unconfirmed):** Standalone shared `.osb` first.
-   - **Blocks:** storyboard authoring UI (stage 7). Do not start it until the user answers.
+   - **Answered (owner, 2026-10-31; SB-0):** the screen edits song-level OSBX storyboards only, one at a time; no chart ownership in v1. osu! export retains the current per-difficulty `[Events]` behavior and refuses storyboard export for multi-chart songs. Standalone shared `.osb` writing is not added by this screen.
+   - **Approved screen scope:** imported OSB is read-only; **Convert to OSBX** creates a new OSBX storyboard and preserves the original until explicitly deleted. Generator-owned OSBX is read-only; **Detach from generator** makes it editable, without override patches in v1.
+   - **Approved interaction:** picker and hierarchy/layers on the left, canvas in the centre, inspector on the right, keyframe timeline at the bottom, using the existing generic dock. Millisecond snapping is the default; beat/chart-grid snapping uses the existing snap owner. Starting an edit gesture pauses playback.
+   - **Later:** pass/fail and trigger simulation remains planned as SB-13 outside v1; clip editing, multi-storyboard simultaneous editing and video are also outside v1. Video profiles remain question 16 / T-155. See [Storyboard screen cards](../tasks/storyboard-screen.md) and [Preview and keyframe editor](../../osbx-draft-spec.md#preview-and-keyframe-editor).
+   - **Unblocks:** SB-0 scope planning; implementation still follows the OSBX prerequisites and post-1.0 release gate.
 10. Should notes eventually allow several semantic tags/layers at once, and if so, how should multiple assigned colors be drawn?
    - **Provisional default (unconfirmed):** One layer per note.
    - **Answered (2026-09-30):** One semantic layer per note.
@@ -62,8 +65,10 @@
    - **Answered (2026-09-30):** BMS export prefers UTF-8 because beatoraja is the target (T-282); the LR2 profile writes CP932. Import detection keeps the current candidates.
    - **Blocks:** detector candidate-set changes. Do not start it until the user answers.
 16. Which initial video containers/codecs, resolutions, frame rates, alpha/background policies, and audio-mix options are required?
-   - **Provisional default (unconfirmed):** None chosen; do not start encoder work.
-   - **Blocks:** video export. Do not start it until the user answers.
+   - **Answered (owner, 2026-10-31; VID-0 / T-155):** Linked FFmpeg libraries behind a new `WORMEDIT_ENABLE_VIDEO_ENCODER` option; a packaged `ffmpeg` process is a fallback only if Windows/macOS packaging fails. MP4 with H.264 + AAC is the first profile (BSD OpenH264 when available; libx264 only in builds whose licence allows GPL); WebM with VP9 + Opus is the second.
+   - **Profile defaults:** 1920×1080 by default, with 3840×2160 (4K UHD), 1280×720 and native 640×480 available in both formats. Pillarbox the 4:3 canvas into 16:9. Exact rational 30/1 or 60/1 fps; derive timestamps from frame index × denominator / numerator. Opaque black background, no alpha in v1. Audio choices are none, song only, or song + storyboard samples once OSBX-10 exists; song offset follows the shared preview time origin. Export the whole song or the selected timeline range. Use the shared Pass, Fail or Neither choice (default Pass; Neither omits both conditional layers), never both; StepMania exports use the same choice.
+   - **Encoder constraints:** VID-2 must verify packaged OpenH264 at 2160p30 (H.264 level 5.1) and 2160p60 (level 5.2). Upstream capability evidence, runtime refusals and the WebM/libx264 fallback rules are recorded in the [Video export decision](../../osbx-draft-spec.md#video-export); approved formats do not guarantee encoder availability in every build. VP9 at 4K can require long renders.
+   - **Unblocks:** VID-1–VID-3 and the SMX-3 video route; implementation and platform verification remain separate work.
 17. What should the converter executable be named, and should it provide an `rdconverter` compatibility alias or only a compatible workflow?
    - **Provisional default (unconfirmed):** Do not create the converter target yet.
    - **Answered (2026-09-30):** Separate executable `wormedit-convert` with its own JSON schema; no rdconverter alias (T-281).
@@ -127,6 +132,12 @@
    - **Context (2026-10-27):** indentation makes saves about three times larger (`0_fgd_I`: 22.5 MB indented, 7.5 MB compact). Recovery journal payloads switched to compact JSON in T-769; readers accept both forms. Compact saves are one long line, which is harder to read or diff by hand.
    - **Answered (2026-10-27):** compact. Explicit saves write compact JSON; readers keep accepting indented files (owner, 2026-10-27: "compact saves sound fine").
    - **Unblocks:** [T-775](../tasks/journal-deltas.md#t-775-write-compact-native-saves).
+
+29. Which conventions govern OSBX 0.1 modules, scene declarations and compatibility export?
+   - **Answered (owner, 2026-10-31; OSBX-0 / T-180):** all ten defaults are accepted and recorded in [OSBX draft 0.2, settled conventions](../../osbx-draft-spec.md#settled-osbx-01-conventions): module entry points, clips, loops/triggers, component-wise matrices, normal/additive blending, bake limits, generated-source/override storage, parametric sampling, stable export identity, and unsupported animation/sample handling.
+   - **Amendment (owner, 2026-10-31):** skew and raw matrix ops anywhere on a sprite or in its ancestry, and implicit hierarchy shear, always block `.osb` export. The bake metric applies only to shear-free motion; no rasterization in 0.1. Use video or StepMania export to retain those transforms.
+   - **Implementation boundary:** the accepted parametric defaults differ from current native recipe defaults; the spec records both without changing saved recipes. Override storage is recorded for later work and does not change SB-0's no-overrides v1 scope. Video profiles remain the separate VID-0 / question 16 decision; pass/fail simulation remains SB-13.
+   - **Unblocks:** the OSBX implementation slices named by each settled convention. The owner authorized work now on `storyboard-osbx`, for one post-1.0 PR; main's 1.0 freeze remains in force.
 
 ## How to use this list
 

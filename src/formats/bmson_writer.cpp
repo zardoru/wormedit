@@ -13,6 +13,7 @@
 #include <charconv>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <map>
 #include <numeric>
 #include <ranges>
@@ -563,6 +564,7 @@ struct channel_builder_t {
     const lane_map_t& lanes;
     std::vector<bmson_write_diagnostic_t>& diagnostics;
     std::vector<emitted_channel_t> channels;
+    std::vector<bmson_channel_binding_t> bindings;
     std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> authored_indexes;
     std::unordered_map<std::uint64_t, retained_projection_t> retained_projections;
     bool projection_warning_emitted{};
@@ -738,6 +740,7 @@ struct channel_builder_t {
                     fail(bmson_write_diagnostic_code_t::invalid_document,
                          "non-playable sound-channel events must use lane zero",
                          "$.sound_channels[].notes[].x");
+                bindings.push_back({.chart = chart.id, .event = event.id, .channel_index = channel_index});
                 channels[channel_index].notes.push_back({
                     .x=x, .y=pulse(event.position, "$.sound_channels[].notes[].y"),
                     .length=event.end ? pulse_length(event.position, *event.end,
@@ -759,6 +762,7 @@ struct channel_builder_t {
                  "BMSON 1.0 cannot encode note labels or branches", "$.sound_channels");
         const auto& resource = resource_for_id(song, *note.sound, "$.sound_channels");
         const auto target = channel_for(resource, "$.sound_channels");
+        bindings.push_back({.chart = chart.id, .event = note.id, .channel_index = target});
         if (reconcile_projection(channels[target], note.sound_channel_event, note.provenance, true,
                                  note.position, note.end, note.lane)) return;
         const auto y = pulse(note.position, "$.sound_channels[].notes[].y");
@@ -776,6 +780,7 @@ struct channel_builder_t {
                  "BMSON BGM events require a source audio resource", "$.sound_channels");
         const auto& resource = resource_for_id(song, *event.sound, "$.sound_channels");
         const auto target = channel_for(resource, "$.sound_channels", event.source_lane);
+        bindings.push_back({.chart = chart.id, .event = event.id, .channel_index = target});
         if (reconcile_projection(channels[target], event.sound_channel_event, event.provenance,
                                  false, event.position, event.end, lane_id_t{})) return;
         channels[target].notes.push_back({0, pulse(event.position, "$.sound_channels[].notes[].y"),
@@ -861,9 +866,13 @@ struct channel_builder_t {
 auto channels_for_chart(const song_document_t& song, const chart_document_t& chart,
                         const measure_index_t& index, const bmson_grid_t& grid,
                         const lane_map_t& lanes,
-                        std::vector<bmson_write_diagnostic_t>& diagnostics)
+                        std::vector<bmson_write_diagnostic_t>& diagnostics,
+                        std::vector<bmson_channel_binding_t>& bindings)
     -> std::vector<emitted_channel_t> {
-    return channel_builder_t{song, chart, index, grid, lanes, diagnostics}.build();
+    channel_builder_t builder{song, chart, index, grid, lanes, diagnostics};
+    auto channels = builder.build();
+    bindings = std::move(builder.bindings);
+    return channels;
 }
 
 auto resource_name_for_identity(const song_document_t& song, std::string_view name_space,
@@ -1300,25 +1309,46 @@ auto serialize_writer_output(writer_output_context_t& output) -> std::string {
     return serialized + "\n";
 }
 
+struct prepared_bmson_writer_t {
+    std::shared_ptr<const chart_document_t> chart;
+    bmson_grid_t grid;
+    measure_index_t index;
+    lane_map_t lanes;
+    std::vector<emitted_channel_t> channels;
+    std::vector<bmson_channel_binding_t> bindings;
+    [[nodiscard]] static auto from(const song_document_t& song, bmson_write_options_t options,
+        std::vector<bmson_write_diagnostic_t>& diagnostics) -> prepared_bmson_writer_t {
+        if (!song.export_cuts.empty())
+            fail(bmson_write_diagnostic_code_t::unsupported_feature,
+                "Export cuts require convert_document so chart transformation and generated audio are planned together.", "export_cuts");
+        const auto selected = selected_chart(song, options);
+        if (const auto* owner = song.find_bms_program(selected.id); owner && owner->prepared().program.has_control_flow())
+            fail(bmson_write_diagnostic_code_t::unsupported_feature,
+                "Choose an explicit active projection before exporting scoped control flow to BMSON.", "$.charts");
+        auto owner = std::make_shared<const chart_document_t>(bake_selected_chart(song, selected));
+        const auto& chart = *owner;
+        if (!chart.beat_zero_audio_offset_seconds.denominator ||
+            chart.beat_zero_audio_offset_seconds.numerator != 0)
+            fail(bmson_write_diagnostic_code_t::unsupported_feature,
+                 "BMSON 1.0 has no beat-zero audio offset field", "$.info");
+        report_bmson_chart_losses(chart, diagnostics);
+        report_bmson_bookmark_loss(chart, diagnostics);
+        validate_bmson_timing_features(chart);
+        validate_bmson_visual_features(chart);
+        const auto [grid, index] = writer_geometry(chart);
+        const auto lanes = lane_map_t::from(chart);
+        std::vector<bmson_channel_binding_t> bindings;
+        auto channels = channels_for_chart(song, chart, index, grid, lanes, diagnostics, bindings);
+        return {.chart = std::move(owner), .grid = grid, .index = index, .lanes = lanes,
+            .channels = std::move(channels), .bindings = std::move(bindings)};
+    }
+};
+
 auto write_impl(const song_document_t& song, bmson_write_options_t options,
-                std::vector<bmson_write_diagnostic_t>& diagnostics) -> std::string {
-    const auto selected = selected_chart(song, options);
-    if (const auto* owner = song.find_bms_program(selected.id); owner && owner->prepared().program.has_control_flow())
-        fail(bmson_write_diagnostic_code_t::unsupported_feature,
-            "Choose an explicit active projection before exporting scoped control flow to BMSON.", "$.charts");
-    auto chart = bake_selected_chart(song, selected);
-    if (!chart.beat_zero_audio_offset_seconds.denominator ||
-        chart.beat_zero_audio_offset_seconds.numerator != 0)
-        fail(bmson_write_diagnostic_code_t::unsupported_feature,
-             "BMSON 1.0 has no beat-zero audio offset field", "$.info");
-    report_bmson_chart_losses(chart, diagnostics);
-    report_bmson_bookmark_loss(chart, diagnostics);
-    validate_bmson_timing_features(chart);
-    validate_bmson_visual_features(chart);
-    const auto [grid, index] = writer_geometry(chart);
-    const auto lanes = lane_map_t::from(chart);
-    const auto channels = channels_for_chart(song, chart, index, grid, lanes, diagnostics);
-    writer_output_context_t output(song, chart, grid, index, lanes, channels, options, diagnostics);
+    std::vector<bmson_write_diagnostic_t>& diagnostics) -> std::string {
+    const auto prepared = prepared_bmson_writer_t::from(song, options, diagnostics);
+    writer_output_context_t output(song, *prepared.chart, prepared.grid, prepared.index,
+        prepared.lanes, prepared.channels, options, diagnostics);
     write_info_section(output);
     write_lines_section(output);
     write_bpm_section(output);
@@ -1330,12 +1360,26 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
 
 } // namespace
 
+auto build_bmson_channel_plan(const song_document_t& song, bmson_write_options_t options)
+    -> attempt_t<bmson_channel_plan_t, std::vector<bmson_write_diagnostic_t>> {
+    attempt_t<bmson_channel_plan_t, std::vector<bmson_write_diagnostic_t>> result;
+    try {
+        auto prepared = prepared_bmson_writer_t::from(song, options, result.diagnostics);
+        bmson_channel_plan_t plan{.bindings = std::move(prepared.bindings)};
+        for (const auto& channel : prepared.channels)
+            plan.channels.push_back({.asset = channel.asset, .filename = channel.name});
+        result.value = std::move(plan);
+    } catch (const write_failure_t& failure) {
+        result.diagnostics.push_back({.code = failure.code, .message = failure.message, .location = failure.path});
+    } catch (const nlohmann::json::exception& error) {
+        result.diagnostics.push_back({.code = bmson_write_diagnostic_code_t::invalid_document,
+            .message = error.what(), .location = "$"});
+    }
+    return result;
+}
+
 auto write_bmson(const song_document_t& song, bmson_write_options_t options)
     -> bmson_write_outcome_t {
-    if (!song.export_cuts.empty())
-        return {.diagnostics = {{.severity = diagnostic_severity_t::error,
-            .code = bmson_write_diagnostic_code_t::unsupported_feature,
-            .message = "Export cuts require convert_document so chart transformation and generated audio are planned together.", .location = "export_cuts"}}};
     bmson_write_outcome_t result{};
     try {
         result.value = write_impl(song, std::move(options), result.diagnostics);

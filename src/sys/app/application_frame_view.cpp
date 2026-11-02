@@ -2,6 +2,7 @@
 #include "sys/app/application_frame_view.h"
 #include "sys/compose/views/compose_hover_timing.h"
 #include "sys/app/frame_timing.h"
+#include "sys/storyboard/storyboard_transport_view.h"
 
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/compose/views/compose_view.h"
@@ -17,6 +18,16 @@
 
 namespace wormedit::sys {
 namespace {
+
+void build_storyboard_transport_frame_view(frontend_workspace_view_t& flattened,
+    const application_frame_projection_context_t& context, const workspace_frame_transport_t& transport) {
+    const auto& services = context.application_command_state.services;
+    build_storyboard_transport_view(flattened.view.storyboard.transport,
+        flattened.view.storyboard.timeline,
+        transport.available && flattened.view.storyboard.selected() != nullptr &&
+            static_cast<bool>(services.transport_set_loop_audio_milliseconds),
+        services.transport_loop_selection_active && services.transport_loop_selection_active());
+}
 
 void build_transport_position_view(frontend_workspace_view_t& flattened,
                                    const application_frame_projection_context_t& context,
@@ -209,6 +220,9 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             context.application_command_state.metronome_settings().available;
     }
 
+    context.application_command_state.project.storyboard.refill(flattened.view.storyboard,
+        context.history.document, context.project_session_generation);
+
     context.application_command_state.project.bms_program.refill(flattened.view.compose.bms_program, context.history);
 
     workspace_frame_transport_t frame_transport;
@@ -230,6 +244,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
                 .player_preview_visible = context.application_command_state.project.compose_view.player_preview_visible,
                 .player_preview_skin = context.application_command_state.project.compose_view.player_preview_skin,
                 .asset_base = context.asset_base,
+                .interaction = context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 .player_image_job = context.player_image_job,
 #endif
@@ -375,6 +390,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             flattened.view.compose.bgm_bar_rows.size() != 0 ||
             flattened.view.compose.waveform_overview_rows.size() != 0;
     }
+    build_storyboard_transport_frame_view(flattened, context, frame_transport);
     build_transport_position_view(flattened, context, frame_transport.source_frame());
     build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);

@@ -5,25 +5,12 @@
 #include "sys/resources/resource_action_context.h"
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/resource_assignment.h>
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-#include <wormedit/visual/image_decoder.h>
-#endif
+#include "sys/resources/image_import_probe.h"
 #include <algorithm>
 #include <filesystem>
 #include <unordered_set>
 namespace wormedit::sys {
 namespace {
-auto probe_image(const std::filesystem::path& path)
-    -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    const auto image = visual::open_image_rgba({.path = path});
-    if (image)
-        return std::pair{image->width, image->height};
-#else
-    (void)path;
-#endif
-    return std::nullopt;
-}
 auto referenced_bga_resources(const song_document_t& document)
     -> std::unordered_set<std::uint64_t> {
     std::unordered_set<std::uint64_t> referenced;
@@ -60,7 +47,8 @@ auto import_bga_feedback(document_history_t& history, chart_id_t chart_id, std::
     bool skipped_unreadable{};
     for (const auto& text : sorted) {
         const auto path = std::filesystem::path{text}.lexically_normal();
-        const auto geometry = path.is_absolute() ? probe_image(path) : std::nullopt;
+        const auto probed = probe_resource_image(path);
+        const auto geometry = probed ? std::optional{*probed} : std::nullopt;
         if (!geometry || !known.insert(path.generic_string()).second) {
             skipped_unreadable = skipped_unreadable || !geometry;
             ++skipped;

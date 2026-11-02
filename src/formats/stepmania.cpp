@@ -32,6 +32,11 @@ namespace {
 
 constexpr std::size_t sm_source_order_stride = 6;
 
+auto is_native_ssc_implementation(stepmania_implementation_profile_t profile) -> bool {
+    return profile == stepmania_implementation_profile_t::stepmania_5_1 ||
+           profile == stepmania_implementation_profile_t::etterna_0_75_1;
+}
+
 struct field_t {
     std::string key;
     std::string value;
@@ -760,7 +765,7 @@ struct timing_parser_t {
     }
 
     void validate_legacy_bpm(const field_t& field) {
-        if (options.source_implementation_profile != stepmania_implementation_profile_t::unspecified ||
+        if (is_native_ssc_implementation(options.source_implementation_profile) ||
             (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
              options.source_timing_syntax != stepmania_timing_syntax_t::legacy_negative_bpm))
             fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
@@ -769,7 +774,7 @@ struct timing_parser_t {
     }
 
     void validate_legacy_stop(const field_t& field) {
-        if (options.source_implementation_profile != stepmania_implementation_profile_t::unspecified ||
+        if (is_native_ssc_implementation(options.source_implementation_profile) ||
             (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
              options.source_timing_syntax != stepmania_timing_syntax_t::legacy_negative_stop))
             fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
@@ -1208,6 +1213,12 @@ void validate_stepmania_source_options(const stepmania_parse_options_t& options,
                                       std::size_t field_count) {
     if (options.source_implementation_profile ==
         stepmania_implementation_profile_t::unspecified) return;
+    if (options.source_implementation_profile == stepmania_implementation_profile_t::notitg_v4) {
+        if (options.profile != stepmania_profile_t::sm)
+            fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                "The conservative NotITG profile requires SM; SSC support is unproved", field_count);
+        return;
+    }
     if (options.profile != stepmania_profile_t::ssc)
         fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
              "Named StepMania implementation profiles currently cover SSC input only",
@@ -1583,8 +1594,7 @@ struct timing_fields_builder_t {
           encoding(select_warp_encoding(write_options)) {}
 
     static auto select_warp_encoding(const stepmania_write_options_t& options) -> warp_encoding_t {
-        if (options.target_implementation_profile !=
-            stepmania_implementation_profile_t::unspecified) return warp_encoding_t::native;
+        if (is_native_ssc_implementation(options.target_implementation_profile)) return warp_encoding_t::native;
         switch (options.target_timing_syntax) {
         case stepmania_timing_syntax_t::native_warps: return warp_encoding_t::native;
         case stepmania_timing_syntax_t::legacy_negative_bpm: return warp_encoding_t::negative_bpm;
@@ -1629,6 +1639,11 @@ struct timing_fields_builder_t {
     }
     void check_profile_support() {
         if (options.profile != stepmania_profile_t::sm) return;
+        if (options.target_implementation_profile == stepmania_implementation_profile_t::notitg_v4 &&
+            std::ranges::any_of(chart.pauses, [](const auto& pause) { return pause.kind == pause_kind_t::delay; }))
+            report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                "NotITG DELAYS runtime support is unverified; existing SM encoding is retained", "DELAYS",
+                diagnostic_severity_t::warning);
         if (!chart.scrolls.empty()) report(stepmania_write_diagnostic_code_t::unsupported_feature,
             "This SM writer profile cannot represent SCROLLS", "SCROLLS");
         if (!chart.speeds.empty()) report(stepmania_write_diagnostic_code_t::unsupported_feature,
@@ -2192,24 +2207,42 @@ auto note_map_text(const chart_document_t& chart,
 
 } // namespace
 
+auto has_stepmania_storyboard_hook(const song_document_t& song, bool foreground) -> bool {
+    for (const auto& group : song.metadata.format_groups) {
+        if (group.family != format_family_t::stepmania) continue;
+        for (const auto& field : group.ordered_fields) {
+            const auto key = text_util::ascii_upper(field.first);
+            if (foreground ? key == "FGCHANGES" : key.starts_with("BGCHANGES") || key == "ANIMATIONS") return true;
+        }
+    }
+    return false;
+}
+
 auto stepmania_write_options_t::from(stepmania_export_policy_t policy)
     -> stepmania_export_policy_outcome_t {
     error_t<failure_code_t> result{};
+    if (policy.implementation_profile == stepmania_implementation_profile_t::notitg_v4 &&
+        policy.file_profile != stepmania_profile_t::sm)
+        return std::unexpected(error_t<failure_code_t>{.code = failure_code_t::unsupported,
+            .message = "The conservative NotITG profile requires SM; SSC support is unproved"});
+    if (static_cast<unsigned>(policy.implementation_profile) > static_cast<unsigned>(stepmania_implementation_profile_t::notitg_v4) ||
+        static_cast<unsigned>(policy.storyboard) > static_cast<unsigned>(stepmania_storyboard_mode_t::none) ||
+        static_cast<unsigned>(policy.conditional_layer) > static_cast<unsigned>(storyboard_conditional_layer_t::neither))
+        return std::unexpected(error_t<failure_code_t>{.code = failure_code_t::invalid_request,
+            .message = "Invalid StepMania storyboard export policy"});
     if (policy.timing_syntax == stepmania_timing_syntax_t::unspecified) {
         result.code = failure_code_t::invalid_request;
         result.message = "Select a StepMania timing syntax explicitly";
         return std::unexpected(std::move(result));
     }
-    if (policy.implementation_profile !=
-            stepmania_implementation_profile_t::unspecified &&
+    if (is_native_ssc_implementation(policy.implementation_profile) &&
         policy.file_profile != stepmania_profile_t::ssc) {
         result.code =
             failure_code_t::unsupported;
         result.message = "Named StepMania implementation targets currently require SSC output";
         return std::unexpected(std::move(result));
     }
-    if (policy.implementation_profile !=
-            stepmania_implementation_profile_t::unspecified &&
+    if (is_native_ssc_implementation(policy.implementation_profile) &&
         policy.timing_syntax != stepmania_timing_syntax_t::native_warps) {
         result.code =
             failure_code_t::conflict;
@@ -2532,6 +2565,34 @@ class stepmania_writer_t {
             modeled_song.insert("BACKGROUND");
         if (background) emit("BACKGROUND", *background);
     }
+    void emit_storyboard_changes(std::set<std::string>& modeled_song) {
+        std::map<std::string, std::string> fields;
+        for (const auto& change : options_.storyboard_changes) {
+            const auto key = change.foreground ? "FGCHANGES" : "BGCHANGES";
+            if (has_stepmania_storyboard_hook(song_, change.foreground)) {
+                report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                    "Storyboard hook conflicts with retained source ownership; chart kept unchanged", key,
+                    diagnostic_severity_t::warning);
+                continue;
+            }
+            const auto beat = rational_decimal(change.start_beat);
+            if (!beat || !osbx_document_t::is_valid_project_path(change.actor_reference) ||
+                change.actor_reference.find_first_of("=,;\\:") != std::string::npos) {
+                report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                    "Storyboard hook has no exact safe beat/path encoding; chart kept unchanged", key,
+                    diagnostic_severity_t::warning);
+                continue;
+            }
+            auto& value = fields[key];
+            if (!value.empty()) value += ",";
+            value += *beat + "=" + change.actor_reference + "=1=0=0=1";
+        }
+        for (const auto& [key, value] : fields) {
+            emit(key, value);
+            modeled_song.insert(key);
+        }
+    }
+
     void emit_song_metadata() {
     if (options_.profile == stepmania_profile_t::ssc)
         emit("VERSION", "0.83");
@@ -2574,6 +2635,7 @@ class stepmania_writer_t {
     }
     emit_background(modeled_song);
     emit_preview(modeled_song);
+    emit_storyboard_changes(modeled_song);
     append_unknown_fields(output_, song_group_, modeled_song, options_.preserve_unknown_fields,
                           result_.diagnostics, options_.max_output_bytes);
     }
@@ -2605,6 +2667,7 @@ class stepmania_writer_t {
         for (const auto* chart : charts_)
             timing_by_chart_.push_back(make_timing_fields(*chart, options_, result_.diagnostics));
         if (options_.profile == stepmania_profile_t::sm) emit_shared_sm_timing();
+        else if (!options_.storyboard_changes.empty()) emit_storyboard_song_timing();
         else emit_shared_ssc_timing();
     }
     void emit_shared_sm_timing() {
@@ -2616,6 +2679,11 @@ class stepmania_writer_t {
         }
         for (const auto& [key, value] : timing_by_chart_.front())
             emit(key, value);
+    }
+    void emit_storyboard_song_timing() {
+        // BG/FG hooks use song timing even when gameplay has split timing.
+        // Leave global_timing_keys_ empty so every chart keeps its full map.
+        for (const auto& [key, value] : timing_by_chart_.front()) emit(key, value);
     }
     void emit_shared_ssc_timing() {
         constexpr std::array<std::string_view, 7> timing_keys{

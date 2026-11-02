@@ -59,9 +59,10 @@ auto retained_index_count(sdl_command_mesh_view_t source, std::span<const unsign
 }
 
 auto same_batch(const sdl_command_batch_t& first, const sdl_command_batch_t& second) -> bool {
-    return first.texture == second.texture && first.index_count == second.index_count &&
-        first.clip.x == second.clip.x && first.clip.y == second.clip.y &&
-        first.clip.w == second.clip.w && first.clip.h == second.clip.h;
+    return first.blend == second.blend && first.texture == second.texture &&
+           first.index_count == second.index_count && first.clip.x == second.clip.x &&
+           first.clip.y == second.clip.y && first.clip.w == second.clip.w &&
+           first.clip.h == second.clip.h;
 }
 
 auto same_vertex(const sdl_command_vertex_t& first, const sdl_command_vertex_t& second) -> bool {
@@ -77,6 +78,8 @@ auto sdl_command_mesh_view_t::is_valid() const -> bool {
         !fits_bytes(*this, indices.size())) return false;
     std::size_t referenced{};
     for (const auto& batch : batches) {
+        if (!is_valid_image_blend(batch.blend))
+            return false;
         if (batch.first_index > indices.size() || batch.index_count > indices.size() - batch.first_index ||
             batch.index_count > limits.maximum_indices - referenced) return false;
         referenced += batch.index_count;
@@ -224,5 +227,43 @@ auto sdl_command_mesh_t::retained_bytes() const -> std::size_t {
         indices_.capacity() * sizeof(sdl_command_index_t) +
         batches_.capacity() * sizeof(sdl_command_batch_t) +
         (source_offsets_.capacity() + remap_.capacity()) * sizeof(sdl_command_index_t);
+}
+
+sdl_blend_scope_t::sdl_blend_scope_t(SDL_Renderer* renderer, SDL_Texture* texture,
+                                     image_blend_t blend)
+    : renderer_(renderer), texture_(texture) {
+    if (blend == image_blend_t::inherit) {
+        ready_ = true;
+        return;
+    }
+    SDL_BlendMode requested{};
+    switch (blend) {
+    case image_blend_t::inherit:
+        return;
+    case image_blend_t::normal:
+        requested = SDL_BLENDMODE_BLEND;
+        break;
+    case image_blend_t::additive:
+        requested = SDL_BLENDMODE_ADD;
+        break;
+    }
+    if (!is_valid_image_blend(blend)) {
+        SDL_SetError("Unsupported image blend request");
+        return;
+    }
+    if (!(texture_ ? SDL_GetTextureBlendMode(texture_, &previous_)
+                   : SDL_GetRenderDrawBlendMode(renderer_, &previous_)))
+        return;
+    changed_ = true;
+    ready_ = texture_ ? SDL_SetTextureBlendMode(texture_, requested)
+                      : SDL_SetRenderDrawBlendMode(renderer_, requested);
+}
+sdl_blend_scope_t::~sdl_blend_scope_t() {
+    if (!changed_)
+        return;
+    const bool restored = texture_ ? SDL_SetTextureBlendMode(texture_, previous_)
+                                   : SDL_SetRenderDrawBlendMode(renderer_, previous_);
+    if (!restored)
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Restoring draw blend: %s", SDL_GetError());
 }
 } // namespace wormedit::ui::nuklear

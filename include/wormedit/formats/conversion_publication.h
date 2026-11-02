@@ -13,6 +13,20 @@
 
 namespace wormedit {
 
+using export_image_probe_t = std::function<result_t<std::pair<std::uint32_t, std::uint32_t>,
+                                                   std::string>(const std::filesystem::path&)>;
+// Read-only OSBX media/timing preflight shared by app and CLI. The boundary
+// supplies the existing optional decoder; neither conversion nor core probes.
+[[nodiscard]] auto prepare_osu_storyboard_export(const song_document_t& song,
+    conversion_request_t& request, const std::filesystem::path& source_directory,
+    const export_image_probe_t& probe, std::stop_token stop = {}) -> std::optional<std::string>;
+
+// Native SSC preflight reuses the same prepared scene/image receipt boundary.
+// Failures are per-object advisory losses; cancellation remains a real failure.
+[[nodiscard]] auto prepare_stepmania_storyboard_export(const song_document_t&, conversion_request_t&,
+    const std::filesystem::path& source_directory, const export_image_probe_t&, std::stop_token = {})
+    -> std::optional<std::string>;
+
 struct conversion_publication_file_t {
     std::size_t output_index{};
     std::filesystem::path project_relative_path;
@@ -31,6 +45,8 @@ struct conversion_publication_plan_error_t;
 // This is a read-only preflight: it checks the already-staged asset files and
 // destination paths, but it does not reserve names or publish chart bytes.
 struct conversion_publication_plan_payload_t {
+    // Paths relative to the package root that the ownership manifest can track.
+    [[nodiscard]] static auto can_track_path(const std::filesystem::path& path) -> bool;
     [[nodiscard]] static auto from(const std::filesystem::path& project_directory,
         const output_group_t& group, const conversion_request_t& request,
         const conversion_result_t& converted,
@@ -39,6 +55,10 @@ struct conversion_publication_plan_payload_t {
     std::vector<conversion_publication_file_t> files;
     std::vector<conversion_publication_asset_t> assets;
     std::vector<std::filesystem::path> generated_files;
+    std::vector<std::filesystem::path> storyboard_images;
+    std::vector<std::filesystem::path> storyboard_samples;
+    // output_index here indexes converted.storyboard_files, never chart outputs.
+    std::vector<conversion_publication_file_t> storyboard_files;
     auto operator==(const conversion_publication_plan_payload_t&) const -> bool = default;
 };
 struct conversion_publication_plan_error_t {
@@ -49,6 +69,9 @@ struct conversion_publication_plan_error_t {
         plan.files.clear();
         plan.assets.clear();
         plan.generated_files.clear();
+        plan.storyboard_images.clear();
+        plan.storyboard_samples.clear();
+        plan.storyboard_files.clear();
         return {.plan = std::move(plan), .message = std::move(message)};
     }
     auto operator==(const conversion_publication_plan_error_t&) const -> bool = default;

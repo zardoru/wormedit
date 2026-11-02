@@ -1,5 +1,6 @@
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/native_project_storage.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/osu_mania.h>
@@ -367,4 +368,115 @@ TEST_CASE("slice primary render publishes canonical planned audio", "[unit][slic
     require_span(rendered.succeeded);
     require_span(!rendered.files.empty());
     check_span(std::filesystem::exists(rendered.files.front()));
+}
+
+
+TEST_CASE("typed retained copies accept nested frozen files and identical private reuse", "[slice_spans][resource_plan]") {
+    render_fixture_t fixture;
+    const auto original = bytes_at(fixture.directory / "stem.wav");
+    conversion_result_t converted;
+    converted.asset_copies.push_back({.asset = asset_id_t{1}, .relative_path = "keysounds/stem.wav",
+        .expected_hash = native_project_content_checksum(original)});
+    const auto output = fixture.directory / "private";
+    std::filesystem::create_directory(output);
+    const slice_span_render_options_t options{.source_directory = fixture.directory, .output_directory = output};
+    CHECK_FALSE(render_conversion_slice_plans(fixture.song, converted, options));
+    CHECK(bytes_at(output / "keysounds/stem.wav") == original);
+    CHECK_FALSE(render_conversion_slice_plans(fixture.song, converted, options));
+    CHECK(bytes_at(fixture.directory / "stem.wav") == original);
+    std::ofstream(output / "keysounds/stem.wav", std::ios::binary | std::ios::trunc) << "changed";
+    CHECK(render_conversion_slice_plans(fixture.song, converted, options).has_value());
+    CHECK(bytes_at(output / "keysounds/stem.wav") == "changed");
+}
+
+TEST_CASE("typed retained copies reject unsafe paths and symlink parents without adopting files", "[slice_spans][resource_plan]") {
+    render_fixture_t fixture;
+    const auto original = bytes_at(fixture.directory / "stem.wav");
+    const auto output = fixture.directory / "private";
+    std::filesystem::create_directory(output);
+    conversion_result_t converted;
+    converted.asset_copies.push_back({.asset = asset_id_t{1}, .relative_path = "nested/stem.wav",
+        .expected_hash = native_project_content_checksum(original)});
+    SECTION("unsafe relative filename") { converted.asset_copies.front().relative_path = "../escape.wav"; }
+    SECTION("symlink parent") {
+        std::filesystem::create_directory(fixture.directory / "outside");
+        std::filesystem::create_directory_symlink(fixture.directory / "outside", output / "nested");
+    }
+    SECTION("symlink destination") {
+        std::filesystem::create_directory(output / "nested");
+        std::filesystem::create_symlink(fixture.directory / "stem.wav", output / "nested/stem.wav");
+    }
+    CHECK(render_conversion_slice_plans(fixture.song, converted,
+        {.source_directory = fixture.directory, .output_directory = output}).has_value());
+    CHECK(bytes_at(fixture.directory / "stem.wav") == original);
+    CHECK_FALSE(std::filesystem::exists(fixture.directory / "escape.wav"));
+    CHECK_FALSE(std::filesystem::exists(fixture.directory / "outside/stem.wav"));
+}
+
+namespace {
+void check_replaced_staged_file(const conversion_asset_copy_t& copy, const std::filesystem::path& path) {
+    auto changed = bytes_at(path); changed.back() ^= 1;
+    std::ofstream(path, std::ios::binary | std::ios::trunc).write(changed.data(), static_cast<std::streamsize>(changed.size()));
+    CHECK_FALSE(copy.validate_staged_file(path));
+}
+void check_cancelled_staged_file(const conversion_asset_copy_t& copy, const std::filesystem::path& path) {
+    std::stop_source stop; stop.request_stop();
+    CHECK_FALSE(copy.validate_staged_file(path, stop.get_token()));
+}
+void check_oversize_staged_file(const conversion_asset_copy_t& copy, const std::filesystem::path& path) {
+    std::filesystem::resize_file(path, 64ULL * 1024ULL * 1024ULL + 1);
+    CHECK_FALSE(copy.validate_staged_file(path));
+}
+void check_malformed_staged_promise(conversion_asset_copy_t copy, const std::filesystem::path& path) {
+    copy.expected_hash = "not-sha256";
+    CHECK_FALSE(copy.validate_staged_file(path));
+}
+}
+
+TEST_CASE("frozen staged validation rejects changed bytes cancellation and the discovery bound", "[slice_spans][resource_plan]") {
+    render_fixture_t fixture;
+    conversion_asset_copy_t copy{.asset = asset_id_t{1}, .relative_path = "stem.wav",
+        .expected_hash = native_project_content_checksum(bytes_at(fixture.directory / "stem.wav"))};
+    const auto path = fixture.directory / "stem.wav";
+    REQUIRE(copy.validate_staged_file(path));
+    SECTION("same-size replacement") { check_replaced_staged_file(copy, path); }
+    SECTION("cancellation") { check_cancelled_staged_file(copy, path); }
+    SECTION("over limit") { check_oversize_staged_file(copy, path); }
+    SECTION("malformed promise") { check_malformed_staged_promise(copy, path); }
+}
+
+TEST_CASE("legacy retained copies still refuse duplicate and nested filenames", "[slice_spans][resource_plan]") {
+    render_fixture_t fixture;
+    conversion_result_t converted;
+    converted.asset_copies.push_back({.asset = asset_id_t{1}, .relative_path = "retained.wav"});
+    const auto output = fixture.directory / "private";
+    std::filesystem::create_directory(output);
+    const slice_span_render_options_t options{.source_directory = fixture.directory, .output_directory = output};
+    REQUIRE_FALSE(render_conversion_slice_plans(fixture.song, converted, options));
+    CHECK(render_conversion_slice_plans(fixture.song, converted, options).has_value());
+    CHECK(bytes_at(output / "retained.wav") == bytes_at(fixture.directory / "stem.wav"));
+    converted.asset_copies.front().relative_path = "nested/retained.wav";
+    CHECK(render_conversion_slice_plans(fixture.song, converted, options).has_value());
+    CHECK_FALSE(std::filesystem::exists(output / "nested"));
+}
+
+
+TEST_CASE("typed source replacement between planning and copy cannot publish stale promised bytes", "[slice_spans][resource_plan]") {
+    render_fixture_t fixture;
+    auto bytes = bytes_at(fixture.directory / "stem.wav");
+    conversion_result_t converted;
+    converted.asset_copies.push_back({.asset = asset_id_t{1}, .relative_path = "nested/stem.wav",
+        .expected_hash = native_project_content_checksum(bytes)});
+    bytes.back() ^= 1;
+    std::ofstream(fixture.directory / "stem.wav", std::ios::binary | std::ios::trunc)
+        .write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    const auto output = fixture.directory / "private";
+    std::filesystem::create_directory(output);
+    std::ofstream(output / "owned.txt") << "keep";
+    const auto rejected = render_conversion_slice_plans(fixture.song, converted,
+        {.source_directory = fixture.directory, .output_directory = output});
+    REQUIRE(rejected);
+    CHECK_FALSE(std::filesystem::exists(output / "nested/stem.wav"));
+    CHECK(bytes_at(output / "owned.txt") == "keep");
+    CHECK(bytes_at(fixture.directory / "stem.wav") == bytes);
 }

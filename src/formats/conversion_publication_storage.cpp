@@ -1,4 +1,6 @@
 #include <wormedit/formats/conversion_publication.h>
+#include <wormedit/formats/native_project_storage.h>
+#include "../core/text_util.h"
 
 #include <algorithm>
 #include <array>
@@ -87,10 +89,13 @@ auto is_safe_field(std::string_view value) -> bool {
 }
 
 auto is_safe_name(std::string_view value) -> bool {
-    const fs::path path{value};
+    const auto path = text_util::path_from_utf8(value);
     return value.size() <= 240 && is_safe_field(value) && value != manifest_name &&
-           !path.is_absolute() && !path.has_root_name() && !path.has_parent_path() &&
-           path.filename() == path && path != "." && path != "..";
+           !path.is_absolute() && !path.has_root_name() && !path.has_root_directory() &&
+           !path.filename().empty() && path == path.lexically_normal() &&
+           std::ranges::none_of(path, [](const auto& part) {
+               return part == "." || part == ".." || part == manifest_name;
+           });
 }
 
 auto read_ownership(const fs::path& directory, output_ownership_t& owners, std::string& failure)
@@ -404,22 +409,62 @@ auto install_new_directory(const fs::path& staging, const fs::path& destination)
 #endif
 }
 
+auto verify_native_ownership(const conversion_publication_plan_payload_t& plan, const fs::path& staging,
+    const fs::path& directory, const output_ownership_t& ownership, const std::string& group_key)
+    -> std::optional<std::string> {
+    if (plan.storyboard_files.empty() && plan.storyboard_images.empty() && plan.storyboard_samples.empty()) return std::nullopt;
+    const auto owner = ownership.find(group_key);
+    const auto verify = [&](const fs::path& path) -> std::optional<std::string> {
+        const auto relative = path.lexically_relative(directory);
+        std::error_code error;
+        const auto exists = fs::exists(staging / relative, error);
+        if (error) return "Cannot inspect existing native storyboard ownership";
+        if (exists && (owner == ownership.end() || !owner->second.contains(text_util::path_utf8(relative))))
+            return "Storyboard media would overwrite an unrelated source asset: " + relative.string();
+        return std::nullopt;
+    };
+    for (const auto& file : plan.storyboard_files)
+        if (auto failure = verify(file.project_relative_path)) return failure;
+    for (const auto& file : plan.storyboard_images)
+        if (auto failure = verify(file)) return failure;
+    for (const auto& file : plan.storyboard_samples)
+        if (auto failure = verify(file)) return failure;
+    return std::nullopt;
+}
+
+auto collect_owned_media_names(std::span<const fs::path> files, const fs::path& directory,
+    std::set<std::string>& current_files, std::string_view message) -> std::optional<std::string> {
+    for (const auto& file : files) {
+        const auto name = text_util::path_utf8(file.lexically_relative(directory));
+        if (!is_safe_name(name) || !current_files.insert(name).second) return std::string{message};
+    }
+    return std::nullopt;
+}
 auto collect_owned_chart_names(const conversion_publication_plan_payload_t& plan,
                                const fs::path& relative_directory, std::string_view group_key,
                                const output_ownership_t& ownership,
                                std::set<std::string>& current_files) -> std::optional<std::string> {
     for (const auto& file : plan.files) {
         const auto relative = file.project_relative_path.lexically_relative(relative_directory);
-        const auto filename = relative.generic_string();
+        const auto filename = text_util::path_utf8(relative);
         if (!is_safe_name(filename) || !current_files.insert(filename).second) {
             return "A generated chart filename cannot be tracked safely.";
         }
     }
+    for (const auto& file : plan.storyboard_files) {
+        const auto name = text_util::path_utf8(file.project_relative_path.lexically_relative(relative_directory));
+        if (!is_safe_name(name) || !current_files.insert(name).second)
+            return "A native actor filename cannot be tracked safely.";
+    }
     for (const auto& file : plan.generated_files) {
-        const auto name = file.lexically_relative(relative_directory).generic_string();
+        const auto name = text_util::path_utf8(file.lexically_relative(relative_directory));
         if (!is_safe_name(name) || !current_files.insert(name).second)
             return "A generated audio filename cannot be tracked safely.";
     }
+    if (auto failure = collect_owned_media_names(plan.storyboard_images, relative_directory, current_files,
+            "A storyboard image filename cannot be tracked safely.")) return failure;
+    if (auto failure = collect_owned_media_names(plan.storyboard_samples, relative_directory, current_files,
+            "A storyboard Sample filename cannot be tracked safely.")) return failure;
     for (const auto& [other_group, filenames] : ownership) {
         if (other_group == group_key) {
             continue;
@@ -443,7 +488,7 @@ auto prune_stale_chart_files(const fs::path& staging, const output_ownership_t& 
     }
     std::error_code error;
     for (const auto& [filename, recorded] : previous->second) {
-        const auto old_path = staging / filename;
+        const auto old_path = staging / text_util::path_from_utf8(filename);
         const auto old_status = fs::symlink_status(old_path, error);
         if (error == std::errc::no_such_file_or_directory) {
             error.clear();
@@ -484,44 +529,98 @@ struct staged_chart_write_t {
     const std::string& group_key;
 };
 
-auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::string> {
+auto write_generated_text(staged_chart_write_t context, const conversion_publication_file_t& file,
+    const std::string& bytes) -> std::optional<std::string> {
+    if (!is_allowed(context.options, conversion_publication_stage_t::write_output))
+        return "Output writing was interrupted.";
+    const auto relative = file.project_relative_path.lexically_relative(context.relative_directory);
+    const auto path = context.staging / relative;
     std::error_code error;
-    context.ownership[context.group_key].clear();
-    for (const auto& file : context.plan.files) {
-        if (!is_allowed(context.options, conversion_publication_stage_t::write_output)) {
-            return "Output writing was interrupted.";
-        }
-        const auto relative =
-            file.project_relative_path.lexically_relative(context.relative_directory);
-        const auto path = context.staging / relative;
-        fs::create_directories(path.parent_path(), error);
-        if (error) {
-            return "Could not create a staged chart directory.";
-        }
-        const auto& bytes = context.converted.outputs[file.output_index].bytes;
-        {
-            std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-            stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-            stream.flush();
-            if (!stream) {
-                return "Could not write a staged chart file.";
-            }
-        }
-        if (!sync_file(path) || !file_bytes_equal(path, bytes)) {
-            return "Staged chart bytes could not be flushed or verified.";
-        }
-        const auto identity = file_identity(path);
-        if (!identity || identity->bytes != bytes.size()) {
-            return "Could not identify a staged chart file.";
-        }
-        context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
-        if (context.options.progress) ++context.options.progress->completed;
+    fs::create_directories(path.parent_path(), error);
+    if (error) return "Could not create a staged output directory.";
+    {
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        stream.flush();
+        if (!stream) return "Could not write a staged output file.";
     }
+    if (!sync_file(path) || !file_bytes_equal(path, bytes)) return "Staged output bytes could not be flushed or verified.";
+    const auto identity = file_identity(path);
+    if (!identity || identity->bytes != bytes.size()) return "Could not identify a staged output file.";
+    context.ownership[context.group_key].emplace(text_util::path_utf8(relative), *identity);
+    if (context.options.progress) ++context.options.progress->completed;
+    return std::nullopt;
+}
+auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::string> {
+    context.ownership[context.group_key].clear();
+    for (const auto& file : context.plan.files)
+        if (auto failure = write_generated_text(context, file, context.converted.outputs[file.output_index].bytes)) return failure;
+    for (const auto& file : context.plan.storyboard_files)
+        if (auto failure = write_generated_text(context, file, context.converted.storyboard_files[file.output_index].bytes)) return failure;
     return std::nullopt;
 }
 
+auto has_safe_copy_components(const conversion_asset_copy_t& copy, const fs::path& path) -> bool {
+    if (!conversion_publication_plan_payload_t::can_track_path(copy.relative_path)) return false;
+    auto root = path;
+    for (const auto& part : copy.relative_path) { (void)part; root = root.parent_path(); }
+    if ((root / copy.relative_path).lexically_normal() != path.lexically_normal()) return false;
+    std::error_code root_error;
+    const auto root_status = fs::symlink_status(root, root_error);
+    if (root_error || !fs::is_directory(root_status) || fs::is_symlink(root_status)) return false;
+    auto current = root;
+    for (const auto& part : copy.relative_path) {
+        current /= part;
+        std::error_code error;
+        const auto status = fs::symlink_status(current, error);
+        if (error || fs::is_symlink(status)) return false;
+        if (current == path ? !fs::is_regular_file(status) : !fs::is_directory(status)) return false;
+    }
+    return true;
+}
+
+auto validate_frozen_copy(const conversion_asset_copy_t& copy, const fs::path& path, std::stop_token stop)
+    -> std::optional<std::string> {
+    if (!copy.expected_hash) return "Frozen audio verification requires a content promise.";
+    if (!has_safe_copy_components(copy, path)) return "Frozen audio staging path has unsafe components.";
+    if (!text_util::is_sha256_digest(*copy.expected_hash)) return "Malformed frozen audio hash.";
+    constexpr std::uintmax_t maximum_bytes = 64U * 1024U * 1024U;
+    std::error_code error;
+    const auto status = fs::symlink_status(path, error);
+    if (error || !fs::is_regular_file(status)) return "Frozen audio staging path is absent or unsafe.";
+    const auto before = project_asset_copy_receipt_t::published_identity_t::from(path);
+    if (!before || before->size > maximum_bytes) return "Frozen audio staging file exceeds its discovery bound.";
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return "Frozen audio staging file is unreadable.";
+    std::string bytes(static_cast<std::size_t>(before->size), '\0');
+    std::size_t read{};
+    while (read < bytes.size()) {
+        if (stop.stop_requested()) return "Frozen audio verification cancelled.";
+        const auto count = std::min<std::size_t>(64U * 1024U, bytes.size() - read);
+        input.read(bytes.data() + read, static_cast<std::streamsize>(count));
+        if (input.gcount() != static_cast<std::streamsize>(count)) return "Frozen audio changed or failed during verification.";
+        read += count;
+    }
+    char extra{};
+    if (input.get(extra) || input.bad() || !has_safe_copy_components(copy, path) ||
+        project_asset_copy_receipt_t::published_identity_t::from(path) != before)
+        return "Frozen audio was replaced during verification.";
+    if (stop.stop_requested()) return "Frozen audio verification cancelled.";
+    if (!text_util::ascii_iequal(native_project_content_checksum(bytes), *copy.expected_hash))
+        return "Staged audio content does not match its declared frozen hash.";
+    return {};
+}
+auto validate_frozen_copies(staged_chart_write_t context) -> std::optional<std::string> {
+    for (const auto& copy : context.converted.asset_copies) {
+        if (!copy.expected_hash) continue;
+        if (const auto checked = copy.validate_staged_file(context.staging / copy.relative_path, context.options.stop); !checked)
+            return checked.error().message;
+    }
+    return {};
+}
+
 auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::string> {
-    if (context.plan.generated_files.empty()) return std::nullopt;
+    if (context.plan.generated_files.empty()) return validate_frozen_copies(context);
     if (!context.options.stage_generated_files) return "Generated audio staging callback is required.";
     std::error_code error;
     for (const auto& file : context.plan.generated_files) {
@@ -531,6 +630,7 @@ auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::s
         if (error) return "Cannot prepare a generated audio staging destination.";
     }
     if (auto failure = context.options.stage_generated_files(context.staging)) return failure;
+    if (auto failure = validate_frozen_copies(context)) return failure;
     for (const auto& file : context.plan.generated_files) {
         if (context.options.stop.stop_requested()) return "Export cancelled while staging audio.";
         const auto relative = file.lexically_relative(context.relative_directory);
@@ -540,10 +640,75 @@ auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::s
             return "Generated audio was absent, unsafe, or could not be flushed.";
         const auto identity = file_identity(path);
         if (!identity) return "Cannot identify generated audio.";
-        context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
+        context.ownership[context.group_key].emplace(text_util::path_utf8(relative), *identity);
         if (context.options.progress) ++context.options.progress->completed;
     }
     return std::nullopt;
+}
+
+auto consume_storyboard_media_bytes(std::span<const fs::path> files,
+    std::span<const project_path_copy_request_t> sources, const fs::path& directory,
+    std::uintmax_t& remaining) -> std::optional<std::string> {
+    std::map<fs::path, const project_path_copy_request_t*> by_path;
+    for (const auto& source : sources) by_path.emplace(source.relative_path, &source);
+    for (const auto& file : files) {
+        const auto source = by_path.find(file.lexically_relative(directory));
+        if (source == by_path.end() || !source->second->expected_source) return "Storyboard media source receipt is missing";
+        const auto bytes = source->second->expected_source->size;
+        if (bytes > remaining) return "Storyboard media exceeds its publication byte budget";
+        remaining -= bytes;
+    }
+    return std::nullopt;
+}
+auto validate_storyboard_publication_budget(const conversion_publication_plan_payload_t& plan,
+    const conversion_request_t& request, const conversion_publication_options_t& options,
+    const fs::path& directory) -> std::optional<std::string> {
+    if (plan.storyboard_images.empty() && plan.storyboard_samples.empty()) return std::nullopt;
+    auto entries = options.maximum_existing_entries;
+    const std::array counts{plan.files.size(), plan.storyboard_files.size(), plan.generated_files.size(),
+        plan.storyboard_images.size(), plan.storyboard_samples.size(), options.pending_assets.size()};
+    for (const auto count : counts) {
+        if (count > entries) return "Output package exceeds its publication file budget";
+        entries -= count;
+    }
+    auto remaining = options.maximum_existing_bytes;
+    if (auto failure = consume_storyboard_media_bytes(plan.storyboard_images, request.osbx_image_sources, directory, remaining)) return failure;
+    return consume_storyboard_media_bytes(plan.storyboard_samples, request.osbx_sample_sources, directory, remaining);
+}
+auto validate_publication_inputs(const conversion_publication_plan_payload_t& plan,
+    const conversion_request_t& request, const conversion_publication_options_t& options,
+    const fs::path& directory) -> std::optional<std::string> {
+    if (!plan.generated_files.empty() && !options.stage_generated_files) return "Generated audio staging callback is required.";
+    if (directory.empty() || options.maximum_existing_bytes == 0 || options.maximum_existing_entries == 0)
+        return "Output group needs a non-root directory and valid copy limits.";
+    return validate_storyboard_publication_budget(plan, request, options, directory);
+}
+auto write_storyboard_media(staged_chart_write_t context, std::span<const fs::path> files,
+    std::span<const project_path_copy_request_t> sources) -> std::optional<std::string> {
+    std::map<fs::path, const project_path_copy_request_t*> by_path;
+    for (const auto& source : sources) by_path.emplace(source.relative_path, &source);
+    for (const auto& file : files) {
+        if (context.options.stop.stop_requested()) return "Export cancelled while staging storyboard media.";
+        const auto relative = file.lexically_relative(context.relative_directory);
+        std::error_code error;
+        fs::remove(context.staging / relative, error);
+        if (error) return "Cannot prepare a storyboard media staging destination.";
+        const auto source = by_path.find(relative);
+        if (source == by_path.end() || !source->second->expected_source)
+            return "Storyboard media has no prepared source receipt: " + relative.string();
+        const auto copied = create_project_path_copy(*source->second, context.staging, context.options.stop);
+        if (!copied) return copied.error().message;
+        const auto identity = file_identity(context.staging / relative);
+        if (!identity) return "Cannot identify a staged storyboard media file.";
+        context.ownership[context.group_key].emplace(text_util::path_utf8(relative), *identity);
+        if (context.options.progress) ++context.options.progress->completed;
+    }
+    return std::nullopt;
+}
+auto write_storyboard_images(staged_chart_write_t context, const conversion_request_t& request)
+    -> std::optional<std::string> {
+    if (auto failure = write_storyboard_media(context, context.plan.storyboard_images, request.osbx_image_sources)) return failure;
+    return write_storyboard_media(context, context.plan.storyboard_samples, request.osbx_sample_sources);
 }
 
 auto stage_pending_assets(const conversion_publication_options_t& options, const fs::path& staging)
@@ -707,19 +872,13 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
     if (options.progress) {
         options.progress->phase.store(job_phase_t::publishing);
         options.progress->completed.store(0);
-        options.progress->total.store(plan.files.size() + plan.generated_files.size() + options.pending_assets.size());
-    }
-    if (!plan.generated_files.empty() && !options.stage_generated_files) {
-        result.diagnostics.errors.emplace_back("Generated audio staging callback is required.");
-        return result;
+        options.progress->total.store(plan.files.size() + plan.storyboard_files.size() + plan.generated_files.size() + plan.storyboard_images.size() + plan.storyboard_samples.size() + options.pending_assets.size());
     }
     const auto relative_directory = effective_group.destination_kind == output_destination_kind_t::file
                                         ? group.relative_output_path.parent_path()
                                         : group.relative_output_path;
-    if (relative_directory.empty() || options.maximum_existing_bytes == 0 ||
-        options.maximum_existing_entries == 0) {
-        result.diagnostics.errors.emplace_back(
-            "Output group needs a non-root directory and valid copy limits.");
+    if (auto failure = validate_publication_inputs(plan, request, options, relative_directory)) {
+        result.diagnostics.errors.push_back(*failure);
         return result;
     }
     const auto destination = project_directory / relative_directory;
@@ -749,6 +908,10 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
         return result;
     }
     const auto group_key = group.relative_output_path.generic_string();
+    if (auto failure = verify_native_ownership(plan, staging.path, relative_directory, ownership, group_key)) {
+        result.diagnostics.errors.push_back(std::move(*failure));
+        return result;
+    }
     std::set<std::string> current_files;
     if (auto failure = collect_owned_chart_names(plan, relative_directory, group_key, ownership,
                                                  current_files)) {
@@ -775,12 +938,29 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
         result.diagnostics.errors.push_back(std::move(*failure));
         return result;
     }
+    if (auto failure = write_storyboard_images(
+            {plan, converted, options, relative_directory, staging.path, ownership, group_key}, request)) {
+        result.diagnostics.errors.push_back(std::move(*failure));
+        return result;
+    }
     install_staged_conversion({plan, options, staging, relative_directory, destination, parent,
                                ownership, destination_exists, result});
     if (result.value.published) {
         result.value.pruned_files = pruned_files;
     }
     return result;
+}
+
+auto conversion_asset_copy_t::validate_staged_file(const fs::path& path, std::stop_token stop) const
+    -> result_t<void, error_t<failure_code_t>> {
+    if (stop.stop_requested()) return std::unexpected(error_t{failure_code_t::cancelled, "Frozen audio verification cancelled."});
+    if (auto failure = validate_frozen_copy(*this, path, stop))
+        return std::unexpected(error_t{stop.stop_requested() ? failure_code_t::cancelled : failure_code_t::invalid_data, std::move(*failure)});
+    return {};
+}
+
+auto conversion_publication_plan_payload_t::can_track_path(const fs::path& path) -> bool {
+    return is_safe_name(text_util::path_utf8(path));
 }
 
 auto conversion_publication_result_t::from(conversion_publication_outcome_t&& outcome) -> conversion_publication_result_t {

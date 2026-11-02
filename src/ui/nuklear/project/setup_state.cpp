@@ -13,7 +13,7 @@ bool output_group_rows_valid(const wormedit::ui::setup_view_t& view) {
             (group.stepmania->file_profile > wormedit::stepmania_profile_t::ssc ||
              group.stepmania->timing_syntax < wormedit::stepmania_timing_syntax_t::native_warps ||
              group.stepmania->timing_syntax > wormedit::stepmania_timing_syntax_t::legacy_negative_stop ||
-             group.stepmania->implementation_profile > wormedit::stepmania_implementation_profile_t::etterna_0_75_1))
+             group.stepmania->implementation_profile > wormedit::stepmania_implementation_profile_t::notitg_v4))
             return false;
     }
     return true;

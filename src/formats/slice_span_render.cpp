@@ -1,5 +1,6 @@
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/export_cut_audio.h>
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/atomic_file_storage.h>
@@ -210,6 +211,44 @@ auto conversion_slice_assets(const song_document_t& song, const conversion_reque
     }
     return assets;
 }
+auto prepare_typed_copy_parent(const std::filesystem::path& root, const std::filesystem::path& relative)
+    -> std::optional<std::string> {
+    if (!conversion_publication_plan_payload_t::can_track_path(relative)) return "Unsafe typed asset filename";
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(root, error);
+    if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status)) return "Unsafe private copy root";
+    auto current = root;
+    for (const auto& part : relative.parent_path()) {
+        current /= part;
+        auto child = std::filesystem::symlink_status(current, error);
+        if (error == std::errc::no_such_file_or_directory || child.type() == std::filesystem::file_type::not_found) {
+            error.clear();
+            if (!std::filesystem::create_directory(current, error) || error) return "Cannot create a private asset parent";
+        } else if (error || !std::filesystem::is_directory(child) || std::filesystem::is_symlink(child)) return "Unsafe private asset parent";
+    }
+    return {};
+}
+
+auto copy_typed_conversion_asset(const std::filesystem::path& source, const conversion_asset_copy_t& copy,
+    const slice_span_render_options_t& options) -> std::optional<std::string> {
+    if (options.stop.stop_requested()) return "Asset copying cancelled";
+    if (auto failure = prepare_typed_copy_parent(options.output_directory, copy.relative_path)) return failure;
+    auto original = copy; original.relative_path = source.filename();
+    if (const auto verified = original.validate_staged_file(source, options.stop); !verified) return verified.error().message;
+    const auto destination = options.output_directory / copy.relative_path;
+    std::error_code error;
+    if (std::filesystem::exists(std::filesystem::symlink_status(destination, error))) {
+        const auto reused = copy.validate_staged_file(destination, options.stop);
+        return reused ? std::optional<std::string>{} : std::optional{reused.error().message};
+    }
+    if (error && error != std::errc::no_such_file_or_directory) return "Cannot inspect a typed copy destination";
+    error.clear();
+    if (!std::filesystem::copy_file(source, destination, std::filesystem::copy_options::none, error) || error)
+        return "Cannot stage typed asset: " + source.string();
+    if (const auto verified = copy.validate_staged_file(destination, options.stop); !verified) return verified.error().message;
+    return {};
+}
+
 auto copy_conversion_asset(const song_document_t& song, const conversion_asset_copy_t& copy,
     const slice_span_render_options_t& options) -> std::optional<std::string> {
     std::filesystem::path source;
@@ -218,6 +257,10 @@ auto copy_conversion_asset(const song_document_t& song, const conversion_asset_c
     if (audio != nullptr) source = audio->source_path;
     else if (visual != song.visual_assets.end()) source = visual->source_path;
     else return "Missing retained export asset " + std::to_string(copy.asset.value);
+    if (copy.expected_hash) {
+        if (!source.is_absolute()) source = options.source_directory / source;
+        return copy_typed_conversion_asset(source, copy, options);
+    }
     if (!is_plain_filename(copy.relative_path.generic_string())) return "Unsafe retained asset filename";
     if (options.stop.stop_requested()) return "Asset copying cancelled";
     if (!source.is_absolute()) source = options.source_directory / source;

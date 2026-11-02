@@ -18,6 +18,12 @@ struct resolved_visual_asset_t {
                                    const std::filesystem::path& project_directory)
         -> result_t<resolved_visual_asset_t, error_t<failure_code_t>>;
 
+    // Preview-only decode identity supplied by the presenter. No document asset
+    // is created; safe relative-path inspection is shared with export media.
+    [[nodiscard]] static auto from_project_image(const std::filesystem::path& relative_path,
+        resource_id_t decode_identity, const std::filesystem::path& project_directory)
+        -> result_t<resolved_visual_asset_t, error_t<failure_code_t>>;
+
     resource_id_t resource;
     asset_id_t asset;
     asset_kind_t kind{asset_kind_t::image};

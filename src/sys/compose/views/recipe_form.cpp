@@ -69,16 +69,16 @@ auto set_lua_parameters(sv_recipe_t& candidate, const wormedit::ui::timing_recip
     const auto seed = parse_unsigned(form.lua_seed);
     if (!seed) return false;
     auto descriptor = candidate.lua.value_or(sv_recipe_lua_t{});
-    descriptor.entry_point = form.lua_entry_point;
-    descriptor.seed = *seed;
+    descriptor.source.entry_point = form.lua_entry_point;
+    descriptor.source.seed = *seed;
     descriptor.mode = form.lua_mode;
-    descriptor.source_reference = *form.lua_source_reference
+    descriptor.source.source_reference = *form.lua_source_reference
         ? std::optional<std::filesystem::path>{text_util::path_from_utf8(form.lua_source_reference)} : std::nullopt;
-    descriptor.parameters.clear();
+    descriptor.source.parameters.clear();
     for (const auto& input : form.lua_parameters) {
         const auto value = parse_signed_rational(input.value);
         if (!value) return false;
-        descriptor.parameters.push_back({.name = input.name, .value = *value});
+        descriptor.source.parameters.push_back({.name = input.name, .value = *value});
     }
     descriptor.cycles.clear();
     if (form.lua_mode == sv_recipe_lua_mode_t::ordered)
@@ -191,7 +191,7 @@ auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_r
     candidate.output = static_cast<sv_recipe_output_t>(form.output);
     candidate.curve = static_cast<sv_recipe_curve_t>(form.curve);
     if (candidate.curve != sv_recipe_curve_t::lua_expression) {
-        candidate.expression_source.clear();
+        candidate.set_frozen_source({});
         candidate.lua.reset();
     }
     if (!set_curve_parameters(candidate, form) || !set_sampling(candidate, form) ||
@@ -309,13 +309,13 @@ void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& rec
     form.lua_entry_point[0] = '\0';
     if (recipe.lua) {
         const auto& lua = *recipe.lua;
-        if (lua.source_reference)
+        if (lua.source.source_reference)
             (void)std::snprintf(form.lua_source_reference, sizeof(form.lua_source_reference), "%s",
-                text_util::path_utf8(*lua.source_reference).c_str());
-        (void)std::snprintf(form.lua_entry_point, sizeof(form.lua_entry_point), "%s", lua.entry_point.c_str());
-        (void)std::snprintf(form.lua_seed, sizeof(form.lua_seed), "%llu", static_cast<unsigned long long>(lua.seed));
+                text_util::path_utf8(*lua.source.source_reference).c_str());
+        (void)std::snprintf(form.lua_entry_point, sizeof(form.lua_entry_point), "%s", lua.source.entry_point.c_str());
+        (void)std::snprintf(form.lua_seed, sizeof(form.lua_seed), "%llu", static_cast<unsigned long long>(lua.source.seed));
         form.lua_mode = lua.mode;
-        for (const auto& parameter : lua.parameters) {
+        for (const auto& parameter : lua.source.parameters) {
             timing_recipe_lua_parameter_form_t field;
             (void)std::snprintf(field.name, sizeof(field.name), "%s", parameter.name.c_str());
             set_text(field.value, parameter.value);

@@ -1,3 +1,5 @@
+#include "sys/storyboard/storyboard_assets_view.h"
+#include "sys/storyboard/storyboard_video_export_view.h"
 #include "common/window_presentation.h"
 #include "common/local_file_location.h"
 #include "sys/compose/generator_runtime.h"
@@ -75,6 +77,7 @@
 #include "sys/project/project_import_feedback.h"
 #include "sys/project/project_save_paths.h"
 #include "sys/audio/player_preview_presenter.h"
+#include "sys/storyboard/osbx_lua_link_runtime.h"
 #include "sys/audio/waveform_view.h"
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/compose/actions/compose_audition_requests.h"
@@ -231,12 +234,14 @@ auto post_callback_feedback(wormedit::notification_sink_t& notifications,
     return message;
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto routine_transport_severity(wormedit::notification_severity_t severity, bool accepted)
     -> wormedit::notification_severity_t {
     if (!accepted || severity == wormedit::notification_severity_t::warning ||
         severity == wormedit::notification_severity_t::error) return severity;
     return wormedit::notification_severity_t::hint;
 }
+#endif
 
 void remember_snap_denominator(application_command_state_t& application_state,
                                wormedit::chart_id_t chart, std::uint64_t denominator) {
@@ -801,13 +806,16 @@ void cancel_stale_compose_interaction(
     const wormedit::workspace_controller_t& workspace) {
     if (compose_interaction_state) {
         const auto& state = *compose_interaction_state;
-        const bool selected_chart_changed =
-            !workspace.selected_chart || *workspace.selected_chart != state.chart;
+        // Document-owned Storyboard gestures share this retained interaction
+        // state and survive frame cleanup without a selected difficulty.
+        const bool storyboard_owned = state.gesture_kind() == wormedit::editor_gesture_kind_t::storyboard_edit;
+        const bool selected_chart_changed = !storyboard_owned &&
+            (!workspace.selected_chart || *workspace.selected_chart != state.chart);
         const bool pending_is_stale = state.is_stale(history.document.revision);
-        const bool compose_inactive =
-            workspace.active_tab != wormedit::workspace_tab_t::compose;
+        const auto owning_tab = storyboard_owned ? wormedit::workspace_tab_t::storyboard : wormedit::workspace_tab_t::compose;
+        const bool owning_tab_inactive = workspace.active_tab != owning_tab;
         if (state.is_pending() &&
-            (selected_chart_changed || pending_is_stale || compose_inactive)) {
+            (selected_chart_changed || pending_is_stale || owning_tab_inactive)) {
             (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
         }
@@ -1318,11 +1326,13 @@ auto close_confirmation_view(const pending_close_t& pending, bool has_native_pat
 
 
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto retained_compose_geometry(const compose_scene_cache_t& cache)
     -> wormedit::editor_measure_geometry_t {
     return {cache.stamp().chart, cache.stamp().document.revision,
             cache.scene.cached_measure_index ? &*cache.scene.cached_measure_index : nullptr};
 }
+#endif
 
 
 
@@ -1517,6 +1527,8 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
             clock.source_frame = preview_music_frame(*context.preview.compiled.value().schedule, frame);
             clock.beats_per_measure = tap_meter_at(context.document, context.preview, context.preview.source_frame(frame));
         }
+#else
+        (void)context;
 #endif
         return clock;
 }
@@ -1704,10 +1716,12 @@ struct application_t::implementation_t {
     } session{platform.notification_sink};
 
     struct background_jobs_t {
-        enum class file_job_scope_t { resource_operations, project_save, compose_dispatch };
+        enum class file_job_scope_t { resource_operations, project_save, compose_dispatch, storyboard_edit };
 
         notification_sink_t& notifications;
         task_scheduler_t resource_copy_scheduler{1, 4, background_scheduler_options()};
+        osbx_lua_link_runtime_t storyboard_links{resource_copy_scheduler};
+        storyboard_video_export_t storyboard_video{resource_copy_scheduler, notifications};
         runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
         runtime::preview_audio_export_t preview_audio_runtime{resource_copy_scheduler, notifications};
         runtime::audio_slicer_t audio_slicer_runtime{resource_copy_scheduler, notifications};
@@ -1726,7 +1740,8 @@ struct application_t::implementation_t {
             const bool busy = is_resource_worker_busy() || export_runtime.is_busy() ||
                               metadata_asset_runtime.import_pending();
             // Save must not publish old-session paths while opening; replacements cancel that open.
-            return busy || (scope == file_job_scope_t::project_save && project_open_runtime.is_busy());
+            return busy || (scope != file_job_scope_t::storyboard_edit && storyboard_video.is_busy()) ||
+                (scope == file_job_scope_t::project_save && project_open_runtime.is_busy());
         }
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         visual::image_cache_t player_image_cache{};
@@ -1919,6 +1934,8 @@ struct application_t::implementation_t {
             return;
         if (action.kind == WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS)
             copy_notification_details(action.id);
+        else if (action.kind == WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER)
+            open_notification_folder(action.id);
         else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
             const auto error = wormedit::sys::go_to_notification(platform.notifications, action.id,
                                                                  session.history, session.workspace,
@@ -1930,10 +1947,21 @@ struct application_t::implementation_t {
         }
     }
 
+    void open_notification_folder(notification_id_t id) {
+        const auto* entry = find_notification(platform.notifications, id);
+        const auto* file = entry ? std::get_if<notification_file_t>(&entry->target) : nullptr;
+        if (!file) return;
+        const auto location = local_file_location_t::from(file->path.parent_path(), SDL_PATHTYPE_DIRECTORY);
+        if (!location || !location->open())
+            platform.notification_sink.post(notification_severity_t::error, notification_source_t::export_,
+                "Could not open the exported file's folder.");
+    }
+
     auto finish_confirmed_close(pending_close_t& pending) -> bool {
         if (jobs.resource_copy_runtime.is_project_save_busy())
             return false;
         if (pending.target == close_target_t::application) {
+            jobs.storyboard_video.cancel_project(session.history.document.id);
             running = false;
             pending = {};
             return true;
@@ -2463,6 +2491,7 @@ struct application_t::implementation_t {
                 "Wait for the current autosave to finish before changing projects.");
             return false;
         }
+        jobs.storyboard_video.cancel_project(session.history.document.id);
         session.history = std::move(binding.history);
         session.workspace = std::move(binding.workspace);
         begin_project_session(std::move(binding.identity));
@@ -2472,7 +2501,7 @@ struct application_t::implementation_t {
     auto is_project_replacement_busy(
         std::string message = "Wait for the current file operation before closing the project.") -> bool {
         // Replacing a session resets autosave; explicit Save reconciles it via mark_explicit_save.
-        if (!session.autosave_loop.is_busy() && !jobs.is_file_job_busy())
+        if (!session.autosave_loop.is_busy() && !jobs.is_file_job_busy(background_jobs_t::file_job_scope_t::storyboard_edit))
             return false;
         post_project_feedback(wormedit::notification_severity_t::warning,
                               wormedit::notification_source_t::document,
@@ -2701,9 +2730,75 @@ struct application_t::implementation_t {
         }
     }
 
+    auto capture_storyboard_video() -> storyboard_video_request_t {
+        storyboard_video_request_t request;
+        request.document = session.history.document;
+        request.chart = session.workspace.selected_chart.value_or(chart_id_t{});
+        const auto charts = request.document.read_charts();
+        if (!request.document.read_chart(request.chart) && !charts.empty()) request.chart = charts.front()->id;
+        request.identity = {.stamp = document_stamp_t::from(request.document),
+            .storyboard = commands.project.storyboard.state().selection.storyboard,
+            .session = views.project_chart_runtime.session_generation};
+        if (!request.identity.storyboard.value && !request.document.storyboards.empty())
+            request.identity.storyboard = request.document.storyboards.front().id;
+        request.selection = views.workspace_frame.view.storyboard.transport.selection;
+        const auto* base = SDL_GetBasePath();
+        request.paths = {session.project_identity.asset_base,
+            preferences.program_preferences.preferences.audio.osu_skin_directory,
+            std::filesystem::path{base ? base : ""} / "assets/hitsounds"};
+        request.prepared = jobs.storyboard_links.snapshot();
+        request.prepared_generation = jobs.storyboard_links.generation();
+        return request;
+    }
+
+    auto open_storyboard_video() -> compose_action_outcome_t {
+        if (!session.project_identity.session_loaded)
+            return compose_action_outcome_t::blocked("Open a project before exporting video.");
+        jobs.storyboard_video.open(capture_storyboard_video());
+        return compose_action_outcome_t::from({}, notification_severity_t::hint,
+            notification_source_t::input, compose_feedback_delivery_t::none);
+    }
+
+    auto dispatch_storyboard_video(const ui::storyboard_action_t& action) -> bool {
+        if (action.kind != ui::storyboard_action_kind_t::video_export) return false;
+        if (action.project != session.history.document.id || action.session_generation != views.project_chart_runtime.session_generation) return true;
+        const auto& video = action.video_export;
+        using kind_t = ui::storyboard_video_action_kind_t;
+        if (video.kind == kind_t::open) { (void)open_storyboard_video(); return true; }
+        if (video.generation != jobs.storyboard_video.generation()) return true;
+        switch (video.kind) {
+        case kind_t::close: jobs.storyboard_video.close(); break;
+        case kind_t::cancel: jobs.storyboard_video.cancel(); break;
+        case kind_t::configure: jobs.storyboard_video.configure(video.settings); break;
+        case kind_t::start: {
+            if (jobs.is_file_job_busy()) break;
+            const auto started = jobs.storyboard_video.start(capture_storyboard_video());
+            if (!started) platform.notification_sink.post(notification_severity_t::warning, notification_source_t::export_, started.error().message);
+            break;
+        }
+        case kind_t::none: case kind_t::open: break;
+        }
+        return true;
+    }
+
+    auto dispatch_storyboard_action(const wormedit::ui::storyboard_action_t& action) -> bool {
+        if (action.kind == wormedit::ui::storyboard_action_kind_t::none) return false;
+        if (dispatch_storyboard_video(action)) return true;
+        if (!views.project.compose_interaction_state &&
+            action.is_document_gesture_begin())
+            views.project.compose_interaction_state.emplace(); // Same document-gesture owner, no chart required.
+        const osbx_lua_prepared_scope_t prepared_storyboards{
+            jobs.storyboard_links.scenes(session.history.document), jobs.storyboard_links.generation()};
+        return commands.project.storyboard.dispatch(action, document_inputs(), commands,
+            views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr,
+            jobs.is_file_job_busy(background_jobs_t::file_job_scope_t::storyboard_edit));
+    }
+
     void dispatch_workspace_frame_action(const wormedit::ui::workspace_action_t& action, bool shortcut_handled,
                                          std::optional<std::uint32_t> sample_rate,
                                          int compose_viewport_height_pixels) {
+        const bool storyboard_cancel = action.storyboard.is_document_gesture_cancel();
+        if (storyboard_cancel) (void)dispatch_storyboard_action(action.storyboard);
         if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
             running = false;
         } else if (dispatch_project_session_action(action)) {
@@ -2715,6 +2810,8 @@ struct application_t::implementation_t {
         } else if (shortcut_handled) {
             // Registry commands take precedence over widget actions emitted
             // by the same input frame, preventing duplicate mutations.
+        } else if (!storyboard_cancel && dispatch_storyboard_action(action.storyboard)) {
+            // Storyboard owns its project selection and shared command completion.
         } else if (dispatch_clipboard_menu(action)) {
             // Clipboard menu actions use the same typed registry as shortcuts.
         } else if (dispatch_reviewed_sound_edit(
@@ -2891,32 +2988,41 @@ struct application_t::implementation_t {
                         !audio_runtime.preview_state.matches_selection(session.history.document,
                                                                        session.workspace)))
             return false;
-        if (!audio_runtime.preview_output.set_loop_region(region))
-            return false;
+        return install_transport_loop(*chart, *region);
+    }
+
+    auto move_to_transport_loop(const wormedit::chart_document_t& chart,
+                                wormedit::audio::preview_loop_region_t region) -> bool {
         if (audio_runtime.preview_output.playing()) {
-            const auto sought = audio_runtime.preview_output.seek(region->begin_frame);
-            if (!sought) {
-                static_cast<void>(audio_runtime.preview_output.set_loop_region(std::nullopt));
-                return false;
-            }
-            audio_runtime.preview_state.resume_frame = region->begin_frame;
+            if (!audio_runtime.preview_output.seek(region.begin_frame)) return false;
+            audio_runtime.preview_state.resume_frame = region.begin_frame;
             audio_runtime.preview_state.paused = false;
-        } else {
-            const auto previous_frame = audio_runtime.preview_state.resume_frame;
-            const auto was_paused = audio_runtime.preview_state.paused;
-            audio_runtime.preview_state.resume_frame = region->begin_frame;
-            audio_runtime.preview_state.paused = false;
-            static_cast<void>(audio_runtime.preview_state.play_pause(
-                chart, session.history.document, audio_runtime.project_sources,
-                audio_runtime.audition_output,
-                audio_runtime.preview_session, audio_runtime.preview_output, std::nullopt, false,
-                audio_runtime.preview_state.source_frame(region->begin_frame)));
-            if (!audio_runtime.preview_output.playing()) {
-                audio_runtime.preview_state.resume_frame = previous_frame;
-                audio_runtime.preview_state.paused = was_paused;
-                static_cast<void>(audio_runtime.preview_output.set_loop_region(std::nullopt));
-                return false;
-            }
+            return true;
+        }
+        audio_runtime.preview_state.resume_frame = region.begin_frame;
+        audio_runtime.preview_state.paused = false;
+        static_cast<void>(audio_runtime.preview_state.play_pause(
+            &chart, session.history.document, audio_runtime.project_sources,
+            audio_runtime.audition_output, audio_runtime.preview_session,
+            audio_runtime.preview_output, std::nullopt, false,
+            audio_runtime.preview_state.source_frame(region.begin_frame)));
+        return audio_runtime.preview_output.playing();
+    }
+
+    auto install_transport_loop(const wormedit::chart_document_t& chart,
+                                wormedit::audio::preview_loop_region_t region) -> bool {
+        const auto previous_loop = audio_runtime.preview_session.loop_region();
+        const auto previous_frame = audio_runtime.preview_state.resume_frame;
+        const auto was_paused = audio_runtime.preview_state.paused;
+        const auto was_playing = audio_runtime.preview_output.playing();
+        const auto audible_frame = audio_runtime.preview_output.timeline_frame();
+        if (!audio_runtime.preview_output.set_loop_region(region)) return false;
+        if (!move_to_transport_loop(chart, region)) {
+            static_cast<void>(audio_runtime.preview_output.set_loop_region(previous_loop));
+            if (was_playing) static_cast<void>(audio_runtime.preview_output.seek(audible_frame));
+            audio_runtime.preview_state.resume_frame = previous_frame;
+            audio_runtime.preview_state.paused = was_paused;
+            return false;
         }
         views.inline_preview_cursor.capture(
             views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr);
@@ -3689,6 +3795,8 @@ struct application_t::implementation_t {
         jobs.audio_slicer_runtime.cancel();
         jobs.metadata_asset_runtime.cancel();
         jobs.export_runtime.cancel();
+        jobs.storyboard_links.cancel();
+        jobs.storyboard_video.cancel_project(session.history.document.id);
         jobs.resource_copy_scheduler.shutdown();
         jobs.metadata_asset_runtime.cleanup(session.project_identity.asset_base);
         jobs.export_runtime.shutdown();
@@ -3846,6 +3954,52 @@ struct application_t::implementation_t {
             session.history.document, session.workspace, audio_runtime.preview_session);
     }
 
+    auto import_storyboard_resource(const ui::storyboard_action_t& action, resource_copy_request_t& request)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& song = session.history.document;
+        const auto& directory = session.project_identity.asset_base;
+        const auto resource = std::ranges::find(song.resources, action.assets.resource, &resource_entry_t::id);
+        if (resource == song.resources.end()) return compose_action_outcome_t::blocked("Image resource no longer exists.");
+        const auto asset = std::ranges::find(song.visual_assets, resource->asset, &visual_asset_t::id);
+        if (asset == song.visual_assets.end() || asset->kind != asset_kind_t::image)
+            return compose_action_outcome_t::blocked("Resource is not a static image.");
+        osbx_resource_image_t source{.resource = resource->id, .asset = asset->id, .source_path = asset->source_path};
+        const auto file = storyboard_resource_image_file(song, resource->id, directory);
+        if (file) {
+            source.file = *file;
+            osbx_place_image_t operation{.source = std::move(source)};
+            if (action.assets.kind == ui::storyboard_assets_action_kind_t::add_sprite)
+                operation.sprite = osbx_sprite_placement_t{.layer = action.assets.layer,
+                    .x = action.assets.position.x, .y = action.assets.position.y};
+            (void)commands.project.storyboard.complete_assets_import(action, operation, document_inputs(), commands,
+                views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr, false);
+            return compose_action_outcome_t::from({}, notification_severity_t::hint, notification_source_t::input,
+                compose_feedback_delivery_t::none);
+        }
+        if (file.error().code != failure_code_t::unavailable) return compose_action_outcome_t::blocked(file.error().message);
+        request.target.asset = asset->id;
+        request.target.source_path = asset->source_path.is_absolute() ? asset->source_path : directory / asset->source_path;
+        request.target.storyboard->resource = std::move(source);
+        return std::nullopt;
+    }
+    auto on_import_storyboard_image(const ui::storyboard_action_t& action) -> compose_action_outcome_t {
+        const auto& directory = session.project_identity.asset_base;
+        if (directory.empty()) return compose_action_outcome_t::blocked("Save the project before importing images.");
+        resource_copy_request_t request{.target = {.document = document_stamp_t::from(session.history.document),
+            .storyboard = storyboard_image_import_target_t{.capture = action}}, .project_directory = directory};
+        const auto& song = session.history.document;
+        if (action.assets.resource) {
+            if (auto completed = import_storyboard_resource(action, request)) return std::move(*completed);
+        } else {
+            if (action.assets.paths.size() != 1) return compose_action_outcome_t::blocked("Choose exactly one image to import.");
+            const auto asset = next_resource_asset_id(song);
+            if (!asset) return compose_action_outcome_t::blocked("The asset catalog is full.");
+            request.target.asset = *asset; request.target.source_path = action.assets.paths.front();
+        }
+        const auto started = jobs.resource_copy_runtime.start(std::move(request));
+        if (!started) return compose_action_outcome_t::blocked(started.error().message);
+        return compose_action_outcome_t::from("Importing storyboard image.", notification_severity_t::info, notification_source_t::import_);
+    }
     auto on_transport_seek_audio_milliseconds(std::int64_t milliseconds)
         -> compose_action_outcome_t {
         const auto result = audio_runtime.preview_state.seek_audio_milliseconds(
@@ -3946,6 +4100,37 @@ struct application_t::implementation_t {
         return audio_runtime.preview_session.has_loop_region();
     }
 
+    auto on_transport_set_loop_audio_milliseconds(std::int64_t begin_ms, std::int64_t end_ms,
+                                                  bool enabled) -> compose_action_outcome_t {
+        const auto* chart = selected_chart(session.history, session.workspace);
+        auto& preview = audio_runtime.preview_state;
+        if (session.workspace.active_tab != wormedit::workspace_tab_t::storyboard ||
+            !chart || !audio_runtime.preview_output.available())
+            return compose_action_outcome_t::blocked("Storyboard looping needs a selected chart and audio output.");
+        if ((audio_runtime.preview_output.playing() || preview.paused ||
+             audio_runtime.preview_session.has_loop_region()) &&
+            !preview.matches_selection(session.history.document, session.workspace))
+            return compose_action_outcome_t::blocked("The shared transport binding has changed; restart playback before looping.");
+        if (!enabled) {
+            const bool disabled = audio_runtime.preview_output.set_loop_region(std::nullopt);
+            return disabled ? compose_action_outcome_t::from("Selection loop disabled.", notification_severity_t::hint,
+                notification_source_t::audio) : compose_action_outcome_t::blocked("The audio output could not disable looping.");
+        }
+        if (begin_ms < 0 || begin_ms >= end_ms)
+            return compose_action_outcome_t::blocked("Select two distinct nonnegative key times to loop.");
+        const auto prior_frame = preview.resume_frame;
+        const auto compiled = preview.compile_if_needed(*chart, session.history.document, audio_runtime.project_sources);
+        preview.resume_frame = prior_frame;
+        if (compiled) return compose_action_outcome_t::blocked(*compiled);
+        const auto region = preview.loop_region_at_audio_milliseconds(begin_ms, end_ms,
+            session.history.document, session.workspace);
+        if (!region) return compose_action_outcome_t::blocked("The selected key interval cannot map exactly inside the shared audio timeline.");
+        if (!install_transport_loop(*chart, *region))
+            return compose_action_outcome_t::blocked("The shared audio output could not start the selection loop.");
+        return compose_action_outcome_t::from("Selection loop enabled.", notification_severity_t::hint,
+            notification_source_t::audio);
+    }
+
     auto on_transport_set_loop_selection(wormedit::chart_id_t chart_id,
                                          std::uint64_t expected_revision, std::uint64_t begin_row,
                                          std::uint64_t end_row, bool enabled) -> bool {
@@ -3977,6 +4162,16 @@ struct application_t::implementation_t {
         commands.services.transport_audio_milliseconds = [this]() {
             return on_transport_audio_milliseconds();
         };
+        commands.services.open_storyboard_video = [this] { return open_storyboard_video(); };
+        commands.services.load_storyboard_lua = [this](const ui::storyboard_action_t& action,
+            const lua_source_descriptor_t& source) {
+            const auto started = jobs.storyboard_links.request_source(action, source, session.project_identity.asset_base);
+            return started ? compose_action_outcome_t::from("Reading Lua module…", notification_severity_t::hint,
+                notification_source_t::input) : compose_action_outcome_t::blocked(started.error());
+        };
+        commands.services.import_storyboard_image = [this](const ui::storyboard_action_t& action) {
+            return on_import_storyboard_image(action);
+        };
         commands.services.transport_seek_audio_milliseconds =
             [this](std::int64_t milliseconds) -> compose_action_outcome_t {
             return on_transport_seek_audio_milliseconds(milliseconds);
@@ -3991,6 +4186,13 @@ struct application_t::implementation_t {
         commands.services.transport_set_preview_mix = [this](const wormedit::preview_mix_t& mix) {
             return on_transport_set_preview_mix(mix);
         };
+    }
+
+    void configure_storyboard_loop_command() {
+        commands.services.transport_set_loop_audio_milliseconds =
+            [this](std::int64_t begin_ms, std::int64_t end_ms, bool enabled) {
+                return on_transport_set_loop_audio_milliseconds(begin_ms, end_ms, enabled);
+            };
     }
 
     void configure_transport_commands() {
@@ -4032,6 +4234,7 @@ struct application_t::implementation_t {
             return on_transport_play_from_start();
         };
         configure_transport_seek_commands();
+        configure_storyboard_loop_command();
         commands.services.transport_stop = [this] { return on_transport_stop(); };
         commands.services.transport_loop_selection_active = [this] {
             return has_transport_loop_selection();
@@ -4146,6 +4349,18 @@ struct application_t::implementation_t {
         runtime->poll(session.history, views.project.compose_interaction_state->chart);
     }
 
+    void poll_storyboard_links() {
+        jobs.storyboard_links.update(session.history.document, views.project_chart_runtime.session_generation);
+        if (const auto source = jobs.storyboard_links.take_source()) {
+            const osbx_lua_prepared_scope_t prepared{jobs.storyboard_links.scenes(session.history.document),
+                jobs.storyboard_links.generation()};
+            (void)commands.project.storyboard.complete_lua_source(source->action, source->source, document_inputs(), commands,
+                views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr,
+                jobs.is_file_job_busy());
+        }
+        jobs.export_runtime.bind_prepared_storyboards(jobs.storyboard_links.snapshot(), views.project_chart_runtime.session_generation);
+    }
+
     auto poll_frame_jobs() -> double {
         double compose_viewport_delta_seconds{};
         {
@@ -4154,12 +4369,21 @@ struct application_t::implementation_t {
             wormedit::sys::poll_application_jobs(
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
                 jobs.preview_audio_runtime,
-                session.history, session.workspace, session.project_identity.asset_base);
+                session.history, session.workspace, session.project_identity.asset_base,
+                [this](const ui::storyboard_action_t& capture, const osbx_place_image_t& operation) {
+                    const osbx_lua_prepared_scope_t prepared_storyboards{
+                        jobs.storyboard_links.scenes(session.history.document), jobs.storyboard_links.generation()};
+                    return commands.project.storyboard.complete_assets_import(capture, operation, document_inputs(), commands,
+                        views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr,
+                        jobs.is_file_job_busy());
+                });
             poll_recipe_evaluation();
             poll_generator_jobs();
             jobs.audio_slicer_runtime.poll(session.history, session.workspace);
+            jobs.storyboard_video.poll();
             poll_project_save();
             poll_project_open();
+            poll_storyboard_links();
             compose_viewport_delta_seconds =
                 wormedit::sys::compose_frame_delta_seconds(views.compose_viewport_last_ticks);
             tick_loaded_project_autosave();
@@ -4270,6 +4494,7 @@ struct application_t::implementation_t {
     }
 
     auto prepare_bound_frame_view(const workspace_view_t& model) -> frontend_workspace_view_t& {
+        const osbx_lua_prepared_scope_t prepared_storyboards{jobs.storyboard_links.scenes(session.history.document), jobs.storyboard_links.generation()};
         prepare_bound_workspace_frame();
         prepare_tap_proposal(views.project.tap_runtime, views.tap_clock, session.history.document,
                              commands.audio_offset_edits_locked(), views.project.compose_scene_cache);
@@ -4323,6 +4548,9 @@ struct application_t::implementation_t {
         flattened.view.file_jobs.opening = jobs.project_open_runtime.view();
         const auto preview_audio = jobs.preview_audio_runtime.view();
         flattened.view.file_jobs.exporting = preview_audio.active ? preview_audio : jobs.export_runtime.view();
+        build_storyboard_video_export_view(flattened.view.storyboard.video_export, jobs.storyboard_video);
+        const auto video = jobs.storyboard_video.file_view();
+        if (video.active) flattened.view.file_jobs.exporting = video;
         const auto slicer = jobs.audio_slicer_runtime.view();
         if (slicer.active) flattened.view.file_jobs.exporting = slicer;
         auto& audio = flattened.view.audio_slices;
@@ -4480,7 +4708,8 @@ struct application_t::implementation_t {
 
             if (action.file_jobs.cancel_open) jobs.project_open_runtime.cancel();
             if (action.file_jobs.cancel_export) {
-                if (jobs.audio_slicer_runtime.is_busy()) jobs.audio_slicer_runtime.cancel();
+                if (jobs.storyboard_video.is_busy()) jobs.storyboard_video.cancel();
+                else if (jobs.audio_slicer_runtime.is_busy()) jobs.audio_slicer_runtime.cancel();
                 else if (jobs.preview_audio_runtime.is_busy()) jobs.preview_audio_runtime.cancel();
                 else jobs.export_runtime.cancel();
             }
@@ -4578,6 +4807,7 @@ struct application_t::implementation_t {
             platform.display_watchdog->publish_window(SDL_GetWindowFlags(window),
                 SDL_GetKeyboardFocus() == window);
         }
+        poll_storyboard_links();
         poll_frame_events();
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();

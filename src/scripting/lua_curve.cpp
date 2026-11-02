@@ -15,7 +15,7 @@ auto recipe_failure(const sv_recipe_t& recipe, std::string message) -> diagnosti
 }
 auto parameters(const sv_recipe_lua_t& lua) -> lua_sandbox_context_t {
     lua_sandbox_context_t result;
-    for (const auto& parameter : lua.parameters)
+    for (const auto& parameter : lua.source.parameters)
         result.push_back(lua_sandbox_node_t::from(parameter.name, to_double(parameter.value)));
     return result;
 }
@@ -86,7 +86,7 @@ auto static_context(const chart_document_t& chart, const measure_index_t& index,
     const auto begin = index.row_of(recipe.range.begin).value_or(0);
     const auto end = index.row_of(recipe.range.end, measure_chart_end_policy_t::allow).value_or(0);
     return {lua_sandbox_node_t::from("interval", {lua_sandbox_node_t::from_unsigned("start_row", begin), lua_sandbox_node_t::from_unsigned("end_row", end)}),
-        lua_sandbox_node_t::from("parameters", parameters(lua)), lua_sandbox_node_t::from("inputs", inputs(lua)), lua_sandbox_node_t::from("seed", std::to_string(lua.seed)),
+        lua_sandbox_node_t::from("parameters", parameters(lua)), lua_sandbox_node_t::from("inputs", inputs(lua)), lua_sandbox_node_t::from("seed", std::to_string(lua.source.seed)),
         lua_sandbox_node_t::from("measures", measures(chart, index)), lua_sandbox_node_t::from("timing", timing(chart, index))};
 }
 auto query_context(const lua_sandbox_context_t& base, const sv_recipe_script_query_t& query)
@@ -133,7 +133,7 @@ class lua_curve_session_t final : public sv_recipe_script_session_t {
         auto replay = lua_sandbox_t::from(replay_limits);
         if (!replay) return recipe_failure(recipe_, replay.error().message);
         const auto lua = recipe_.lua.value_or(sv_recipe_lua_t{});
-        const auto installed = replay->install_function(source_, query_context(context_, {}), lua.entry_point,
+        const auto installed = replay->install_function(source_, query_context(context_, {}), lua.source.entry_point,
             name_, lua.mode == sv_recipe_lua_mode_t::pure);
         if (!installed) return recipe_failure(recipe_, installed.error().message);
         const auto pure = lua.mode == sv_recipe_lua_mode_t::pure;
@@ -177,27 +177,27 @@ auto lua_curve_backend_t::start(const chart_document_t& chart, const sv_recipe_t
         chart.pauses.size() + chart.kiai.size() + chart.warps.size() + chart.timing_anchors.size() > 65536)
         return {nullptr, recipe_failure(recipe, "snapshot exceeds 65536 entries")};
     const auto lua = recipe.lua.value_or(sv_recipe_lua_t{});
-    if (!lua.source_hash.empty() && !text_util::ascii_iequal(lua.source_hash,
-        native_project_content_checksum(recipe.expression_source)))
+    if (!lua.source.source_hash.empty() && !text_util::ascii_iequal(lua.source.source_hash,
+        native_project_content_checksum(recipe.script().frozen_source)))
         return {nullptr, recipe_failure(recipe, "frozen source does not match its content hash")};
-    if (lua.api_version != 1) return {nullptr, recipe_failure(recipe, "unsupported script API version")};
-    auto limits = limits_; limits.seed = lua.seed;
+    if (lua.source.api_version != lua_source_descriptor_t::current_api_version) return {nullptr, recipe_failure(recipe, "unsupported script API version")};
+    auto limits = limits_; limits.seed = lua.source.seed;
     auto sandbox = lua_sandbox_t::from(limits);
     if (!sandbox) return {nullptr, recipe_failure(recipe, sandbox.error().message)};
     auto context = static_context(chart, *index, recipe, lua);
-    if (lua.seed <= static_cast<std::uint64_t>(INT64_MAX)) context.push_back(lua_sandbox_node_t::from_unsigned("seed_integer", lua.seed));
-    auto name = lua.source_reference ? "@" + text_util::path_utf8(*lua.source_reference) : "SV recipe " + std::to_string(recipe.id.value);
-    auto source = lua.entry_point.empty()
-        ? "local function values(fn) return fn end return " + recipe.expression_source : recipe.expression_source;
-    auto installed = sandbox->install_function(source, query_context(context, {}), lua.entry_point,
+    if (lua.source.seed <= static_cast<std::uint64_t>(INT64_MAX)) context.push_back(lua_sandbox_node_t::from_unsigned("seed_integer", lua.source.seed));
+    auto name = lua.source.source_reference ? "@" + text_util::path_utf8(*lua.source.source_reference) : "SV recipe " + std::to_string(recipe.id.value);
+    auto source = lua.source.entry_point.empty()
+        ? "local function values(fn) return fn end return " + recipe.script().frozen_source : recipe.script().frozen_source;
+    auto installed = sandbox->install_function(source, query_context(context, {}), lua.source.entry_point,
         name, lua.mode == sv_recipe_lua_mode_t::pure);
     // Let Lua's parser distinguish function expressions from returning chunks.
-    if (!installed && installed.error().code == failure_code_t::invalid_data && lua.entry_point.empty()) {
+    if (!installed && installed.error().code == failure_code_t::invalid_data && lua.source.entry_point.empty()) {
         limits.maximum_instructions = sandbox->usage().remaining_instructions;
         if (!limits.maximum_instructions) return {nullptr, recipe_failure(recipe, "instruction budget exhausted before source retry")};
         sandbox = lua_sandbox_t::from(limits);
         if (!sandbox) return {nullptr, recipe_failure(recipe, sandbox.error().message)};
-        source = recipe.expression_source;
+        source = recipe.script().frozen_source;
         installed = sandbox->install_function(source, query_context(context, {}), {}, name,
             lua.mode == sv_recipe_lua_mode_t::pure);
     }

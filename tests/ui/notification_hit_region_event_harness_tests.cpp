@@ -1,5 +1,6 @@
 #include "sys/commands/menu_command_view.h"
 #include "nuklear_event_harness.h"
+#include <wormedit/core/notifications.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -240,4 +241,23 @@ TEST_CASE("A dismissed badge cannot reopen history on release after its press ac
     const auto up = pointer_event(SDL_EVENT_MOUSE_BUTTON_UP, badge->first, badge->second);
     CHECK(harness.frame(std::span{&up, 1}).get().notifications.kind ==
           WORM_UI_NOTIFICATION_ACTION_NONE);
+}
+
+TEST_CASE("real toast folder control emits the stable existing notification action", "[frontend-state][event-harness][notifications][video]") {
+    nuklear_event_harness_t harness{1280, 900}; REQUIRE(harness.ready());
+    wormedit::notification_center_t center{[] { return std::chrono::nanoseconds{}; }};
+    center.post({.severity = wormedit::notification_severity_t::success, .source = wormedit::notification_source_t::export_,
+        .message = "Video exported", .target = wormedit::notification_file_t{.path = "/tmp/clip.webm"}});
+    center.drain_inbox({});
+    harness.view().notifications = wormedit::ui::notification_view_t::from(center, {});
+    const auto id = harness.view().notifications.toasts.front().id;
+    (void)harness.frame();
+    const auto position = harness.drawn_text_center("Show in folder"); REQUIRE(position);
+    const auto frames = click(harness, position->first, position->second);
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER;
+    });
+    REQUIRE(found != frames.end());
+    CHECK(found->get().notifications.id == id);
+    CHECK(found->get().storyboard.kind == wormedit::ui::storyboard_action_kind_t::none);
 }

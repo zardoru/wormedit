@@ -2,6 +2,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include "sys/metadata/metadata_asset_runtime.h"
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/native_project_storage.h>
 #include <span>
 #include "sys/resources/resource_job_state.h"
 #include "ui/frontend.h"
@@ -123,8 +124,8 @@ auto failed_copy_worker(const resource_copy_request_t&, std::stop_token)
 auto cancelled_copy_worker(const resource_copy_request_t&, std::stop_token)
     -> resource_copy_job_t::work_outcome_t {
     return resource_copy_job_t::work_outcome_t{
-        std::in_place, std::unexpected(wormedit::error_t<failure_code_t>{
-                           failure_code_t::cancelled, {}})};
+        std::in_place, resource_copy_result_t{.copied = std::unexpected(wormedit::error_t<failure_code_t>{
+                           failure_code_t::cancelled, {}})}};
 }
 
 struct export_worker_control_t {
@@ -773,3 +774,396 @@ TEST_CASE("output groups opt into active BMS projection only for flattened targe
         CHECK(output_group_export_plan_t::from(document, group).request.branches == expected);
     }
 }
+
+TEST_CASE("OSBX output group publishes a storyboard image and warns about baked object IDs",
+          "[unit][sys][resource-notification][osbx]") {
+    resource_notification_fixture_t fixture;
+    const std::string source = "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_resource_notification(parsed.value.has_value());
+    auto& song = *parsed.value;
+    osbx_document_t scene{.images = {{.id = "image", .file = "images/sprite.ppm"}},
+        .nodes = {{.id = "sprite", .kind = osbx_node_kind_t::sprite, .parent = "parent",
+            .image = "image", .ops = {{.id = "offset", .track = {.default_value = {100, 0}}}}}}};
+    osbx_transform_op_t turn{.id = "turn", .kind = osbx_transform_kind_t::rotate,
+        .track = {.default_value = {0}, .keys = {{.id = "a", .value = {0}},
+            {.id = "b", .time_ms = 2000, .value = {90}}}}};
+    scene.nodes.push_back({.id = "parent", .ops = {turn}});
+    song.storyboards = {{.id = storyboard_id_t{1}, .osbx = scene}};
+    std::filesystem::create_directory(fixture.root / "images");
+    std::ofstream(fixture.root / "images/sprite.ppm", std::ios::binary) << "P6\n2 1\n255\nabcdef";
+    auto plan = output_group_export_plan_t::from(song,
+        {.family = format_family_t::osu_mania, .charts = {song.charts.front().id},
+         .destination_kind = output_destination_kind_t::directory, .relative_output_path = "exports"});
+
+    SECTION("baked publication delivers a warning through the export result") {
+        const auto result = run_output_group_export(
+            {.document = song, .plan = plan, .asset_base = fixture.root}, {});
+        INFO(result.message);
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+        require_resource_notification(result.published);
+        check_resource_notification(result.severity == notification_severity_t::warning);
+        check_resource_notification(result.detail.find("sprite baked; worst normalized error") != std::string::npos);
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root / "exports/images/sprite.ppm"));
+#else
+        check_resource_notification(!result.published);
+        check_resource_notification(result.message.find("image decoding support") != std::string::npos);
+#endif
+    }
+    SECTION("skew refuses before creating an output directory") {
+        song.storyboards.front().osbx->nodes.back().ops = {{.id = "bad-skew",
+            .kind = osbx_transform_kind_t::skew, .track = {.default_value = {10, 0}}}};
+        const auto result = run_output_group_export(
+            {.document = song, .plan = plan, .asset_base = fixture.root}, {});
+        check_resource_notification(!result.published);
+        check_resource_notification(!std::filesystem::exists(fixture.root / "exports"));
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+        check_resource_notification(result.message.find("bad-skew") != std::string::npos);
+#endif
+    }
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    SECTION("image replacement after preparation leaves the output directory untouched") {
+        const bool during_staging = GENERATE(false, true);
+        auto prepared = output_group_export_preparation_t::from(
+            {.document = song, .plan = plan, .asset_base = fixture.root});
+        require_resource_notification(prepared.has_value());
+        require_resource_notification(prepared->blocking_error.empty());
+        std::filesystem::create_directory(fixture.root / "exports");
+        std::ofstream(fixture.root / "exports/sentinel") << "keep me";
+        const auto replace_image = [&] {
+            std::ofstream(fixture.root / "images/sprite.ppm", std::ios::binary)
+                << "P6\n1 1\n255\nabc";
+        };
+        if (!during_staging) replace_image();
+        conversion_publication_options_t options;
+        options.allow_stage = [&](conversion_publication_stage_t stage) {
+            if (during_staging && stage == conversion_publication_stage_t::write_output) replace_image();
+            return true;
+        };
+        const auto result = create_conversion_group(fixture.root, plan.group,
+            prepared->request, prepared->converted, options);
+        check_resource_notification(!result.value.published);
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root / "exports/sentinel"));
+        check_resource_notification(std::distance(std::filesystem::directory_iterator(fixture.root / "exports"),
+            std::filesystem::directory_iterator{}) == 1);
+    }
+    SECTION("multiple scene-local image IDs retain their decoded file dimensions") {
+        auto second = song.storyboards.front();
+        second.id = storyboard_id_t{2};
+        second.osbx->images.front().file = "images/second.ppm";
+        song.storyboards.push_back(std::move(second));
+        std::ofstream(fixture.root / "images/second.ppm", std::ios::binary) << "P6\n1 1\n255\nabc";
+        const auto prepared = output_group_export_preparation_t::from(
+            {.document = song, .plan = plan, .asset_base = fixture.root});
+        require_resource_notification(prepared.has_value());
+        require_resource_notification(prepared->blocking_error.empty());
+        require_resource_notification(prepared->request.osbx_image_sizes.size() == 2);
+        check_resource_notification(prepared->request.osbx_image_sizes[0].width == 2);
+        check_resource_notification(prepared->request.osbx_image_sizes[1].width == 1);
+        const auto result = run_output_group_export(
+            {.document = song, .plan = plan, .asset_base = fixture.root}, {});
+        require_resource_notification(result.published);
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root / "exports/images/sprite.ppm"));
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root / "exports/images/second.ppm"));
+    }
+#endif
+}
+
+namespace {
+auto prepared_snapshot_export_worker(const output_group_export_request_t& request, std::stop_token stop)
+    -> output_group_export_task_result_t {
+    const auto& prepared = request.plan.request.osbx_prepared;
+    if (prepared.size() != 1 || !prepared.front().scene || prepared.front().scene->canvas.width != 123)
+        return {.message = "Missing prepared storyboard ownership"};
+    if (request.plan.group.name == "delay-confirm") {
+        request.progress->completed = 1;
+        while (!stop.stop_requested()) std::this_thread::yield();
+    }
+    if (request.plan.existing_files == existing_files_policy_t::ask)
+        return {.confirmation_required = true, .message = "Replace prepared storyboard?"};
+    return {.published = true, .message = "Owned prepared storyboard retained"};
+}
+}
+TEST_CASE("export admission and confirmation retain prepared storyboard ownership and reject new sessions",
+          "[unit][sys][osbx-link]") {
+    resource_notification_fixture_t fixture;
+    runtime::output_group_export_t exports{fixture.sink};
+    auto snapshot = std::make_shared<std::vector<osbx_lua_prepared_scene_t>>();
+    auto scene = std::make_shared<osbx_document_t>(); scene->canvas.width = 123;
+    snapshot->push_back({.stamp = document_stamp_t::from(fixture.history), .scene = scene, .complete = true});
+    exports.bind_prepared_storyboards(snapshot,1);
+    auto plan = output_group_export_plan_t::from(fixture.history.document, {.name = "prepared"});
+    plan.existing_files = existing_files_policy_t::ask;
+    SECTION("a late worker cannot restore old-session confirmation") {
+        plan.group.name = "delay-confirm";
+        require_resource_notification(static_cast<bool>(exports.start(fixture.history.document,plan,{},prepared_snapshot_export_worker)));
+        const auto deadline = std::chrono::steady_clock::now()+std::chrono::seconds{2};
+        while (exports.view().completed != 1 && std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
+        exports.bind_prepared_storyboards({},2);
+        require_resource_notification(static_cast<bool>(wait_for_export_result(exports,fixture.history)));
+        check_resource_notification(!exports.confirmation_view().required);
+        return;
+    }
+    require_resource_notification(static_cast<bool>(exports.start(fixture.history.document,plan,{},prepared_snapshot_export_worker)));
+    snapshot.reset(); scene.reset();
+    require_resource_notification(static_cast<bool>(wait_for_export_result(exports,fixture.history)));
+    require_resource_notification(static_cast<bool>(exports.confirmation_view().required));
+    SECTION("confirmation owns the original prepared result") {
+        exports.bind_prepared_storyboards({},1);
+        require_resource_notification(static_cast<bool>(exports.confirm(fixture.history)));
+        const auto completed = wait_for_export_result(exports,fixture.history);
+        require_resource_notification(static_cast<bool>(completed));
+        check_resource_notification(static_cast<bool>(*completed == "Owned prepared storyboard retained"));
+    }
+    SECTION("same saved ID and revision in another session rejects confirmation") {
+        exports.bind_prepared_storyboards({},2);
+        check_resource_notification(!static_cast<bool>(exports.confirmation_view().required));
+        check_resource_notification(!static_cast<bool>(exports.confirm(fixture.history)));
+    }
+}
+
+#if defined(WORMEDIT_HAS_LUA) && defined(WORMEDIT_HAS_IMAGE_DECODER)
+TEST_CASE("linked generated images share decoded geometry receipts conversion and atomic publication",
+          "[unit][sys][osbx-link]") {
+    const auto scenario = GENERATE("pending reload", "failed reload", "changed source", "unchanged source");
+    resource_notification_fixture_t fixture;
+    const std::string chart = "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{chart.data(),chart.size()})); require_resource_notification(static_cast<bool>(parsed.value));
+    auto& song = *parsed.value;
+    const std::string source = "return function(ctx) image{id='new',file='generated.ppm'}; sprite('child'); image('new') end";
+    song.storyboards = {{.id = storyboard_id_t{1}, .osbx = osbx_document_t{.nodes = {{.id = "hand-group",
+        .children_link = osbx_lua_link_t{.id = "children-link", .source = {.frozen_source = source,
+            .source_reference = "not-read.lua", .source_hash = native_project_content_checksum(source)}}}}}}};
+    const auto plan = output_group_export_plan_t::from(song,{.family = format_family_t::osu_mania,
+        .charts = {song.charts.front().id}, .destination_kind = output_destination_kind_t::directory,
+        .relative_output_path = "exports"});
+    { std::ofstream file{fixture.root/"generated.ppm",std::ios::binary}; file << "P6\n2 1\n255\nabcdef"; }
+    const auto prepared = output_group_export_preparation_t::from({.document = song,.plan = plan,.asset_base = fixture.root});
+    INFO((prepared ? prepared->blocking_error : prepared.error()));
+    require_resource_notification(static_cast<bool>(prepared)); require_resource_notification(static_cast<bool>(prepared->blocking_error.empty()));
+    require_resource_notification(static_cast<bool>(prepared->request.osbx_image_sizes.size() == 1));
+    check_resource_notification(static_cast<bool>(prepared->request.osbx_image_sizes.front().width == 2));
+    check_resource_notification(static_cast<bool>(prepared->request.osbx_image_sizes.front().height == 1));
+    require_resource_notification(static_cast<bool>(prepared->request.osbx_image_sources.size() == 1));
+    check_resource_notification(static_cast<bool>(prepared->request.osbx_image_sources.front().expected_source));
+    check_resource_notification(static_cast<bool>(prepared->converted.storyboard_images == std::vector<std::filesystem::path>{"generated.ppm"}));
+    std::filesystem::create_directory(fixture.root/"exports");
+    { std::ofstream file{fixture.root/"exports/sentinel"}; file << "keep"; }
+    if (std::string_view{scenario} == "pending reload") {
+        runtime::output_group_export_t exports{fixture.sink};
+        exports.bind_prepared_storyboards(
+            std::make_shared<const std::vector<osbx_lua_prepared_scene_t>>(prepared->request.osbx_prepared), 1);
+        auto& descriptor = song.storyboards.front().osbx->nodes.front().children_link->source;
+        descriptor.frozen_source = "return function(ctx) error('pending broken reload') end";
+        descriptor.source_hash = native_project_content_checksum(descriptor.frozen_source);
+        ++song.revision;
+        fixture.history = document_history_t::from(song);
+        require_resource_notification(static_cast<bool>(exports.start(song, plan, fixture.root)));
+        const auto completed = wait_for_export_result(exports, fixture.history);
+        require_resource_notification(static_cast<bool>(completed));
+        INFO(*completed);
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root/"exports/generated.ppm"));
+        return;
+    }
+    if (std::string_view{scenario} == "failed reload") {
+        auto& descriptor = song.storyboards.front().osbx->nodes.front().children_link->source;
+        descriptor.frozen_source = "return function(ctx) error('broken reload') end";
+        descriptor.source_hash = native_project_content_checksum(descriptor.frozen_source);
+        ++song.revision;
+        auto failed_plan = plan;
+        failed_plan.request.osbx_prepared = prepared->request.osbx_prepared;
+        const auto updated = output_group_export_preparation_t::from({.document = song,.plan = failed_plan,.asset_base = fixture.root});
+        require_resource_notification(static_cast<bool>(updated));
+        require_resource_notification(updated->blocking_error.empty());
+        const auto& cached = updated->request.osbx_prepared.front();
+        check_resource_notification(cached.complete && !cached.diagnostics.empty());
+        check_resource_notification(cached.links.front().is_last_good);
+        check_resource_notification(*cached.scene == *prepared->request.osbx_prepared.front().scene);
+        failed_plan.request.osbx_prepared = updated->request.osbx_prepared;
+        const auto exported = run_output_group_export({.document = song,.plan = failed_plan,.asset_base = fixture.root},{});
+        check_resource_notification(exported.published);
+        check_resource_notification(std::filesystem::is_regular_file(fixture.root/"exports/generated.ppm"));
+        return;
+    }
+    const bool changed = std::string_view{scenario} == "changed source";
+    if (changed) { std::ofstream file{fixture.root/"generated.ppm",std::ios::binary}; file << "P6\n1 1\n255\nxyz"; }
+    const auto published = create_conversion_group(fixture.root,plan.group,prepared->request,prepared->converted);
+    check_resource_notification(static_cast<bool>(published.value.published != changed));
+    check_resource_notification(static_cast<bool>(std::filesystem::is_regular_file(fixture.root/"exports/sentinel")));
+    if (changed) check_resource_notification(static_cast<bool>(std::distance(std::filesystem::directory_iterator(fixture.root/"exports"),std::filesystem::directory_iterator{}) == 1));
+    else check_resource_notification(static_cast<bool>(std::filesystem::is_regular_file(fixture.root/"exports/generated.ppm")));
+}
+#endif
+
+TEST_CASE("project reopen retains an already published export receipt as a stale-session warning",
+          "[unit][sys][osbx-link]") {
+    resource_notification_fixture_t fixture;
+    runtime::output_group_export_t exports{fixture.sink};
+    exports.bind_prepared_storyboards({},1);
+    export_worker_control.entered = false; export_worker_control.publications = 0;
+    require_resource_notification(static_cast<bool>(start_test_export(exports,fixture.history,"cancel-after")));
+    const bool entered = wait_for_export_worker();
+    exports.bind_prepared_storyboards({},2);
+    require_resource_notification(entered);
+    const auto completed = wait_for_export_result(exports,fixture.history);
+    require_resource_notification(static_cast<bool>(completed));
+    check_resource_notification(export_worker_control.publications == 1);
+    check_resource_notification(completed->find("editor session changed") != std::string::npos);
+    const auto notifications = fixture.entries();
+    require_resource_notification(!notifications.empty());
+    check_resource_notification(notifications.front().severity == notification_severity_t::warning);
+}
+
+namespace {
+auto storyboard_copy_request(resource_notification_fixture_t& fixture) -> resource_copy_request_t {
+    const auto source = fixture.root / "image.ppm";
+    std::ofstream file{source, std::ios::binary};
+    file << "P6\n1 1\n255\n";
+    const std::array<char, 3> pixel{char(255), 0, 0};
+    file.write(pixel.data(), pixel.size()); file.close();
+    ui::storyboard_action_t capture{.kind = ui::storyboard_action_kind_t::assets,
+        .project = fixture.history.document.id, .revision = fixture.history.document.revision,
+        .session_generation = 7, .storyboard = storyboard_id_t{11},
+        .assets = {.kind = ui::storyboard_assets_action_kind_t::import_images, .paths = {source.string()}}};
+    return {.target = {.asset = asset_id_t{1}, .document = document_stamp_t::from(fixture.history.document),
+        .source_path = source, .storyboard = storyboard_image_import_target_t{.capture = std::move(capture)}},
+        .project_directory = fixture.project};
+}
+auto wait_for_storyboard_copy(resource_notification_fixture_t& fixture, storyboard_import_completion_t complete)
+    -> std::optional<std::string> {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+    do {
+        if (auto result = fixture.resource_copy.poll(fixture.history, fixture.workspace, complete)) return result;
+        std::this_thread::yield();
+    } while (std::chrono::steady_clock::now() < deadline);
+    return {};
+}
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+std::atomic<bool> storyboard_copy_release{};
+std::atomic<bool> storyboard_copy_published{};
+void wait_for_storyboard_publication() {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+    while (!storyboard_copy_published && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+}
+auto paused_storyboard_copy(const resource_copy_request_t& request, std::stop_token stop)
+    -> resource_copy_job_t::work_outcome_t {
+    const auto copied = request.storyboard_receipt->create_copy(stop);
+    if (!copied) return std::unexpected(copied.error());
+    storyboard_copy_published = true;
+    while (!stop.stop_requested()) std::this_thread::yield();
+    return std::unexpected(wormedit::error_t<failure_code_t>{failure_code_t::cancelled, "Cancelled after publication"});
+}
+void check_replaced_storyboard_copy(const resource_notification_fixture_t& fixture,
+    const std::filesystem::path& destination, int completions, const std::string& result) {
+    CHECK(completions == 0);
+    CHECK(result.find("changed") != std::string::npos);
+    CHECK(std::filesystem::exists(destination));
+    CHECK(std::filesystem::file_size(destination) == std::string_view{"replacement bytes with different identity"}.size());
+    CHECK(fixture.history.undo.empty());
+}
+auto held_storyboard_completion(const resource_copy_request_t& request, std::stop_token stop)
+    -> resource_copy_job_t::work_outcome_t {
+    auto copied = request.storyboard_receipt->create_copy(stop);
+    if (!copied) return std::unexpected(copied.error());
+    storyboard_copy_published = true;
+    while (!storyboard_copy_release && !stop.stop_requested()) std::this_thread::yield();
+    return resource_copy_result_t{.copied = std::move(copied),
+        .storyboard = osbx_place_image_t{.source = osbx_import_image_t{.file = {
+            .source_path = request.target.source_path, .copied_project_relative_path = "assets/1-image.ppm",
+            .expected_new_asset_id = request.target.asset, .role = resource_role_t::bga, .image_geometry = std::pair{1U, 1U}}}},
+        .receipt = request.storyboard_receipt};
+}
+
+#endif
+}
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+TEST_CASE("Storyboard import refused completion discards only its newly published project file",
+          "[resource-notifications][storyboard-assets][copy-rollback]") {
+    resource_notification_fixture_t fixture;
+    auto request = storyboard_copy_request(fixture);
+    const auto destination = fixture.project / "assets" / "1-image.ppm";
+    REQUIRE(fixture.resource_copy.start(std::move(request)));
+    int completions{};
+    REQUIRE(wait_for_storyboard_copy(fixture, [&](const auto&, const auto&) { ++completions; return false; }));
+    CHECK(completions == 1);
+    CHECK_FALSE(std::filesystem::exists(destination));
+    CHECK(fixture.history.document.visual_assets.empty());
+    CHECK(fixture.history.undo.empty());
+}
+TEST_CASE("Storyboard import successful atomic completion retains the linked project bytes",
+          "[resource-notifications][storyboard-assets][copy-rollback]") {
+    resource_notification_fixture_t fixture;
+    fixture.history.document.storyboards = {{.id = storyboard_id_t{11}, .osbx = osbx_document_t{}}};
+    REQUIRE(fixture.resource_copy.start(storyboard_copy_request(fixture)));
+    REQUIRE(wait_for_storyboard_copy(fixture, [&](const auto& capture, const auto& operation) {
+        return apply_osbx_edit_with_created_ids(fixture.history,
+            {.storyboard = capture.storyboard, .change = operation}).command.applied;
+    }));
+    CHECK(std::filesystem::exists(fixture.project / "assets" / "1-image.ppm"));
+    CHECK(fixture.history.document.visual_assets.size() == 1);
+    CHECK(fixture.history.document.resources.size() == 1);
+    CHECK(fixture.history.undo.size() == 1);
+}
+TEST_CASE("Storyboard cancellation after file publication cleans up without a surviving result",
+          "[resource-notifications][storyboard-assets][copy-rollback]") {
+    resource_notification_fixture_t fixture;
+    storyboard_copy_published = false;
+    REQUIRE(fixture.resource_copy.start(storyboard_copy_request(fixture), paused_storyboard_copy));
+    wait_for_storyboard_publication();
+    REQUIRE(storyboard_copy_published);
+    CHECK(std::filesystem::exists(fixture.project / "assets" / "1-image.ppm"));
+    fixture.resource_copy.cancel(); fixture.scheduler.shutdown();
+    CHECK_FALSE(fixture.resource_copy.poll(fixture.history, fixture.workspace));
+    CHECK_FALSE(std::filesystem::exists(fixture.project / "assets" / "1-image.ppm"));
+    CHECK(fixture.history.undo.empty());
+}
+TEST_CASE("Storyboard receipt never discards reused preexisting project bytes",
+          "[resource-notifications][storyboard-assets][copy-rollback]") {
+    resource_notification_fixture_t fixture;
+    const auto request = storyboard_copy_request(fixture);
+    std::filesystem::create_directories(fixture.project / "assets");
+    const auto destination = fixture.project / "assets" / "1-image.ppm";
+    std::filesystem::copy_file(request.target.source_path, destination);
+    REQUIRE(fixture.resource_copy.start(request));
+    REQUIRE(wait_for_storyboard_copy(fixture, [](const auto&, const auto&) { return false; }));
+    CHECK(std::filesystem::exists(destination));
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Copied and reused storyboard destinations replaced before completion are never linked or deleted",
+          "[resource-notifications][storyboard-assets][copy-rollback][replacement]") {
+    const bool reused = GENERATE(false, true);
+    resource_notification_fixture_t fixture;
+    auto request = storyboard_copy_request(fixture);
+    const auto destination = fixture.project / "assets" / "1-image.ppm";
+    if (reused) {
+        std::filesystem::create_directories(destination.parent_path());
+        std::filesystem::copy_file(request.target.source_path, destination);
+    }
+    storyboard_copy_published = false; storyboard_copy_release = false;
+    REQUIRE(fixture.resource_copy.start(std::move(request), held_storyboard_completion));
+    wait_for_storyboard_publication();
+    REQUIRE(storyboard_copy_published);
+    std::filesystem::remove(destination);
+    std::ofstream{destination} << "replacement bytes with different identity";
+    storyboard_copy_release = true;
+    int completions{};
+    const auto result = wait_for_storyboard_copy(fixture, [&](const auto&, const auto&) { ++completions; return true; });
+    REQUIRE(result);
+    check_replaced_storyboard_copy(fixture, destination, completions, *result);
+}
+
+#else
+TEST_CASE("Storyboard image import without a decoder refuses publication explicitly",
+          "[resource-notifications][storyboard-assets][copy-rollback]") {
+    resource_notification_fixture_t fixture;
+    REQUIRE(fixture.resource_copy.start(storyboard_copy_request(fixture)));
+    const auto outcome = wait_for_storyboard_copy(fixture, [](const auto&, const auto&) { return true; });
+    REQUIRE(outcome);
+    CHECK(outcome->find("unavailable") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(fixture.project / "assets" / "1-image.ppm"));
+    CHECK(fixture.history.undo.empty());
+}
+#endif

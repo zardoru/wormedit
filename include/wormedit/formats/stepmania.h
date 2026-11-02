@@ -54,7 +54,8 @@ using stepmania_parse_outcome_t = attempt_t<song_document_t, std::vector<stepman
 
 // Parses a complete .sm or .ssc source transactionally. SSC is bounded to
 // audited v0.83 semantics (with missing VERSION defaulting to 0.83); named
-// StepMania 5.1 and Etterna 0.75.1 subsets require native SSC warps. Song
+// StepMania 5.1 and Etterna 0.75.1 subsets require native SSC warps. NotITG's
+// conservative SM route reuses explicit existing SM syntax; SSC is unproved. Song
 // fields and each #NOTEDATA block remain separately addressable.
 [[nodiscard]] auto parse_stepmania_bytes(std::span<const std::byte> bytes,
                                          stepmania_parse_options_t options = {})
@@ -77,6 +78,16 @@ using stepmania_write_diagnostic_t =
     format_diagnostic_t<stepmania_write_diagnostic_code_t, std::string,
                             stepmania_write_diagnostic_code_t::invalid_document>;
 
+// Includes legacy ANIMATIONS and additional BGCHANGES layers: retained hook
+// ownership must not be inferred only from one spelling of the primary tag.
+[[nodiscard]] auto has_stepmania_storyboard_hook(const song_document_t&, bool foreground) -> bool;
+
+struct stepmania_storyboard_change_t {
+    signed_rational_t start_beat;
+    std::string actor_reference;
+    bool foreground{};
+};
+
 struct stepmania_write_options_t {
     // Resolves file, syntax and implementation choices. Document-specific loss
     // is still diagnosed transactionally by write_stepmania.
@@ -91,6 +102,7 @@ struct stepmania_write_options_t {
     std::optional<chart_id_t> chart;
     warp_encoding_t warp_encoding{warp_encoding_t::native};
     bool preserve_unknown_fields{true};
+    std::vector<stepmania_storyboard_change_t> storyboard_changes;
     // Reports a loss warning when nonterminating timing values need decimal rounding.
     bool allow_timing_approximation{false};
     std::size_t max_output_bytes{64U * 1024U * 1024U};

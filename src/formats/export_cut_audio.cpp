@@ -53,6 +53,9 @@ void include_custom_note_assets(const song_document_t& song, const chart_documen
     for (const auto& measure : chart.measures) for (const auto& note : measure.notes)
         if (note.osu_hitsample && !note.osu_hitsample->filename.empty())
             paths.insert(std::filesystem::path{note.osu_hitsample->filename}.lexically_normal());
+    for (const auto& measure : chart.measures) for (const auto& event : measure.bgm_events)
+        if (event.osu_hitsample && !event.osu_hitsample->filename.empty())
+            paths.insert(std::filesystem::path{event.osu_hitsample->filename}.lexically_normal());
     for (const auto& asset : song.audio_assets)
         if (paths.contains(asset.source_path.lexically_normal())) assets.insert(asset.id);
 }

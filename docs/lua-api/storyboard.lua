@@ -1,0 +1,288 @@
+--- Detached OSBX storyboard declarations (API 0.1).
+-- The standalone OSBX host evaluates declarations twice with identical seed and
+-- immutable generator context, decodes the descriptors and validates the entire
+-- scene before returning it. Lua never changes the live song. Project bundles
+-- capture included source and canonical image paths/hashes for offline replay.
+-- Compose's Lua generator previews scenes alongside chart output; Apply commits
+-- the whole batch as one Undo step. Failed runs retain the last applied scenes.
+--
+-- Calls select a current node; indentation is conventional. Node settings require
+-- a preceding group or sprite. Declaring a new node resets that context. Images
+-- declared with tables do not select a node. IDs share a document-wide namespace.
+-- Generated operation/key IDs derive from node IDs and declaration ordinals;
+-- explicit key IDs retain identity across insertions. Diagnostics include original
+-- source file and line; duplicate IDs identify both declarations.
+-- @module storyboard
+
+--- Begin a storyboard, selecting a new scene and clearing the current node.
+-- The combined generator supports up to 32 unique storyboard keys per run,
+-- with keys bounded to 128 UTF-8 bytes. It accepts no return, an empty table,
+-- empty generator arrays, or chart output alongside the declarations.
+-- The standalone OSBX host requires exactly one scene. Regeneration preserves
+-- the native storyboard identity by key and rejects manually edited scenes.
+-- @string id Stable nonempty storyboard name.
+-- @function storyboard
+
+--- Select the OSBX schema version. Defaults to 0.1; other versions reject.
+-- @string value Version string.
+-- @function api_version
+
+--- Set the logical canvas, default 640 by 480, with positive finite dimensions.
+-- Positive X points right; positive Y points down.
+-- @param value `{width=640,height=480}`.
+-- @function canvas
+
+--- Declare an image asset or set the selected sprite's image reference.
+-- In project modules, table declarations use the existing project-relative asset
+-- resolver and hash capture; shared project images may precede the storyboard.
+-- References do not reread the image. Standalone paths
+-- are relative, with no filesystem access. Groups cannot reference images. A complete animation has a fixed template after
+-- numbered-frame capture; assigning another image ID to it refuses before mutation.
+-- @param value `{id="logo",file="sb/logo.png"}` or string image ID.
+-- @function image
+
+--- Declare and select a group with default property tracks and no transforms.
+-- @string id Unique stable node ID.
+-- @function group
+
+--- Declare and select a sprite. It must reference a declared image before finish.
+-- @string id Unique stable node ID.
+-- @function sprite
+
+--- Set the selected node's layer. Unspecified children inherit their parent layer;
+-- roots default to background. Parent and child must ultimately share a layer.
+-- @string value `background`, `fail`, `pass`, or `foreground`.
+-- @function layer
+
+--- Set the selected node's integer draw order, default zero.
+-- @int value Signed order in native int range.
+-- @function order
+
+--- Set the selected node's parent. Forward references are allowed; cycles reject.
+-- @string id Group/node ID in this storyboard.
+-- @function parent
+
+--- Set the selected sprite's origin (default centre).
+-- Accepts canonical OSB spellings (plus the `centre` alias): TopLeft, TopCentre, TopRight,
+-- CentreLeft, Centre, CentreRight, BottomLeft, BottomCentre, BottomRight.
+-- @string value Origin name, e.g. `centre`.
+-- @function origin
+
+--- Declare a reusable transform/property template without selecting a node.
+-- Fields are id, ops, tracks, parameters and ordered nested uses. Operations are
+-- pure tables {id?,kind,track?,children?}; only pivot accepts children. Kinds and
+-- numeric arities match transform.*. A numeric track accepts the ordinary
+-- constant/vector/key-array form or {default=...,keys=...,parameter="name"}.
+-- The parameter selector supplies the DEFAULT only; it never changes authored
+-- keys or easing. Parameters are {name="offset",default={20,0}} with unique
+-- ASCII names [A-Za-z_][A-Za-z0-9_]* and finite vectors of 1..6 components.
+-- Bindings use literal vectors of exactly the declared arity; omitted bindings
+-- use the declared default. Expressions and implicit outer capture are absent.
+--
+-- tracks supports opacity, RGBA color, visibility and optional blend. Opacity
+-- and color multiply the node's properties; visibility is ANDed. Visibility
+-- accepts a boolean or {default=true,keys={{time=500,value=false}}}. Blend accepts
+-- normal/additive or an equivalent discrete track. Omitted blend leaves the
+-- current blend unchanged; the last active explicit override wins.
+-- Clip templates reject raw Lua links, including links in nested pivot tracks.
+-- Cycles, missing definitions, ID/parameter collisions and aggregate expanded
+-- operation/key/property/storage/work exhaustion reject the whole scene.
+-- @param value `{id="pulse",ops=...,tracks=...,parameters=...,uses=...}`.
+-- @function clip
+
+--- Append an ordered reusable clip instance to the selected node.
+-- Fields are id?, clip, start? (signed integer ms, default 0), time_scale?
+-- (finite positive, default 1), and parameters? ({name=...,value={...}} entries).
+-- Nested clip.uses contains literal tables with the same fields. Missing IDs
+-- derive deterministically from declaration order and share the existing stable
+-- ID namespace. Node operations run first, then ordered clip/nested operations.
+-- Local time is (parent_time-start)/time_scale. Before activation contributions
+-- are identity; afterwards the usual keyed-track hold rules apply. Nested uses
+-- cannot bypass their parent's activation, lifetime or conditional-layer gate.
+--
+-- Binary64 scales retain their exact stored ratios. Checked clock composition
+-- must fit the shared signed64 whole-ms plus reduced uint32 fraction domain;
+-- otherwise it diagnoses rather than rounding. Even a scale such as 0.1 can
+-- refuse when mapped endpoints exceed that fraction capacity. Authored keys
+-- stay integer-ms; compiled bound tracks/maps are immutable derived data.
+-- Native schema 35->36 adds definitions/uses/selectors, never compiled caches.
+-- OSB export bakes used clips through the existing error/density/work checks;
+-- fractional mapped activation/keys and unsupported transforms/properties refuse
+-- explicitly. Selected used-clip StepMania actors produce the existing advisory
+-- before sidecars; ordinary actors and chart loss handling retain their policy.
+-- @usage
+-- storyboard("clip-example")
+-- image {id="logo",file="sb/logo.png"}
+-- clip {id="pulse",parameters={{name="offset",default={20,0}}},
+--   ops={{id="pulse-position",kind="translate",track={parameter="offset"}}},
+--   tracks={opacity={key{0,value=0},key{100,value=1}}}}
+-- sprite("hero")
+-- image("logo")
+-- use_clip {id="hero-pulse",clip="pulse",start=250,time_scale=0.5,
+--   parameters={{name="offset",value={40,10}}}}
+-- @param value Instance descriptor.
+-- @function use_clip
+
+--- Append an ordered translation operation.
+-- @param value Two numbers `{x,y}`, or an array of two-component key descriptors.
+-- @function transform.translate
+
+--- Append an ordered clockwise rotation in degrees on the Y-down canvas.
+-- @param value `{degrees}`, a numeric scalar, or an array of scalar keys.
+-- @function transform.rotate
+
+--- Append an ordered scale operation (unkeyed default 1,1).
+-- @param value `{x,y}` or an array of two-component keys.
+-- @function transform.scale
+
+--- Append ordered clockwise X/Y skew angles in degrees.
+-- @param value `{x,y}` or an array of two-component keys.
+-- @function transform.skew
+
+--- Append an ordered affine matrix, interpolated component by component.
+-- Finite singular matrices are allowed. Raw matrices/skew cannot export to OSB.
+-- @param value `{a,b,c,d,tx,ty}` or an array of six-component keys.
+-- @function transform.matrix
+
+--- Append a pivot containing ordered operations on the selected node.
+-- Child constructors execute first; pivot moves those operations from the node's
+-- root stack into its children. Each child must belong to the current node and
+-- occur once. Nested pivots use the same rule.
+-- @param value `{x,y,ops={transform.rotate{45},transform.scale{2,2}}}`.
+-- @function transform.pivot
+
+--- Set opacity, default 1, with finite values from zero through one.
+-- @param value Scalar number or an array of scalar keys.
+-- @function opacity
+
+--- Set linear RGBA multipliers, default 1,1,1,1, with finite components.
+-- @param value `{r,g,b,a}` or an array of four-component keys.
+-- @function color
+
+--- Set the selected node's default blend mode.
+-- @string value `normal` (default) or `additive`.
+-- @function blend
+
+--- Construct a key descriptor for a transform or property track.
+-- Keys must be supplied in strictly increasing time order. Keyed tracks hold the
+-- first value before their first key and the last value after their last key.
+-- Defaults apply to tracks without keys: identity transforms, full opacity and
+-- white color. Key easing controls the segment to the next key.
+-- Easing may be `linear` (default), `step`, `in_out_sine`, an OSB easing integer
+-- 0 through 34, or a cubic bezier array `{x1,y1,x2,y2}` with X controls in [0,1].
+-- @param value `{milliseconds,value=number_or_array,id="optional",easing="linear"}`.
+-- Times are signed integer milliseconds; IDs must be unique across the document.
+-- @function key
+
+--- Remove redundant linear key descriptors with the shared native RDP simplifier.
+-- Preserves original descriptors, IDs and provenance in strictly increasing time
+-- order. `dims` is 1, 2 or 3 (default 1); tolerance is finite and nonnegative,
+-- measured as perpendicular distance in mixed (milliseconds, components) space.
+-- No rounding is applied. This is a geometric scripting helper; OSB baking must
+-- additionally verify rounded screen-space corner/opacity errors and key density
+-- through the core metric wrapper. Nonlinear keys reject rather than change easing.
+-- At most 65536 input keys; native scratch memory, result indices and each unit
+-- of native work share sandbox memory, result, instruction and cancellation caps.
+-- The core also caps native work at 8000000 units. Exhaustion fails the run.
+-- @param options `{keys={key{0,value=0},key{100,value=1}},tolerance=0.01,dims=1}`.
+-- @return An ordered array of the retained input key descriptors.
+-- @function keys.simplify
+
+--- Hybrid Lua links on hand-authored storyboards.
+-- An editable scene can link an individual translate/rotate/scale/skew/matrix
+-- operation, opacity, or color track. Link metadata is a stable link ID, API 1,
+-- project-relative module path, frozen source and SHA-256, optional named entry,
+-- rational named parameters, and seed. Normal evaluation reads only frozen bytes;
+-- explicit Reload reads the module and returns a new descriptor for an Undoable
+-- edit. This does not make the whole scene generator-owned.
+--
+-- A track module returns function(t, ctx), or a table whose named entry is that
+-- function. t is absolute integer storyboard milliseconds. Return a finite
+-- number for rotation/opacity, or an array of exactly the operation's arity
+-- (RGBA has four components). ctx.parameters holds named values; ctx.seed is
+-- the exact decimal seed string. Pure functions cannot mutate retained state or
+-- draw from the RNG; seeded module initialization can capture random constants.
+-- The inclusive link range overrides authored keys only inside that range.
+-- Adaptive midpoint sampling defaults to tolerance 0.002 and max_points 256;
+-- fixed sampling requires 2..4096 evenly spaced integer-ms points. Sampling is
+-- shared with the SV worker and is an approximation, not an extrema proof.
+--
+-- A hand-placed sprite's rotation operation may link scripts/wobble.lua with
+-- range [0,1000], parameters amplitude=4 and period=1200, and frozen module:
+-- @usage
+-- return function(t, ctx)
+--   return ctx.parameters.amplitude * math.sin(2 * math.pi * t / ctx.parameters.period)
+-- end
+--
+-- A group can instead link a function(ctx) that declares its children using
+-- this module's image/group/sprite/transform prelude. The host supplies the
+-- storyboard scope; omit storyboard(), canvas(), and api_version(). The
+-- parent's position, transforms, layer and order remain hand-editable. Children
+-- and images have stable IDs scoped by parent/link/local ID, inherit the parent
+-- layer, remain transient/read-only, and regenerate on descriptor changes.
+-- @usage
+-- return function(ctx)
+--   image {id="spark", file="sb/spark.png"}
+--   sprite("spark-1")
+--     image("spark")
+--     transform.translate {20, 30}
+-- end
+--
+-- Workers evaluate frozen descriptors with instruction/memory/cancellation
+-- budgets and deterministic replay. Preview and export share the immutable
+-- prepared scene, including generated image references. Failure diagnoses the
+-- node and source file:line and retains its last good result; a link without
+-- one blocks consumption/export. No samples, generated children, caches or VM
+-- state are saved. Bake to keys / Detach children replace one link with its
+-- current prepared result in one Undo step. Nonlinear authored segments cut by
+-- a link boundary use bounded integer-ms guard keys (65536 per cut segment) to
+-- preserve outside-range values exactly at storyboard clock ticks.
+-- @section hybrid_links
+
+
+--- Declare and select an animation with eagerly captured numbered-frame images.
+-- The virtual base is not a physical asset: logo.png names logo0.png, logo1.png,
+-- etc., inserting the index before the final extension. Count and positive finite
+-- binary64 delay are required. Ordinary image declarations still read their real
+-- file immediately. Complete animation templates cannot later be reassigned with
+-- image("id"); the image-ID animation constructor is unsupported.
+-- Frame time starts at the node's explicit lifetime beginning, otherwise zero.
+-- Parent/property keys do not reset that epoch. Paths are project-relative and
+-- every concrete frame uses the existing bounded frozen project asset owner.
+-- @string id Stable unique node ID.
+-- @param value `{file="logo.png",frame_count=4,frame_delay_ms=100,loop_type="LoopForever"}`.
+-- @return Ephemeral scene-scope value, not a live node or metadata handle.
+-- @function animation
+
+--- Declare and select an authored storyboard Sample cue.
+-- This is independent of chart BGM declarations; authored duplicate events remain.
+-- The compiled cue query shares the existing preview schedule. It does not add
+-- audio playback or a second mixer. Sample/ancestor transforms, property effects,
+-- clips, lifetimes and temporal programs that cannot preserve cue semantics refuse.
+-- @string id Stable unique node ID.
+-- @param value `{path="audio/cue.wav",time_ms=500,volume=80}`. Volume is optional 1..100, default100.
+-- @return Ephemeral scene-scope value, not a live node or metadata handle.
+-- @function sample
+
+--- Construct a flat typed loop program for a numeric or discrete track.
+-- Relative integer-ms keys are nonnegative and strictly ordered; count is
+-- 1..UINT32_MAX. The last relative key time is the period. One key at0 is a
+-- constant from start; empty keys refuse. Later iteration gaps hold the previous
+-- final key; the last iteration's final value stays held. No count unrolling or
+-- recursive loop/trigger grammar is introduced. Programs compete by latest
+-- effective segment start; programs win root ties and later authored programs
+-- win program ties. Exact checked clocks and storage/work limits still apply.
+-- @param value `{id="pulse",start=100,count=3,keys={key{0,value=0},key{10,value=1}}}`.
+-- @function loop
+
+--- Construct a flat direct-activation trigger program for an existing track.
+-- Names use the canonical supported OSB grammar and exact spelling. Optional
+-- signed from/to values retain omission. Relative keys use loop's rules; no group
+-- field is exposed (only absent/zero groups are supported by the typed subset).
+-- Evaluation requires the caller's sealed direct-firing scenario; declarations
+-- do not infer gameplay, HitSound-family matches or Pass/Fail layer transitions.
+-- The latest firing whose first key has started restarts this block. Windows
+-- include endpoints and apply to firing time. All samplers/index/frame/op-space
+-- queries borrow one scenario built/sorted once, not a per-frame event scan.
+-- @param value `{id="flash",name="Passing",from=0,to=1000,keys={key{0,value=1},key{100,value=0}}}`.
+-- @function trigger

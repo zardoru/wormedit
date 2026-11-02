@@ -59,6 +59,10 @@ void capture_fit_onsets(compose_scene_cache_t& cache,
     if (!first || !last || *first >= *last)
         return;
     cache.timing.beat_fit_onsets = capture_compose_onsets(waveform, *first, *last);
+#else
+    (void)cache;
+    (void)state;
+    (void)workspace;
 #endif
 }
 
@@ -79,6 +83,8 @@ auto fit_onset_target(compose_scene_cache_t& cache, const wormedit::ui::compose_
         cache.timing.beat_fit_onset_snapped = true;
         return *onset;
     }
+#else
+    (void)input;
 #endif
     return frame;
 }

@@ -141,6 +141,16 @@ void song_document_t::reset_chart_indices() noexcept {
 }
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
+auto song_document_t::storyboard_resource(std::string_view path) const -> resource_id_t {
+    const auto normalized = std::filesystem::path{path}.lexically_normal();
+    const auto asset = std::ranges::find_if(visual_assets, [&](const auto& candidate) {
+        return candidate.kind == asset_kind_t::image &&
+               candidate.source_path.lexically_normal() == normalized;
+    });
+    if (asset == visual_assets.end()) return {};
+    const auto resource = std::ranges::find(resources, asset->id, &resource_entry_t::asset);
+    return resource == resources.end() ? resource_id_t{} : resource->id;
+}
 auto song_document_t::find_export_cut(object_id_t id) -> export_cut_t* { return find_id(export_cuts, id); }
 auto song_document_t::find_export_cut(object_id_t id) const -> const export_cut_t* { return find_id(export_cuts, id); }
 auto song_document_t::effective_preview(const chart_document_t& chart) const
@@ -953,9 +963,21 @@ struct chart_object_validation_t {
     semantic_sound_links_t& sound_links;
 };
 
+void validate_sample_binding(const std::optional<sample_reference_binding_t>& binding,
+    std::optional<resource_id_t> sound, semantic_sound_links_t& links, object_id_t id) {
+    if (!binding) return;
+    const auto resource = links.resource_assets.find(binding->bound_sound.value);
+    if (!binding->is_valid() || !binding->bound_sound || !binding->bound_asset ||
+        sound != binding->bound_sound || resource == links.resource_assets.end() ||
+        resource->second != binding->bound_asset)
+        add_diagnostic(links.diagnostics, diagnostic_code_t::invalid_binding,
+            "Sample reference provenance is malformed or no longer matches its effective sound", id);
+}
+
 auto validate_chart_note(chart_object_validation_t& context, measure_id_t measure_id,
                          const note_t& note) -> void {
     validate_object_id(context.diagnostics, context.object_ids, note.id, "note");
+    validate_sample_binding(note.sample_reference, note.sound, context.sound_links, note.id);
     if (note.osu_hitsample && !note.osu_hitsample->is_valid()) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                        "note has invalid osu! hitsample settings", note.id);
@@ -1005,6 +1027,9 @@ auto validate_chart_note(chart_object_validation_t& context, measure_id_t measur
 auto validate_chart_bgm(chart_object_validation_t& context, measure_id_t measure_id,
                         const bgm_event_t& bgm) -> void {
     validate_object_id(context.diagnostics, context.object_ids, bgm.id, "BGM event");
+    validate_sample_binding(bgm.sample_reference, bgm.sound, context.sound_links, bgm.id);
+    if (bgm.osu_hitsample && !bgm.osu_hitsample->is_valid())
+        add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id, "Invalid BGM osu! sample", bgm.id);
     const auto start =
         position_row_or_diagnostic(context.index, bgm.position, context.diagnostics, bgm.id);
     if (bgm.position.measure != measure_id) {
@@ -1636,6 +1661,73 @@ struct document_validation_work_t {
     std::map<std::tuple<int, std::string, std::string>, resource_id_t> target_identity_owners;
 };
 
+auto osbx_document_diagnostic_code(osbx_diagnostic_code_t code) -> diagnostic_code_t {
+    switch (code) {
+    case osbx_diagnostic_code_t::duplicate_id: return diagnostic_code_t::duplicate_id;
+    case osbx_diagnostic_code_t::invalid_id:
+    case osbx_diagnostic_code_t::missing_parent:
+    case osbx_diagnostic_code_t::clip_cycle:
+    case osbx_diagnostic_code_t::parent_cycle: return diagnostic_code_t::invalid_id;
+    case osbx_diagnostic_code_t::missing_image:
+    case osbx_diagnostic_code_t::invalid_image_reference:
+    case osbx_diagnostic_code_t::invalid_path: return diagnostic_code_t::dangling_asset;
+    case osbx_diagnostic_code_t::invalid_lua_link:
+    case osbx_diagnostic_code_t::invalid_clip:
+    case osbx_diagnostic_code_t::unprepared_lua_link: return diagnostic_code_t::invalid_binding;
+    case osbx_diagnostic_code_t::invalid_version:
+    case osbx_diagnostic_code_t::invalid_canvas:
+    case osbx_diagnostic_code_t::cross_layer_parent:
+    case osbx_diagnostic_code_t::invalid_value_shape:
+    case osbx_diagnostic_code_t::non_finite_value:
+    case osbx_diagnostic_code_t::invalid_value_range:
+    case osbx_diagnostic_code_t::invalid_easing:
+    case osbx_diagnostic_code_t::unordered_keys:
+    case osbx_diagnostic_code_t::invalid_children:
+    case osbx_diagnostic_code_t::invalid_enum:
+    case osbx_diagnostic_code_t::invalid_origin:
+    case osbx_diagnostic_code_t::nesting_limit:
+    case osbx_diagnostic_code_t::node_limit:
+    case osbx_diagnostic_code_t::image_limit:
+    case osbx_diagnostic_code_t::op_limit:
+    case osbx_diagnostic_code_t::clip_expansion_limit:
+    case osbx_diagnostic_code_t::key_limit: return diagnostic_code_t::unsupported_feature;
+    }
+    return diagnostic_code_t::unsupported_feature;
+}
+
+auto validate_song_storyboard(const storyboard_document_t& storyboard,
+                              document_validation_work_t& work) -> void {
+    const auto object = object_id_t{storyboard.id.value};
+    if (storyboard.model && storyboard.osbx) {
+        work.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "storyboard cannot contain both OSB and OSBX models", object));
+    }
+    if (storyboard.model && !emit_osb(*storyboard.model).value) {
+        add_diagnostic(work.diagnostics, diagnostic_code_t::unsupported_feature,
+                       "storyboard model is invalid or exceeds the bounded OSB limits");
+    }
+    if (storyboard.owning_generator_recipe &&
+        std::ranges::find(work.song.generator_recipes, *storyboard.owning_generator_recipe,
+                          &generator_recipe_t::id) == work.song.generator_recipes.end()) {
+        work.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "storyboard refers to an unknown owning generator recipe", object));
+    }
+    if (!storyboard.osbx) return;
+    // OSBX image IDs resolve through its images table. The validator checks the
+    // project-relative file fallback; registered files use song.storyboard_resource(),
+    // shared with OSB preview. Validation never probes the filesystem.
+    const auto validation = validate_osbx_document(*storyboard.osbx);
+    for (const auto& diagnostic : validation.diagnostics) {
+        auto message = "OSBX [" + diagnostic.location.id + "]: " + diagnostic.message;
+        const auto& provenance = diagnostic.location.provenance;
+        if (!provenance.file.empty())
+            message += " (" + provenance.file + ":" + std::to_string(provenance.line) + ")";
+        work.diagnostics.push_back({.severity = diagnostic.severity,
+            .code = osbx_document_diagnostic_code(diagnostic.code),
+            .message = std::move(message), .object = object});
+    }
+}
+
 auto validate_song_unique_ids(document_validation_work_t& work) -> void {
     require_id(work.diagnostics, work.song.id, "song");
     validate_format_groups(work.song.metadata.format_groups, work.diagnostics);
@@ -1661,10 +1753,7 @@ auto validate_song_unique_ids(document_validation_work_t& work) -> void {
         work.diagnostics, work.song.storyboards,
         [](const auto& storyboard) { return storyboard.id; }, "storyboard");
     for (const auto& storyboard : work.song.storyboards) {
-        if (storyboard.model.has_value() && !emit_osb(*storyboard.model).value) {
-            add_diagnostic(work.diagnostics, diagnostic_code_t::unsupported_feature,
-                           "storyboard model is invalid or exceeds the bounded OSB limits");
-        }
+        validate_song_storyboard(storyboard, work);
     }
 }
 
@@ -2173,6 +2262,35 @@ auto redivision_plan_t::from(const chart_document_t& chart,
     transformed.divisions_per_standard_measure = target_divisions_per_standard_measure;
     result.value.chart = std::move(transformed);
     return result;
+}
+
+auto audio_file_reference_t::is_valid() const -> bool {
+    const auto relative = text_util::path_from_utf8(path);
+    return !declared_name.empty() && text_util::is_valid_bounded_text(declared_name, 128) &&
+        !path.empty() && text_util::is_valid_bounded_text(path, 4096) &&
+        std::ranges::none_of(path, [](unsigned char c) { return c < 32 || c == 127; }) &&
+        !relative.is_absolute() && !relative.has_root_name() && !relative.filename().empty() &&
+        path.find('\\') == std::string::npos && path.find(':') == std::string::npos &&
+        relative.lexically_normal() == relative &&
+        std::ranges::none_of(relative, [](const auto& part) { return part == ".." || part == "."; }) &&
+        text_util::is_sha256_digest(content_hash) && (!asset || static_cast<bool>(*asset)) &&
+        stream.sample_rate != 0 && stream.channels != 0 && stream.frame_count && *stream.frame_count > 0;
+}
+
+void normalize_sample_references(song_document_t& document) {
+    const auto normalize = [&](auto& event) {
+        if (!event.sample_reference) return;
+        const auto& binding = *event.sample_reference;
+        const auto resource = std::ranges::find(document.resources, binding.bound_sound, &resource_entry_t::id);
+        if (!binding.bound_sound || event.sound != binding.bound_sound ||
+            resource == document.resources.end() || resource->asset != binding.bound_asset)
+            event.sample_reference.reset();
+    };
+    for (auto& chart : document.charts)
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) normalize(note);
+            for (auto& event : measure.bgm_events) normalize(event);
+        }
 }
 
 } // namespace wormedit

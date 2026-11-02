@@ -561,7 +561,7 @@ auto parse_event_line(const source_line_t& line, fail_t&& fail)
     parsed_event_lines_t result;
     const auto parts = osu_line::split_fields(line.text);
     const auto& kind = parts.front();
-    const auto indentation = line.raw_text.find_first_not_of(" \t");
+    const auto indentation = line.raw_text.find_first_not_of(" \t_");
     const bool indented = indentation != std::string_view::npos && indentation != 0;
     const bool background = kind == "0" || kind == "Background";
     const bool video = kind == "Video" || kind == "1";
@@ -612,16 +612,17 @@ void validate_storyboard_indentation(const std::vector<storyboard_node_t>& nodes
                                      const std::vector<source_line_t>& lines,
                                      std::size_t expected_indent, fail_t&& fail) {
     for (const auto& node : nodes) {
+        if (node.kind == storyboard_node_kind_t::retained_line) continue;
         const auto& source_line = lines[static_cast<std::size_t>(node.source_order - 1)];
-        const auto first_content = source_line.raw_text.find_first_not_of(" \t");
+        const auto first_content = source_line.raw_text.find_first_not_of(" \t_");
         const auto indentation = first_content == std::string_view::npos
                                      ? source_line.raw_text.size() : first_content;
         if (indentation != expected_indent)
             fail(osu_mania_parse_diagnostic_code_t::unsupported_storyboard,
                  "embedded storyboard uses a nested directive block that is not represented by "
-                 "Sprite/loop nodes",
+                 "Sprite/loop/trigger nodes",
                  source_line.order, source_line.byte_offset);
-        if (node.kind == storyboard_node_kind_t::loop)
+        if (node.kind == storyboard_node_kind_t::loop || node.kind == storyboard_node_kind_t::trigger)
             validate_storyboard_indentation(node.children, lines, expected_indent + 1, fail);
     }
 }
@@ -642,25 +643,10 @@ auto count_storyboard_nodes(const std::vector<storyboard_node_t>& nodes) -> std:
     return count;
 }
 
-template <typename fail_t, typename account_events_t>
-auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
-                               const osu_mania_parse_options_t& options,
-                               fail_t&& fail, account_events_t&& account_events)
-    -> std::optional<storyboard_document_model_t> {
-    if (lines.empty()) return std::nullopt;
-    std::string source;
-    std::vector<std::size_t> orders;
-    orders.reserve(lines.size());
-    for (const auto& line : lines) {
-        source.append(line.raw_text);
-        source.push_back('\n');
-        orders.push_back(line.order);
-    }
-    const auto node_limit = std::min<std::size_t>(options.max_events, 250'000);
-    const auto line_limit = std::min<std::size_t>(options.max_lines, 250'000);
-    auto parsed = parse_osb(source, {.maximum_input_bytes = options.max_source_bytes,
-                                     .maximum_lines = line_limit,
-                                     .maximum_nodes = node_limit});
+template <typename fail_t, typename warn_t>
+void report_embedded_storyboard(const storyboard_parse_outcome_t& parsed,
+    const std::vector<source_line_t>& lines, const std::vector<std::size_t>& orders,
+    fail_t&& fail, warn_t&& warn) {
     if (!parsed.value) {
         const auto index = parsed.diagnostics.empty() || parsed.diagnostics.front().line == 0
                                ? std::size_t{0}
@@ -677,6 +663,32 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
                      : osu_mania_parse_diagnostic_code_t::invalid_storyboard,
              "invalid embedded osu! storyboard: " + message, orders[index], lines[index].byte_offset);
     }
+    for (const auto& diagnostic : parsed.diagnostics) {
+        const auto index = diagnostic.line == 0 ? 0 : std::min(diagnostic.line - 1, orders.size() - 1);
+        warn(diagnostic.message, orders[index], lines[index].byte_offset);
+    }
+}
+
+template <typename fail_t, typename account_events_t, typename warn_t>
+auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
+                               const osu_mania_parse_options_t& options,
+                               fail_t&& fail, account_events_t&& account_events, warn_t&& warn)
+    -> std::optional<storyboard_document_model_t> {
+    if (lines.empty()) return std::nullopt;
+    std::string source;
+    std::vector<std::size_t> orders;
+    orders.reserve(lines.size());
+    for (const auto& line : lines) {
+        source.append(line.raw_text);
+        source.push_back('\n');
+        orders.push_back(line.order);
+    }
+    const auto node_limit = std::min<std::size_t>(options.max_events, 250'000);
+    const auto line_limit = std::min<std::size_t>(options.max_lines, 250'000);
+    auto parsed = parse_osb(source, {.maximum_input_bytes = options.max_source_bytes,
+                                     .maximum_lines = line_limit,
+                                     .maximum_nodes = node_limit});
+    report_embedded_storyboard(parsed, lines, orders, fail, warn);
     const auto source_order_for = [&](std::uint64_t order) {
         return order == 0 || order > orders.size() ? std::size_t{}
                                                    : orders[static_cast<std::size_t>(order - 1)];
@@ -691,9 +703,13 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
         remap_storyboard_nodes(sprite.nodes, source_order_for);
     }
     for (auto& line : model.retained_top_level_lines) line.source_order = source_order_for(line.source_order);
+    for (auto& sample : model.samples) {
+        sample.source_order = source_order_for(sample.source_order);
+        sample.stable_id = sample.source_order + 1;
+    }
     std::size_t node_count{};
     for (const auto& sprite : model.sprites) node_count += count_storyboard_nodes(sprite.nodes);
-    auto output_lines = model.sprites.size() + model.retained_top_level_lines.size();
+    auto output_lines = model.sprites.size() + model.retained_top_level_lines.size() + model.samples.size();
     if (node_count > std::numeric_limits<std::size_t>::max() - output_lines)
         fail(osu_mania_parse_diagnostic_code_t::storyboard_limit,
              "embedded storyboard output line count overflowed");
@@ -1748,7 +1764,11 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         auto storyboard_lines = std::move(parsed_events.storyboard_lines);
 
         auto embedded_storyboard = parse_embedded_storyboard(
-            storyboard_lines, options, fail, account_events);
+            storyboard_lines, options, fail, account_events,
+            [&](std::string message, std::size_t order, std::optional<std::size_t> offset) {
+                result.diagnostics.push_back({diagnostic_severity_t::warning,
+                    osu_mania_parse_diagnostic_code_t::invalid_storyboard, std::move(message), {order, offset}});
+            });
 
         auto geometry = derive_timing_geometry(timing_points, hit_objects, visuals, options, fail);
         const auto& anchors = geometry.anchors;
@@ -2099,6 +2119,7 @@ auto embedded_storyboard_source_orders(const song_document_t& song)
         }
         for (const auto& line : storyboard.model->retained_top_level_lines)
             orders.insert(line.source_order);
+        for (const auto& sample : storyboard.model->samples) orders.insert(sample.source_order);
     }
     return orders;
 }
@@ -2331,9 +2352,14 @@ auto select_osu_profile(const song_document_t& song, const chart_document_t& cha
         retained_profile.value_or(osu_mania_file_profile_t::stable_v14));
 }
 
+auto storyboard_command_text(std::string_view line) -> std::string_view {
+    const auto first = line.find_first_not_of(" \t_");
+    return first == std::string_view::npos ? std::string_view{} : trim(line.substr(first));
+}
+
 template <typename fail_t>
 void validate_storyboard_retained_line(std::string_view text, fail_t&& fail) {
-    const auto trimmed = trim(text);
+    const auto trimmed = storyboard_command_text(text);
     if (trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']')
         fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
              "storyboard retained lines cannot inject osu! section headers", "storyboards");
@@ -2348,7 +2374,7 @@ template <typename fail_t>
 void validate_storyboard_nodes(const storyboard_document_model_t& model, fail_t&& fail) {
     const auto validate_nodes = [&](auto&& self, const std::vector<storyboard_node_t>& nodes) -> void {
         for (const auto& node : nodes) {
-            const auto trimmed = trim(node.retained_line);
+            const auto trimmed = storyboard_command_text(node.retained_line);
             if (node.kind == storyboard_node_kind_t::retained_line && trimmed.size() >= 2 &&
                 trimmed.front() == '[' && trimmed.back() == ']')
                 fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
@@ -2398,19 +2424,105 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
     return *emitted.value;
 }
 
+void append_shear_ops(std::span<const osbx_transform_op_t> ops, std::string& reason) {
+    for (const auto& op : ops) {
+        if (op.kind == osbx_transform_kind_t::scale || op.kind == osbx_transform_kind_t::rotate)
+            reason += " op " + op.id;
+        append_shear_ops(op.children, reason);
+    }
+}
+
+auto implicit_shear_context(const std::unordered_map<std::string_view, const osbx_node_t*>& nodes,
+                            std::string_view id) -> std::string {
+    std::string reason;
+    auto found = nodes.find(id);
+    while (found != nodes.end()) {
+        const auto& node = *found->second;
+        std::string ops;
+        append_shear_ops(node.ops, ops);
+        if (!ops.empty()) reason += "; owner " + node.id + ops;
+        if (!node.parent) break;
+        found = nodes.find(*node.parent);
+    }
+    return reason;
+}
+
+auto build_osbx_failure_report(const osbx_osb_outcome_t& converted, const osbx_document_t& document) -> std::string {
+    std::map<std::string, std::vector<std::string>> groups;
+    std::unordered_map<std::string_view, const osbx_node_t*> nodes;
+    for (const auto& node : document.nodes) nodes.emplace(node.id, &node);
+    for (const auto& diagnostic : converted.diagnostics) {
+        auto reason = diagnostic.message;
+        const auto prefix = "node " + diagnostic.path + ", ";
+        if (!diagnostic.path.empty() && reason.starts_with(prefix))
+            reason.erase(0, prefix.size());
+        if (reason.starts_with("Implicit shear"))
+            reason += implicit_shear_context(nodes, diagnostic.path);
+        const auto advice = reason.find(": no .osb equivalent:");
+        if (advice != std::string::npos)
+            reason.erase(advice);
+        if (advice != std::string::npos || reason.find("shear") != std::string::npos)
+            reason += ": no .osb equivalent: remove it, or export video or StepMania instead";
+        groups[reason].push_back(diagnostic.path);
+    }
+    std::string message = "OSBX storyboard export failed";
+    if (groups.empty()) return message + ": converter returned no model";
+    for (const auto& [reason, ids] : groups) {
+        message += "\n";
+        for (const auto& id : ids) {
+            if (!id.empty()) message += id + ", ";
+        }
+        message += reason;
+    }
+    return message;
+}
+
+template <typename fail_t, typename warn_t>
+auto convert_osu_storyboard(const osbx_document_t& document,
+                            const osu_mania_write_options_t& options,
+                            fail_t&& fail, warn_t&& warn) -> storyboard_document_model_t {
+    if (!options.osbx.playback_span)
+        fail(osu_mania_write_diagnostic_code_t::invalid_document,
+             "OSBX export requires the song playback span", "storyboards");
+    auto converted = convert_osbx_to_osb(document, options.osbx);
+    if (!converted.ok() || !converted.value.model)
+        fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+             build_osbx_failure_report(converted, document), "storyboards");
+    for (const auto& report : converted.value.report) {
+        if (report.classification == osbx_osb_class_t::baked)
+            warn(osu_mania_write_diagnostic_code_t::storyboard_bake,
+                 "OSBX object " + report.node_id + " baked; worst normalized error " +
+                     format_double(report.worst_error), "storyboards");
+    }
+    return std::move(*converted.value.model);
+}
+
 template <typename fail_t>
-auto prepare_osu_storyboard(const song_document_t& song,
+void validate_storyboard_asset_paths(const storyboard_document_model_t& model, fail_t&& fail) {
+    for (const auto& sprite : model.sprites)
+        if (!safe_relative_path(sprite.path))
+            fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                 "storyboard sprite path must be a safe relative asset path", "storyboards");
+    for (const auto& sample : model.samples)
+        if (!safe_relative_path(sample.path))
+            fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                 "storyboard Sample path must be a safe relative asset path", "storyboards");
+}
+
+template <typename fail_t>
+auto prepare_legacy_osu_storyboard(const song_document_t& song,
                             const osu_mania_write_options_t& options, fail_t&& fail)
     -> std::optional<std::string> {
+    if (!options.embed_storyboard) return std::nullopt;
     const storyboard_document_model_t* model{};
     for (const auto& storyboard : song.storyboards) {
+        const auto* candidate = storyboard.model ? &*storyboard.model : nullptr;
         if (!storyboard.retained_source_lines.empty())
             fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
                  "osu!mania cannot export storyboard source lines without an unambiguous "
                  "structured model",
                  "storyboards");
-        if (!storyboard.model || (storyboard.model->sprites.empty() &&
-                                  storyboard.model->retained_top_level_lines.empty()))
+        if (!candidate || (candidate->sprites.empty() && candidate->retained_top_level_lines.empty() && candidate->samples.empty()))
             continue;
         if (model)
             fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
@@ -2421,17 +2533,52 @@ auto prepare_osu_storyboard(const song_document_t& song,
                  "song-level storyboard content has no chart ownership for multi-chart osu! "
                  "export",
                  "storyboards");
-        for (const auto& sprite : storyboard.model->sprites)
-            if (!safe_relative_path(sprite.path))
-                fail(osu_mania_write_diagnostic_code_t::invalid_resource,
-                     "storyboard sprite path must be a safe relative asset path", "storyboards");
-        for (const auto& line : storyboard.model->retained_top_level_lines)
+        validate_storyboard_asset_paths(*candidate, fail);
+        for (const auto& line : candidate->retained_top_level_lines)
             validate_storyboard_retained_line(line.text, fail);
-        validate_storyboard_nodes(*storyboard.model, fail);
-        model = &*storyboard.model;
+        validate_storyboard_nodes(*candidate, fail);
+        model = candidate;
     }
     if (!model) return std::nullopt;
     return emit_and_validate_osu_storyboard(*model, options, fail);
+}
+
+template <typename fail_t, typename warn_t>
+auto prepare_osu_storyboard(const song_document_t& song,
+                            const osu_mania_write_options_t& options, fail_t&& fail, warn_t&& warn)
+    -> std::optional<std::string> {
+    if (!options.embed_storyboard) return std::nullopt;
+    if (std::ranges::none_of(song.storyboards, [](const auto& storyboard) { return storyboard.osbx.has_value(); }))
+        return prepare_legacy_osu_storyboard(song, options, fail);
+    storyboard_document_model_t combined;
+    for (const auto& storyboard : song.storyboards) {
+        if (!storyboard.retained_source_lines.empty() ||
+            (storyboard.model && (!storyboard.model->sprites.empty() ||
+                                  !storyboard.model->retained_top_level_lines.empty() || !storyboard.model->samples.empty())))
+            fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                 "OSBX packages cannot combine difficulty-owned legacy storyboard content", "storyboards");
+        if (!storyboard.osbx) continue;
+        auto converted = convert_osu_storyboard(*storyboard.osbx, options, fail, warn);
+        for (auto& sprite : converted.sprites) {
+            if (!safe_relative_path(sprite.path))
+                fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                     "storyboard sprite path must be a safe relative asset path", "storyboards");
+            // These are transient OSB identities. Native and single-scene core
+            // IDs remain unchanged, while package-local ordering is unambiguous.
+            sprite.stable_id = combined.sprites.size() + combined.samples.size() + 1;
+            sprite.source_order = sprite.stable_id;
+            combined.sprites.push_back(std::move(sprite));
+        }
+        for (auto& sample : converted.samples) {
+            if (!safe_relative_path(sample.path))
+                fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                     "storyboard sample path must be a safe relative asset path", "storyboards");
+            sample.stable_id = combined.sprites.size() + combined.samples.size() + 1;
+            sample.source_order = sample.stable_id;
+            combined.samples.push_back(std::move(sample));
+        }
+    }
+    return emit_and_validate_osu_storyboard(combined, options, fail);
 }
 
 struct osu_export_geometry_t {
@@ -3331,19 +3478,82 @@ void append_osu_sample_event(std::vector<osu_output_event_t>& output, std::size_
     account_event();
 }
 
+auto registered_voice_match(const audio_asset_t& asset,
+    const osu_hitsample_voice_t& voice) -> std::optional<std::size_t> {
+    if (!voice.filename.empty()) {
+        const auto requested = text_util::path_from_utf8(voice.filename);
+        if (asset.source_path.lexically_normal() == requested) return 0;
+        return {};
+    }
+    const auto sample = osu_skin_sample_t::from(asset.source_path.filename());
+    if (!sample || *sample != voice.fallback) return {};
+    const auto extension = text_util::ascii_lowercase(asset.source_path.extension().generic_string());
+    return static_cast<std::size_t>(std::ranges::find(osu_skin_sample_extensions, extension) - osu_skin_sample_extensions.begin());
+}
+
+auto registered_osu_voice(const song_document_t& song, const osu_hitsample_voice_t& voice)
+    -> result_t<resource_id_t, std::string> {
+    if (!voice.filename.empty()) {
+        const std::filesystem::path path = text_util::path_from_utf8(voice.filename);
+        if (path.is_absolute() || path.has_root_name() || path.lexically_normal() != path ||
+            std::ranges::any_of(path, [](const auto& part) { return part == ".."; }) ||
+            !osu_line::is_writable_filename(voice.filename) || voice.filename.find(':') != std::string::npos)
+            return std::unexpected("osu! sample requires a safe declared custom filename");
+    } else if (voice.fallback.index == 0)
+        return std::unexpected("osu! sample requires skin audio unavailable to offline serialization");
+    std::optional<resource_id_t> selected;
+    asset_id_t selected_asset;
+    std::size_t best_rank = osu_skin_sample_extensions.size();
+    for (const auto& resource : song.resources) {
+        if (resource.missing || (!resource.has_role(resource_role_t::sample) && !resource.has_role(resource_role_t::bgm))) continue;
+        const auto* asset = song.find_audio_asset(resource.asset);
+        if (!asset) continue;
+        const auto rank_match = registered_voice_match(*asset, voice);
+        if (!rank_match || *rank_match > best_rank) continue;
+        const auto rank = *rank_match;
+        if (rank == best_rank && selected && selected_asset != asset->id)
+            return std::unexpected("osu! sample audio is ambiguous in the registered catalog");
+        selected = resource.id;
+        selected_asset = asset->id;
+        best_rank = rank;
+    }
+    if (!selected) return std::unexpected("osu! sample has no registered audio source");
+    return *selected;
+}
+
+auto plan_osu_bgm_samples(const song_document_t& song, const bgm_event_t& event,
+    const std::optional<osu_sample_context_index_t>& context)
+    -> result_t<std::vector<std::pair<resource_id_t, std::int64_t>>, std::string> {
+    if (!event.osu_hitsample->is_valid() || !context)
+        return std::unexpected("Invalid BGM osu! descriptor or unavailable inherited context");
+    const auto resolved = resolve_osu_sample_resources(song, *event.osu_hitsample,
+        context->at(event.position), event.sound);
+    if (!resolved) return std::unexpected(resolved.error().message);
+    return *resolved;
+}
+
 template <typename timestamp_t, typename account_t, typename fail_t, typename warn_t>
 void append_osu_bgm_events(
     std::vector<osu_output_event_t>& output, std::size_t& serial,
     const chart_document_t& chart, const measure_index_t& measures, const song_document_t& song,
     const retained_osu_event_fields_t& retained, bool lazer_profile, timestamp_t&& timestamp_at_row,
     account_t&& account_event, fail_t&& fail, warn_t&& warn) {
+    const auto sample_context = osu_sample_context_index_t::from(chart);
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
             if (event.end)
                 warn(osu_mania_write_diagnostic_code_t::lossy_transform,
                      "osu! Sample event retains only the BGM head; hold tail is omitted",
                      "bgm_events[].end");
-            if (event.sound) {
+            if (event.osu_hitsample) {
+                const auto samples = plan_osu_bgm_samples(song, event, sample_context);
+                if (!samples) fail(osu_mania_write_diagnostic_code_t::invalid_resource, samples.error(), "Events.Sample");
+                const auto layer = retained_sample_event_fields(retained, event.id.value).first;
+                for (const auto& [resource, volume] : *samples)
+                    append_osu_sample_event(output, serial, measures, song, event.position, resource,
+                        event.provenance.source_order, layer, volume, lazer_profile,
+                        timestamp_at_row, account_event, fail);
+            } else if (event.sound) {
                 const auto [layer, volume] = retained_sample_event_fields(retained, event.id.value);
                 append_osu_sample_event(output, serial, measures, song, event.position,
                                         *event.sound, event.provenance.source_order, layer,
@@ -3473,9 +3683,8 @@ auto serialize_osu_bookmarks(const chart_document_t& chart, const measure_index_
     return times;
 }
 
-} // namespace
-
-auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options)
+template <typename emit_t>
+auto run_osu_writer(emit_t&& emit)
     -> osu_mania_write_outcome_t {
     osu_mania_write_outcome_t result{};
     const auto fail = [&](osu_mania_write_diagnostic_code_t code, std::string message,
@@ -3494,130 +3703,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                       .location = std::move(field)});
     };
     try {
-        const auto* chart = select_osu_chart(song, options, fail);
-        const auto output_profile = select_osu_profile(song, *chart, options, fail);
-        const bool lazer_profile = output_profile == osu_mania_file_profile_t::lazer_v128;
-
-        auto baked_chart = validate_and_bake_osu_chart(song, *chart, fail);
-        chart = &*baked_chart.value;
-        auto storyboard_output = prepare_osu_storyboard(song, options, fail);
-        validate_osu_chart_features(*chart, options, fail, warn);
-        auto geometry = build_osu_export_geometry(*chart, options, fail);
-        const auto& measures = geometry.measures;
-        const auto& ordered_lane_ids = geometry.ordered_lane_ids;
-        const auto keys = ordered_lane_ids.size();
-        const auto lane_column = [&](lane_id_t lane) -> std::optional<std::size_t> {
-            const auto found = std::ranges::find(ordered_lane_ids, lane);
-            if (found == ordered_lane_ids.end())
-                return std::nullopt;
-            return static_cast<std::size_t>(std::distance(ordered_lane_ids.begin(), found));
-        };
-
-        const auto bpm_timing = build_osu_bpm_timing(*chart, measures, fail);
-        const auto& bpms = bpm_timing.events;
-        const auto relative_milliseconds_at = [&](std::uint64_t row) {
-            return osu_relative_milliseconds(bpm_timing, row,
-                                             chart->divisions_per_standard_measure, fail);
-        };
-
-        const auto retained_note_times = retained_osu_note_times(*chart);
-        auto offset_seconds = rational_value(chart->beat_zero_audio_offset_seconds);
-        if (!offset_seconds)
-            fail(osu_mania_write_diagnostic_code_t::invalid_document,
-                 "beat-zero audio offset is invalid", "beat_zero_audio_offset_seconds");
-        auto offset_ms = *offset_seconds * 1000.0L;
-        if (const auto inferred = infer_osu_offset_ms(*chart, measures, bpms, retained_note_times,
-                                                      relative_milliseconds_at))
-            offset_ms = *inferred;
-        const auto timestamp_at_row = [&](std::uint64_t row) {
-            return offset_ms + relative_milliseconds_at(row);
-        };
-
-        const auto scrolls = collect_osu_scroll_events(*chart, measures, fail);
-        const auto kiais = collect_osu_kiai_events(*chart, measures, fail);
-        std::size_t event_count{};
-        const auto account_event = [&]() {
-            if (event_count >= options.max_events)
-                fail(osu_mania_write_diagnostic_code_t::output_limit,
-                     "osu! event count exceeds the configured export bound", "events");
-            ++event_count;
-        };
-        std::size_t event_serial{};
-        auto timing_output = build_osu_timing_output(
-            *chart, measures, bpm_timing, scrolls, kiais, timestamp_at_row, account_event,
-            event_serial, fail);
-
-        std::vector<osu_output_event_t> hit_output;
-        bool rounded_hit_time{};
-        std::size_t note_serial{};
-        for (std::size_t measure_index = 0; measure_index < chart->measures.size();
-             ++measure_index) {
-            const auto& measure = chart->measures[measure_index];
-            for (const auto& note : measure.notes) {
-                const auto lane = lane_column(note.lane);
-                if (!lane)
-                    fail(osu_mania_write_diagnostic_code_t::invalid_layout,
-                         "note refers to a lane outside the osu!mania layout", "HitObjects.lane");
-                const auto begin_row = measures.row_of(note.position);
-                if (!begin_row)
-                    fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
-                         "note head lies outside chart geometry", "HitObjects.time");
-                hit_output.push_back(serialize_osu_note(
-                    note, *begin_row, *lane, keys, song, measures, retained_note_times,
-                    lazer_profile, rounded_hit_time, timestamp_at_row, note_serial, account_event,
-                    fail, warn));
-                ++note_serial;
-            }
-        }
-        std::ranges::stable_sort(hit_output, [](const auto& left, const auto& right) {
-            return std::tuple{left.milliseconds, left.row, left.order, left.serial} <
-                   std::tuple{right.milliseconds, right.row, right.order, right.serial};
-        });
-        if (rounded_hit_time && !lazer_profile)
-            warn(osu_mania_write_diagnostic_code_t::timestamp_quantization,
-                 "fractional hit-object milliseconds were rounded to nearest integer; exact "
-                 "half-millisecond ties round away from zero",
-                 "HitObjects.time");
-
-        std::vector<osu_output_event_t> event_output;
-        const auto retained_events = retained_osu_event_fields(*chart);
-        append_osu_bgm_events(event_output, event_serial, *chart, measures, song, retained_events,
-                              lazer_profile, timestamp_at_row, account_event, fail, warn);
-        append_osu_sound_channels(event_output, event_serial, *chart, measures, song,
-                                  lazer_profile, timestamp_at_row, account_event, fail);
-        append_osu_bga_events(event_output, event_serial, *chart, measures, song,
-                              retained_events, lazer_profile, timestamp_at_row, account_event,
-                              fail);
-        auto bookmark_times = serialize_osu_bookmarks(*chart, measures, timestamp_at_row,
-                                                      account_event, fail, warn);
-
-        auto music_files = collect_osu_music_files(song, *chart, fail);
-        auto tags = collect_osu_tags(song, *chart, fail);
-        auto extra_fields = options.preserve_unknown_fields
-                                ? passthrough_fields(*chart, song, result.diagnostics)
-                                : std::vector<passthrough_field_t>{};
-        project_osu_specialstyle_field(*chart, extra_fields);
-        project_osu_preview_field(song, *chart, extra_fields, result.diagnostics);
-        if (!result.ok())
-            throw osu_write_abort_t{};
-        std::size_t metadata_field_count{};
-        std::size_t metadata_bytes{};
-        const auto account_metadata = [&](std::string_view line) {
-            if (metadata_field_count >= options.max_metadata_fields ||
-                line.size() > options.max_metadata_bytes ||
-                metadata_bytes > options.max_metadata_bytes - line.size()) {
-                fail(osu_mania_write_diagnostic_code_t::metadata_limit,
-                     "osu! metadata exceeds the configured field-count or byte limit", "metadata");
-            }
-            ++metadata_field_count;
-            metadata_bytes += line.size();
-        };
-        account_osu_metadata(music_files, bookmark_times, song, *chart, tags, keys, extra_fields,
-                             account_metadata);
-        result.value = assemble_osu_output(song, *chart, options, output_profile, music_files,
-                                          bookmark_times, tags, keys, extra_fields, event_output,
-                                          timing_output, hit_output, storyboard_output,
-                                          account_event, fail);
+        emit(result, fail, warn);
     } catch (const osu_write_abort_t&) {
         result.value.reset();
     } catch (const std::exception& error) {
@@ -3635,6 +3721,150 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                       .location = "document"});
     }
     return result;
+}
+
+template <typename fail_t, typename warn_t>
+void emit_osu_mania(const song_document_t& song, const osu_mania_write_options_t& options,
+                    osu_mania_write_outcome_t& result, fail_t&& fail, warn_t&& warn) {
+    const auto* chart = select_osu_chart(song, options, fail);
+    const auto output_profile = select_osu_profile(song, *chart, options, fail);
+    const bool lazer_profile = output_profile == osu_mania_file_profile_t::lazer_v128;
+
+    auto baked_chart = validate_and_bake_osu_chart(song, *chart, fail);
+    chart = &*baked_chart.value;
+    auto storyboard_output = prepare_osu_storyboard(song, options, fail, warn);
+    validate_osu_chart_features(*chart, options, fail, warn);
+    auto geometry = build_osu_export_geometry(*chart, options, fail);
+    const auto& measures = geometry.measures;
+    const auto& ordered_lane_ids = geometry.ordered_lane_ids;
+    const auto keys = ordered_lane_ids.size();
+    const auto lane_column = [&](lane_id_t lane) -> std::optional<std::size_t> {
+        const auto found = std::ranges::find(ordered_lane_ids, lane);
+        if (found == ordered_lane_ids.end())
+            return std::nullopt;
+        return static_cast<std::size_t>(std::distance(ordered_lane_ids.begin(), found));
+    };
+
+    const auto bpm_timing = build_osu_bpm_timing(*chart, measures, fail);
+    const auto& bpms = bpm_timing.events;
+    const auto relative_milliseconds_at = [&](std::uint64_t row) {
+        return osu_relative_milliseconds(bpm_timing, row,
+                                         chart->divisions_per_standard_measure, fail);
+    };
+
+    const auto retained_note_times = retained_osu_note_times(*chart);
+    auto offset_seconds = rational_value(chart->beat_zero_audio_offset_seconds);
+    if (!offset_seconds)
+        fail(osu_mania_write_diagnostic_code_t::invalid_document,
+             "beat-zero audio offset is invalid", "beat_zero_audio_offset_seconds");
+    auto offset_ms = *offset_seconds * 1000.0L;
+    if (const auto inferred = infer_osu_offset_ms(*chart, measures, bpms, retained_note_times,
+                                                  relative_milliseconds_at))
+        offset_ms = *inferred;
+    const auto timestamp_at_row = [&](std::uint64_t row) {
+        return offset_ms + relative_milliseconds_at(row);
+    };
+
+    const auto scrolls = collect_osu_scroll_events(*chart, measures, fail);
+    const auto kiais = collect_osu_kiai_events(*chart, measures, fail);
+    std::size_t event_count{};
+    const auto account_event = [&]() {
+        if (event_count >= options.max_events)
+            fail(osu_mania_write_diagnostic_code_t::output_limit,
+                 "osu! event count exceeds the configured export bound", "events");
+        ++event_count;
+    };
+    std::size_t event_serial{};
+    auto timing_output = build_osu_timing_output(
+        *chart, measures, bpm_timing, scrolls, kiais, timestamp_at_row, account_event,
+        event_serial, fail);
+
+    std::vector<osu_output_event_t> hit_output;
+    bool rounded_hit_time{};
+    std::size_t note_serial{};
+    for (std::size_t measure_index = 0; measure_index < chart->measures.size();
+         ++measure_index) {
+        const auto& measure = chart->measures[measure_index];
+        for (const auto& note : measure.notes) {
+            const auto lane = lane_column(note.lane);
+            if (!lane)
+                fail(osu_mania_write_diagnostic_code_t::invalid_layout,
+                     "note refers to a lane outside the osu!mania layout", "HitObjects.lane");
+            const auto begin_row = measures.row_of(note.position);
+            if (!begin_row)
+                fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                     "note head lies outside chart geometry", "HitObjects.time");
+            hit_output.push_back(serialize_osu_note(
+                note, *begin_row, *lane, keys, song, measures, retained_note_times,
+                lazer_profile, rounded_hit_time, timestamp_at_row, note_serial, account_event,
+                fail, warn));
+            ++note_serial;
+        }
+    }
+    std::ranges::stable_sort(hit_output, [](const auto& left, const auto& right) {
+        return std::tuple{left.milliseconds, left.row, left.order, left.serial} <
+               std::tuple{right.milliseconds, right.row, right.order, right.serial};
+    });
+    if (rounded_hit_time && !lazer_profile)
+        warn(osu_mania_write_diagnostic_code_t::timestamp_quantization,
+             "fractional hit-object milliseconds were rounded to nearest integer; exact "
+             "half-millisecond ties round away from zero",
+             "HitObjects.time");
+
+    std::vector<osu_output_event_t> event_output;
+    const auto retained_events = retained_osu_event_fields(*chart);
+    append_osu_bgm_events(event_output, event_serial, *chart, measures, song, retained_events,
+                          lazer_profile, timestamp_at_row, account_event, fail, warn);
+    append_osu_sound_channels(event_output, event_serial, *chart, measures, song,
+                              lazer_profile, timestamp_at_row, account_event, fail);
+    append_osu_bga_events(event_output, event_serial, *chart, measures, song,
+                          retained_events, lazer_profile, timestamp_at_row, account_event,
+                          fail);
+    auto bookmark_times = serialize_osu_bookmarks(*chart, measures, timestamp_at_row,
+                                                  account_event, fail, warn);
+
+    auto music_files = collect_osu_music_files(song, *chart, fail);
+    auto tags = collect_osu_tags(song, *chart, fail);
+    auto extra_fields = options.preserve_unknown_fields
+                            ? passthrough_fields(*chart, song, result.diagnostics)
+                            : std::vector<passthrough_field_t>{};
+    project_osu_specialstyle_field(*chart, extra_fields);
+    project_osu_preview_field(song, *chart, extra_fields, result.diagnostics);
+    if (!result.ok())
+        throw osu_write_abort_t{};
+    std::size_t metadata_field_count{};
+    std::size_t metadata_bytes{};
+    const auto account_metadata = [&](std::string_view line) {
+        if (metadata_field_count >= options.max_metadata_fields ||
+            line.size() > options.max_metadata_bytes ||
+            metadata_bytes > options.max_metadata_bytes - line.size()) {
+            fail(osu_mania_write_diagnostic_code_t::metadata_limit,
+                 "osu! metadata exceeds the configured field-count or byte limit", "metadata");
+        }
+        ++metadata_field_count;
+        metadata_bytes += line.size();
+    };
+    account_osu_metadata(music_files, bookmark_times, song, *chart, tags, keys, extra_fields,
+                         account_metadata);
+    result.value = assemble_osu_output(song, *chart, options, output_profile, music_files,
+                                      bookmark_times, tags, keys, extra_fields, event_output,
+                                      timing_output, hit_output, storyboard_output,
+                                      account_event, fail);
+}
+} // namespace
+
+auto write_osu_storyboard(const song_document_t& song, osu_mania_write_options_t options)
+    -> osu_mania_write_outcome_t {
+    return run_osu_writer([&](auto& result, const auto& fail, const auto& warn) {
+        result.value = prepare_osu_storyboard(song, options, fail, warn);
+    });
+}
+
+auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options)
+    -> osu_mania_write_outcome_t {
+    return run_osu_writer([&](auto& result, const auto& fail, const auto& warn) {
+        emit_osu_mania(song, options, result, fail, warn);
+    });
 }
 
 auto osu_sample_context_index_t::from(const chart_document_t& chart)
@@ -3745,6 +3975,27 @@ auto materialize_osu_sample_controls(chart_document_t& chart) -> bool {
             .value = fields[0] >= 0 && fields[0] <= 3 ? fields[0] : 0, .provenance = {.family = format_family_t::osu_mania, .source_order = source->source_order}});
     }
     return true;
+}
+
+auto resolve_osu_sample_resources(const song_document_t& song, const osu_hitsample_t& sample,
+    osu_sample_context_t context, std::optional<resource_id_t> custom_normal)
+    -> result_t<std::vector<std::pair<resource_id_t, std::int64_t>>, error_t<failure_code_t>> {
+    if (!sample.is_valid()) return std::unexpected(error_t{failure_code_t::invalid_data, "Invalid osu! sample descriptor"});
+    const auto query = sample.query(context, custom_normal.has_value());
+    std::vector<std::pair<resource_id_t, std::int64_t>> result;
+    if (custom_normal) {
+        const auto resource = std::ranges::find(song.resources, *custom_normal, &resource_entry_t::id);
+        const auto path = osu_resource_path(song, *custom_normal, true);
+        if (resource == song.resources.end() || resource->missing || !path || !osu_line::is_writable_filename(*path))
+            return std::unexpected(error_t{failure_code_t::not_found, "Explicit osu! normal resource is unavailable or unsafe"});
+        result.emplace_back(*custom_normal, query.volume);
+    }
+    for (const auto& voice : query.voices) {
+        const auto resource = registered_osu_voice(song, voice);
+        if (!resource) return std::unexpected(error_t{failure_code_t::resolve_failed, resource.error()});
+        result.emplace_back(*resource, query.volume);
+    }
+    return result;
 }
 
 } // namespace wormedit

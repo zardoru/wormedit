@@ -687,11 +687,11 @@ TEST_CASE("Fixed script recipes link across exact grids without evaluating scrip
     add_source_scroll_recipe(song);
     auto& recipe = song.charts.front().sv_recipes.front();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "1";
+    recipe.set_frozen_source("1");
     auto history = document_history_t::from(std::move(song));
     link_scroll_recipe(history);
     CHECK(history.document.charts.back().sv_recipes.front().curve == sv_recipe_curve_t::lua_expression);
-    CHECK(history.document.charts.back().sv_recipes.front().expression_source == "1");
+    CHECK(history.document.charts.back().sv_recipes.front().script().frozen_source == "1");
     CHECK(history.document.charts.back().sv_recipes.front().sampling.fixed_step_rows == 120);
     require_valid_links(history.document);
 }

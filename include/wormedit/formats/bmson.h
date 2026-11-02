@@ -74,6 +74,25 @@ struct bmson_write_options_t {
     bool preserve_source_fields{true};
 };
 
+struct bmson_channel_binding_t {
+    chart_id_t chart;
+    object_id_t event; // Semantic event or retained source-event identity.
+    std::size_t channel_index{}; // Zero-based sound_channels array position.
+    auto operator==(const bmson_channel_binding_t&) const -> bool = default;
+};
+struct bmson_planned_channel_t {
+    asset_id_t asset;
+    std::string filename;
+    auto operator==(const bmson_planned_channel_t&) const -> bool = default;
+};
+struct bmson_channel_plan_t {
+    std::vector<bmson_planned_channel_t> channels;
+    // A vector preserves one-to-many source aliases without a mutable mirror.
+    std::vector<bmson_channel_binding_t> bindings;
+};
+[[nodiscard]] auto build_bmson_channel_plan(const song_document_t& song, bmson_write_options_t options = {})
+    -> attempt_t<bmson_channel_plan_t, std::vector<bmson_write_diagnostic_t>>;
+
 using bmson_write_outcome_t = attempt_t<std::string, std::vector<bmson_write_diagnostic_t>>;
 
 // Exports one chart as BMSON 1.0 JSON. Positions and durations are represented exactly;

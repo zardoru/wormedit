@@ -116,7 +116,8 @@ template <class Request, class Payload, class Identity> class async_job_t {
 
     // Capture runs once, only after admission; rejected image batches allocate no source copy.
     template <class Capture>
-    [[nodiscard]] auto request(Capture&& capture, Identity identity, work_function_t work)
+    [[nodiscard]] auto request(Capture&& capture, Identity identity, work_function_t work,
+        task_cancel_result_policy_t policy = task_cancel_result_policy_t::discard_running_result)
         -> async_job_start_outcome_t {
         if (maximum_in_flight_ == 0)
             return std::unexpected(error_t<failure_code_t>{
@@ -135,7 +136,7 @@ template <class Request, class Payload, class Identity> class async_job_t {
                     return std::unexpected(task_failure_t::from(
                         result.error().code, std::move(result.error().message)));
                 return task_value_t::from(std::make_shared<const Payload>(std::move(*result)));
-            });
+            }, policy);
         if (!task)
             return std::unexpected(std::move(task.error()));
         auto submitted = scheduler_->begin(std::move(graph));

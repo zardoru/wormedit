@@ -3,6 +3,7 @@
 // Typed frontend actions the editor controller dispatches (dispatch_editor_action).
 
 #include <wormedit/core/interaction_types.h>
+#include <wormedit/core/osbx_edit.h>
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 
@@ -171,6 +172,15 @@ struct update_note_move_gesture_action_t {
     // Absolute destination in the unmaterialized BMS tail (BGM reference only).
     std::optional<std::uint64_t> virtual_bgm_row;
     proposal_operation_t operation{proposal_operation_t::revise};
+};
+
+struct begin_osbx_edit_gesture_action_t {
+    osbx_edit_t edit;
+};
+struct update_osbx_edit_gesture_action_t {
+    osbx_edit_change_t change;
+    proposal_operation_t operation{proposal_operation_t::revise};
+    bool pointer_captured{true};
 };
 
 struct begin_bar_line_move_gesture_action_t {
@@ -346,6 +356,7 @@ using editor_interaction_action_t = std::variant<
     begin_note_duration_gesture_action_t, update_note_duration_gesture_action_t,
     begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
     begin_bar_line_move_gesture_action_t, update_bar_line_move_gesture_action_t,
+    begin_osbx_edit_gesture_action_t, update_osbx_edit_gesture_action_t,
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
     end_note_paint_gesture_action_t, begin_resource_paint_gesture_action_t,
     update_resource_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,

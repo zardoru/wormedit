@@ -129,10 +129,10 @@ void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            runtime::preview_audio_export_t& preview_audio,
                            document_history_t& history,
                            workspace_controller_t& workspace,
-                           const std::filesystem::path& asset_base) {
+                           const std::filesystem::path& asset_base, storyboard_import_completion_t storyboard) {
     // Metadata runtime consumes and posts each terminal outcome itself.
     static_cast<void>(metadata_assets.poll(history, workspace, asset_base));
-    static_cast<void>(resource_copy.poll(history, workspace));
+    static_cast<void>(resource_copy.poll(history, workspace, std::move(storyboard)));
     static_cast<void>(preview_audio.poll(history, workspace));
     static_cast<void>(output_group_export.poll(history));
 }

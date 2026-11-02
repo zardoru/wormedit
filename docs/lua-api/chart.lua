@@ -76,7 +76,8 @@
 
 --- A playable tap inside a measure.
 -- @param descriptor `{key="hit", row=0, lane=1, sound=123}`; key and sound optional.
--- Sound is an existing resource ID, not an asset ID. Typed sample references are future work.
+-- Sound is an existing resource ID, not an asset ID. Alternatively, sample accepts
+-- osu_sample, bms_wav or audio_file. Do not supply both sound and sample.
 -- Keys are stable within a measure. Omitted event keys use their ordinal.
 -- @function note
 
@@ -148,3 +149,38 @@
 -- SPEEDS spans use instantaneous transitions. Sampling, composition and format rounding
 -- follow the ordinary SV recipe preview/export path.
 -- @table SpanDescriptor
+
+--- Use the existing typed osu! sample descriptor on a note or BGM event.
+-- @param value `{set="normal", addition="clap", index=2, volume=100}`.
+-- Set/addition-set names are auto, normal, soft and drum. Addition selects a
+-- hitnormal/whistle/finish/clap voice; filename optionally selects custom audio.
+-- The descriptor remains authoritative when later edited through hitsound tools.
+-- BMS/BMSON can lower a new typed descriptor only when the registered catalog
+-- resolves exactly one voice at unit gain. Missing voices, additions requiring
+-- multiple contributions and scaled gain reject before output; osu! retains
+-- the full descriptor. This does not change imported chart conversion policy.
+-- @function osu_sample
+
+--- Retain an explicit BMS WAV reference to the current imported chart context.
+-- Two-digit base36 indices 01 through ZZ are accepted, ignoring ASCII case.
+-- A table form `{index="0A", chart=123}` selects a stable source chart ID.
+-- Different audio claiming one explicit target WAV index rejects export before
+-- bytes are written. Reassigning the event's sound invalidates the old intent.
+-- @param value Two-character index or reference table.
+-- @function bms_wav
+
+--- Use a declared, hash-frozen project audio asset by declaration ID or file.
+-- Declare audio in project.lua before including the chart module. Relative file
+-- names resolve through that declaration's canonical project/module path;
+-- arbitrary working-directory files and undeclared paths are rejected.
+-- A typed audio_file requires canonical decoder geometry during discovery;
+-- builds without that optional decoder report unavailable for this form.
+-- Ordinary byte-only audio declarations and numeric sample IDs remain usable.
+-- New declared assets and their resources materialize with the generated chart
+-- in the same Undo transaction, including when no asset ID existed at discovery.
+-- Export verifies frozen encoded-source bytes in private staging before atomic
+-- publication. Filename collisions, changed source promises and exhausted WAV
+-- slots reject the whole output. A source that needs slice/cut rendering must
+-- be resolved explicitly when its frozen identity cannot be preserved.
+-- @string value Declared audio ID or project-relative audio file reference.
+-- @function audio_file

@@ -1,6 +1,7 @@
 #include "ui/nuklear/chrome/catalog_chrome.h"
 #include "ui/nuklear/chrome/content_layout.h"
 #include "ui/nuklear/compose/compose_bga_panel.h"
+#include "ui/frontend/storyboard_assets.h"
 #include "ui/nuklear/chrome/catalog_confirmation.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_action_stamp.h"
@@ -19,10 +20,12 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <memory>
 #include <nuklear.h>
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <wormedit/core/vocabulary.h>
 namespace {
 using wormedit::ui::chrome::IconButton;
@@ -34,25 +37,41 @@ struct Texture { SDL_Texture* value{}; std::uint64_t content{}, project{}; };
 SDL_Renderer* renderer{};
 std::unordered_map<std::uint64_t, Texture> textures;
 
-struct Picker { std::mutex mutex; bool open{}; wormedit::ui::chrome::PopupContextStamp origin; std::vector<std::string> paths; };
+using image_picker_target_t = std::variant<wormedit::ui::chrome::PopupContextStamp, wormedit::ui::storyboard_action_t>;
+struct Picker {
+    std::mutex mutex;
+    bool open{};
+    std::shared_ptr<const image_picker_target_t> target;
+    std::vector<std::string> paths;
+};
 Picker picker;
 auto advance_eligible(const wormedit::ui::compose_view_t& view, std::uint64_t resource_id) -> bool {
     return std::ranges::find(view.bga_advance_ids, resource_id) != view.bga_advance_ids.end();
 }
-void SDLCALL picked(void*, const char* const* paths, int) {
+void SDLCALL picked(void* userdata, const char* const* paths, int) {
+    const std::unique_ptr<std::shared_ptr<const image_picker_target_t>> target{
+        static_cast<std::shared_ptr<const image_picker_target_t>*>(userdata)};
     std::lock_guard lock{picker.mutex};
+    if (picker.target != *target) return; // A reset/rebind cannot revive an older native callback.
     picker.open = false;
+    picker.paths.clear();
     for (std::size_t index = 0; paths && paths[index] && index < wormedit::ui::sound_drop_resource_limit; ++index)
         picker.paths.emplace_back(paths[index]);
 }
-void open_picker(const wormedit::ui::compose_view_t& view) {
+auto show_image_picker(image_picker_target_t origin, bool multiple) -> bool {
+    auto target = std::make_shared<const image_picker_target_t>(std::move(origin));
     { std::lock_guard lock{picker.mutex};
-      if (picker.open) return;
+      if (picker.open) return false;
       picker.open = true;
-      picker.origin = wormedit::ui::chrome::PopupContextStamp::from(view);
+      picker.target = target;
       picker.paths.clear(); }
     static const SDL_DialogFileFilter filter{"Images", "png;jpg;jpeg;bmp;gif;tga;ppm"};
-    SDL_ShowOpenFileDialog(picked, nullptr, SDL_GetKeyboardFocus(), &filter, 1, nullptr, true);
+    auto callback = std::make_unique<std::shared_ptr<const image_picker_target_t>>(std::move(target));
+    SDL_ShowOpenFileDialog(picked, callback.release(), SDL_GetKeyboardFocus(), &filter, 1, nullptr, multiple);
+    return true;
+}
+void open_picker(const wormedit::ui::compose_view_t& view) {
+    (void)show_image_picker(wormedit::ui::chrome::PopupContextStamp::from(view), true);
 }
 auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind) -> bool {
@@ -64,9 +83,11 @@ void import_picked(wormedit::ui::workspace_action_t& action, const wormedit::ui:
     wormedit::ui::chrome::PopupContextStamp origin;
     std::vector<std::string> paths;
     { std::lock_guard lock{picker.mutex};
-      if (picker.paths.empty()) return;
+      if (picker.paths.empty() || !picker.target) return;
+      const auto* compose = std::get_if<wormedit::ui::chrome::PopupContextStamp>(picker.target.get());
+      if (!compose) return;
       paths = std::move(picker.paths); picker.paths.clear();
-      origin = picker.origin; }
+      origin = *compose; picker.target.reset(); }
     if (!wormedit::ui::chrome::popup_context_matches(origin,
             wormedit::ui::chrome::PopupContextStamp::from(view))) {
         return;
@@ -371,6 +392,34 @@ void render_bga_usage(nk_context* context, const wormedit::ui::compose_view_t& v
     if (state.bga_catalog.find_uses_open) render_bga_usage_rows(context, view, action, state);
     if (!available) nk_widget_disable_end(context);
 }
+}
+
+void worm_ui_nuklear_reset_image_picker() {
+    std::lock_guard lock{picker.mutex};
+    picker.open = false; picker.target.reset(); picker.paths.clear();
+}
+auto wormedit::ui::open_storyboard_image_picker(const storyboard_action_t& captured) -> bool {
+    if (captured.kind != storyboard_action_kind_t::assets ||
+        captured.assets.kind != storyboard_assets_action_kind_t::import_images || !captured.assets.paths.empty()) return false;
+    return show_image_picker(captured, false);
+}
+auto wormedit::ui::consume_storyboard_image_picker(const storyboard_view_t& view, storyboard_action_t& output) -> bool {
+    if (output.kind != storyboard_action_kind_t::none) return false;
+    storyboard_action_t captured;
+    std::vector<std::string> paths;
+    {
+        std::lock_guard lock{picker.mutex};
+        if (!picker.target || picker.paths.empty()) return false;
+        const auto* storyboard = std::get_if<storyboard_action_t>(picker.target.get());
+        if (!storyboard) return false;
+        captured = *storyboard; paths = std::move(picker.paths);
+        picker.target.reset(); picker.paths.clear();
+    }
+    if (!view.visible || captured.project != view.project || captured.revision != view.revision ||
+        captured.session_generation != view.session_generation || captured.storyboard != view.state.selection.storyboard ||
+        captured.prepared_generation != view.canvas.prepared_generation) return false;
+    output = std::move(captured); output.assets.paths = std::move(paths);
+    return true;
 }
 
 void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui::compose_view_t* view,

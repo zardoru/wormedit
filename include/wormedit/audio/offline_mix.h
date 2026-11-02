@@ -4,6 +4,7 @@
 #include <wormedit/core/result.h>
 
 #include <cstddef>
+#include <functional>
 #include <cstdint>
 #include <span>
 #include <stop_token>
@@ -30,6 +31,19 @@ struct offline_mix_t {
 
 // Applies the same endpoint fade as offline rendering to bounded stereo PCM.
 void apply_offline_mix_fade(std::vector<float>& interleaved_stereo, std::uint32_t fade_out_ms);
+
+// Borrowed stereo PCM at the existing preview rate. first_frame is absolute
+// on the same schedule clock, including chart music offset and prefix tails.
+// The sink must consume the span before returning. Failure stops production.
+using offline_mix_sink_t = std::function<result_t<void, error_t<failure_code_t>>(
+    std::uint64_t first_frame, std::span<const float>)>;
+
+[[nodiscard]] auto render_offline_interval_to(
+    decoded_source_registry_t& sources, const preview_schedule_t& schedule,
+    std::span<const preview_object_source_binding_t> objects,
+    std::uint64_t begin_frame, std::uint64_t end_frame, const offline_mix_sink_t& sink,
+    offline_mix_options_t options = {}, std::stop_token stop = {})
+        -> result_t<void, error_t<failure_code_t>>;
 
 // Mixes [begin_frame, end_frame) through the same preview bridge and transport
 // used by playback, without metronome clicks. Renders from timeline zero and

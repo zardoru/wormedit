@@ -338,9 +338,10 @@ auto validate_generator_parameters(const generator_recipe_t& recipe) -> diagnost
 }
 auto validate_generator_recipe(const generator_recipe_t& recipe) -> diagnostic_list_t {
     const bool legacy = recipe.source.empty() && !recipe.chart && recipe.generated_notes.empty() &&
-        recipe.generated_layers.empty() && recipe.generated_charts.empty() && recipe.generated_scrolls.empty() && recipe.generated_sv_recipes.empty() && !recipe.bms_scope && !recipe.bms_chart;
+        recipe.generated_layers.empty() && recipe.generated_storyboards.empty() && recipe.generated_charts.empty() && recipe.generated_scrolls.empty() && recipe.generated_sv_recipes.empty() && !recipe.bms_scope && !recipe.bms_chart;
     if (auto errors = validate_generator_inputs(recipe, legacy); !errors.empty()) return errors;
     if (auto errors = validate_generator_parameters(recipe); !errors.empty()) return errors;
+    if (auto errors = validate_generator_storyboards(recipe); !errors.empty()) return errors;
     if (legacy) return {};
     if (auto errors = validate_generator_charts(recipe); !errors.empty()) return errors;
     if (recipe.api_version != "1" || !recipe.chart || recipe.source.empty() ||
@@ -419,7 +420,8 @@ auto generator_preview_t::bind_output(const document_history_t& history, generat
     identities.maximum = std::max(identities.maximum, identity_floor);
     const auto needed = count_new_keys(output.notes, old.generated_notes) + count_new_keys(output.layers, old.generated_layers) +
         count_new_keys(output.scrolls, old.generated_scrolls) + count_new_keys(output.sv_recipes, old.generated_sv_recipes) +
-        static_cast<std::size_t>(!recipe.id) + count_new_chart_declarations(output.charts,old);
+        static_cast<std::size_t>(!recipe.id) + count_new_chart_declarations(output.charts,old) +
+        count_new_keys(output.storyboards, old.generated_storyboards);
     const auto first = needed ? identities.next(needed) : std::optional{object_id_t{0}};
     if (!first) return {error(diagnostic_code_t::invalid_binding, "Generator identities are exhausted.")};
     auto next = first->value;
@@ -429,6 +431,7 @@ auto generator_preview_t::bind_output(const document_history_t& history, generat
     if (auto errors = bind_sv_values(recipe.generated_scrolls, output.scrolls, old.generated_scrolls, next, sv); !errors.empty()) return errors;
     if (auto errors = bind_sv_values(recipe.generated_sv_recipes, output.sv_recipes, old.generated_sv_recipes, next, sv); !errors.empty()) return errors;
     if (!recipe.id) recipe.id = recipe_id_t{next++};
+    if (auto errors = bind_storyboards(history, std::move(output.storyboards), old, next); !errors.empty()) return errors;
     return {};
 }
 auto generator_preview_t::propose(const document_history_t& history, generator_recipe_t recipe,
@@ -465,6 +468,8 @@ auto generator_preview_t::stage_outputs(document_command_transaction_t& transact
         const auto staged = stage_charts(transaction, old);
         if (!staged.value || !staged.ok()) return staged.diagnostics;
     }
+    const auto storyboard_stage = stage_storyboards(transaction, old);
+    if (!storyboard_stage.value || !storyboard_stage.ok()) return storyboard_stage.diagnostics;
     if ((!recipe.generated_layers.empty() || !old.generated_layers.empty()) &&
         !stage_layers(transaction, recipe, old)) return transaction.outcome().diagnostics;
     if ((!recipe.generated_notes.empty() || !old.generated_notes.empty()) &&
@@ -493,7 +498,12 @@ auto generator_preview_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) con
     if (!chart) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Generator chart disappeared.")}};
     if (auto errors = check_baseline(*chart, previous); !errors.empty()) return {.diagnostics = std::move(errors)};
     if (auto errors = check_placement(*chart, materialization, old); !errors.empty()) return {.diagnostics = std::move(errors)};
-    if (auto errors = stage_outputs(transaction, old); !errors.empty()) return {.diagnostics = std::move(errors)};
+    if (auto errors = materialize_generator_sample_references(transaction, materialization); !errors.empty())
+        return {.diagnostics = std::move(errors)};
+    if (previous && materialization == *previous) return {.value = std::nullopt};
+    auto materialized = *this;
+    materialized.recipe = materialization;
+    if (auto errors = materialized.stage_outputs(transaction, old); !errors.empty()) return {.diagnostics = std::move(errors)};
     if (keep_recipe) {
         const auto staged = stage_generator_record(transaction, std::move(materialization));
         if (!staged.value || !staged.ok()) return {.diagnostics = staged.diagnostics};
@@ -510,6 +520,8 @@ struct detach_generator_edit_t {
         auto& transaction = scope.transaction();
         if (!old_recipe(transaction.source_document(), id)) return {};
         const auto staged = transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+            for (auto& storyboard : document.storyboards)
+                if (storyboard.owning_generator_recipe == id) storyboard.owning_generator_recipe.reset();
             const auto removed = std::erase_if(document.generator_recipes, [&](const auto& recipe) { return recipe.id == id; });
             return {.value = document_edit_effect_t{.changed = removed != 0, .command_label = "Detach generator recipe"}};
         });

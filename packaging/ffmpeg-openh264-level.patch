@@ -1,0 +1,37 @@
+--- a/libavcodec/libopenh264enc.c
++++ b/libavcodec/libopenh264enc.c
+@@ -221,8 +221,34 @@
+     param.sSpatialLayers[0].iSpatialBitrate     = param.iTargetBitrate;
+     param.sSpatialLayers[0].iMaxSpatialBitrate  = param.iMaxBitrate;
+     param.sSpatialLayers[0].uiProfileIdc        = s->profile;
+ 
++    /* Forward only public OpenH264 levels; leave the SDK default unspecified. */
++    if (avctx->level > 0) {
++        switch (avctx->level) {
++        case 9: param.sSpatialLayers[0].uiLevelIdc = LEVEL_1_B; break;
++        case 10: param.sSpatialLayers[0].uiLevelIdc = LEVEL_1_0; break;
++        case 11: param.sSpatialLayers[0].uiLevelIdc = LEVEL_1_1; break;
++        case 12: param.sSpatialLayers[0].uiLevelIdc = LEVEL_1_2; break;
++        case 13: param.sSpatialLayers[0].uiLevelIdc = LEVEL_1_3; break;
++        case 20: param.sSpatialLayers[0].uiLevelIdc = LEVEL_2_0; break;
++        case 21: param.sSpatialLayers[0].uiLevelIdc = LEVEL_2_1; break;
++        case 22: param.sSpatialLayers[0].uiLevelIdc = LEVEL_2_2; break;
++        case 30: param.sSpatialLayers[0].uiLevelIdc = LEVEL_3_0; break;
++        case 31: param.sSpatialLayers[0].uiLevelIdc = LEVEL_3_1; break;
++        case 32: param.sSpatialLayers[0].uiLevelIdc = LEVEL_3_2; break;
++        case 40: param.sSpatialLayers[0].uiLevelIdc = LEVEL_4_0; break;
++        case 41: param.sSpatialLayers[0].uiLevelIdc = LEVEL_4_1; break;
++        case 42: param.sSpatialLayers[0].uiLevelIdc = LEVEL_4_2; break;
++        case 50: param.sSpatialLayers[0].uiLevelIdc = LEVEL_5_0; break;
++        case 51: param.sSpatialLayers[0].uiLevelIdc = LEVEL_5_1; break;
++        case 52: param.sSpatialLayers[0].uiLevelIdc = LEVEL_5_2; break;
++        default:
++            av_log(avctx, AV_LOG_ERROR, "Unsupported OpenH264 level %d\n", avctx->level);
++            return AVERROR(EINVAL);
++        }
++    }
++
+ #if OPENH264_VER_AT_LEAST(1, 7)
+     if (avctx->sample_aspect_ratio.num && avctx->sample_aspect_ratio.den) {
+         // Table E-1.
+         static const AVRational sar_idc[] = {

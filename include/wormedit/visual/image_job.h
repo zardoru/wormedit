@@ -84,12 +84,20 @@ struct image_request_t {
 class image_job_t
     : public async_job_t<image_request_t, image_job_result_t, async_job_project_identity_t> {
   public:
+    // The configured source count is the owner's complete per-request work
+    // budget, honored without an additional hidden clamp. The default remains
+    // five; zero disables admission. Decode/result/cache byte limits and the
+    // bounded in-flight job count apply independently to every admitted batch.
     image_job_t(image_cache_t& cache, task_scheduler_t& scheduler,
                 std::size_t maximum_sources_per_request = 5,
                 std::size_t maximum_in_flight_jobs = 4);
 
     image_job_t(const image_job_t&) = delete;
     auto operator=(const image_job_t&) -> image_job_t& = delete;
+
+    [[nodiscard]] auto maximum_sources_per_request() const noexcept -> std::size_t {
+        return maximum_sources_per_request_;
+    }
 
     [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                std::span<const resolved_visual_asset_t> sources,

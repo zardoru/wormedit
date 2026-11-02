@@ -76,6 +76,7 @@ struct project_asset_copy_receipt_t {
         -> project_asset_copy_receipt_t;
 
     struct published_identity_t {
+        [[nodiscard]] static auto from(const std::filesystem::path&) -> std::optional<published_identity_t>;
         std::uint64_t volume{};
         std::uint64_t file{};
         std::uintmax_t size{};
@@ -90,6 +91,21 @@ struct project_asset_copy_receipt_t {
 };
 using project_asset_copy_outcome_t =
     result_t<project_asset_copy_receipt_t, error_t<failure_code_t>>;
+
+// A project-relative file with no registered asset ID. The optional receipt
+// binds read-only media preparation to the bytes later copied into staging.
+struct project_path_copy_request_t {
+    std::filesystem::path source_directory;
+    std::filesystem::path relative_path;
+    std::uintmax_t maximum_bytes{64U * 1024U * 1024U};
+    std::optional<project_asset_copy_receipt_t::published_identity_t> expected_source;
+    auto operator==(const project_path_copy_request_t&) const -> bool = default;
+};
+[[nodiscard]] auto inspect_project_path_source(const project_path_copy_request_t& request)
+    -> result_t<std::filesystem::path, error_t<failure_code_t>>;
+[[nodiscard]] auto create_project_path_copy(const project_path_copy_request_t& request,
+    const std::filesystem::path& staging_directory, std::stop_token stop = {})
+    -> result_t<void, error_t<failure_code_t>>;
 
 // Publishes a byte-identical copy under project_directory/assets using the
 // planned source basename or collision fallback. A same-directory temporary

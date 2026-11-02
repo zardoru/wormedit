@@ -40,6 +40,18 @@ auto resolve_sample(const hitsound_environment_t& environment, osu_sample_set_t 
     if (const auto skin = existing_sample(environment.skin_directory, skin_name)) return skin;
     return existing_sample(environment.bundle_directory, skin_name);
 }
+// Notes and autoplay events share descriptor traversal; resolution and voice
+// lifetime remain with hitsound_resolver_t.
+template<class Visitor> void visit_hitsamples(const chart_document_t& chart,
+    std::optional<object_id_t> object, Visitor&& visit) {
+    const auto matches = [object](const auto& event) {
+        return event.osu_hitsample && (!object || event.id == *object);
+    };
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) if (matches(note)) visit(note);
+        for (const auto& event : measure.bgm_events) if (matches(event)) visit(event);
+    }
+}
 auto extension_rank(const std::filesystem::path& path) -> std::size_t {
     const auto extension = text_util::ascii_lowercase(path.extension().generic_string());
     return static_cast<std::size_t>(std::ranges::find(osu_skin_sample_extensions, extension) -
@@ -63,23 +75,12 @@ void hitsound_environment_t::refill_project_samples(const song_document_t& song)
 
 auto hitsound_paths_t::from(const osu_hitsample_t& sample, const hitsound_environment_t& environment,
                             bool custom_normal, osu_sample_context_t context) -> hitsound_paths_t {
-    hitsound_paths_t result{.gain = static_cast<float>(sample.volume == 0 ? context.volume : sample.volume) / 100};
-    if (!sample.is_valid()) return result;
-    const auto normal = sample.normal_set == osu_sample_set_t::automatic ? context.normal_set : sample.normal_set;
-    const auto addition = sample.addition_set == osu_sample_set_t::automatic ? normal : sample.addition_set;
-    const auto custom_index = sample.custom_index == 0 ? context.custom_index : sample.custom_index;
-    if (!custom_normal) {
-        auto path = safe_custom_path(environment, sample.filename);
-        if (!sample.filename.empty() && !path) result.fallback = true;
-        if (!path) path = resolve_sample(environment, normal, osu_sample_kind_t::hitnormal, custom_index);
-        if (path) result.paths.push_back(*path);
-        else result.fallback = true;
-    }
-    const std::array enabled{sample.whistle, sample.finish, sample.clap};
-    constexpr std::array kinds{osu_sample_kind_t::hitwhistle, osu_sample_kind_t::hitfinish, osu_sample_kind_t::hitclap};
-    for (std::size_t index = 0; index < enabled.size(); ++index) {
-        if (!enabled[index]) continue;
-        const auto path = resolve_sample(environment, addition, kinds[index], custom_index);
+    const auto query = sample.query(context, custom_normal);
+    hitsound_paths_t result{.gain = static_cast<float>(query.volume) / 100};
+    for (const auto& voice : query.voices) {
+        auto path = safe_custom_path(environment, voice.filename);
+        if (!voice.filename.empty() && !path) result.fallback = true;
+        if (!path) path = resolve_sample(environment, voice.fallback.set, voice.fallback.kind, voice.fallback.index);
         if (path) result.paths.push_back(*path);
         else result.fallback = true;
     }
@@ -106,11 +107,11 @@ auto hitsound_resolver_t::voice(const std::filesystem::path& path, decoded_sourc
     return voice;
 }
 
-auto hitsound_resolver_t::binding_for(const note_t& note, const hitsound_environment_t& resolved_environment,
+auto hitsound_resolver_t::binding_for(object_id_t object, const osu_hitsample_t& sample, const hitsound_environment_t& resolved_environment,
     decoded_source_registry_t& registry, osu_sample_context_t context, bool custom_normal) -> hitsound_binding_t {
-    const auto resolved = hitsound_paths_t::from(*note.osu_hitsample, resolved_environment, custom_normal, context);
+    const auto resolved = hitsound_paths_t::from(sample, resolved_environment, custom_normal, context);
     bool fallback = resolved.fallback;
-    preview_object_source_binding_t binding{.object = note.id};
+    preview_object_source_binding_t binding{.object = object};
     for (const auto& path : resolved.paths) {
         auto source = voice(path, registry);
         if (source) binding.voices.push_back(*source);
@@ -141,14 +142,11 @@ auto hitsound_resolver_t::bindings(const song_document_t& song, const chart_docu
     for (const auto& binding : registry.bindings()) assets.insert(binding.asset.value);
     for (const auto& resource : song.resources)
         if (assets.contains(resource.asset.value)) available.insert(resource.id.value);
-    for (const auto& measure : chart.measures) {
-        for (const auto& note : measure.notes) {
-            if (!note.osu_hitsample || (object && note.id != *object)) continue;
-            result.push_back(binding_for(note, resolved_environment, registry,
-                context ? context->at(note.position) : osu_sample_context_t{},
-                note.sound && available.contains(note.sound->value)));
-        }
-    }
+    visit_hitsamples(chart, object, [&](const auto& event) {
+        result.push_back(binding_for(event.id, *event.osu_hitsample, resolved_environment, registry,
+            context ? context->at(event.position) : osu_sample_context_t{},
+            event.sound && available.contains(event.sound->value)));
+    });
     return result;
 }
 }

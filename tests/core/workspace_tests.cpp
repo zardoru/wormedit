@@ -470,39 +470,29 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 }
 
-TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activated",
-          "[unit][core][workspace][placeholder]") {
+TEST_CASE("storyboard can be activated by the workspace controller",
+          "[unit][core][workspace][storyboard]") {
     const auto song = workspace_song();
     auto bound = workspace_controller_t::from(song);
     wormedit::test::require_workspace_result(bound);
     auto& workspace = *bound.value;
-    CHECK(is_workspace_tab_enabled(workspace_tab_t::setup));
-    CHECK_FALSE(is_workspace_tab_enabled(workspace_tab_t::storyboard));
+    CHECK(is_workspace_tab_enabled(workspace_tab_t::storyboard));
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::storyboard}));
+    CHECK(workspace.active_tab == workspace_tab_t::storyboard);
+}
 
-    const auto placeholder = workspace_view_t::from(workspace, song, workspace_tab_t::storyboard);
-    wormedit::test::require_workspace_result(placeholder);
-    CHECK_FALSE(placeholder.value->tab_enabled);
-    REQUIRE(std::holds_alternative<workspace_storyboard_view_t>(placeholder.value->tab_view));
-    const auto& placeholder_body =
-        std::get<workspace_storyboard_view_t>(placeholder.value->tab_view);
-    CHECK_FALSE(placeholder_body.enabled);
-    CHECK_FALSE(placeholder_body.placeholder.empty());
-
-    const auto rejected =
-        apply_workspace_action(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::storyboard});
-    wormedit::test::check_workspace_rejection(rejected);
-    CHECK(has_code(rejected.diagnostics, diagnostic_code_t::unsupported_feature));
-    CHECK(workspace.active_tab == workspace_tab_t::setup);
-
-    REQUIRE(
-        apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compare_validate}));
-    const auto validation = workspace_view_t::from(workspace, song);
-    wormedit::test::require_workspace_result(validation);
-    REQUIRE(std::holds_alternative<workspace_compare_validate_view_t>(validation.value->tab_view));
-    const auto& body = std::get<workspace_compare_validate_view_t>(validation.value->tab_view);
-    CHECK((body.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
-    CHECK(body.error_count == 0);
-    CHECK(body.diagnostics.empty());
+TEST_CASE("storyboard capability projection retains the configured workspace limit",
+          "[unit][core][workspace][storyboard]") {
+    const auto song = workspace_song();
+    auto bound = workspace_controller_t::from(song);
+    wormedit::test::require_workspace_result(bound);
+    const auto model = workspace_view_t::from(*bound.value, song, workspace_tab_t::storyboard);
+    wormedit::test::require_workspace_result(model);
+    CHECK(model.value->tab_enabled);
+    REQUIRE(std::holds_alternative<workspace_storyboard_view_t>(model.value->tab_view));
+    const auto& storyboard = std::get<workspace_storyboard_view_t>(model.value->tab_view);
+    CHECK(storyboard.enabled);
+    CHECK(storyboard.maximum_storyboards == bound.value->limits.maximum_storyboards);
 }
 
 TEST_CASE("transport range and compose summary caps reject partial updates",

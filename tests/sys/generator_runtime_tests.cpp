@@ -270,3 +270,107 @@ TEST_CASE("project chart modules create owned difficulties through captured sour
     check_runtime(runtime.result()->proposal.value->payload.recipe.generated_charts.front().chart==generated);
 }
 #endif
+
+#if defined(WORMEDIT_HAS_LUA)
+TEST_CASE("storyboard generator previews applies regenerates and undoes one scene", "[sys][generator-runtime][osbx-generator]") {
+    auto directory = test::temporary_directory_t::from(); require_runtime(directory.has_value());
+    const auto source = "storyboard 'scene-key'; group 'root'; opacity(.5)";
+    std::ofstream{directory->path() / "main.osbx.lua"} << source;
+    auto history = runtime_history();
+    const auto before = history.document;
+    task_scheduler_t scheduler{1, 4}; generator_runtime_t runtime{scheduler};
+    auto form = form_for_file();
+    std::snprintf(form.path, sizeof(form.path), "main.osbx.lua");
+    run_preview(runtime, history, form, directory->path());
+    INFO(runtime.result()->status);
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(history.document.storyboards == before.storyboards);
+    check_runtime(history.document.generator_recipes == before.generator_recipes);
+    check_runtime(history.document.revision == before.revision);
+    check_runtime(runtime.result()->proposal.value->payload.storyboards.added == 1);
+    check_runtime(runtime.result()->status.find("1 added") != std::string::npos);
+    require_runtime(runtime.apply(history, form).applied);
+    check_runtime(history.undo.size() == 1);
+    require_runtime(history.document.storyboards.size() == 1);
+    const auto id = history.document.storyboards.front().id;
+    check_runtime(history.document.storyboards.front().name == "scene-key");
+    check_runtime(history.document.storyboards.front().owning_generator_recipe == history.document.generator_recipes.front().id);
+    require_runtime(undo_document_command(history));
+    check_runtime(history.document.storyboards == before.storyboards);
+    check_runtime(history.document.generator_recipes == before.generator_recipes);
+    require_runtime(redo_document_command(history));
+    form = ui::generator_form_t::from(history.document.generator_recipes.front());
+    std::ofstream{directory->path() / "main.osbx.lua"} << "storyboard 'scene-key'; group 'root'; opacity(.75)";
+    run_preview(runtime, history, form, directory->path());
+    check_runtime(runtime.result()->requires_confirmation);
+    run_preview(runtime, history, form, directory->path(), true);
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(runtime.result()->proposal.value->payload.storyboards.changed == 1);
+    require_runtime(runtime.apply(history, form).applied);
+    check_runtime(history.document.storyboards.size() == 1);
+    check_runtime(history.document.storyboards.front().id == id);
+    check_runtime(history.document.storyboards.front().osbx->nodes.front().tracks.opacity.default_value == std::vector<double>{.75});
+}
+
+TEST_CASE("storyboard failures and manual changes preserve the applied scene", "[sys][generator-runtime][osbx-generator]") {
+    auto directory = test::temporary_directory_t::from(); require_runtime(directory.has_value());
+    write_script(directory->path(), "storyboard 'scene-key'; group 'root'");
+    auto history = runtime_history();
+    task_scheduler_t scheduler{1, 4}; generator_runtime_t runtime{scheduler};
+    auto form = form_for_file();
+    run_preview(runtime, history, form, directory->path());
+    require_runtime(runtime.apply(history, form).applied);
+    form = ui::generator_form_t::from(history.document.generator_recipes.front());
+    const auto good = history.document;
+    write_script(directory->path(), "storyboard 'scene-key'; error('broken')");
+    run_preview(runtime, history, form, directory->path());
+    run_preview(runtime, history, form, directory->path(), true);
+    check_runtime(!runtime.result()->proposal.value);
+    check_runtime(!runtime.apply(history, form).applied);
+    check_runtime(history.document.storyboards == good.storyboards);
+    check_runtime(history.document.generator_recipes == good.generator_recipes);
+    check_runtime(history.document.revision == good.revision);
+    write_script(directory->path(), "storyboard 'scene-key'; group 'root'");
+    history.document.storyboards.front().name = "Edited storyboard";
+    history.document.storyboards.front().osbx->canvas.width = 800;
+    ++history.document.revision;
+    const auto edited = history.document;
+    run_preview(runtime, history, form, directory->path());
+    check_runtime(!runtime.result()->proposal.value);
+    check_runtime(runtime.result()->status.find("Edited storyboard") != std::string::npos);
+    check_runtime(!runtime.apply(history, form).applied);
+    check_runtime(history.document.storyboards == edited.storyboards);
+    check_runtime(history.document.generator_recipes == edited.generator_recipes);
+    check_runtime(history.document.revision == edited.revision);
+}
+
+TEST_CASE("project generator applies chart and multiple storyboards atomically", "[sys][generator-runtime][osbx-generator]") {
+    auto directory = test::temporary_directory_t::from(); require_runtime(directory.has_value());
+    std::ofstream{directory->path() / "project.lua"} << "worm_project 'Song'; include 'easy.chart.lua'; include 'a.osbx.lua'; include 'b.osbx.lua'";
+    std::ofstream{directory->path() / "easy.chart.lua"} << "difficulty 'Easy'; measure{}";
+    std::ofstream{directory->path() / "a.osbx.lua"} << "storyboard 'a'; group 'root'";
+    std::ofstream{directory->path() / "b.osbx.lua"} << "storyboard 'b'; group 'root'";
+    auto history = runtime_history();
+    task_scheduler_t scheduler{1, 4}; generator_runtime_t runtime{scheduler};
+    auto form = form_for_file(); std::snprintf(form.path, sizeof(form.path), "project.lua");
+    run_preview(runtime, history, form, directory->path());
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(history.document.charts.size() == 1 && history.document.storyboards.empty());
+    check_runtime(runtime.result()->proposal.value->payload.storyboards.added == 2);
+    require_runtime(runtime.apply(history, form).applied);
+    check_runtime(history.document.charts.size() == 2 && history.document.storyboards.size() == 2);
+    check_runtime(history.undo.size() == 1);
+    const auto applied = history.document;
+    std::filesystem::remove_all(directory->path());
+    form = ui::generator_form_t::from(history.document.generator_recipes.front());
+    form.use_saved_source = true;
+    run_preview(runtime, history, form, directory->path());
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(runtime.result()->proposal.value->payload.storyboards.unchanged == 2);
+    check_runtime(history.document.storyboards == applied.storyboards);
+    check_runtime(history.document.generator_recipes == applied.generator_recipes);
+    check_runtime(history.document.revision == applied.revision);
+    require_runtime(undo_document_command(history));
+    check_runtime(history.document.charts.size() == 1 && history.document.storyboards.empty());
+}
+#endif

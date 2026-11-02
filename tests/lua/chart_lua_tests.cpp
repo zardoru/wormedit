@@ -2,6 +2,8 @@
 #include "../../src/scripting/lua_project.h"
 #include "../support/lua_documentation.h"
 #include "../support/native_bms_fixture.h"
+#include "../support/temporary_directory.h"
+#include <fstream>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
@@ -296,7 +298,12 @@ TEST_CASE("chart Lua preserves authored positions and rejects grid changes atomi
                                 .position = local_position_t{chart->measures.back().id, 1}});
     proposal = prepare_chart(history, recipe);
     require_chart(proposal.value.has_value());
-    require_chart(apply_generator(history, *proposal.value).applied);
+    const auto undo_count = history.undo.size();
+    const auto revision = history.document.revision;
+    const auto rerun = apply_generator(history, *proposal.value);
+    require_chart(rerun.diagnostics.empty());
+    check_chart(!rerun.applied);
+    check_chart(history.undo.size() == undo_count && history.document.revision == revision);
     check_chart(history.document.find_chart(chart_id)->bookmarks.front().position->row == 1);
     const auto before = history.document.revision;
     recipe.source =
@@ -341,11 +348,7 @@ auto shared_sv_chart_history() -> document_history_t {
         .name = "Shared frozen curve",
         .range = {{first, 0}, {middle, 0}},
         .curve = sv_recipe_curve_t::lua_expression,
-        .expression_source = source,
-        .lua = sv_recipe_lua_t{.source_reference = "curves/shared.lua",
-                               .source_hash = native_project_content_checksum(source),
-                               .parameters = {{.name = "height", .value = {3, 2}}},
-                               .seed = 17}};
+        .lua = sv_recipe_lua_t{.source = {.frozen_source = source, .source_reference = "curves/shared.lua", .source_hash = native_project_content_checksum(source), .parameters = {{.name = "height", .value = {3, 2}}}, .seed = 17}}};
     require_chart(apply_sv_recipe_edit(
                       history, insert_edit_t<sv_recipe_t>{.chart = chart_id, .value = recipe})
                       .applied);
@@ -392,7 +395,7 @@ TEST_CASE("chart Lua regeneration preserves shared SV definitions and frozen sou
     const auto stale = prepare_chart(history, history.document.generator_recipes.front());
     require_chart(stale.value.has_value());
     auto edited = history.document.find_chart(chart_id)->sv_recipes.front();
-    edited.lua->seed = 99;
+    edited.lua->source.seed = 99;
     require_chart(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id,
                                                                            .id = edited.id,
                                                                            .value = edited})
@@ -629,4 +632,136 @@ TEST_CASE("Adding generated spans cannot acquire independently authored recipe o
     recipe.source_hash = native_project_content_checksum(recipe.source);
     check_chart(!(prepare_chart(history, recipe).value));
     check_chart(history.document.charts.back().sv_recipes.front().name == "Authored");
+}
+
+namespace {
+void check_typed_note_sample_owner(const note_t& note) {
+    REQUIRE(note.osu_hitsample);
+    CHECK(note.osu_hitsample->clap);
+    CHECK(note.osu_hitsample->custom_index == 2);
+    CHECK_FALSE(note.sample_reference);
+}
+}
+
+TEST_CASE("chart Lua typed sample constructors retain one canonical event owner", "[chart-lua][resource_plan]") {
+    const auto history = chart_history();
+    const auto output = run_chart(history, chart_recipe(R"(
+      difficulty 'Typed'
+      measure {note {row=0,lane=1,sample=osu_sample{set='normal',addition='clap',index=2,volume=70}},
+               bgm {row=120,sample=bms_wav '0a'}}
+    )"));
+    REQUIRE(output.ok());
+    const auto& measure = output.value.charts.front().content.measures.front();
+    check_typed_note_sample_owner(measure.notes.front());
+    REQUIRE(measure.bgm_events.front().sample_reference);
+    const auto& reference = std::get<bms_wav_reference_t>(measure.bgm_events.front().sample_reference->reference);
+    CHECK(reference.index == "0A");
+    CHECK(reference.source_chart == chart_id_t{2});
+}
+
+TEST_CASE("chart Lua rejects invalid typed samples and fabricated audio receipts", "[chart-lua][resource_plan]") {
+    const auto expression = GENERATE("bms_wav '00'", "bms_wav '0!'", "osu_sample{volume=101}",
+        "osu_sample{set='unknown'}", "audio_file 'undeclared.wav'",
+        "{_kind='audio_file',declared_name='fake',file='fake.wav',content_hash='bad'}");
+    const auto history = chart_history();
+    const auto output = run_chart(history, chart_recipe("difficulty 'Bad'\nmeasure{note{row=0,lane=1,sample=" +
+        std::string(expression) + "}}"));
+    CHECK_FALSE(output.ok());
+    REQUIRE_FALSE(output.diagnostics.empty());
+    CHECK(output.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    CHECK(history.undo.empty());
+}
+
+namespace {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+void check_declared_sample_witness(const generator_chart_binding_t& witness, const chart_document_t& chart) {
+    const auto& note = chart.measures.front().notes.front();
+    const auto& bgm = chart.measures.front().bgm_events.front();
+    REQUIRE(note.sound);
+    REQUIRE(note.sample_reference);
+    CHECK(note.sound == bgm.sound);
+    CHECK(note.sample_reference->bound_sound == note.sound);
+    CHECK(witness.content.measures.front().notes.front() == note);
+    CHECK(witness.content.measures.front().bgm_events.front() == bgm);
+}
+auto checked_declared_sample_recipe(const document_history_t& history) -> generator_recipe_t {
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(history.document.audio_assets.size() == 1);
+    const auto& stored = history.document.generator_recipes.front();
+    const auto& witness = stored.generated_charts.front();
+    const auto* chart = history.document.find_chart(witness.chart);
+    REQUIRE(chart);
+    check_declared_sample_witness(witness, *chart);
+    return stored;
+}
+void check_materialization_noop_state(const document_history_t& history, const document_command_result_t& rerun,
+    const generator_recipe_t& stored) {
+    CHECK(rerun.diagnostics.empty());
+    CHECK(history.document.audio_assets.size() == 1);
+    CHECK_FALSE(rerun.applied);
+    CHECK(history.undo.size() == 1);
+    const auto& witness = stored.generated_charts.front();
+    CHECK(history.document.find_chart(witness.chart)->measures.front().notes.front().sound ==
+        witness.content.measures.front().notes.front().sound);
+}
+void check_declared_audio_noop(document_history_t& history, const generator_recipe_t& stored) {
+    const auto regenerated = prepare_chart(history, stored);
+    REQUIRE(regenerated.value);
+    const auto before = write_native_project(history.document);
+    REQUIRE(before.value);
+    const auto rerun = apply_generator(history, *regenerated.value);
+    const auto after = write_native_project(history.document);
+    REQUIRE(after.value);
+    INFO(nlohmann::json::diff(nlohmann::json::parse(*before.value), nlohmann::json::parse(*after.value)).dump());
+    check_materialization_noop_state(history, rerun, stored);
+}
+void undo_declared_sample_materialization(document_history_t& history) {
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.audio_assets.empty());
+    CHECK(history.document.resources.empty());
+    CHECK(history.document.charts.size() == 1);
+}
+#else
+void check_declared_audio_unavailable(const document_history_t& history, const generator_recipe_t& recipe,
+    const std::filesystem::path& directory) {
+    const auto frozen = lua_project_source_t::from(history.document, *history.read_chart(chart_id_t{2}), recipe, {}, directory);
+    CHECK_FALSE(frozen.ok());
+    REQUIRE_FALSE(frozen.diagnostics.empty());
+    CHECK(frozen.diagnostics.front().message.find("unavailable") != std::string::npos);
+    CHECK(history.document.audio_assets.empty());
+    CHECK(history.document.resources.empty());
+    CHECK(history.undo.empty());
+}
+#endif
+}
+
+TEST_CASE("declared audio without an asset ID materializes chart and witness in one transaction", "[chart-lua][resource_plan]") {
+    auto history = chart_history();
+    const auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto fixture = std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures/audio/keysound-c4.ogg";
+    std::filesystem::copy_file(fixture, directory->path() / "hit.ogg");
+    {
+        std::ofstream project_file(directory->path() / "project.lua");
+        project_file << "worm_project 'Samples'\naudio{id='hit',file='hit.ogg'}\ninclude 'typed.chart.lua'\n";
+        std::ofstream chart_file(directory->path() / "typed.chart.lua");
+        chart_file << "difficulty 'Typed'\nmeasure{note{row=0,lane=1,sample=audio_file 'hit'},bgm{row=120,sample=audio_file 'hit.ogg'}}\n";
+    }
+    auto recipe = chart_recipe("");
+    recipe.source_path = "project.lua";
+#if !defined(WORMEDIT_HAS_AUDIO_DECODER)
+    check_declared_audio_unavailable(history, recipe, directory->path());
+    CHECK(std::filesystem::file_size(directory->path() / "hit.ogg") == std::filesystem::file_size(fixture));
+#else
+    const auto frozen = lua_project_source_t::from(history.document, *history.read_chart(chart_id_t{2}), recipe, {}, directory->path());
+    REQUIRE(frozen.ok());
+    recipe.source = frozen.value.source;
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    const auto proposal = prepare_chart(history, recipe);
+    REQUIRE(proposal.value);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+    const auto stored = checked_declared_sample_recipe(history);
+    check_declared_audio_noop(history, stored);
+    undo_declared_sample_materialization(history);
+#endif
 }

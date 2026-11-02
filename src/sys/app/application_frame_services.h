@@ -34,7 +34,8 @@ void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            runtime::preview_audio_export_t& preview_audio,
                            document_history_t& history,
                            workspace_controller_t& workspace,
-                           const std::filesystem::path& asset_base);
+                           const std::filesystem::path& asset_base,
+                           storyboard_import_completion_t storyboard = {});
 
 auto compose_frame_delta_seconds(std::uint64_t& last_ticks) -> double;
 

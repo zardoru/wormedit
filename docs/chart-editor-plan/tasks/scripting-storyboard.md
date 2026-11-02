@@ -2,7 +2,7 @@
 
 [Back to the task-card index](../tasks.md).
 
-> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Cards remain deferred unless their status records an explicit owner promotion; do not start another card without that authorization.
 
 Stage 7 from [later work](../stages/later.md) and the
 [OSBX draft](../../osbx-draft-spec.md). Several items wait on open questions 9,
@@ -11,51 +11,63 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-150 Parse and emit OSB Animation objects
 
-- **Status:** deferred (stage 7–8 ambition; was: ready)
+- **Status:** done (2026-11-02; owner promoted storyboard work on 2026-10-31)
 - **Outcome:** `Animation,layer,origin,"path",x,y,frameCount,frameDelay,loopType` headers parse into a structured object with the same command children as Sprite, and emit back identically.
 - **Read first:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `tests/core/storyboard_tests.cpp`.
-- **Files owned:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `src/formats/native_project.cpp` (storyboard JSON), `tests/core/storyboard_tests.cpp`, `tests/formats/native_project_tests.cpp`.
+- **Files owned:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `src/formats/native_project.cpp` (storyboard JSON), `tests/core/storyboard_tests.cpp`, `tests/formats/native_project_tests.cpp`; coordinator-approved support: `include/wormedit/core/document.h`, `src/formats/native_project_migrations.cpp` (mandatory schema migration), `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp` (skip animation drawing until T-152), `src/core/osb_to_osbx.cpp`, `tests/core/osb_to_osbx_tests.cpp` (refuse static conversion until OSBX-10), and `tests/formats/osu_mania_tests.cpp` (embedded parse/emit regression using the existing common parser).
+- **Serialized ownership:** the coordinator acknowledged SMX-4's four-path schema 33 release before admitting T-150's schema 33→34 migration. T-150 preserved schema 32→33 and the NotITG profile validation, then released all source writers. T-151 subsequently added and verified schema 35. T-152/T-153 need new named reservations; these completed admissions grant no continuing writer slot. CMake, common documentation/status and coherent execution remain coordinator-owned.
 - **Steps:** 1. Tests first: parse/emit/reparse of an Animation with nested loop. 2. Model fields; `LoopForever`/`LoopOnce` enum. 3. Native JSON read/write with older-record compatibility.
 - **Invariants:** unknown directives stay retained lines.
 - **Reject/failure behavior:** malformed headers stay retained raw lines with a diagnostic.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'storyboard|native_project'`.
+- **Verification:** SOURCE42's fresh service GATE passed build, all 6,308 configured tests, whitespace and all 215 changed-C++ complexity comparisons with unchanged allowances. The combined Animation/NotITG/shared-job focused suite passed 1,302 assertions in 52 cases; the complete all-codecs-disabled suite passed 5,482 tests. The strict native decoder retains malformed-metadata refusal; no Animation drawing or static OSBX conversion was enabled. Actual GATE logs: `/tmp/wormedit-gate.egRjge`; final service receipt: `/tmp/t150-source42-finalization.json`. The task is accepted; T-152 and OSBX-10 remain separate work.
 - **Out of scope:** drawing animations (T-152).
 
 ## T-151 Parse and emit OSB Sample directives
 
-- **Status:** deferred (stage 7–8 ambition; was: ready)
+- **Status:** done (2026-11-02; parent SOURCE48 acceptance)
 - **Outcome:** `Sample,time,layer,"path",volume` lines become structured objects scheduled on the preview clock and emitted back identically.
 - **Read first:** as T-150, plus `include/wormedit/core/storyboard_preview.h`.
-- **Files owned:** as T-150, plus `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`.
+- **Files owned:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `tests/core/storyboard_tests.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `include/wormedit/core/document.h`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`; coordinator-approved supporting consumers: `src/formats/osu_mania.cpp`, `tests/formats/osu_mania_tests.cpp` (sample-only embedding and existing BGM ownership), `src/core/osb_to_osbx.cpp`, `tests/core/osb_to_osbx_tests.cpp` (transactional refusal until OSBX-10), `src/core/export_cut_transform.cpp`, `tests/core/export_cut_transform_tests.cpp` (preserve existing refusal of unrebased sample payload).
+- **Serialized ownership (2026-11-02):** T-151's 16 source slots and schema 34→35 migration are released and accepted. T-152 remains read-only until a fresh managed claim, exact before hashes and a new source grant; T-153 needs a separate schema reservation. Parent retains CMake, common docs/status and coherent execution. Historical source-only deliveries are distinct from the completed parent acceptance.
+- **Contract:** one structured Sample record and one instantaneous edge in the existing full schedule/cursor; reuse the shared layer/conditional vocabulary. Keep integer milliseconds and optional integer volume 1–100 (omission means 100); unsupported fractional forms remain retained with diagnostics. Preserve source order, stable identities, bounded parsing and unknown lines. Imported `.osu` Sample lines continue to use the existing BGM/resource owner; standalone/native samples emit once without cloning that owner. The preview exposes cues without playing or mixing audio. New native records require samples; schema 34→35 inserts empty arrays in older models while preserving all prior fields/migrations. Structured samples must retain conversion/cut refusal until those later operations support them safely.
 - **Steps:** 1. Tests first. 2. Model and codec. 3. Expose samples in the preview schedule (audio playback itself is a later card).
 - **Invariants:** as T-150.
 - **Reject/failure behavior:** as T-150.
 - **Verify:** as T-150.
+- **Verification (2026-11-02):** Its distinct service GATE passed all 6,332 tests and 215 changed-C++ comparisons, with unchanged allowances; the explicit storyboard/native filter passed 92 cases. Signed Sample times round-trip at INT64 minimum, negative, zero and maximum; overflow/future-field/identity guards remain strict. Structured cues reuse the full schedule; imported .osu Samples keep their BGM owner. Audio mixing remains out of scope. Logs: `/tmp/wormedit-gate.rLDiSC`; receipt: `/tmp/t151-source48-acceptance.json`.
 - **Out of scope:** mixing samples into playback.
 
 ## T-152 Draw Animation frames in the player preview
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-150)
+- **Status:** done (2026-11-02; parent SOURCE56 acceptance)
 - **Outcome:** preview selects the correct frame path (`name0.png`, `name1.png`, …) from time, delay, and loop type.
-- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/audio/player_preview_presenter.cpp`.
-- **Files owned:** `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `src/sys/audio/player_preview_presenter.cpp`.
+- **Read first:** `include/wormedit/core/storyboard.h`, `src/core/storyboard_preview.cpp`, `src/sys/storyboard/storyboard_scene_presenter.cpp`.
+- **Files owned:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `src/sys/storyboard/storyboard_scene_presenter.cpp`, `tests/sys/player_preview_presenter_tests.cpp`, `tests/core/storyboard_raster_tests.cpp`.
+- **Current ownership:** All eight writers are released and parent-acknowledged in `/tmp/t152-source49-parent-ack.json`. The accepted implementation preserves T-151 Sample scheduling; T-153 and SB-13 subsequently used new serialized successor slots. No old admission grants further writes. Native schema and CMake were unchanged by this card; coherent registration, verification and finalization were parent-owned.
+- **Contract:** Query Animation metadata using the existing exact fractional clock and the source's earliest command/loop epoch; LoopOnce clamps and LoopForever wraps without rounding tiny binary64 delays or overflowing a full signed-time span. Generate only the selected final-extension frame path in the existing arena. Use the same bounded image catalog, job, cache and placeholders through an Animation-only constant-time source lookup; preserve static OSB, OSBX, conditional/lifetime, Sample cue and stale-source behavior. Authored directory dots remain unchanged; this naming rule does not claim full upstream multi-dot replacement parity.
 - **Steps:** 1. Pure frame-index function with tests for LoopOnce end and LoopForever wrap. 2. Resolve frame path through the resource catalog.
 - **Invariants:** exact millisecond math.
 - **Reject/failure behavior:** missing frame image shows the missing placeholder.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'storyboard'`.
 - **Out of scope:** trigger blocks.
+- **Verification (2026-11-02):** Its distinct SOURCE56 service GATE passed build, all 6,425 tests, whitespace and 218 changed-C++ complexity comparisons without raised allowances. The coherent cohort also passed all 5,595 tests with all four codecs disabled and complete 841-unit header-consumer complexity coverage. Original SOURCE55 complexity failed 14 test functions; eight test-only helper refactors preserve all assertions and pass, while 833 unchanged units retain exact-input evidence. Source and protected fixture hashes stayed fixed. See `/tmp/cohort56-service-acceptance.json` and `/tmp/cohort56-parent-verification.json`. Exact binary64-delay/fractional frame queries, Once saturation, arena frame paths, missing/bounded frames and same-catalog cache continuity pass. Logs: `/tmp/wormedit-gate.UW9fZg`; receipt: `/tmp/t152-source56-finalization.json`.
 
 ## T-153 Model OSB trigger blocks
 
-- **Status:** deferred (stage 7–8 ambition; was: ready)
-- **Outcome:** `T,triggerName,start,end` blocks with nested commands parse structurally instead of rejecting, and emit back identically; preview ignores them unless T-154 lands.
-- **Read first:** as T-150.
-- **Files owned:** as T-150.
+- **Status:** done (2026-11-02; parent SOURCE56 acceptance)
+- **Outcome:** Supported `T` headers and nested commands parse into typed bounded subtrees; valid metadata emits normalized supported forms, malformed subtrees remain verbatim with diagnostics, and preview deliberately ignores trigger execution.
+- **Read first:** `include/wormedit/core/storyboard_vocabulary.h`, `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `tests/core/storyboard_tests.cpp`.
+- **Files owned:** `include/wormedit/core/storyboard_vocabulary.h`, `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `tests/core/storyboard_tests.cpp`, `include/wormedit/core/document.h`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/formats/osu_mania.cpp`, `tests/formats/osu_mania_tests.cpp`, `src/core/export_cut_transform.cpp`, `tests/core/export_cut_transform_tests.cpp`, `tests/core/osb_to_osbx_tests.cpp`, `tests/core/storyboard_preview_tests.cpp`.
+- **Current ownership:** The 14-path continuation and mandatory schema 36→37 migration are released and accepted after the clips schema 36 handoff. The prior read-only run was interrupted, never counted as implementation. Preserve Animation/Sample/clips/lifetime/profile successors; any new schema or model writer needs a fresh named reservation. Parent owned common documentation, coherent execution and finalization.
+- **Source handoff:** All 14 writers were independently hash-acknowledged in `/tmp/t153-source14-parent-ack.json`; later parent compiler/test-helper fixes and actual coherent acceptance are recorded separately. Released slots do not reopen.
+- **Contract:** One shared trigger-name value/query supports the documented Passing, Failing and HitSound forms. Typed optional signed integer bounds and authored signed 32-bit group preserve omitted fields. Append the node enum without renumbering older values. Leading spaces, tabs and underscores use the existing indentation owners. Unknown/malformed headers or any malformed child retain the whole bounded raw subtree with a diagnostic; descendants never become unconditional commands. One outermost staging buffer reuses the existing parser and retained-line representation. Validate/count all ignored descendants; neither trigger branches nor loops containing only triggers create drawable lifetime. Typed headers emit normalized values without a stale raw witness. Preview ignores triggers, and existing cut/conversion safety refusals remain explicit.
 - **Steps:** 1. Tests first with a HitSound and a Passing trigger. 2. Structural node like loops.
 - **Invariants:** as T-150.
 - **Reject/failure behavior:** as T-150.
 - **Verify:** as T-150.
 - **Out of scope:** evaluating triggers.
+- **Verification (2026-11-02):** Its distinct SOURCE56 service GATE passed build, all 6,425 tests, whitespace and 218 changed-C++ complexity comparisons without raised allowances. The coherent cohort also passed all 5,595 tests with all four codecs disabled and complete 841-unit header-consumer complexity coverage. Original SOURCE55 complexity failed 14 test functions; eight test-only helper refactors preserve all assertions and pass, while 833 unchanged units retain exact-input evidence. Source and protected fixture hashes stayed fixed. See `/tmp/cohort56-service-acceptance.json` and `/tmp/cohort56-parent-verification.json`. Whole malformed subtree retention, signed optional headers, strict schema 37, ignored-trigger bounds/lifetime, embedded `.osu` and cut/conversion safety regressions pass. Prefix header forms are supported; empty numeric slots remain retained raw with diagnostics. Trigger execution remains out of scope. Receipt: `/tmp/t153-source56-finalization.json`.
 
 ## T-154 Simulate Pass/Fail state in storyboard preview
 
@@ -200,6 +212,7 @@ Stage 7 from [later work](../stages/later.md) and the
 ## T-292 Carry storyboards into SM/SSC exports
 
 - **Status:** deferred (stage 7–8 ambition, user idea 2026-09-30; was: blocked-on T-155)
+- **Replacement (owner, 2026-10-31):** Nightshift SMX-1 capability survey → SMX-2 SM5/ITGmania actor adapter → SMX-3 Etterna route → SMX-4 NotITG profile/dialect; VID tasks own video rendering/encoding. See [the SMX-1 capability survey](../../references/stepmania-storyboard-capabilities.md) for pinned sources, route decisions and verification limits. The historical steps below are superseded; Etterna 0.75.1 permits song-local Lua, and NotITG needs a separately verified SM/XML dialect.
 - **Outcome:** exporting a song with an OSB/OSBX storyboard to SM/SSC can also emit a non-interactive version of it: by default a rendered video (offline storyboard renderer from T-155's follow-up cards) referenced through `#BGCHANGES` (background layers) and `#FGCHANGES` (foreground layers); optionally, a small bundled Lua OSB interpreter as a StepMania BGAnimation that reads the `.osb` and draws sprites with the game engine.
 - **Read first:** `docs/osbx-draft-spec.md` (Video export, Standard OSB compatibility export), `src/formats/stepmania.cpp` (retained `#BGCHANGES`/`#FGCHANGES` fields), `include/wormedit/core/storyboard_preview.h`.
 - **Files owned:** decided when un-deferred (split into a video-path card and an interpreter card first).

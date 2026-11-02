@@ -27,6 +27,7 @@ struct node_state_t {
     std::size_t dependencies_left{};
     node_status_t status{node_status_t::blocked};
     task_outcome_t result;
+    task_cancel_result_policy_t cancel_result_policy{task_cancel_result_policy_t::discard_running_result};
 };
 
 struct graph_state_t {
@@ -63,6 +64,7 @@ struct task_graph_t::impl_t {
     struct node_definition_t {
         task_function_t function;
         std::vector<std::uint32_t> dependencies;
+        task_cancel_result_policy_t cancel_result_policy{task_cancel_result_policy_t::discard_running_result};
     };
 
     explicit impl_t(std::size_t cap) : maximum_tasks(cap) {
@@ -173,12 +175,19 @@ void push_ready_dependents(graph_state_t& graph, std::uint32_t task) {
     }
 }
 
+auto is_cancelled_result(const graph_state_t& graph, std::uint32_t task) -> bool {
+    if (!graph.stop_source.stop_requested()) return false;
+    const auto& node = graph.nodes[task];
+    return node.status != node_status_t::running ||
+        node.cancel_result_policy != task_cancel_result_policy_t::retain_running_result;
+}
+
 void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_state_t>& graph,
                      std::uint32_t task, task_outcome_t result) {
     if (scheduler.stopping) {
         result = std::unexpected(task_failure_t::from(failure_code_t::scheduler_stopped,
                                                       "scheduler is shutting down"));
-    } else if (graph->stop_source.stop_requested()) {
+    } else if (is_cancelled_result(*graph, task)) {
         result = std::unexpected(
             task_failure_t::from(failure_code_t::cancelled, "task graph was cancelled"));
     }
@@ -306,7 +315,8 @@ task_graph_t::task_graph_t(task_graph_t&&) noexcept = default;
 auto task_graph_t::operator=(task_graph_t&&) noexcept -> task_graph_t& = default;
 task_graph_t::~task_graph_t() = default;
 
-auto task_graph_t::create_task(std::span<const task_id_t> dependencies, task_function_t function)
+auto task_graph_t::create_task(std::span<const task_id_t> dependencies, task_function_t function,
+                               task_cancel_result_policy_t policy)
     -> result_t<task_id_t, error_t<failure_code_t>> {
     if (!impl_ || !function) {
         return std::unexpected(
@@ -318,7 +328,7 @@ auto task_graph_t::create_task(std::span<const task_id_t> dependencies, task_fun
                                                           "task graph capacity exceeded"});
     }
     const auto next = static_cast<std::uint32_t>(impl_->nodes.size());
-    impl_t::node_definition_t node{.function = std::move(function)};
+    impl_t::node_definition_t node{.function = std::move(function), .cancel_result_policy = policy};
     node.dependencies.reserve(dependencies.size());
     for (const auto dependency : dependencies) {
         if (dependency.index >= next ||
@@ -430,7 +440,8 @@ auto task_scheduler_t::begin(task_graph_t graph) -> result_t<task_graph_handle_t
     runtime_graph->propagation.reserve(graph.impl_->nodes.size());
     for (auto& definition : graph.impl_->nodes) {
         detail::node_state_t node{.function = std::move(definition.function),
-                                  .dependencies = std::move(definition.dependencies)};
+                                  .dependencies = std::move(definition.dependencies),
+                                  .cancel_result_policy = definition.cancel_result_policy};
         node.dependencies_left = node.dependencies.size();
         node.inputs.reserve(node.dependencies.size());
         runtime_graph->nodes.push_back(std::move(node));

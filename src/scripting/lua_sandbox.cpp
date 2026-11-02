@@ -1,4 +1,5 @@
 #include <wormedit/scripting/lua_sandbox.h>
+#include <wormedit/core/keyframe_simplify.h>
 
 extern "C" {
 #include <lauxlib.h>
@@ -39,6 +40,8 @@ struct lua_sandbox_t::implementation_t {
     double argument{};
     lua_project_reader_t project_reader;
     std::optional<result_t<lua_project_file_t, error_t<failure_code_t>>> project_file;
+    std::optional<simplify_result_t> simplified_keys;
+    std::size_t simplify_reservation{};
     bool pure{};
     bool bounded_lookup{};
     std::string_view snapshot_name;
@@ -50,6 +53,7 @@ struct lua_sandbox_t::implementation_t {
           random_state(limits.seed) {}
     ~implementation_t() { close(); }
     void close() noexcept {
+        release_simplify();
         if (state) lua_close(std::exchange(state, nullptr));
     }
     void record_failure(failure_code_t code, const char* message) noexcept {
@@ -210,7 +214,18 @@ struct lua_sandbox_t::implementation_t {
         lua_pushlstring(state, (**self.project_file).path.data(), (**self.project_file).path.size());
         lua_pushlstring(state, (**self.project_file).content.data(), (**self.project_file).content.size());
         lua_pushlstring(state, (**self.project_file).asset_id.data(), (**self.project_file).asset_id.size());
-        return 3;
+        if ((**self.project_file).audio_stream) {
+            const auto& stream = *(**self.project_file).audio_stream;
+            lua_createtable(state, 0, 4);
+            lua_pushinteger(state, stream.sample_rate); lua_setfield(state, -2, "sample_rate");
+            lua_pushinteger(state, stream.channels); lua_setfield(state, -2, "channels");
+            lua_pushinteger(state, static_cast<lua_Integer>(*stream.frame_count)); lua_setfield(state, -2, "frame_count");
+            lua_pushboolean(state, stream.seekable); lua_setfield(state, -2, "seekable");
+        } else lua_pushnil(state);
+        const auto& probe_error = (**self.project_file).audio_probe_error;
+        if (probe_error) lua_pushlstring(state, probe_error->data(), probe_error->size());
+        else lua_pushnil(state);
+        return 5;
     }
     static auto make_project_environment(lua_State* state) -> int {
         luaL_checktype(state, 1, LUA_TTABLE);
@@ -370,12 +385,132 @@ struct lua_sandbox_t::implementation_t {
         lua_call(state, 2, 1);
         return 1;
     }
+    // Only the trusted adapter receives this closure, as its chunk argument. No
+    // inspection API is installed in the global environment. Skip adapter/C
+    // frames to retain the original module name even through declaration helpers.
+    static auto declaration_location(lua_State* state) -> int {
+        lua_Debug frame{};
+        auto skip = std::clamp(lua_tointeger(state, 1), lua_Integer{0}, lua_Integer{8});
+        for (int level = 1; level < 128 && lua_getstack(state, level, &frame); ++level) {
+            if (!lua_getinfo(state, "Sl", &frame) || frame.currentline <= 0 ||
+                !frame.source || std::strcmp(frame.source, "generator adapter") == 0)
+                continue;
+            if (skip-- > 0) continue;
+            const auto* source = frame.source;
+            auto length = frame.srclen;
+            if (*source == '@' || *source == '=') { ++source; --length; }
+            lua_pushlstring(state, source, std::min(length, std::size_t{4096}));
+            lua_pushinteger(state, frame.currentline);
+            return 2;
+        }
+        lua_pushliteral(state, "unknown");
+        lua_pushinteger(state, 0);
+        return 2;
+    }
+    // Called without Lua APIs: C++ RAII finishes before the callback can longjmp.
+    void simplify_native(std::span<const simplify_key_t> keys, int dimensions,
+                         double tolerance) noexcept {
+        try {
+            const simplify_projection_t project = [](const simplify_key_t& key) {
+                return key.value;
+            };
+            simplify_limits_t budget{.consume_work = [this] { return consume_instruction(); }};
+            switch (dimensions) {
+            case 1:
+                simplified_keys = simplify_rdp_1d(keys, tolerance, project, std::move(budget));
+                break;
+            case 2:
+                simplified_keys = simplify_rdp_2d(keys, tolerance, project, std::move(budget));
+                break;
+            case 3:
+                simplified_keys = simplify_rdp_3d(keys, tolerance, project, std::move(budget));
+                break;
+            }
+        } catch (...) {
+            record_failure(failure_code_t::out_of_memory, "Native simplifier allocation failed.");
+        }
+    }
+    auto reserve_simplify(std::size_t count) noexcept -> bool {
+        // Upper bound on core projected keys, selected flags, RDP stack and result
+        // capacities, plus fixed callback overhead. Input lives in Lua userdata.
+        simplify_reservation = count * 80 + 4096;
+        if (simplify_reservation > limits.maximum_memory_bytes - usage.allocated_bytes) {
+            simplify_reservation = 0;
+            record_failure(failure_code_t::out_of_memory, "Native simplifier memory cap exceeded.");
+            return false;
+        }
+        usage.allocated_bytes += simplify_reservation;
+        usage.peak_bytes = std::max(usage.peak_bytes, usage.allocated_bytes);
+        return true;
+    }
+    void release_simplify() noexcept {
+        simplified_keys.reset();
+        usage.allocated_bytes -= std::exchange(simplify_reservation, 0);
+    }
+    // Available only as the second trusted-adapter argument. All automatic values
+    // here are trivial; Lua allocation errors cannot skip C++ destructors.
+    static auto simplify_keys(lua_State* state) -> int {
+        auto& self = context(state);
+        if (self.simplify_reservation || self.simplified_keys)
+            return luaL_error(state, "Native simplification cannot reenter");
+        luaL_checktype(state, 1, LUA_TTABLE);
+        const auto dimensions = luaL_checkinteger(state, 2);
+        const auto tolerance = luaL_checknumber(state, 3);
+        if (dimensions < 1 || dimensions > 3 || !std::isfinite(tolerance) || tolerance < 0)
+            return luaL_error(state, "Invalid simplifier dimensions or tolerance");
+        const auto stride = static_cast<std::size_t>(dimensions + 1);
+        const auto length = lua_rawlen(state, 1);
+        const auto count = length / stride;
+        if (length % stride || count > simplify_limits_t::maximum_input_keys ||
+            count > self.limits.maximum_result_bytes / sizeof(lua_Integer))
+            return luaL_error(state, "Simplifier key/result limit exceeded");
+        auto* input = static_cast<simplify_key_t*>(
+            lua_newuserdatauv(state, count * sizeof(simplify_key_t), 0));
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!self.consume_instruction())
+                return luaL_error(state, "%s", self.abort_message);
+            input[i] = {};
+            for (std::size_t d = 0; d < stride; ++d) {
+                lua_rawgeti(state, 1, static_cast<lua_Integer>(i * stride + d + 1));
+                if (lua_type(state, -1) != LUA_TNUMBER)
+                    return luaL_error(state, "Simplifier requires numbers");
+                const auto value = lua_tonumber(state, -1);
+                lua_pop(state, 1);
+                if (!d)
+                    input[i].time_ms = value;
+                else
+                    input[i].value[d - 1] = value;
+            }
+        }
+        if (!self.reserve_simplify(count))
+            return luaL_error(state, "%s", self.abort_message);
+        self.simplify_native({input, count}, static_cast<int>(dimensions), tolerance);
+        if (self.abort_code) {
+            self.release_simplify();
+            return luaL_error(state, "%s", self.abort_message);
+        }
+        if (!self.simplified_keys || !*self.simplified_keys) {
+            self.release_simplify();
+            return luaL_error(state, "Invalid keys or exhausted simplifier work budget");
+        }
+        lua_createtable(state, static_cast<int>(self.simplified_keys->value().size()), 0);
+        for (std::size_t i = 0; i < self.simplified_keys->value().size(); ++i) {
+            if (!self.consume_instruction())
+                return luaL_error(state, "%s", self.abort_message);
+            lua_pushinteger(state, static_cast<lua_Integer>(self.simplified_keys->value()[i] + 1));
+            lua_rawseti(state, -2, static_cast<lua_Integer>(i + 1));
+        }
+        self.release_simplify();
+        return 1;
+    }
     static auto run(lua_State* state) -> int {
         auto& self = context(state);
         if (!self.trusted_adapter.empty()) {
             self.load_status=luaL_loadbufferx(state,self.trusted_adapter.data(),self.trusted_adapter.size(),"generator adapter","t");
             if (self.load_status!=LUA_OK) return lua_error(state);
-            lua_call(state,0,1);
+            lua_pushcfunction(state, declaration_location);
+            lua_pushcfunction(state, simplify_keys);
+            lua_call(state,2,1);
             luaL_checktype(state,-1,LUA_TFUNCTION);
         }
         self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), self.chunk_name.empty() ? "sandbox" : self.chunk_name.c_str(), "t");

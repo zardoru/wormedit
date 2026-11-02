@@ -7,6 +7,8 @@ flock 9
 jobs=${WORMEDIT_BUILD_JOBS:-3}
 [[ $jobs =~ ^[1-3]$ ]] || { echo 'Build jobs must be 1..3.' >&2; exit 1; }
 command -v asciidoctor >/dev/null || { echo 'The offline manuals require the Asciidoctor CLI.' >&2; exit 1; }
+manifest=${WORMEDIT_PACKAGE_SOURCE_MANIFEST:-/work/package-source-manifest.json}
+[[ -s $manifest ]] || { echo "Missing accepted package source manifest: $manifest" >&2; exit 1; }
 # Compiler switches can reset CMake's explicit feature flags. Clear that cache
 # only on a compiler change, preserving objects during ordinary packaging retries.
 configure_mode=()
@@ -25,6 +27,7 @@ cmake "${configure_mode[@]}" -S /source -B /work/build -DCMAKE_BUILD_TYPE=Releas
     -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DWORMEDIT_WARNINGS_AS_ERRORS=ON \
     -DWORMEDIT_ENABLE_LUA=ON -DWORMEDIT_REQUIRE_FFMPEG=ON \
+    -DWORMEDIT_ENABLE_VIDEO_ENCODER=ON -DWORMEDIT_VIDEO_ENCODER_ALLOW_GPL=OFF \
     -DWORMEDIT_FFMPEG_NOTICES_DIR=/opt/ffmpeg/share/wormedit-ffmpeg \
     -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build /work/build --parallel "$jobs"
@@ -43,7 +46,13 @@ find "$appdir/usr/lib" -type f \( -name '*.a' -o -name '*.cmake' -o -name '*.pc'
 find "$appdir/usr/lib" -depth -type d -empty -delete
 notices="$appdir/usr/bin/third-party"
 cp /source/packaging/linux/Dockerfile "$notices/ffmpeg/build.Dockerfile"
-cp /source/packaging/build-lame-sdk.sh "$notices/ffmpeg/"
+cp /source/packaging/build-lame-sdk.sh /source/packaging/build-video-codecs-sdk.sh \
+    /source/packaging/ffmpeg-openh264-level.patch "$notices/ffmpeg/"
+bash /source/packaging/build-video-codecs-sdk.sh verify /opt/ffmpeg
+# Parent supplies the accepted exact-input/hash manifest in the reusable /work
+# mount. Never collect unrelated dirty files into a release source receipt.
+bash /source/packaging/build-video-codecs-sdk.sh source-patch /source \
+    "$manifest" "$appdir/usr/bin/BUILD-CHANGES.patch"
 printf '%s\n' "$WORMEDIT_BUILD_REVISION" > "$appdir/usr/bin/BUILD-REVISION.txt"
 # Reject a GPL/nonfree FFmpeg, including changes accidentally made to its build.
 for feature in GPL NONFREE VERSION3; do
@@ -54,7 +63,14 @@ for feature in GPL NONFREE VERSION3; do
 done
 # linuxdeploy carries the AppImage excludelist (libc and graphics drivers).
 # Explicit exclusions cover Vulkan/GL dispatch libraries as well.
+encoder_libraries=()
+for library in avformat avcodec avutil swscale swresample openh264 vpx opus; do
+    file="/opt/ffmpeg/lib/lib$library.so"
+    [[ -e $file ]] || { echo "Missing promised video SDK runtime: $file" >&2; exit 1; }
+    encoder_libraries+=(--library "$file")
+done
 /opt/tools/linuxdeploy/AppRun --appdir "$appdir" --executable "$appdir/usr/bin/wormedit" \
+    "${encoder_libraries[@]}" \
     --library "$("$CXX" -print-file-name=libstdc++.so.6)" \
     --library "$("$CC" -print-file-name=libgcc_s.so.1)" \
     --custom-apprun /source/packaging/linux/AppRun \
@@ -62,6 +78,12 @@ done
     --icon-file /source/packaging/linux/wormedit.png \
     --exclude-library 'libvulkan.so*' --exclude-library 'libGL*.so*' \
     --exclude-library 'libEGL.so*' --exclude-library 'libdrm*.so*' --exclude-library 'libgbm.so*'
+# Assert those actual roots survived deployment; dependency resolution below
+# then verifies every deployed ELF, including all transitive codec libraries.
+for library in avformat avcodec avutil swscale swresample openh264 vpx opus; do
+    deployed=("$appdir/usr/lib/lib$library.so"*)
+    [[ -e ${deployed[0]} ]] || { echo "Video runtime not deployed: $library" >&2; exit 1; }
+done
 # Use our own shell launcher; the only third-party entry code is the pinned
 # type-2 runtime, whose notices and rebuild sources travel with the image.
 cp -a /opt/runtime-notices "$notices/appimage-runtime"
@@ -93,6 +115,9 @@ while IFS= read -r binary; do
         echo "Unresolved dependency: $binary" >&2; exit 1
     fi
 done < <(find "$appdir/usr/bin" "$appdir/usr/lib" -type f | sort)
+# Record deployed/patchelf-adjusted code as well as the original SDK artifacts.
+(cd "$appdir"; find usr/lib usr/bin -type f \( -name '*.so' -o -name '*.so.*' -o -name wormedit \) \
+    -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum) > "$appdir/usr/bin/VIDEO-RUNTIMES.sha256"
 # Assert the promised compatibility floor on the deployed ELFs, including the
 # bundled C++ runtime; never rely on the base image tag alone.
 python3 - "$appdir" <<'PYTHON'

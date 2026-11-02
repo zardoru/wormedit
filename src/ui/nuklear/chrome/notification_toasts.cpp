@@ -9,6 +9,8 @@ namespace wormedit::ui::nuklear {
 namespace {
 
 auto severity_label(wormedit::notification_severity_t severity) -> const char* {
+    if (severity == wormedit::notification_severity_t::success) return "Export complete";
+    if (severity == wormedit::notification_severity_t::info || severity == wormedit::notification_severity_t::hint) return "Information";
     return severity == wormedit::notification_severity_t::error ? "Error" : "Warning";
 }
 
@@ -52,8 +54,14 @@ void render_one_toast(nk_context* context, const wormedit::ui::notification_toas
         state.close_bounds[index] = {close.x, close.y, close.w, close.h};
         nk_label(context, "×", NK_TEXT_CENTERED);
         nk_layout_row_end(context);
-        nk_layout_row_dynamic(context, std::max(0.0f, bounds.height - 38.0f), 1);
+        nk_layout_row_dynamic(context, std::max(0.0f, bounds.height - (toast.show_in_folder ? 76.0f : 38.0f)), 1);
         nk_text_wrap(context, toast.message.data(), static_cast<int>(toast.message.size()));
+        if (toast.show_in_folder) {
+            nk_layout_row_dynamic(context, 22, 1);
+            const auto folder = nk_widget_bounds(context);
+            state.folder_bounds[index] = {folder.x, folder.y, folder.w, folder.h};
+            nk_label(context, "Show in folder", NK_TEXT_LEFT);
+        }
         render_message_detail(context, toast.message, bounds);
     }
     nk_end(context);
@@ -65,6 +73,7 @@ void render_notification_toasts(nk_context* context, const wormedit::ui::notific
                                 notification_toast_state_t& state, int width, int height) {
     state.bounds.fill({});
     state.close_bounds.fill({});
+    state.folder_bounds.fill({});
     state.ids.fill(0);
     state.count = 0;
     if (!context || width <= 0 || height <= 0) return;

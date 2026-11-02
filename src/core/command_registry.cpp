@@ -872,6 +872,8 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     add_builtin(registry, invoker, "view.open_layers", "Open Layers",
                 command_category_t::workspace, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::l, primary())}, true, compose);
+    add_builtin(registry, invoker, "document.export_storyboard_video", "Export Storyboard Video…",
+                command_category_t::document, command_focus_scope_t::workspace, {}, true);
     add_builtin(registry, invoker, "document.export_output_group", "Export Output Group…",
                 command_category_t::document, command_focus_scope_t::workspace,
                 {chord(shortcut_key_t::e, primary())}, true);

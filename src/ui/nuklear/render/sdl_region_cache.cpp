@@ -116,6 +116,8 @@ auto is_supported_blending(const sdl_region_request_t& request, SDL_Renderer* re
     if (request.immutable_texture &&
         (!SDL_GetTextureBlendMode(request.immutable_texture,&mode) || mode != SDL_BLENDMODE_BLEND)) return false;
     for (const auto& batch : request.mesh.batches) {
+        if (batch.blend != image_blend_t::inherit)
+            return false;
         if (batch.texture && batch.texture != request.immutable_texture) {
             if (std::ranges::find(request.immutable_images,batch.texture) == request.immutable_images.end() ||
                 !SDL_GetTextureBlendMode(batch.texture,&mode) || mode != SDL_BLENDMODE_BLEND) return false;

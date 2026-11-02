@@ -104,6 +104,8 @@ struct project_panel_state_t {
     int group_stepmania_file{WORM_UI_STEPMANIA_FILE_SSC};
     int group_stepmania_timing{WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS};
     int group_stepmania_implementation{WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
+    wormedit::stepmania_storyboard_mode_t group_storyboard{wormedit::stepmania_storyboard_mode_t::actors};
+    wormedit::storyboard_conditional_layer_t group_conditional_layer{wormedit::storyboard_conditional_layer_t::pass};
     std::vector<nk_bool> group_charts;
     std::vector<std::uint64_t> shown_charts;
     wormedit::ui::chrome::ContextMenu group_menu{.title = "Export target actions"};
@@ -250,6 +252,7 @@ void open_project_metadata(nk_context* context, const wormedit::ui::setup_view_t
     popup.selection = project_state.selection.ids;
     project_state.edit_author = author;
     project_state.edit_rating = !author;
+    project_state.unset_rating = false;
     popup.bounds = wormedit::ui::chrome::clamped_popup_bounds(context,
         nk_vec2(context->input.mouse.pos.x, context->input.mouse.pos.y + 20),
         nk_vec2(380, author ? 140 : 228));
@@ -463,7 +466,7 @@ void begin_table_row(nk_context* context, float height, const table_ratios_t& ra
 }
 
 // A text cell that ellipsizes and shows the full text in a tooltip when it was shortened.
-void text_cell(nk_context* context, const char* text, float width) {
+void text_cell(nk_context* context, std::string_view text, float width) {
     const auto shown = wormedit::ui::chrome::fit_text_with_ellipsis(context->style.font, text, width - cell_padding, wormedit::ui::chrome::ellipsis_overflow_t::suffix);
     nk_label(context, shown.c_str(), NK_TEXT_LEFT);
     if (shown != text && nk_widget_is_hovered(context))
@@ -601,14 +604,14 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
     }
     if (name != label && nk_widget_is_hovered(context))
         wormedit::ui::nuklear::tooltip::text(context, label);
-    text_cell(context, row.author.data(), widths[1]);
-    text_cell(context, row.rating.data(), widths[2]);
-    text_cell(context, row.mode.data(), widths[3]);
+    text_cell(context, row.author, widths[1]);
+    text_cell(context, row.rating, widths[2]);
+    text_cell(context, row.mode, widths[3]);
     nk_labelf(context, NK_TEXT_LEFT, "%u", row.key_count);
-    if (nk_button_label(context, row.output_groups.data()))
+    if (nk_button_label(context, row.output_groups.empty() ? "" : row.output_groups.data()))
         begin_chart_memberships(row.chart_id.value, view.document_revision);
     nk_labelf(context, NK_TEXT_LEFT, "%llu", static_cast<unsigned long long>(row.note_count));
-    text_cell(context, row.length.data(), widths[7]);
+    text_cell(context, row.length, widths[7]);
     const bool hovered = nk_input_is_mouse_hovering_rect(&context->input, context->current->buffer.clip) &&
                          nk_input_is_mouse_hovering_rect(&context->input, row_bounds);
     render_chart_actions(context, view, row, hovered, action);
@@ -720,6 +723,10 @@ void load_output_group_draft(const wormedit::ui::setup_view_t& view, const worme
     state.group_stepmania_implementation = group && group->stepmania.has_value()
                                                ? static_cast<int>(group->stepmania->implementation_profile)
                                                : WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    state.group_storyboard = group && group->stepmania ? group->stepmania->storyboard
+        : group ? wormedit::stepmania_storyboard_mode_t::none : wormedit::stepmania_storyboard_mode_t::actors;
+    state.group_conditional_layer = group && group->stepmania ? group->stepmania->conditional_layer
+        : wormedit::storyboard_conditional_layer_t::pass;
     state.group_flatten_bms_branches = group && group->flatten_bms_branches;
     state.group_audio = group ? group->audio : wormedit::export_audio_settings_t{};
     state.group_editor_dialog = {};
@@ -744,6 +751,8 @@ void begin_output_group_suggestion(const wormedit::ui::setup_view_t& view,
     project_state.group_stepmania_file = static_cast<int>(suggestion.stepmania.value_or(wormedit::stepmania_export_policy_t{}).file_profile);
     project_state.group_stepmania_timing = static_cast<int>(suggestion.stepmania.value_or(wormedit::stepmania_export_policy_t{}).timing_syntax) - 1;
     project_state.group_stepmania_implementation = static_cast<int>(suggestion.stepmania.value_or(wormedit::stepmania_export_policy_t{}).implementation_profile);
+    project_state.group_storyboard = suggestion.stepmania.value_or(wormedit::stepmania_export_policy_t{}).storyboard;
+    project_state.group_conditional_layer = suggestion.stepmania.value_or(wormedit::stepmania_export_policy_t{}).conditional_layer;
     std::snprintf(project_state.group_name, sizeof(project_state.group_name), "%s", suggestion.name.data());
     std::snprintf(project_state.group_path, sizeof(project_state.group_path), "%s", suggestion.path.data());
 }
@@ -793,7 +802,9 @@ void publish_output_group_action(const wormedit::ui::setup_view_t& view, wormedi
             .file_profile = static_cast<wormedit::stepmania_profile_t>(project_state.group_stepmania_file),
             .timing_syntax = static_cast<wormedit::stepmania_timing_syntax_t>(project_state.group_stepmania_timing + 1),
             .implementation_profile = static_cast<wormedit::stepmania_implementation_profile_t>(
-                project_state.group_stepmania_implementation)};
+                project_state.group_stepmania_implementation),
+            .storyboard = project_state.group_storyboard,
+            .conditional_layer = project_state.group_conditional_layer};
     output.chart_ids.clear();
     for (size_t i = 0; i < view.charts.size(); ++i)
         if (project_state.group_charts[i]) output.chart_ids.push_back(view.charts[i].chart_id);
@@ -943,11 +954,27 @@ auto render_existing_files_picker(nk_context* context, int selected) -> int {
     }
     return selected;
 }
+void render_stepmania_storyboard_policy(nk_context* context) {
+    constexpr std::array modes{"Actors", "Video", "None"};
+    constexpr std::array layers{"Pass", "Fail", "Neither"};
+    constexpr float fields[]{0.22f, 0.78f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Storyboard", NK_TEXT_LEFT);
+    project_state.group_storyboard = static_cast<wormedit::stepmania_storyboard_mode_t>(wormedit::ui::chrome::safe_combo(
+        context, modes.data(), modes.size(), static_cast<int>(project_state.group_storyboard), 24, nk_vec2(280, 100)));
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Conditional layer", NK_TEXT_LEFT);
+    project_state.group_conditional_layer = static_cast<wormedit::storyboard_conditional_layer_t>(wormedit::ui::chrome::safe_combo(
+        context, layers.data(), layers.size(), static_cast<int>(project_state.group_conditional_layer), 24, nk_vec2(280, 100)));
+}
+
 void render_stepmania_policy(nk_context* context) {
     constexpr std::array file_labels{"SM", "SSC"};
     constexpr std::array timing_labels{"Native WARPS", "Legacy negative BPM",
                                        "Legacy negative STOP"};
-    constexpr std::array implementation_labels{"Syntax only", "StepMania 5.1", "Etterna 0.75.1"};
+    constexpr std::array implementation_labels{"Syntax only", "StepMania 5.1", "Etterna 0.75.1", "NotITG v4 (SM)"};
+    static_assert(WORM_UI_STEPMANIA_IMPLEMENTATION_NOTITG_V4 ==
+        static_cast<int>(wormedit::stepmania_implementation_profile_t::notitg_v4));
     constexpr float fields[]{0.22f, 0.78f};
     auto& state = project_state;
     nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
@@ -965,7 +992,15 @@ void render_stepmania_policy(nk_context* context) {
     state.group_stepmania_implementation = wormedit::ui::chrome::safe_combo(
         context, implementation_labels.data(), implementation_labels.size(),
         state.group_stepmania_implementation, 24, nk_vec2(280, 120));
-    if (state.group_stepmania_implementation != WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY) {
+    render_stepmania_storyboard_policy(context);
+    if (state.group_stepmania_implementation == WORM_UI_STEPMANIA_IMPLEMENTATION_NOTITG_V4) {
+        state.group_stepmania_file = WORM_UI_STEPMANIA_FILE_SM;
+        std::string path{state.group_path};
+        if (path.ends_with(".ssc")) {
+            path.replace(path.size() - 4, 4, ".sm");
+            std::snprintf(state.group_path, sizeof(state.group_path), "%s", path.c_str());
+        }
+    } else if (state.group_stepmania_implementation != WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY) {
         state.group_stepmania_file = WORM_UI_STEPMANIA_FILE_SSC;
         state.group_stepmania_timing = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
     } else if (state.group_stepmania_file == WORM_UI_STEPMANIA_FILE_SM ||
@@ -1228,20 +1263,20 @@ void render_output_group_card(nk_context* context, const wormedit::ui::setup_vie
     nk_layout_space_push(context, nk_rect(12.0f, 7.0f, 64.0f, 24.0f));
     render_output_group_badge(context, view.output_families.label(static_cast<wormedit::format_family_t>(group.family), "Unsupported"));
     nk_layout_space_push(context, nk_rect(84.0f, 8.0f, name_width, 22.0f));
-    text_cell(context, group.name.data(), name_width);
+    text_cell(context, group.name, name_width);
     nk_layout_space_push(context, nk_rect(path_x, 8.0f, std::max(1.0f, metadata_end - path_x - 8.0f), 22.0f));
     std::string destination{"→ "};
     destination += group.destination_kind == wormedit::output_destination_kind_t::file ? "File · "
                                                                              : "Folder · ";
     destination += group.path.data();
-    text_cell(context, destination.c_str(), std::max(1.0f, metadata_end - path_x - 8.0f));
+    text_cell(context, destination, std::max(1.0f, metadata_end - path_x - 8.0f));
     render_output_group_card_actions(context, view, group, action, nk_vec2(action_x, action_y));
     render_output_group_chips(context, view, group, std::max(1.0f, metadata_end - 92.0f), action);
     nk_layout_space_push(context, nk_rect(84.0f, height - 23.0f, std::max(1.0f, width - 100.0f), 18.0f));
     const auto status = std::string_view{group.preview_status.data() ? group.preview_status.data() : ""};
     const auto first_line = status.substr(0, status.find('\n'));
     std::string status_line{first_line.empty() ? "Preview not run" : first_line};
-    text_cell(context, status_line.c_str(), std::max(1.0f, width - 100.0f));
+    text_cell(context, status_line, std::max(1.0f, width - 100.0f));
     nk_layout_space_end(context);
     if (project_state.group_plan_expanded &&
         project_state.group_plan_index == group.document_index) {
@@ -1254,7 +1289,7 @@ void render_output_group_card(nk_context* context, const wormedit::ui::setup_vie
             constexpr float columns[]{0.13f, 0.67f, 0.20f};
             nk_layout_row(context, NK_DYNAMIC, 22, 3, columns);
             nk_label(context, action_labels[static_cast<size_t>(row.action)], NK_TEXT_LEFT);
-            text_cell(context, row.path.data(), 360.0f);
+            text_cell(context, row.path, 360.0f);
             nk_label(context, bytes, NK_TEXT_RIGHT);
         }
         for (size_t index = 0; index < group.diagnostics.size(); ++index) {

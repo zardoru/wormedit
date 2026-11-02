@@ -1,5 +1,6 @@
 #include "ui/nuklear/audio/player_preview.h"
 #include "ui/nuklear/audio/player_preview_texture.h"
+#include "ui/nuklear/storyboard/scenario.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 
 #include "wormedit/nuklear_config.h"
@@ -168,11 +169,13 @@ auto player_preview_visual_layers_valid(const wormedit::ui::player_preview_view_
 
 auto player_preview_storyboard_sprite_valid(const wormedit::ui::player_preview_storyboard_sprite_view_t& sprite)
     -> bool {
-    if (sprite.stable_id == 0 || sprite.layer_order > 4 || !std::isfinite(sprite.x) ||
-        !std::isfinite(sprite.y) || !std::isfinite(sprite.origin_x) || sprite.origin_x < 0.0 ||
-        sprite.origin_x > 1.0 || !std::isfinite(sprite.origin_y) || sprite.origin_y < 0.0 ||
-        sprite.origin_y > 1.0 || !std::isfinite(sprite.scale_x) ||
-        !std::isfinite(sprite.scale_y) || !std::isfinite(sprite.rotation_radians) ||
+    if (sprite.stable_id == 0 || sprite.layer_order > 4 ||
+        !wormedit::visual_affine_t{sprite.transform}.is_finite() ||
+        !std::isfinite(sprite.logical_width) || sprite.logical_width <= 0 ||
+        !std::isfinite(sprite.logical_height) || sprite.logical_height <= 0 ||
+        !wormedit::ui::is_valid_image_blend(sprite.blend) ||
+        !std::isfinite(sprite.origin_x) || sprite.origin_x < 0.0 || sprite.origin_x > 1.0 ||
+        !std::isfinite(sprite.origin_y) || sprite.origin_y < 0.0 || sprite.origin_y > 1.0 ||
         !std::isfinite(sprite.opacity) || !std::isfinite(sprite.red) ||
         !std::isfinite(sprite.green) || !std::isfinite(sprite.blue)) return false;
     return preview_image_payload_valid(sprite.image_ready, sprite.image_pending,
@@ -182,6 +185,7 @@ auto player_preview_storyboard_sprite_valid(const wormedit::ui::player_preview_s
 }
 
 auto player_preview_storyboards_valid(const wormedit::ui::player_preview_view_t& view) -> bool {
+    if (view.storyboard_sprites.size() > wormedit::ui::maximum_preview_storyboard_instances) return false;
     for (std::size_t index = 0; index < view.storyboard_sprites.size(); ++index)
         if (!player_preview_storyboard_sprite_valid(view.storyboard_sprites[index])) return false;
     return true;
@@ -271,9 +275,11 @@ void render_preview_visual_layer(struct nk_context* context,
     }
 }
 
+constexpr float preview_status_label_height = 20.0f;
+
 void render_preview_status(struct nk_context* context,
                            const wormedit::ui::player_preview_view_t* view) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, preview_status_label_height, 1);
     if (!view->scene_available) {
         nk_label(context, !view->status_text.empty() ? view->status_text.c_str() : "Preview unavailable",
                  NK_TEXT_LEFT);
@@ -283,6 +289,10 @@ void render_preview_status(struct nk_context* context,
                   view->note_endpoints.size(), view->storyboard_sprites.size(),
                   view->pre_zero ? " · count-in" : "",
                   view->split_stage ? " · split stage" : "");
+        if (!view->status_text.empty()) {
+            nk_layout_row_dynamic(context, preview_status_label_height, 1);
+            nk_label(context, view->status_text.c_str(), NK_TEXT_LEFT);
+        }
     }
     for (std::size_t index = 0; index < view->visual_layers.size(); ++index)
         render_preview_visual_layer(context, view->visual_layers[index]);
@@ -296,9 +306,12 @@ std::size_t preview_diagnostic_count(const wormedit::ui::player_preview_view_t& 
     return count;
 }
 
-auto preview_viewport_height(const wormedit::ui::player_preview_view_t& view, float panel_height) -> float {
+auto preview_viewport_height(const wormedit::ui::player_preview_view_t& view, float panel_height,
+                              float row_spacing) -> float {
     const auto label_count = view.visual_layers.size() + preview_diagnostic_count(view);
-    return std::max(180.0f, panel_height - 92.0f - static_cast<float>(label_count) * 18.0f);
+    const auto status_height = view.scene_available && !view.status_text.empty()
+                                   ? preview_status_label_height + row_spacing : 0.0f;
+    return std::max(180.0f, panel_height - 92.0f - static_cast<float>(label_count) * 18.0f - status_height);
 }
 
 void merge_preview_result(worm_ui_nuklear_preview_visual_result_t& result,
@@ -405,11 +418,16 @@ void draw_preview_canvas(struct nk_context* context, struct SDL_Renderer* render
 
 void render_preview_window_content(struct nk_context* context, struct SDL_Renderer* renderer,
                                    const wormedit::ui::player_preview_view_t* view,
-                                   wormedit::ui::workspace_action_t* action, float panel_height) {
+                                   wormedit::ui::workspace_action_t* action, float panel_height,
+                                   const wormedit::ui::storyboard_view_t* storyboard, bool input_available) {
     render_preview_skin_buttons(context, view, action);
+    if (storyboard && action)
+        wormedit::ui::render_storyboard_scenario(context, *storyboard, action->storyboard,
+            input_available && action->kind == WORM_UI_WORKSPACE_ACTION_NONE);
     render_preview_status(context, view);
     struct nk_rect viewport{};
-    nk_layout_row_dynamic(context, preview_viewport_height(*view, panel_height), 1);
+    const auto scenario_height = storyboard ? 26.0f + context->style.window.spacing.y : 0.0f;
+    nk_layout_row_dynamic(context, preview_viewport_height(*view, panel_height, context->style.window.spacing.y) - scenario_height, 1);
     if (nk_widget(&viewport, context) != NK_WIDGET_INVALID)
         draw_preview_canvas(context, renderer, view, viewport);
 }
@@ -420,7 +438,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            struct SDL_Renderer* renderer,
                                            const wormedit::ui::player_preview_view_t* view,
                                            wormedit::ui::workspace_action_t* action, int window_width,
-                                           int window_height) {
+                                           int window_height,
+                                           const wormedit::ui::storyboard_view_t* storyboard, bool input_available) {
     if (!context || !view || !view->visible) return;
     const auto panel_width = std::min(360.0f, std::max(260.0f, window_width * 0.32f));
     const auto panel_height = std::min(580.0f, std::max(300.0f, window_height - 90.0f));
@@ -428,7 +447,7 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                  nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f,
                          panel_width, panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE))
-        render_preview_window_content(context, renderer, view, action, panel_height);
+        render_preview_window_content(context, renderer, view, action, panel_height, storyboard, input_available);
     nk_end(context);
 }
 

@@ -213,3 +213,73 @@ TEST_CASE("Offline interval reports cancellation without a PCM value", "[unit][a
     REQUIRE_FALSE(cancelled.has_value());
     REQUIRE(cancelled.error().code == failure_code_t::cancelled);
 }
+
+namespace {
+void check_stream_equivalence(const result_t<offline_mix_t, wormedit::error_t<failure_code_t>>& retained,
+    const result_t<void, wormedit::error_t<failure_code_t>>& streamed, const std::vector<float>& samples) {
+    REQUIRE(retained);
+    REQUIRE(streamed);
+    CHECK(samples == retained->interleaved_stereo);
+    CHECK(samples.front() != 0.0F);
+    CHECK(samples.back() == 0.0F);
+}
+}
+TEST_CASE("Offline stream shares prefix tails music offset and fade with retained PCM", "[unit][audio][offline][stream]") {
+    decoded_source_registry_t sources;
+    const auto music = register_tone(sources, 1, 256, 0.125F, 0.0625F);
+    const auto bgm = register_tone(sources, 2, 80, 0.25F, 0.125F);
+    auto schedule = make_music_schedule(256);
+    schedule.music->sample_frame = 8;
+    schedule.bgm = {{.sample_frame = 8, .object = object_id_t{2}, .resource = resource_id_t{202}}};
+    const std::array objects{music_binding(music), bgm_binding(bgm, 2)};
+    const offline_mix_options_t options{.maximum_read_frames = 32, .fade_out_ms = 2};
+    const auto retained = render_offline_interval(sources, schedule, objects, 32, 192, options);
+    std::vector<float> samples;
+    std::uint64_t next = 32;
+    const auto sink = [&](std::uint64_t first, std::span<const float> chunk) -> result_t<void, wormedit::error_t<failure_code_t>> {
+        if (first != next || chunk.size() > 32 * output_channel_count)
+            return std::unexpected(wormedit::error_t{failure_code_t::invalid_data, std::string{"Unexpected chunk clock or bound"}});
+        samples.insert(samples.end(), chunk.begin(), chunk.end());
+        next += chunk.size() / output_channel_count;
+        return {};
+    };
+    const auto streamed = render_offline_interval_to(sources, schedule, objects, 32, 192, sink, options);
+    check_stream_equivalence(retained, streamed, samples);
+    CHECK(next == 192);
+}
+namespace {
+void check_stream_terminal_failure(bool cancel) {
+    decoded_source_registry_t sources;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    std::stop_source stop;
+    std::size_t calls{};
+    const auto sink = [&](std::uint64_t, std::span<const float>) -> result_t<void, wormedit::error_t<failure_code_t>> {
+        ++calls;
+        if (cancel) { stop.request_stop(); return {}; }
+        return std::unexpected(wormedit::error_t{failure_code_t::io_failed, std::string{"Sink refused output"}});
+    };
+    const auto result = render_offline_interval_to(sources, schedule, {}, 16, 96, sink,
+        {.maximum_read_frames = 16}, stop.get_token());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == (cancel ? failure_code_t::cancelled : failure_code_t::io_failed));
+    CHECK(calls == 1);
+}
+}
+TEST_CASE("Offline stream stops on sink failure or cancellation without emitting later chunks", "[unit][audio][offline][stream]") {
+    for (const bool cancel : {false, true}) check_stream_terminal_failure(cancel);
+}
+
+TEST_CASE("Offline stream enforces cumulative PCM byte limit before invoking sink", "[unit][audio][offline][stream]") {
+    decoded_source_registry_t sources;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    bool called{};
+    const auto sink = [&](std::uint64_t, std::span<const float>) -> result_t<void, wormedit::error_t<failure_code_t>> {
+        called = true;
+        return {};
+    };
+    const auto result = render_offline_interval_to(sources, schedule, {}, 16, 48, sink,
+        {.maximum_output_bytes = 31 * output_channel_count * sizeof(float), .maximum_read_frames = 8});
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::capacity_exceeded);
+    CHECK_FALSE(called);
+}

@@ -72,6 +72,10 @@ struct frontend_workspace_view_t {
     wormedit::ui::workspace_view_t view{};
     std::vector<projection_feedback_t> projection_feedback;
 
+    struct storyboard_projection_t {
+        keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t>, bool> rows;
+    } storyboard;
+
     std::size_t summary_size{};
     std::vector<std::pair<std::filesystem::path, std::string>> recovery_diagnostic_paths;
     void reset();

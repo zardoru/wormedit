@@ -13,3 +13,9 @@ Keep application-side preview state in a dedicated presenter that owns revision 
 ## Very-late selected-area video export
 
 The area-selection context menu offers **Export player-preview video** for the selected exact chart interval. Offline rendering drives the same player-style scene and shared audio/BGA/storyboard schedule from a deterministic sample-frame clock, with explicit resolution, frame rate, skin/layout, lead-in/out, and audio-mix options. It renders and muxes through the optional video-encoder boundary to a temporary output, reports bounded progress and cancellation, and atomically publishes only a validated completed file. An empty/stale selection, unsupported encoder, missing asset, cancellation, or render/encode failure leaves the project and any existing destination untouched. This remains deferred until live player preview, transport, visual assets, and offline video infrastructure are stable.
+
+This future action can reuse Storyboard export's `storyboard_video_export_t`,
+`offline_preview_mix_t`, shared raster ring and video encoder boundary. VID-3
+exports storyboard pixels; chart lanes, skins and this area-selection action remain
+outside its scope. A cut-aware successor must map video and audio through one
+coherent frame timeline, rather than cutting only PCM.

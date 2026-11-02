@@ -47,6 +47,7 @@ struct workspace_frame_view_args_t {
     bool player_preview_visible{};
     player_preview_skin_t player_preview_skin{};
     const std::filesystem::path& asset_base;
+    const editor_interaction_state_t* interaction{};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     visual::image_job_t& player_image_job;
 #endif

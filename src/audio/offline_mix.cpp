@@ -95,70 +95,77 @@ auto render_chunk(preview_session_t& session, std::span<float> samples,
            rendered.mix.dropped_music_voices == 0;
 }
 
-auto copy_selected_frames(std::span<const float> rendered, std::uint64_t first_frame,
-                          std::uint64_t begin_frame, std::uint64_t end_frame,
-                          std::vector<float>& output) -> void {
-    const auto rendered_frames = rendered.size() / output_channel_count;
-    const auto selected_first = std::max(first_frame, begin_frame);
-    const auto selected_end = std::min(first_frame + rendered_frames, end_frame);
-    if (selected_first >= selected_end) return;
-    const auto input_offset = static_cast<std::size_t>(selected_first - first_frame) * output_channel_count;
-    const auto output_offset = static_cast<std::size_t>(selected_first - begin_frame) * output_channel_count;
-    const auto count = static_cast<std::size_t>(selected_end - selected_first) * output_channel_count;
-    std::copy_n(rendered.begin() + static_cast<std::ptrdiff_t>(input_offset), count,
-                output.begin() + static_cast<std::ptrdiff_t>(output_offset));
-}
-
-auto render_chunks(preview_session_t& session, std::span<float> chunk,
-                   std::vector<float>& output, std::uint64_t begin, std::uint64_t end,
-                   std::size_t maximum_chunk, preview_pump_options_t pump_options,
-                   std::stop_token stop) -> std::optional<failure_code_t> {
-    std::uint64_t current{};
-    while (current < end) {
-        if (stop.stop_requested()) return failure_code_t::cancelled;
-        if (current != 0) {
-            const auto pumped = pump_session(session, pump_options, current, end, maximum_chunk);
-            if (pumped) return pumped;
-        }
-        const auto frames = static_cast<std::size_t>(
-            std::min<std::uint64_t>(maximum_chunk, end - current));
-        auto samples = chunk.first(frames * output_channel_count);
-        if (!render_chunk(session, samples, frames)) return failure_code_t::render_failed;
-        copy_selected_frames(samples, current, begin, end, output);
-        current += frames;
-        if (!session.is_active() && current < end) return failure_code_t::render_failed;
-    }
-    return std::nullopt;
-}
-
-auto apply_fade(std::vector<float>& samples, std::uint64_t frames, std::uint32_t fade_ms) -> void {
+void apply_fade(std::span<float> samples, std::uint64_t frames,
+    std::uint64_t first_output_frame, std::uint32_t fade_ms) {
     if (fade_ms == 0 || frames == 0) return;
     const auto requested = static_cast<std::uint64_t>(fade_ms) * output_sample_rate / 1000U;
     const auto fade_frames = std::min(frames, std::max<std::uint64_t>(1, requested));
-    const auto first = frames - fade_frames;
-    for (std::uint64_t frame = first; frame < frames; ++frame) {
-        const auto offset = frame - first;
-        const auto gain = fade_frames == 1
-                              ? 0.0F
-                              : static_cast<float>(fade_frames - 1U - offset) /
-                                    static_cast<float>(fade_frames - 1U);
-        const auto sample = static_cast<std::size_t>(frame) * output_channel_count;
-        samples[sample] *= gain;
-        samples[sample + 1] *= gain;
+    const auto first_faded = frames - fade_frames;
+    for (std::size_t i = 0; i < samples.size() / output_channel_count; ++i) {
+        const auto frame = first_output_frame + i;
+        if (frame < first_faded) continue;
+        const auto offset = frame - first_faded;
+        const auto gain = fade_frames == 1 ? 0.0F :
+            static_cast<float>(fade_frames - 1U - offset) / static_cast<float>(fade_frames - 1U);
+        samples[i * output_channel_count] *= gain;
+        samples[i * output_channel_count + 1] *= gain;
     }
 }
+
+struct offline_interval_t {
+    preview_session_t& session;
+    const offline_mix_sink_t& sink;
+    const offline_mix_options_t& options;
+    std::uint64_t begin{}, end{};
+    std::stop_token stop;
+
+    auto emit(std::span<float> rendered, std::uint64_t first_frame)
+        -> result_t<void, error_t<failure_code_t>> {
+        const auto rendered_end = first_frame + rendered.size() / output_channel_count;
+        const auto selected_first = std::max(first_frame, begin);
+        const auto selected_end = std::min(rendered_end, end);
+        if (selected_first >= selected_end) return {};
+        auto selected = rendered.subspan(static_cast<std::size_t>(selected_first - first_frame) * output_channel_count,
+            static_cast<std::size_t>(selected_end - selected_first) * output_channel_count);
+        apply_fade(selected, end - begin, selected_first - begin, options.fade_out_ms);
+        return sink(selected_first, selected);
+    }
+    auto render_chunks(std::span<float> chunk) -> result_t<void, error_t<failure_code_t>> {
+        std::uint64_t current{};
+        while (current < end) {
+            if (stop.stop_requested()) return std::unexpected(error_t{failure_code_t::cancelled,
+                std::string{"Offline mix cancelled."}});
+            if (current != 0) {
+                const auto failure = pump_session(session, options.pump, current, end, options.maximum_read_frames);
+                if (failure) return std::unexpected(error_t{*failure, std::string{"Could not pump offline preview session."}});
+            }
+            const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(options.maximum_read_frames, end - current));
+            auto samples = chunk.first(frames * output_channel_count);
+            if (!render_chunk(session, samples, frames)) return std::unexpected(error_t{
+                failure_code_t::render_failed, std::string{"Preview mix did not produce the complete selected interval."}});
+            if (auto emitted = emit(samples, current); !emitted) return emitted;
+            current += frames;
+            if (!session.is_active() && current < end) return std::unexpected(error_t{
+                failure_code_t::render_failed, std::string{"Offline preview session ended early."}});
+        }
+        if (stop.stop_requested()) return std::unexpected(error_t{failure_code_t::cancelled,
+            std::string{"Offline mix cancelled."}});
+        return {};
+    }
+};
 
 } // namespace
 
 void apply_offline_mix_fade(std::vector<float>& samples, std::uint32_t fade_ms) {
-    apply_fade(samples, samples.size() / output_channel_count, fade_ms);
+    apply_fade(samples, samples.size() / output_channel_count, 0, fade_ms);
 }
 
-auto render_offline_interval(decoded_source_registry_t& sources, const preview_schedule_t& schedule,
+auto render_offline_interval_to(decoded_source_registry_t& sources, const preview_schedule_t& schedule,
                              std::span<const preview_object_source_binding_t> objects,
-                             std::uint64_t begin_frame, std::uint64_t end_frame,
+                             std::uint64_t begin_frame, std::uint64_t end_frame, const offline_mix_sink_t& sink,
                              offline_mix_options_t options, std::stop_token stop)
-    -> result_t<offline_mix_t, error_t<failure_code_t>> {
+    -> result_t<void, error_t<failure_code_t>> {
+    if (!sink) return std::unexpected(error_t{failure_code_t::invalid_request, std::string{"Offline mix sink is required."}});
     std::size_t output_samples{};
     const auto valid = validate_offline_interval(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
     if (valid)
@@ -168,10 +175,8 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     if (stop.stop_requested())
         return std::unexpected(error_t{failure_code_t::cancelled, std::string{"Offline mix cancelled."}});
 
-    offline_mix_t result;
     std::vector<float> chunk;
     try {
-        result.interleaved_stereo.resize(output_samples);
         chunk.resize(options.maximum_read_frames * output_channel_count);
     } catch (const std::bad_alloc&) {
         return std::unexpected(error_t{failure_code_t::capacity_exceeded,
@@ -191,25 +196,37 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     if (!started) {
         const auto failure = prime_status(started.error());
         static_cast<void>(session.stop());
-        result.interleaved_stereo.clear();
         return std::unexpected(error_t{failure, std::string{"Could not start or prime offline preview session."}});
     }
     if (started.value().detail.materialize && materialization_status(*started.value().detail.materialize).has_value()) {
         const auto failure = materialization_status(*started.value().detail.materialize);
         static_cast<void>(session.stop());
-        result.interleaved_stereo.clear();
         return std::unexpected(error_t{*failure, std::string{"Preview schedule could not be fully materialized."}});
     }
 
-    const auto rendered = render_chunks(session, chunk, result.interleaved_stereo,
-                                        begin_frame, end_frame, options.maximum_read_frames,
-                                        pump_options, stop);
+    offline_interval_t interval{.session = session, .sink = sink, .options = options,
+        .begin = begin_frame, .end = end_frame, .stop = stop};
+    const auto rendered = interval.render_chunks(chunk);
     static_cast<void>(session.stop());
-    if (rendered)
-        return std::unexpected(error_t{*rendered, rendered == failure_code_t::cancelled
-                                    ? "Offline mix cancelled."
-                                    : std::string{"Preview mix did not produce the complete selected interval."}});
-    apply_fade(result.interleaved_stereo, end_frame - begin_frame, options.fade_out_ms);
+    return rendered;
+}
+
+auto render_offline_interval(decoded_source_registry_t& sources, const preview_schedule_t& schedule,
+    std::span<const preview_object_source_binding_t> objects, std::uint64_t begin_frame, std::uint64_t end_frame,
+    offline_mix_options_t options, std::stop_token stop) -> result_t<offline_mix_t, error_t<failure_code_t>> {
+    offline_mix_t result;
+    const auto sink = [&](std::uint64_t first, std::span<const float> samples) -> result_t<void, error_t<failure_code_t>> {
+        if (result.interleaved_stereo.empty()) {
+            try { result.interleaved_stereo.resize(static_cast<std::size_t>(end_frame - begin_frame) * output_channel_count); }
+            catch (const std::bad_alloc&) { return std::unexpected(error_t{failure_code_t::capacity_exceeded,
+                std::string{"Could not allocate offline mix buffer."}}); }
+        }
+        const auto offset = static_cast<std::size_t>(first - begin_frame) * output_channel_count;
+        std::ranges::copy(samples, result.interleaved_stereo.begin() + static_cast<std::ptrdiff_t>(offset));
+        return {};
+    };
+    auto rendered = render_offline_interval_to(sources, schedule, objects, begin_frame, end_frame, sink, options, stop);
+    if (!rendered) return std::unexpected(std::move(rendered.error()));
     return result;
 }
 

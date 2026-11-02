@@ -167,3 +167,104 @@ return {sv_points={sv_point{key='base',at=at_measure(m,0),value=2}},
     CHECK(output.value.scrolls.size() == 1);
     CHECK(output.value.sv_recipes.size() == 1);
 }
+
+namespace {
+void require_project_media(bool value) { REQUIRE(value); }
+void check_project_media(bool value) { CHECK(value); }
+void animation_project_files(const std::filesystem::path& root) {
+    source_file(root, "project.lua", "worm_project('media')\nstoryboard('scene')\n"
+        "animation('hero',{file='dir.name/hero.png',frame_count=2,frame_delay_ms=2.5,loop_type='LoopForever'})\n"
+        "sample('sound',{path='tone.wav',time_ms=-10,volume=80})\n");
+    source_file(root, "dir.name/hero0.png", "frame zero");
+    source_file(root, "dir.name/hero1.png", "frame one");
+    source_file(root, "tone.wav", "raw sample bytes without playback geometry");
+}
+}
+
+TEST_CASE("project Animation freezes numbered frames and raw Samples without a virtual base file", "[lua][osbx][animation][sample]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    animation_project_files(root->path());
+    const auto song = project_song();
+    const auto frozen = freeze(song, root->path());
+    require_project_media(frozen.ok());
+    check_project_media(frozen.value.source.find(native_project_content_checksum("frame zero")) != std::string::npos);
+    check_project_media(frozen.value.source.find(native_project_content_checksum("frame one")) != std::string::npos);
+    check_project_media(!std::filesystem::exists(root->path() / "dir.name/hero.png"));
+    std::filesystem::remove_all(root->path() / "dir.name");
+    std::filesystem::remove(root->path() / "tone.wav");
+    const auto generated = execute(song, frozen.value);
+    require_project_media(generated.ok());
+    require_project_media(generated.value.storyboards.size() == 1);
+    const auto& nodes = generated.value.storyboards.front().value.nodes;
+    require_project_media(nodes.size() == 2);
+    check_project_media(nodes[0].animation && nodes[0].animation->frame_count == 2);
+    check_project_media(nodes[1].sample && nodes[1].sample->time_ms == -10);
+}
+
+TEST_CASE("project Animation source capture detects changed frames and keeps static image reads strict", "[lua][osbx][animation]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    animation_project_files(root->path());
+    const auto song = project_song();
+    const auto before = freeze(song, root->path());
+    require_project_media(before.ok());
+    source_file(root->path(), "dir.name/hero1.png", "changed frame bytes");
+    const auto after = freeze(song, root->path());
+    require_project_media(after.ok());
+    check_project_media(before.value.source != after.value.source);
+    check_project_media(execute(song, before.value).ok());
+    source_file(root->path(), "project.lua", "worm_project('strict')\nimage{id='missing',file='absent.png'}\n");
+    check_project_media(!freeze(song, root->path()).ok());
+}
+
+TEST_CASE("project Animation rejects frame enumeration beyond the existing frozen file graph", "[lua][osbx][animation][bounds]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    source_file(root->path(), "project.lua", "worm_project('bounded')\nstoryboard('scene')\n"
+        "animation('hero',{file='absent.png',frame_count=65,frame_delay_ms=1})\n");
+    const auto frozen = freeze(project_song(), root->path());
+    check_project_media(!frozen.ok());
+    require_project_media(!frozen.diagnostics.empty());
+    check_project_media(frozen.diagnostics.front().message.find("64") != std::string::npos);
+}
+
+TEST_CASE("project media capture namespaces matching node IDs by storyboard", "[lua][osbx][animation][sample]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    source_file(root->path(), "project.lua", "worm_project('scoped')\n"
+        "storyboard('first')\nanimation('hero',{file='frame.png',frame_count=1,frame_delay_ms=1})\n"
+        "storyboard('second')\nanimation('hero',{file='frame.png',frame_count=1,frame_delay_ms=1})\n");
+    source_file(root->path(), "frame0.png", "shared frame");
+    const auto frozen = freeze(project_song(), root->path());
+    require_project_media(frozen.ok());
+    const auto generated = execute(project_song(), frozen.value);
+    require_project_media(generated.ok());
+    check_project_media(generated.value.storyboards.size() == 2);
+}
+
+TEST_CASE("project Animation cannot bind uncaptured frame files through a later image override", "[lua][osbx][animation][capture]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    source_file(root->path(), "project.lua", "worm_project('captured')\nstoryboard('scene')\n"
+        "image{id='other',file='other.png'}\n"
+        "animation('hero',{file='frame.png',frame_count=1,frame_delay_ms=1})\nimage('other')\n");
+    source_file(root->path(), "frame0.png", "captured frame");
+    source_file(root->path(), "other.png", "static base with no numbered frames");
+    check_project_media(!freeze(project_song(), root->path()).ok());
+}
+
+TEST_CASE("project Animation copies settings rather than retaining a mutable live descriptor", "[lua][osbx][animation][capture]") {
+    const auto root = test::temporary_directory_t::from();
+    require_project_media(root.has_value());
+    source_file(root->path(), "project.lua", "worm_project('copied')\nstoryboard('scene')\n"
+        "local settings={file='frame.png',frame_count=1,frame_delay_ms=1}\n"
+        "animation('hero',settings)\nsettings.file='absent.png'\nsettings.frame_count=20\n");
+    source_file(root->path(), "frame0.png", "captured frame");
+    const auto frozen = freeze(project_song(), root->path());
+    require_project_media(frozen.ok());
+    const auto generated = execute(project_song(), frozen.value);
+    require_project_media(generated.ok());
+    const auto& node = generated.value.storyboards.front().value.nodes.front();
+    check_project_media(node.animation && node.animation->frame_count == 1);
+}

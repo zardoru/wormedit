@@ -188,6 +188,7 @@ struct notification_toast_view_t {
     wormedit::notification_severity_t severity{};
     std::string_view message;
     std::uint32_t repeat_count{};
+    bool show_in_folder{};
     auto operator==(const notification_toast_view_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
@@ -197,7 +198,8 @@ typedef enum WormUiNotificationTargetAvailability {
     WORM_UI_NOTIFICATION_NO_TARGET = 0,
     WORM_UI_NOTIFICATION_TARGET_POSITION,
     WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL,
-    WORM_UI_NOTIFICATION_TARGET_MISSING
+    WORM_UI_NOTIFICATION_TARGET_MISSING,
+    WORM_UI_NOTIFICATION_TARGET_FILE
 } WormUiNotificationTargetAvailability;
 
 namespace wormedit::ui {
@@ -265,7 +267,8 @@ typedef enum WormUiNotificationActionKind {
     WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY,
     WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS,
     WORM_UI_NOTIFICATION_ACTION_GO_TO,
-    WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL
+    WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL,
+    WORM_UI_NOTIFICATION_ACTION_SHOW_IN_FOLDER
 } WormUiNotificationActionKind;
 
 namespace wormedit::ui {

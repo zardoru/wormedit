@@ -3,17 +3,33 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/slice_spans.h>
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_decoder.h>
+#endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/formats/export_cut_audio.h>
 #endif
 #if defined(WORMEDIT_HAS_LUA)
 #include "scripting/lua_curve.h"
+#include "scripting/osbx_lua_link.h"
 #endif
 #include <algorithm>
 #include <utility>
 
 namespace wormedit::sys {
 namespace {
+auto make_export_image_probe() -> export_image_probe_t {
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    return [](const std::filesystem::path& path)
+        -> result_t<std::pair<std::uint32_t, std::uint32_t>, std::string> {
+        const auto image = visual::open_image_rgba({.path = path});
+        if (!image) return std::unexpected(image.error().message);
+        return std::pair{image->width, image->height};
+    };
+#else
+    return {};
+#endif
+}
 auto export_target(const output_group_export_plan_t& plan) -> output_group_export_target_t {
     return {.group = plan.group, .request = plan.request, .existing_files = plan.existing_files};
 }
@@ -66,16 +82,18 @@ auto prepare_output_assets(const output_group_export_request_t& input,
     return pending;
 }
 
-void report_output_conversion_losses(const wormedit::conversion_result_t& converted,
+void report_output_conversion_warnings(const wormedit::conversion_result_t& converted,
                                      output_group_export_task_result_t& completed) {
     if (!completed.published)
         return;
     std::size_t count{};
+    bool has_advisory_warning{};
     const wormedit::conversion_diagnostic_t* first{};
     for (const auto& diagnostic : converted.diagnostics) {
-        if (!diagnostic.loss)
+        if (!diagnostic.loss && diagnostic.severity != diagnostic_severity_t::warning)
             continue;
         ++count;
+        has_advisory_warning = has_advisory_warning || !diagnostic.loss;
         if (!first)
             first = &diagnostic;
         if (completed.detail.size() >= wormedit::notification_detail_max_bytes)
@@ -92,9 +110,10 @@ void report_output_conversion_losses(const wormedit::conversion_result_t& conver
     }
     if (!first)
         return;
-    completed.message = "Output target published with " + std::to_string(count) +
-                        (count == 1 ? " conversion loss: " : " conversion losses: ") +
-                        first->message;
+    const auto label = has_advisory_warning
+        ? (count == 1 ? " conversion warning: " : " conversion warnings: ")
+        : (count == 1 ? " conversion loss: " : " conversion losses: ");
+    completed.message = "Output target published with " + std::to_string(count) + label + first->message;
     wormedit::truncate_notification_text(completed.message,
                                          wormedit::notification_message_max_bytes);
     completed.severity = wormedit::notification_severity_t::warning;
@@ -119,7 +138,7 @@ void complete_output_publication(const wormedit::conversion_publication_result_t
     if (published.published) {
         for (const auto& warning : published.warnings)
             completed.detail += warning + "\n";
-        report_output_conversion_losses(converted, completed);
+        report_output_conversion_warnings(converted, completed);
     }
 }
 
@@ -155,9 +174,16 @@ auto existing_publication_files(const std::filesystem::path& project_directory,
     for (const auto& file : publication.files)
         if (auto error = inspect(file.project_relative_path))
             return std::unexpected(*error);
+    for (const auto& file : publication.storyboard_files)
+        if (auto error = inspect(file.project_relative_path)) return std::unexpected(*error);
     for (const auto& file : publication.generated_files)
         if (auto error = inspect(file))
             return std::unexpected(*error);
+    for (const auto& file : publication.storyboard_images)
+        if (auto error = inspect(file))
+            return std::unexpected(*error);
+    for (const auto& file : publication.storyboard_samples)
+        if (auto error = inspect(file)) return std::unexpected(*error);
     return conflicts;
 }
 
@@ -197,6 +223,14 @@ auto generated_file_bytes(const output_group_export_request_t& input,
     return file_size_or_zero(source.is_absolute() ? source : input.asset_base / source);
 }
 
+void append_storyboard_file_plan(output_group_export_preparation_t& prepared) {
+    for (const auto& file : prepared.publication.storyboard_files)
+        prepared.files.push_back({.path = file.project_relative_path,
+            .action = std::ranges::contains(prepared.conflicts, file.project_relative_path) ? output_group_export_file_action_t::replace
+                                                        : output_group_export_file_action_t::new_file,
+            .bytes = prepared.converted.storyboard_files[file.output_index].bytes.size()});
+}
+
 void build_file_plan(const output_group_export_request_t& input,
                      output_group_export_preparation_t& prepared) {
     const auto exists = [&](const std::filesystem::path& path) {
@@ -213,6 +247,7 @@ void build_file_plan(const output_group_export_request_t& input,
                            : output_group_export_file_action_t::new_file,
              .bytes = prepared.converted.outputs[file.output_index].bytes.size()});
     }
+    append_storyboard_file_plan(prepared);
     for (const auto& file : prepared.publication.generated_files) {
         const auto copied = std::ranges::find(prepared.converted.asset_copies, file.filename(),
                                               &conversion_asset_copy_t::relative_path) !=
@@ -224,6 +259,17 @@ void build_file_plan(const output_group_export_request_t& input,
                                              : output_group_export_file_action_t::new_file,
              .bytes = generated_file_bytes(input, prepared.converted, file)});
     }
+    const auto directory = input.plan.group.destination_kind == output_destination_kind_t::file
+        ? input.plan.group.relative_output_path.parent_path() : input.plan.group.relative_output_path;
+    for (const auto& image : prepared.publication.storyboard_images)
+        prepared.files.push_back({.path = image,
+            .action = exists(image) ? output_group_export_file_action_t::replace
+                                    : output_group_export_file_action_t::copy,
+            .bytes = file_size_or_zero(input.asset_base / image.lexically_relative(directory))});
+    for (const auto& sample : prepared.publication.storyboard_samples)
+        prepared.files.push_back({.path = sample,
+            .action = exists(sample) ? output_group_export_file_action_t::replace : output_group_export_file_action_t::copy,
+            .bytes = file_size_or_zero(input.asset_base / sample.lexically_relative(directory))});
     for (const auto& asset : prepared.publication.assets) {
         const auto pending = std::ranges::find(
             prepared.pending_assets, asset.asset, &project_asset_copy_request_t::asset);
@@ -289,7 +335,7 @@ auto prepare_output_targets(const output_group_export_request_t& input,
         if (!prepared->blocking_error.empty())
             return std::unexpected(
                 output_group_export_task_result_t{.message = prefix + prepared->blocking_error,
-                    .target = prepared->blocking_target});
+                    .detail = prepared->blocking_error, .target = prepared->blocking_target});
         if (target.existing_files == existing_files_policy_t::ask)
             for (const auto& path : prepared->conflicts)
                 batch.conflicts += target.group.name + ": " + path.generic_string() + "\n";
@@ -349,6 +395,16 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
     if (stop.stop_requested()) return std::unexpected("Export cancelled before conversion.");
     if (input.plan.group.charts.empty()) return std::unexpected("Add at least one chart before exporting.");
     output_group_export_preparation_t prepared{.request = input.plan.request};
+#if defined(WORMEDIT_HAS_LUA)
+    const scripting::osbx_lua_link_backend_t links{{.cancellation = stop}};
+    if (prepared.request.target != format_family_t::native_project)
+        prepared.request.osbx_prepared = prepare_osbx_lua_scenes(input.document, links, prepared.request.osbx_prepared);
+#endif
+    const osbx_lua_prepared_scope_t prepared_scope{prepared.request.osbx_prepared};
+    if (auto failure = prepare_osu_storyboard_export(input.document, prepared.request,
+            input.asset_base, make_export_image_probe(), stop)) return std::unexpected(*failure);
+    if (auto failure = prepare_stepmania_storyboard_export(input.document, prepared.request,
+            input.asset_base, make_export_image_probe(), stop)) return std::unexpected(*failure);
     if (is_conversion_needs_slice_spans(input.document, prepared.request)) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         if (auto error = prepare_conversion_slice_sources(input.document, prepared.request, input.asset_base, stop))

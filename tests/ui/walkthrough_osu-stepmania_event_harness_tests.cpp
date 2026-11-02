@@ -1,5 +1,6 @@
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
+#include "../support/temporary_directory.h"
 #include "sys/app/application_defaults.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/compose/input/compose_input.h"
@@ -318,7 +319,9 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes both groups with song a
         group.charts = {history.document.charts.front().id, *duplicate.payload.chart, *added.payload.chart};
         expect(apply_set_output_group_command(history, index, std::move(group)).applied);
     }
-    const auto root = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/osu-stepmania-publication";
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto root = directory->path();
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
     expect(create_native_project_file(root / "song.wormedit", history.document).value);
@@ -424,7 +427,9 @@ TEST_CASE("Osu StepMania walkthrough refuses multiple music resources without pu
     auto song = audio_project();
     song.resources.push_back({.id = resource_id_t{100}, .name = "Second music",
         .asset = song.audio_assets.front().id, .roles = {resource_role_t::music}});
-    const auto root = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/osu-stepmania-refusal";
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto root = directory->path();
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
     for (const auto& group : song.output_groups) {

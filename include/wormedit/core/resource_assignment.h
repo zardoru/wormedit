@@ -12,8 +12,13 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
+#include <utility>
 
 namespace wormedit {
+
+// Owned result; no projection storage escapes its immutable source owner.
+[[nodiscard]] auto resolve_bms_sample_reference(const song_document_t&, const bms_wav_reference_t&)
+    -> result_t<std::pair<resource_entry_t, audio_asset_t>, error_t<failure_code_t>>;
 
 struct bms_identifier_capacity_t {
     std::size_t used{};

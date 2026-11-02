@@ -2,6 +2,7 @@
 #include "lua_project.h"
 #include "lua_value_reader.h"
 #include "chart_lua.h"
+#include "osbx_lua.h"
 #include "lua_document_api.h"
 #include "../core/text_util.h"
 #include <wormedit/core/numeric_text.h>
@@ -77,6 +78,11 @@ auto decode_output(const values::table_t& table) -> generator_output_t {
         if (values.size() > maximum_generator_notes) values::malformed("Generator note limit exceeded.");
         for (const auto& note : values) output.notes.push_back(decode_note(note));
     }
+    return output;
+}
+auto decode_combined_output(const values::table_t& envelope) -> generator_output_t {
+    auto output = decode_output(values::children(values::required(envelope, "output")));
+    output.storyboards = decode_lua_storyboards(values::children(values::required(envelope, "storyboards")));
     return output;
 }
 class generator_context_builder_t {
@@ -176,11 +182,34 @@ auto execute_once(const lua_document_snapshot_t& snapshot,const values::table_t&
     if (auto installed=snapshot.install(*sandbox); !installed) return std::unexpected(installed.error());
     if (auto installed=sandbox->install_snapshot("generator",context); !installed) return std::unexpected(installed.error());
     const auto name=recipe.source_path.empty() ? "generator" : "@"+text_util::path_utf8(recipe.source_path);
-    const auto adapter=std::string(chart_lua_prelude())+"\nreturn finish_chart_declarations";
+    const auto adapter=std::string(chart_lua_prelude())+std::string(osbx_lua_prelude())+
+        ((reader || lua_project_source_t::is_frozen(recipe.source)) ? "" : "_wormedit_chart_project_audio=nil\n")+R"lua(
+local output_type, output_next = type, next
+return function(value)
+  local output=finish_chart_declarations(value)
+  local storyboards=finish_osbx_batch()
+  if #storyboards>0 and (output==nil or (output_type(output)=='table' and output_next(output)==nil)) then
+    output={notes={}}
+  end
+  return {output=output,storyboards=storyboards}
+end
+)lua";
     auto result=sandbox->evaluate_context(recipe.source,name,adapter);
     limits.maximum_instructions=sandbox->usage().remaining_instructions;
     if (result && retain) *retain=std::move(*sandbox);
     return result;
+}
+template<class Event> void bind_sample_context_event(Event& event, chart_id_t source_chart) {
+    if (!event.sample_reference) return;
+    if (auto* reference = std::get_if<bms_wav_reference_t>(&event.sample_reference->reference);
+        reference && !reference->source_chart) reference->source_chart = source_chart;
+}
+void bind_sample_context(generator_output_t& output, chart_id_t source_chart) {
+    for (auto& chart : output.charts)
+        for (auto& measure : chart.content.measures) {
+            for (auto& note : measure.notes) bind_sample_context_event(note, source_chart);
+            for (auto& event : measure.bgm_events) bind_sample_context_event(event, source_chart);
+        }
 }
 auto rejected(std::string message) -> diagnosed_t<generator_output_t> {
     return {.diagnostics = {error(diagnostic_code_t::invalid_binding, std::move(message))}};
@@ -211,11 +240,15 @@ auto run_lua_generator(const song_document_t& song, const chart_document_t& char
         std::optional<lua_sandbox_t> initial;
         const auto first=execute_once(*snapshot,context,recipe,limits,reader,&initial);
         if (!first) return rejected(first.error().message);
-        auto output=decode_output(*first);
+        auto output=decode_combined_output(*first);
+        bind_sample_context(output, chart.id);
         limits.maximum_memory_bytes-=initial->usage().allocated_bytes;
         const auto replay=execute_once(*snapshot,context,recipe,limits,reader);
         if (!replay) return rejected("Generator replay failed: "+replay.error().message);
-        if (output!=decode_output(*replay)) return rejected("Generator output is not deterministic for the frozen inputs and seed.");
+        auto repeated = decode_combined_output(*replay);
+        bind_sample_context(repeated, chart.id);
+        if (output!=repeated)
+            return rejected("Generator output is not deterministic for the frozen inputs and seed.");
         return {.value=std::move(output)};
     } catch (const std::exception& exception) {
         return rejected(exception.what());

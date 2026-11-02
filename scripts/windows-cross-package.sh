@@ -34,7 +34,12 @@ validate_ffmpeg_sdk() {
     fi
 }
 
+manifest=${WORMEDIT_PACKAGE_SOURCE_MANIFEST:?Set WORMEDIT_PACKAGE_SOURCE_MANIFEST to the accepted exact source/hash manifest}
+[[ -s $manifest ]] || { echo "Missing accepted package source manifest: $manifest" >&2; exit 1; }
+
 validate_ffmpeg_sdk
+bash packaging/build-video-codecs-sdk.sh verify "$sdk"
+bash packaging/stage-mingw-runtimes.sh verify "$sdk"
 export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
 export PKG_CONFIG_PATH=
 jobs=${WORMEDIT_BUILD_JOBS:-$(scripts/gate.sh --print-jobs | cut -d' ' -f1)}
@@ -42,7 +47,8 @@ out="$(realpath -m "${1:-build/dist}")"
 stage="build/windows-cross-stage"
 
 # shellcheck disable=SC2086
-cmake --preset windows-cross-release ${CMAKE_ARGS:-}
+cmake --preset windows-cross-release ${CMAKE_ARGS:-} \
+    -DWORMEDIT_ENABLE_VIDEO_ENCODER=ON -DWORMEDIT_VIDEO_ENCODER_ALLOW_GPL=OFF
 version=$(sed -n 's/^#define WORMEDIT_VERSION "\([^"]*\)"$/\1/p' build/windows-cross-release/config.h)
 name="wormedit-${version}-windows-x64"
 cmake --build --preset windows-cross-release --parallel "$jobs"
@@ -51,20 +57,30 @@ for component in Wormedit Manual; do
     cmake --install build/windows-cross-release --prefix "$stage/$name" --strip --component "$component"
 done
 # The shared notices installer supplies the SDK's FFmpeg sources and licenses.
-cp scripts/windows-ffmpeg.sh packaging/build-lame-sdk.sh scripts/env-mingw.sh "$stage/$name/third-party/ffmpeg/"
+cp scripts/windows-ffmpeg.sh packaging/build-lame-sdk.sh packaging/build-video-codecs-sdk.sh \
+    packaging/stage-mingw-runtimes.sh \
+    packaging/ffmpeg-openh264-level.patch scripts/env-mingw.sh "$stage/$name/third-party/ffmpeg/"
 cat > "$stage/$name/START-HERE.txt" <<'EOF'
 Wormedit Windows preview (64-bit)
 
 Extract the entire ZIP into a folder, then run wormedit.exe.
 Keep the DLLs and assets folder next to the executable.
-This preview includes FFmpeg video playback and audio metadata support.
+This preview includes FFmpeg video playback and linked video export support.
+MP4 uses OpenH264 and AAC; WebM uses libvpx VP9 and Opus. Each selected
+configuration is available only after actual encode/probe validation.
+OpenH264/Opus/LAME/FFmpeg are shared libraries. The Windows-only BSD libvpx
+static archive is private input to the replaceable shared FFmpeg DLL;
+its source, LICENSE, PATENTS, configuration and artifact/link receipts travel
+with the FFmpeg notices. Development archives are not included in this ZIP.
 
 FFmpeg is dynamically linked under the GNU LGPL version 2.1 or later.
 Its license, corresponding source archive and build configuration are in
 third-party/ffmpeg. You may replace the FFmpeg DLLs with compatible builds.
 EOF
 git rev-parse HEAD > "$stage/$name/BUILD-REVISION.txt"
-git diff --binary HEAD > "$stage/$name/BUILD-CHANGES.patch"
+# Explicit parent-reviewed exact path/hash manifest, including intended new
+# source files. Do not publish arbitrary dirty work (notably the .agent fixture).
+bash packaging/build-video-codecs-sdk.sh source-patch "$PWD" "$manifest" "$stage/$name/BUILD-CHANGES.patch"
 mkdir -p "$out"
 # Refuse accidental host libraries, dependency SDKs and debug runtime DLLs.
 unexpected=$(find "$stage/$name" -type f \( -name '*.so' -o -name '*.so.*' -o -name '*.a' \
@@ -79,6 +95,9 @@ while IFS= read -r -d '' binary; do
         exit 1
     fi
 done < <(find "$stage/$name" -type f \( -iname '*.exe' -o -iname '*.dll' \) -print0)
+# Installed/stripped runtime hashes complement the unstripped SDK/link receipts.
+(cd "$stage/$name"; find . -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0 \
+    | LC_ALL=C sort -z | xargs -0 -r sha256sum) > "$stage/$name/VIDEO-RUNTIMES.sha256"
 (cd "$stage/$name" && find . -type f | LC_ALL=C sort) > "$out/$name.zip.files.txt"
 rm -f "$out/$name.zip"
 (cd "$stage" && zip -qr -9 "$out/$name.zip" "$name")

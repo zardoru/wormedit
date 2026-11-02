@@ -929,12 +929,45 @@ void populate_compose_tab(const workspace_projection_context_t& projection,
             return result.summary_size;
         });
 }
-void populate_storyboard_tab(const workspace_projection_context_t& projection, const wormedit::workspace_storyboard_view_t& tab) {
-    const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
-                append(tab.placeholder);
-                append("Storyboard documents: " + std::to_string(tab.storyboard_count));
-
+void populate_storyboard_tab(const workspace_projection_context_t& projection,
+                             const wormedit::workspace_storyboard_view_t& tab) {
+    auto& owner = projection.result;
+    auto& view = owner.view.storyboard;
+    const auto& document = projection.document;
+    const auto& previous = owner.storyboard.rows.key();
+    const bool same_session = previous && std::get<0>(*previous) == &document &&
+        std::get<1>(*previous).project == document.id &&
+        std::get<2>(*previous) == owner.query_session_generation;
+    view.visible = tab.enabled;
+    view.project = document.id;
+    view.revision = document.revision;
+    view.session_generation = owner.query_session_generation;
+    view.create_available = tab.enabled && document.storyboards.size() < tab.maximum_storyboards;
+    (void)owner.storyboard.rows.get_or_build(
+        std::tuple{&document, document_stamp_t::from(document), owner.query_session_generation}, [&] {
+            view.storyboards.resize(document.storyboards.size());
+            for (std::size_t index = 0; index < document.storyboards.size(); ++index) {
+                const auto& source = document.storyboards[index];
+                auto& row = view.storyboards[index];
+                row.id = source.id;
+                row.name = source.name;
+                row.kind = source.osbx ? ui::storyboard_kind_t::osbx : ui::storyboard_kind_t::osb;
+                row.generator_owned = source.owning_generator_recipe.has_value();
+                row.generator_recipe = source.owning_generator_recipe;
+                row.generator_module.clear();
+                if (source.owning_generator_recipe) {
+                    const auto recipe = std::ranges::find(document.generator_recipes,
+                        *source.owning_generator_recipe, &generator_recipe_t::id);
+                    if (recipe != document.generator_recipes.end())
+                        row.generator_module = recipe->source_path.generic_string();
+                }
+            }
+            return true;
+        });
+    if (!same_session) view.refill_state({});
+    else view.refill_state(view.state);
 }
+
 void populate_sound_lane_modes(const workspace_projection_context_t& projection) {
     const auto* chart = projection.document.read_chart(projection.result.view.selected_chart_id);
     if (!chart || chart->source_family != format_family_t::bmson) return;
@@ -1111,7 +1144,8 @@ void frontend_workspace_view_t::reset() {
         view.compare.charts, view.compare.diagnostics,
         view.playback_rates.entries, view.bms_encodings.entries, view.bms_lane_profiles.entries,
         view.sound_kinds.entries,
-        view.compose);
+        view.compose, view.storyboard);
+    view.storyboard.reset_visibility();
     view.compose.reset();
     view.setup.reset();
     view.options.reset();
@@ -1144,14 +1178,17 @@ void wormedit::ui::notification_view_t::refill(const notification_center_t& cent
     unread_errors = unread.errors;
     const auto entries = center.borrowed_snapshot(notification_capacity);
     for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry) {
+        const bool file = std::holds_alternative<notification_file_t>(entry->target);
+        const bool completion = file && (entry->severity == notification_severity_t::success ||
+                                         entry->severity == notification_severity_t::info);
         if (entry->severity != notification_severity_t::warning &&
-            entry->severity != notification_severity_t::error)
+            entry->severity != notification_severity_t::error && !completion)
             continue;
-        if (entry->severity == notification_severity_t::warning &&
+        if (entry->severity != notification_severity_t::error &&
             now - entry->timestamp >= std::chrono::seconds{8})
             continue;
         toasts.push_back({.id = entry->id, .severity = entry->severity,
-                         .message = entry->message, .repeat_count = entry->count});
+                         .message = entry->message, .repeat_count = entry->count, .show_in_folder = file});
         if (toasts.size() == maximum_visible_toasts) break;
     }
 }

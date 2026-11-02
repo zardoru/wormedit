@@ -1,4 +1,7 @@
+#include <wormedit/core/osbx_edit.h>
 #include <wormedit/core/generator.h>
+#include "../../src/core/generator_chart.h"
+#include <wormedit/formats/native_project.h>
 #include <wormedit/core/lane_profiles.h>
 #include "../../src/core/id_ceiling.h"
 #include "../support/native_bms_fixture.h"
@@ -200,4 +203,143 @@ TEST_CASE("generator layer definitions use normal editor name validation", "[gen
         {.layers = {{"layer", {.name = std::move(name)}}}});
     check_generator(!result.value && !result.diagnostics.empty());
     check_generator(history.undo.empty() && history.document.charts.front().semantic_layers.empty());
+}
+
+TEST_CASE("persisted storyboard witnesses reserve identities after live output and history disappear", "[generator][osbx-generator]") {
+    auto history = generator_history();
+    const auto first = generator_preview_t::propose(history, generator_descriptor(), {.storyboards = {{.key = "scene"}}});
+    require_generator(first.value.has_value());
+    require_generator(apply_generator(history, *first.value).applied);
+    const auto id = history.document.storyboards.front().id;
+    history.document.storyboards.clear();
+    history.undo.clear(); history.redo.clear();
+    check_generator(generator_identity_floor(history) >= id.value);
+    const auto another = generator_preview_t::propose(history, generator_descriptor(), {.storyboards = {{.key = "another"}}});
+    require_generator(another.value.has_value());
+    check_generator(another.value->payload.recipe.generated_storyboards.front().storyboard.value > id.value);
+}
+
+TEST_CASE("storyboard witness exhaustion rejects allocation without wrapping", "[generator][osbx-generator]") {
+    auto history = generator_history();
+    const auto first = generator_preview_t::propose(history, generator_descriptor(), {.storyboards = {{.key = "scene"}}});
+    require_generator(first.value.has_value());
+    require_generator(apply_generator(history, *first.value).applied);
+    history.document.generator_recipes.front().generated_storyboards.front().storyboard = storyboard_id_t{UINT64_MAX};
+    history.document.storyboards.clear(); history.undo.clear(); history.redo.clear();
+    check_generator(generator_identity_floor(history) == UINT64_MAX);
+    const auto rejected = generator_preview_t::propose(history, generator_descriptor(), {.storyboards = {{.key = "another"}}});
+    check_generator(!rejected.value);
+    require_generator(!rejected.diagnostics.empty());
+    check_generator(rejected.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    check_generator(history.undo.empty());
+}
+
+namespace {
+void check_sample_materialization_rollback(const document_history_t& history, const std::string& before) {
+    CHECK(history.undo.empty());
+    CHECK(history.document.audio_assets.empty());
+    CHECK(history.document.resources.empty());
+    const auto after = write_native_project(history.document);
+    REQUIRE(after.value);
+    CHECK(after.value == before);
+}
+}
+
+TEST_CASE("sample materialization failure rolls back the same generator transaction", "[generator][resource_plan]") {
+    auto history = generator_history();
+    const auto before = write_native_project(history.document);
+    REQUIRE(before.value);
+    audio_file_reference_t good{.declared_name = "good", .path = "good.wav", .content_hash = std::string(64, 'a'),
+        .stream = {.sample_rate = 44100, .channels = 2, .frame_count = 100}};
+    auto bad = good; bad.content_hash = "not-a-hash";
+    generator_recipe_t candidate;
+    candidate.generated_charts = {{.key = "typed", .chart = chart_id_t{20},
+        .content = {.measures = {{.id = measure_id_t{21},
+            .notes = {{.id = object_id_t{22}, .sample_reference = sample_reference_binding_t{.reference = good}},
+                      {.id = object_id_t{23}, .sample_reference = sample_reference_binding_t{.reference = bad}}}}}}}};
+    document_command_transaction_t transaction(history);
+    auto errors = materialize_generator_sample_references(transaction, candidate);
+    REQUIRE_FALSE(errors.empty());
+    const auto rejected = transaction.finish_execution({.diagnostics = std::move(errors)});
+    CHECK_FALSE(rejected.applied);
+    check_sample_materialization_rollback(history, *before.value);
+}
+
+
+namespace {
+auto generated_detach_history() -> document_history_t {
+    auto history = generator_history();
+    auto proposal = generator_preview_t::propose(history, generator_descriptor(),
+        {.notes = {generated_note("note", 120)}, .layers = {{.key = "generated", .value = {.name = "Generated"}}},
+            .storyboards = {{.key = "scene"}, {.key = "other"}}});
+    REQUIRE(proposal.value);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+    return history;
+}
+void detach_first_generated_storyboard(document_history_t& history) {
+    const auto& board = history.document.storyboards.front();
+    REQUIRE(apply_osbx_edit(history, {.storyboard = board.id,
+        .change = osbx_detach_storyboard_t{.expected_owner = *board.owning_generator_recipe}}).applied);
+}
+auto regenerated_detach_proposal(const document_history_t& history) -> generator_proposal_t {
+    auto proposal = generator_preview_t::propose(history, history.document.generator_recipes.front(),
+        {.notes = {generated_note("note", 120)}, .layers = {{.key = "generated", .value = {.name = "Generated"}}},
+            .storyboards = {{.key = "scene"}, {.key = "other"}}});
+    REQUIRE(proposal.value);
+    return std::move(*proposal.value);
+}
+auto generator_detach_bytes(const song_document_t& song) -> std::string {
+    const auto written = write_native_project(song);
+    REQUIRE(written.value);
+    return *written.value;
+}
+void check_regeneration_keeps_detached(const document_history_t& history, const storyboard_document_t& detached,
+    storyboard_id_t generated) {
+    CHECK(history.document.storyboards.front() == detached);
+    CHECK(history.document.storyboards.size() == 3);
+    CHECK(history.document.generator_recipes.front().generated_storyboards.front().storyboard == generated);
+    CHECK(generated != detached.id);
+}
+} // namespace
+
+TEST_CASE("storyboard detachment regenerates a new identity and preserves other generator outputs", "[generator][osbx-generator][storyboard-detach]") {
+    auto history = generated_detach_history();
+    const auto measures = history.document.charts.front().measures;
+    const auto layers = history.document.charts.front().semantic_layers;
+    const auto other = history.document.storyboards.back();
+    detach_first_generated_storyboard(history);
+    REQUIRE(apply_osbx_edit(history, {.storyboard = history.document.storyboards.front().id,
+        .change = osbx_add_node_t{}}).applied);
+    const auto detached = history.document.storyboards.front();
+    const auto next = regenerated_detach_proposal(history);
+    const auto generated = next.payload.recipe.generated_storyboards.front().storyboard;
+    REQUIRE(apply_generator(history, next).applied);
+    check_regeneration_keeps_detached(history, detached, generated);
+    CHECK(history.document.charts.front().measures == measures);
+    CHECK(history.document.charts.front().semantic_layers == layers);
+    CHECK(history.document.storyboards[1] == other);
+}
+
+TEST_CASE("storyboard detachment retains redo identity reservations during regeneration", "[generator][osbx-generator][storyboard-detach]") {
+    auto history = generated_detach_history();
+    detach_first_generated_storyboard(history);
+    const auto next = regenerated_detach_proposal(history);
+    const auto generated = next.payload.recipe.generated_storyboards.front().storyboard;
+    REQUIRE(apply_generator(history, next).applied);
+    REQUIRE(undo_document_command(history));
+    const auto reserved = regenerated_detach_proposal(history);
+    CHECK(reserved.payload.recipe.generated_storyboards.front().storyboard.value > generated.value);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.generator_recipes.front().generated_storyboards.front().storyboard == generated);
+}
+
+TEST_CASE("storyboard detachment rejects a pre-detach generator preview without reclaiming the board", "[generator][osbx-generator][storyboard-detach]") {
+    auto history = generated_detach_history();
+    const auto stale = regenerated_detach_proposal(history);
+    detach_first_generated_storyboard(history);
+    const auto before = generator_detach_bytes(history.document);
+    const auto undo_count = history.undo.size();
+    CHECK_FALSE(apply_generator(history, stale).applied);
+    CHECK(generator_detach_bytes(history.document) == before);
+    CHECK(history.undo.size() == undo_count);
 }

@@ -5,11 +5,15 @@
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "compose_area_dispatch_fixture.h"
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "project_audio_sources_fixture.h"
+#endif
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/app/application_defaults.h"
 #include "sys/audio/bmson_waveform_view.h"
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/audio/chart_preview_state.h"
+#endif
 #include "sys/project/compare_view.h"
 #include "sys/compose/actions/compose_actions.h"
 #include "sys/compose/actions/compose_area_actions.h"
@@ -24,6 +28,9 @@
 #include "sys/compose/views/compose_view_internal.h"
 #include "sys/app/frame_timing.h"
 #include "sys/app/application_frame_view.h"
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_job.h>
+#endif
 #include <wormedit/audio/decoder.h>
 #include <wormedit/audio/transport.h>
 #include <thread>
@@ -2404,7 +2411,6 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
 }
 
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
 auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uint64_t row = 240) -> wormedit::ui::workspace_action_t {
     const auto& chart = fixture.history.document.charts.front();
@@ -3017,8 +3023,6 @@ TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits th
     expect_compose_test(notes.back().position.row == 240);
     expect_compose_test(fixture.interaction->cursor == cursor);
 }
-#endif
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside pointer",
           "[sys][clipboard][paste-preview]") {
     compose_test_fixture_t fixture{paste_preview_song()};
@@ -3051,7 +3055,6 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     expect_compose_test(std::string{fixture.flattened.view.compose.paste_diagnostic}.empty());
     expect_compose_test(fixture.history.undo.empty());
 }
-#endif
 
 TEST_CASE("Offset lock action rejects stale binding without clearing captured edits",
           "[sys][offset-stamp]") {
@@ -3240,6 +3243,7 @@ TEST_CASE("Configured anchor projects a short chart through audio-tail rows stop
     }
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
 struct overview_generation_fixture_t {
     song_document_t song = dense_song();
@@ -3326,6 +3330,8 @@ TEST_CASE("Compose overview detail identity and cleared cache publish unique gen
     expect_compose_test(cleared > identity);
     expect_compose_test(fixture.project(fixture.flattened, &replacement) == cleared);
 }
+
+#endif
 
 namespace {
 void check_static_source_has_no_frame_overlays(const wormedit::ui::compose_view_t& source) {
@@ -4138,6 +4144,7 @@ TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancel
     }
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
 void expect_waveform_arena(bool value, const std::source_location location = std::source_location::current()) {
     INFO("Waveform arena expectation at " << location.file_name() << ':' << location.line());
@@ -4269,6 +4276,8 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
         expect_waveform_arena(std::ranges::equal(row.samples, expected.samples));
     }
 }
+
+#endif
 
 namespace {
 auto marker_arena_song(std::size_t count = 2) -> song_document_t {
@@ -5537,6 +5546,7 @@ TEST_CASE("stem waveforms cover channels with events near the cursor or audio re
     CHECK(at(9999) == at(1));
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
 auto configure_mixed_projection(channel_projection_fixture_t& fixture)
     -> std::shared_ptr<const audio::waveform_analysis_result_t> {
@@ -5608,6 +5618,8 @@ TEST_CASE("BMSON production projection excludes one thousand packed channels and
     check_mixed_production_projection(fixture, packed_analysis, false);
     check_mixed_production_projection(fixture, packed_analysis, true);
 }
+
+#endif
 
 namespace {
 struct workspace_timing_snapshot_t {
@@ -6982,8 +6994,10 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
         requested_project=project;requested_chart=chart;requested_lane=lane;return 116.0;
     };
     state.services.compose_left_dock_pixels=[] { return 240; };
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::sys::runtime::chart_preview_t preview;
     state.bookmarks.preview = &preview;
+#endif
     const auto now=std::chrono::steady_clock::now();
     state.bookmarks.fixed_clock = &now;
     state.bookmarks.record_seek(wormedit::chart_id_t{7}, 44);
@@ -6996,7 +7010,9 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
     expect_compose_test(requested_chart==7);
     expect_compose_test(requested_lane==44);
     expect_compose_test(static_cast<bool>(state.services.compose_left_dock_pixels));
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
     expect_compose_test(state.bookmarks.preview == &preview);
+#endif
     expect_compose_test(state.bookmarks.fixed_clock == &now);
     expect_compose_test(state.services.compose_left_dock_pixels()==240);
     expect_compose_test(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
@@ -8336,6 +8352,7 @@ TEST_CASE("Compose layout segment lists exceed the retired storage cutoff", "[sy
     expect_compose_test(view.lane_layout_segments.back().segment_id == object_id_t{12048});
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("Owned populated Compose BGM waveform and stem views refill without heap allocations",
           "[sys][compose-bgm][waveform-projection][stem][allocation]") {
     compose_test_fixture_t bgm(bgm_arena_song(format_family_t::bms));
@@ -8386,6 +8403,8 @@ TEST_CASE("Owned populated Compose BGM waveform and stem views refill without he
 }
 
 
+#endif
+
 TEST_CASE("Compose BGM event view has no retired storage cutoff", "[sys][compose-bgm]") {
     constexpr std::size_t event_count = 32769;
     frontend_workspace_view_t flattened;
@@ -8404,6 +8423,7 @@ TEST_CASE("Compose BGM event view has no retired storage cutoff", "[sys][compose
 }
 
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("Compose direct sample waveform cache refreshes its source style and viewport",
           "[sys][waveform-projection][allocation]") {
     envelope_projection_fixture_t fixture;
@@ -8473,6 +8493,8 @@ TEST_CASE("Compose direct sample waveform cache refreshes its source style and v
     expect_compose_test(!rows.empty());
     expect_compose_test(std::abs(rows.front().samples[0] - .4f) > .1f);
 }
+
+#endif
 
 TEST_CASE("Compose BGA dock owns complete rows and reuses warmed projection storage",
           "[sys][compose-bga][allocation]") {
@@ -8609,10 +8631,8 @@ TEST_CASE("Lua inspector and prepared recipe graph reuse their warmed buffers", 
     auto song = recipe_test_song();
     auto& recipe = song.charts.front().sv_recipes.front();
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "function(p,ctx) return 1+p end";
-    recipe.lua = sv_recipe_lua_t{.source_reference = "scripts/a-long-retained-lua-module-reference.lua",
-        .parameters = {{"gain", {3, 2}}},
-        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}}};
+    recipe.set_frozen_source("function(p,ctx) return 1+p end");
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source, .source_reference = "scripts/a-long-retained-lua-module-reference.lua", .parameters = {{"gain", {3, 2}}}}, .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}}};
     compose_test_fixture_t fixture{std::move(song)};
     fixture.project();
     prepare_lua_recipe_view(fixture);
@@ -8629,7 +8649,7 @@ TEST_CASE("Lua inspector and prepared recipe graph reuse their warmed buffers", 
     expect_compose_test(form.lua_parameters.data() == parameters && form.lua_cycles.data() == cycles);
     expect_compose_test(fixture.flattened.compose.timing_geometry.recipe_preview.points.data() == points);
     expect_compose_test(!fixture.flattened.view.compose.recipe_form.sampled_points.empty());
-    fixture.history.document.charts.front().sv_recipes.front().lua->parameters.front().value = {7, 2};
+    fixture.history.document.charts.front().sv_recipes.front().lua->source.parameters.front().value = {7, 2};
     ++fixture.history.document.revision;
     fixture.project();
     expect_compose_test(std::strcmp(form.lua_parameters.front().value.text, "3.5") == 0);
@@ -9070,12 +9090,17 @@ TEST_CASE("T275 projection owner benchmark across stable transport scroll select
 }
 
 
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 // Headless platform adapter: production frame projection reads the test window
 // dimensions without creating an SDL window or touching the desktop.
 void worm_window_get_size(WormWindow* window, int* width, int* height) {
     if (width) *width = window ? window->width : 0;
     if (height) *height = window ? window->height : 0;
+}
+
+// Native drop hit testing is unrelated to the action dispatcher in this
+// headless target; no rendered metadata pane can accept a file drop.
+wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t, float, float) {
+    return {};
 }
 
 // Deterministic frontend input boundary for the application projection driver.
@@ -9094,6 +9119,7 @@ void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_wavefo
 }
 int worm_ui_frontend_title_bar_height() { return 36; }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
 struct t275_application_frame_fixture_t {
     channel_projection_fixture_t channel;
@@ -9102,6 +9128,11 @@ struct t275_application_frame_fixture_t {
     timing_grid_state_t grid;
     timing_scene_cache_t timing;
     runtime::timing_edit_t timing_edit;
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    visual::image_cache_t player_image_cache;
+    task_scheduler_t player_image_scheduler{1, 2};
+    visual::image_job_t player_image_job{player_image_cache, player_image_scheduler};
+#endif
     player_preview_presenter_t player;
     std::optional<editor_interaction_state_t> interaction;
     std::optional<proposal_t<audio_offset_drag_t>> offset_drag;
@@ -9150,6 +9181,9 @@ struct t275_application_frame_fixture_t {
             .application_command_state = commands, .compose_interaction_state = interaction,
             .audio_offset_drag = offset_drag, .audio_offset_drag_tab = offset_tab,
             .metadata_drop = drop, .metadata_asset_runtime = metadata, .window = window,
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+            .player_image_job = player_image_job,
+#endif
             .waveform_runtime = waveforms, .audition_sources = channel.project_sources,
             .audition_source_generation = channel.project_sources.generation,
             .audition_session = audition, .preview_session = preview, .preview_state = preview_state,

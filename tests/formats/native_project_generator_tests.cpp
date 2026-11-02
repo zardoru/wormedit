@@ -1,3 +1,4 @@
+#include <wormedit/core/osbx_edit.h>
 #include "../support/bms_program_fixture.h"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
@@ -5,6 +6,7 @@
 #include <nlohmann/json.hpp>
 #include <utility>
 #include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/generator.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 
@@ -67,6 +69,54 @@ auto inactive_generator_song() -> song_document_t {
         .source_hash = native_project_content_checksum(source), .source = source,
         .chart = chart_id_t{9000}, .bms_scope = target->scope, .bms_chart = target->chart});
     return song;
+}
+void apply_storyboard_output(document_history_t& history, const generator_recipe_t& recipe,
+    generator_output_t output) {
+    auto proposal = generator_preview_t::propose(history, recipe, std::move(output));
+    REQUIRE(proposal.value);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+}
+auto reopen_storyboard_project(const song_document_t& song) -> document_history_t {
+    const auto written = write_native_project(song);
+    REQUIRE(written.value);
+    const auto loaded = parse_native_project(*written.value);
+    INFO((loaded.diagnostics.empty() ? "success" : loaded.diagnostics.front().message));
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->storyboards == song.storyboards);
+    CHECK(loaded.value->generator_recipes == song.generator_recipes);
+    return document_history_t::from(*loaded.value);
+}
+void check_storyboard_state(const song_document_t& actual, const song_document_t& expected) {
+    CHECK(actual.storyboards == expected.storyboards);
+    CHECK(actual.generator_recipes == expected.generator_recipes);
+    CHECK(actual.revision == expected.revision);
+}
+void check_storyboard_detach(document_history_t& history, recipe_id_t recipe) {
+    const auto scene = history.document.storyboards.front().osbx;
+    REQUIRE(detach_generator(history, recipe).applied);
+    CHECK_FALSE(history.document.storyboards.front().owning_generator_recipe);
+    CHECK(history.document.storyboards.front().osbx == scene);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.storyboards.front().owning_generator_recipe == recipe);
+}
+void check_forged_storyboard_identity(document_history_t& history, generator_proposal_t proposal) {
+    proposal.payload.recipe.generated_storyboards.front().storyboard = storyboard_id_t{proposal.payload.recipe.id.value};
+    const auto before = history.document;
+    CHECK_FALSE(apply_generator(history, proposal).applied);
+    check_storyboard_state(history.document, before);
+    CHECK(history.undo.empty());
+}
+void check_deleted_storyboard_witness(document_history_t& history, const generator_proposal_t& proposal) {
+    REQUIRE(apply_generator(history, proposal).applied);
+    const auto stored = history.document.generator_recipes.back();
+    history.document.storyboards.clear();
+    ++history.document.revision;
+    const auto before = history.document;
+    const auto attempted = generator_preview_t::propose(history, stored, {});
+    CHECK_FALSE(attempted.value);
+    REQUIRE_FALSE(attempted.diagnostics.empty());
+    CHECK(attempted.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    check_storyboard_state(history.document, before);
 }
 } // namespace
 
@@ -190,4 +240,138 @@ TEST_CASE("native generator targets retain an explicit later Chart within the sa
     const auto loaded = parse_native_project(*written.value);
     REQUIRE(loaded.value);
     CHECK(loaded.value->generator_recipes.front() == recipe);
+}
+
+TEST_CASE("native storyboard bindings retain witnesses and support regeneration after reopen",
+          "[unit][format][native-project][osbx-generator]") {
+    auto history = document_history_t::from(generator_song());
+    const std::string source = "storyboard 'intro'; group 'root'";
+    generator_recipe_t recipe{.api_version = "1", .source_hash = native_project_content_checksum(source),
+        .source = source, .chart = chart_id_t{10}};
+    const osbx_document_t generated{.nodes = {{.id = "root"}}};
+    apply_storyboard_output(history, recipe, {.storyboards = {{.key = "intro", .value = generated}}});
+    const auto id = history.document.storyboards.front().id;
+    auto reopened = reopen_storyboard_project(history.document);
+    recipe = reopened.document.generator_recipes.back();
+    auto changed = generated; changed.canvas.width = 800;
+    const auto proposal = generator_preview_t::propose(reopened, recipe, {.storyboards = {{.key = "intro", .value = changed}}});
+    REQUIRE(proposal.value);
+    CHECK(proposal.value->payload.storyboards.changed == 1);
+    REQUIRE(apply_generator(reopened, *proposal.value).applied);
+    CHECK(reopened.document.storyboards.front().id == id);
+    CHECK(reopened.document.storyboards.front().osbx == changed);
+}
+
+TEST_CASE("existing schema29 snapshots default absent storyboard bindings safely",
+          "[unit][format][native-project][osbx-generator]") {
+    auto encoded = generator_json();
+    for (auto& recipe : encoded["document"]["generator_recipes"]) recipe.erase("generated_storyboards");
+    const auto loaded = parse_native_project(encoded.dump());
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->generator_recipes.front().generated_storyboards.empty());
+}
+
+TEST_CASE("storyboard generator omissions and detach respect scene ownership",
+          "[unit][format][native-project][osbx-generator]") {
+    auto history = document_history_t::from(generator_song());
+    const std::string source = "storyboard 'intro'";
+    generator_recipe_t recipe{.api_version = "1", .source_hash = native_project_content_checksum(source),
+        .source = source, .chart = chart_id_t{10}};
+    apply_storyboard_output(history, recipe, {.storyboards = {{.key = "intro"}, {.key = "outro"}}});
+    recipe = history.document.generator_recipes.back();
+    const auto proposal = generator_preview_t::propose(history, recipe, {.storyboards = {{.key = "intro"}}});
+    REQUIRE(proposal.value);
+    CHECK(proposal.value->payload.storyboards.removed == 1);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+    REQUIRE(history.document.storyboards.size() == 1);
+    check_storyboard_detach(history, recipe.id);
+}
+
+TEST_CASE("unretained storyboard generation leaves editable scenes without dangling ownership",
+          "[unit][format][native-project][osbx-generator]") {
+    auto history = document_history_t::from(generator_song());
+    const std::string source = "storyboard 'intro'";
+    const generator_recipe_t recipe{.api_version = "1", .source_hash = native_project_content_checksum(source),
+        .source = source, .chart = chart_id_t{10}};
+    const auto proposal = generator_preview_t::propose(history, recipe, {.storyboards = {{.key = "intro"}}}, false);
+    REQUIRE(proposal.value);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+    REQUIRE(history.document.storyboards.size() == 1);
+    CHECK_FALSE(history.document.storyboards.front().owning_generator_recipe);
+    CHECK(history.document.generator_recipes.size() == 1);
+}
+
+TEST_CASE("storyboard regeneration rejects deleted witnesses and forged identities atomically",
+          "[unit][format][native-project][osbx-generator]") {
+    auto history = document_history_t::from(generator_song());
+    const std::string source = "storyboard 'intro'";
+    const generator_recipe_t recipe{.api_version = "1", .source_hash = native_project_content_checksum(source),
+        .source = source, .chart = chart_id_t{10}};
+    auto proposal = generator_preview_t::propose(history, recipe, {.storyboards = {{.key = "intro"}}});
+    REQUIRE(proposal.value);
+    SECTION("recipe identity cannot be reused for the scene") {
+        check_forged_storyboard_identity(history, *proposal.value);
+    }
+    SECTION("deleted scene cannot be recreated implicitly") {
+        check_deleted_storyboard_witness(history, *proposal.value);
+    }
+}
+
+TEST_CASE("native storyboard witnesses reserve deleted output identities after save load", "[unit][format][native-project][osbx-generator]") {
+    auto song = generator_song();
+    song.generator_recipes.front().generated_storyboards.push_back({.key = "missing", .storyboard = storyboard_id_t{10000}});
+    const auto history = reopen_storyboard_project(song);
+    CHECK(history.document.storyboards.empty());
+    CHECK(history.undo.empty());
+    CHECK(generator_identity_floor(history) >= 10000);
+    const auto proposal = generator_preview_t::propose(history,
+        {.api_version = "1", .source_hash = native_project_content_checksum("return {notes={}}"),
+         .source = "return {notes={}}", .chart = chart_id_t{10}}, {.storyboards = {{.key = "new"}}});
+    REQUIRE(proposal.value);
+    CHECK(proposal.value->payload.recipe.generated_storyboards.front().storyboard.value > 10000);
+}
+
+
+namespace {
+auto persisted_detach_history() -> document_history_t {
+    auto history = document_history_t::from(generator_song());
+    const std::string source = "storyboard 'intro'";
+    generator_recipe_t recipe{.api_version = "1", .source_path = "scripts/story.lua",
+        .source_hash = native_project_content_checksum(source), .source = source, .chart = chart_id_t{10}};
+    const osbx_document_t generated{.nodes = {{.id = "root", .lifetime = osbx_lifetime_t{.begin_ms = 10, .end_ms = 300}}}};
+    apply_storyboard_output(history, recipe, {.storyboards = {{.key = "intro", .value = generated}, {.key = "outro"}}});
+    const auto& board = history.document.storyboards.front();
+    REQUIRE(apply_osbx_edit(history, {.storyboard = board.id,
+        .change = osbx_detach_storyboard_t{.expected_owner = *board.owning_generator_recipe}}).applied);
+    return reopen_storyboard_project(history.document);
+}
+void check_persisted_detach(const document_history_t& history) {
+    CHECK_FALSE(history.document.storyboards.front().owning_generator_recipe);
+    REQUIRE(history.document.storyboards.front().osbx);
+    const osbx_lifetime_t lifetime{.begin_ms = 10, .end_ms = 300};
+    CHECK(history.document.storyboards.front().osbx->nodes.front().lifetime == lifetime);
+    CHECK(history.document.generator_recipes.back().generated_storyboards.size() == 1);
+}
+} // namespace
+
+TEST_CASE("native per-storyboard detach persists ownership separation and preserves scene lifetime", "[unit][format][native-project][storyboard-detach]") {
+    const auto history = persisted_detach_history();
+    check_persisted_detach(history);
+}
+
+TEST_CASE("native reopened detached storyboard survives same-key regeneration with a fresh identity", "[unit][format][native-project][storyboard-detach]") {
+    auto history = persisted_detach_history();
+    REQUIRE(apply_osbx_edit(history, {.storyboard = history.document.storyboards.front().id,
+        .change = osbx_add_node_t{}}).applied);
+    const auto detached = history.document.storyboards.front();
+    const auto recipe = history.document.generator_recipes.back();
+    const auto proposal = generator_preview_t::propose(history, recipe,
+        {.storyboards = {{.key = "intro"}, {.key = "outro"}}});
+    REQUIRE(proposal.value);
+    const auto generated = proposal.value->payload.recipe.generated_storyboards.front().storyboard;
+    CHECK(generated.value > detached.id.value);
+    REQUIRE(apply_generator(history, *proposal.value).applied);
+    CHECK(history.document.storyboards.front() == detached);
+    const auto reopened = reopen_storyboard_project(history.document);
+    CHECK(reopened.document.storyboards.front() == detached);
 }

@@ -324,10 +324,11 @@ struct workspace_compose_view_t {
     [[nodiscard]] auto bms_branch_outline() const -> const workspace_bms_branch_outline_view_t&;
 };
 
+// Navigation/capability projection only. Storyboard presentation has one owner
+// in ui/frontend/storyboard.h and is refilled by the sys workspace projection.
 struct workspace_storyboard_view_t {
-    bool enabled{};
-    std::string placeholder;
-    std::size_t storyboard_count{};
+    bool enabled{true};
+    std::size_t maximum_storyboards{};
 };
 
 struct workspace_audio_slices_view_t {
@@ -352,8 +353,7 @@ using workspace_tab_view_t =
 struct workspace_view_t {
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
                                    const song_document_t& document) -> diagnosed_t<std::optional<workspace_view_t>>;
-    // Also builds a non-active tab's view. This lets the shell display the
-    // storyboard placeholder while navigation/actions continue to reject it.
+    // Also builds a non-active tab's view for retained workspace projections.
     // Compare diagnostics may be supplied from a cache keyed to this document's
     // ID and revision; a null pointer preserves the normal validation behavior.
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,

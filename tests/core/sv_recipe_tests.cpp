@@ -713,7 +713,7 @@ TEST_CASE("materializing rejects unknown and non-evaluable recipes without a rev
     expression.id = recipe_id_t{21};
     expression.name = "wave";
     expression.curve = sv_recipe_curve_t::lua_expression;
-    expression.expression_source = "return 1 + t";
+    expression.set_frozen_source("return 1 + t");
     song.charts.front().sv_recipes.push_back(expression);
     auto history = document_history_t::from(song);
     const auto revision = history.document.revision;
@@ -735,7 +735,7 @@ TEST_CASE("Lua expression recipes are validated and reject sampling without a ba
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
     recipe.curve = sv_recipe_curve_t::lua_expression;
     CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());  // an expression needs source
-    recipe.expression_source = "return 1 + t";
+    recipe.set_frozen_source("return 1 + t");
     CHECK(validate_sv_recipe(chart, recipe).empty());
     const auto sampled = sample_sv_recipe(chart, recipe);
     CHECK_FALSE(sampled);
@@ -744,9 +744,9 @@ TEST_CASE("Lua expression recipes are validated and reject sampling without a ba
     check_export_bake_rejection(bake_sv_recipes_for_export(chart));
 
     auto stray = make_linear_recipe(recipe_id_t{22}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
-    stray.expression_source = "return 2";
+    stray.set_frozen_source("return 2");
     CHECK_FALSE(validate_sv_recipe(chart, stray).empty());  // source belongs to the expression curve
-    recipe.expression_source.assign(16 * 1024 + 1, 'x');
+    recipe.set_frozen_source(std::string(16 * 1024 + 1, 'x'));
     CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
 }
 
@@ -759,7 +759,7 @@ TEST_CASE("SV recipes reject malformed UTF-8 and NUL-bearing bounded text", "[un
     CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
     recipe.name = "expression";
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "return 1 -- \xc0\x80";
+    recipe.set_frozen_source("return 1 -- \xc0\x80");
     CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
 }
 
@@ -1223,7 +1223,7 @@ TEST_CASE("prepared emissions accept evaluated script data while raw Lua samplin
     const auto chart = make_recipe_chart();
     auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "return function(p) return p end";
+    recipe.set_frozen_source("return function(p) return p end");
     const auto raw = sv_recipe_samples_t::from(chart, recipe);
     REQUIRE_FALSE(raw.diagnostics.empty());
     CHECK(raw.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
@@ -1505,8 +1505,8 @@ class fake_recipe_backend_t final : public sv_recipe_script_backend_t {
 auto make_script_recipe() -> sv_recipe_t {
     auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
     recipe.curve = sv_recipe_curve_t::lua_expression;
-    recipe.expression_source = "return function(p, ctx) return 1 + p end";
-    recipe.lua = sv_recipe_lua_t{};
+    recipe.set_frozen_source("return function(p, ctx) return 1 + p end");
+    recipe.lua = sv_recipe_lua_t{.source = {.frozen_source = recipe.script().frozen_source}};
     return recipe;
 }
 } // namespace
@@ -1660,7 +1660,7 @@ TEST_CASE("prepared scopes reuse exact Lua snapshots without opening another VM"
     CHECK_FALSE(sv_recipe_evaluation_scope_t::current());
     const sv_recipe_prepared_scope_t scope(std::span{&prepared.value, 1});
     CHECK(sv_recipe_prepared_t::from(chart, recipe).diagnostics.empty());
-    SECTION("changed recipe") { recipe.lua->seed = 4; }
+    SECTION("changed recipe") { recipe.lua->source.seed = 4; }
     SECTION("changed geometry") { chart.divisions_per_standard_measure *= 2; }
     CHECK_FALSE(sv_recipe_prepared_t::from(chart, recipe).diagnostics.empty());
     CHECK(trace.starts == 1);
@@ -1670,14 +1670,14 @@ TEST_CASE("Lua durable metadata rejects malformed declarations before starting a
           "[unit][sv-recipe][lua]") {
     const auto chart = make_recipe_chart();
     auto recipe = make_script_recipe();
-    SECTION("API") { recipe.lua->api_version = 2; }
+    SECTION("API") { recipe.lua->source.api_version = 2; }
     SECTION("mode") { recipe.lua->mode = static_cast<sv_recipe_lua_mode_t>(2); }
-    SECTION("entry point") { recipe.lua->entry_point = "a.b"; }
-    SECTION("reference") { recipe.lua->source_reference = "../outside.lua"; }
-    SECTION("hash") { recipe.lua->source_hash = "not a hash"; }
-    SECTION("parameter name") { recipe.lua->parameters = {{"a-b", {1, 1}}}; }
-    SECTION("duplicate parameters") { recipe.lua->parameters = {{"x", {1, 1}}, {"x", {2, 1}}}; }
-    SECTION("parameter rational") { recipe.lua->parameters = {{"x", {1, 0}}}; }
+    SECTION("entry point") { recipe.lua->source.entry_point = "a.b"; }
+    SECTION("reference") { recipe.lua->source.source_reference = "../outside.lua"; }
+    SECTION("hash") { recipe.lua->source.source_hash = "not a hash"; }
+    SECTION("parameter name") { recipe.lua->source.parameters = {{"a-b", {1, 1}}}; }
+    SECTION("duplicate parameters") { recipe.lua->source.parameters = {{"x", {1, 1}}, {"x", {2, 1}}}; }
+    SECTION("parameter rational") { recipe.lua->source.parameters = {{"x", {1, 0}}}; }
     SECTION("input") { recipe.lua->inputs = {{asset_id_t{}, std::string(64, 'a')}}; }
     SECTION("input hash") { recipe.lua->inputs = {{asset_id_t{1}, ""}}; }
     SECTION("pure cycles") { recipe.lua->cycles = {{3}}; }
@@ -1688,7 +1688,7 @@ TEST_CASE("Lua durable metadata rejects malformed declarations before starting a
     }
     SECTION("incomplete plan") { recipe.lua->mode = sv_recipe_lua_mode_t::ordered; recipe.lua->cycles = {{2}}; }
     SECTION("empty cycle") { recipe.lua->mode = sv_recipe_lua_mode_t::ordered; recipe.lua->cycles = {{0}, {3}}; }
-    SECTION("non Lua") { recipe.curve = sv_recipe_curve_t::linear; recipe.expression_source.clear(); }
+    SECTION("non Lua") { recipe.curve = sv_recipe_curve_t::linear; recipe.set_frozen_source({}); }
     script_trace_t trace;
     const fake_recipe_backend_t backend(trace);
     const sv_recipe_evaluation_scope_t scope(backend);

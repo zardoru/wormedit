@@ -1,23 +1,25 @@
-#include "pixel_comparison.h"
-#include "ui/nuklear/app/sdl_backend.h"
-#include "ui/nuklear/app/manual_location.h"
 #include "../support/temporary_directory.h"
-#include <fstream>
+#include "pixel_comparison.h"
+#include "sys/app/frame_timing.h"
+#include "ui/frontend.h"
+#include "ui/nuklear/app/manual_location.h"
+#include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/render/image_quad.h"
+#include "ui/nuklear/render/sdl_region_frame.h"
+#include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include "ui/frontend.h"
-#include "sys/app/frame_timing.h"
-#include <array>
-#include <cmath>
-#include <vector>
-#include <algorithm>
-#include <cstdio>
-#include <string_view>
-#include <source_location>
+#include <fstream>
 #include <limits>
+#include <source_location>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 using namespace wormedit::ui::nuklear;
 
@@ -848,4 +850,197 @@ TEST_CASE("Comparison field retirement preserves earlier queued texture referenc
     expect_backend(pixels[(8*128+8)*4]==210 && retired==0);
     nk_sdl_begin_frame(fixture.context);
     expect_backend(retired==1 && primary.tile_work().retained_bytes==0);
+}
+
+TEST_CASE("SDL batches preserve normal additive normal order and clip boundaries",
+          "[ui][sdl-backend][blend]") {
+    using wormedit::ui::image_blend_t;
+    sdl_draw_batcher_t batches;
+    const SDL_Rect clip{1, 2, 30, 40};
+    expect_backend(!(batches.append(texture(0), clip, 6, image_blend_t::normal)));
+    const auto normal = batches.append(texture(0), clip, 6, image_blend_t::additive);
+    expect_backend(normal);
+    expect_backend(normal->blend == image_blend_t::normal);
+    expect_backend(normal->index_offset == 0);
+    const auto additive = batches.append(texture(0), clip, 6, image_blend_t::normal);
+    expect_backend(additive);
+    expect_backend(additive->blend == image_blend_t::additive);
+    expect_backend(additive->index_offset == 6);
+    const auto clipped = batches.append(texture(0), {1, 2, 15, 40}, 6, image_blend_t::normal);
+    expect_backend(clipped);
+    expect_backend(clipped->blend == image_blend_t::normal);
+    expect_backend(clipped->index_offset == 12);
+    expect_backend(batches.finish()->index_offset == 18);
+}
+
+namespace {
+struct quad_conversion_t {
+    nk_buffer commands{}, vertices{}, indices{};
+    quad_conversion_t() {
+        nk_buffer_init_default(&commands);
+        nk_buffer_init_default(&vertices);
+        nk_buffer_init_default(&indices);
+    }
+    ~quad_conversion_t() {
+        nk_buffer_free(&commands);
+        nk_buffer_free(&vertices);
+        nk_buffer_free(&indices);
+    }
+    void convert(nk_context* context) {
+        static constexpr nk_draw_vertex_layout_element layout[]{
+            {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(sdl_command_vertex_t, position)},
+            {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(sdl_command_vertex_t, uv)},
+            {NK_VERTEX_COLOR, NK_FORMAT_R32G32B32A32_FLOAT, NK_OFFSETOF(sdl_command_vertex_t, col)},
+            {NK_VERTEX_LAYOUT_END}};
+        nk_convert_config config{};
+        config.vertex_layout = layout;
+        config.vertex_size = sizeof(sdl_command_vertex_t);
+        config.vertex_alignment = alignof(sdl_command_vertex_t);
+        config.tex_null.texture = context->style.font->texture;
+        config.global_alpha = 1;
+        expect_backend(nk_convert(context, &commands, &vertices, &indices, &config) ==
+                       NK_CONVERT_SUCCESS);
+    }
+    auto mesh() const -> sdl_command_mesh_view_t {
+        return {
+            .vertices = {static_cast<const sdl_command_vertex_t*>(
+                             nk_buffer_memory_const(&vertices)),
+                         vertices.allocated / sizeof(sdl_command_vertex_t)},
+            .indices = {static_cast<const sdl_command_index_t*>(nk_buffer_memory_const(&indices)),
+                        indices.allocated / sizeof(sdl_command_index_t)}};
+    }
+};
+void push_blend_quad(nk_command_buffer* canvas, const struct nk_image& image, float x, float y,
+                     wormedit::ui::image_blend_t blend) {
+    const std::array points{nk_vec2(x, y), nk_vec2(x + 24, y), nk_vec2(x + 24, y + 16),
+                            nk_vec2(x, y + 16)};
+    expect_backend(worm_ui_nuklear_push_image_quad(canvas, &image, points.data(),
+                                                   nk_rgba(255, 255, 255, 255), blend));
+}
+void build_blend_frame(backend_fixture_t& backend, SDL_Texture* texture) {
+    using wormedit::ui::image_blend_t;
+    worm_ui_nuklear_begin_image_quad_frame();
+    nk_sdl_begin_frame(backend.context);
+    nk_input_begin(backend.context);
+    nk_input_end(backend.context);
+    expect_backend(
+        nk_begin(backend.context, "blend", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
+    auto* canvas = nk_window_get_canvas(backend.context);
+    nk_push_scissor(canvas, nk_rect(0, 0, 128, 128));
+    nk_fill_rect(canvas, nk_rect(0, 0, 128, 128), 0, nk_rgb(40, 60, 80));
+    const auto image = nk_image_ptr(texture);
+    const std::array invalid_points{nk_vec2(8, 32), nk_vec2(32, 32), nk_vec2(32, 48), nk_vec2(8, 48)};
+    expect_backend(!worm_ui_nuklear_push_image_quad(canvas, &image, invalid_points.data(),
+                                                   nk_rgba(255, 255, 255, 255),
+                                                   static_cast<image_blend_t>(99)));
+    expect_backend(begin_sdl_region(backend.context, sdl_region_t::header, nk_rgb(40, 60, 80)));
+    push_blend_quad(canvas, image, 8, 32, image_blend_t::normal);
+    nk_push_scissor(canvas, nk_rect(40, 32, 12, 16));
+    push_blend_quad(canvas, image, 40, 32, image_blend_t::additive);
+    nk_push_scissor(canvas, nk_rect(0, 0, 128, 128));
+    push_blend_quad(canvas, image, 72, 32, image_blend_t::normal);
+    // Overlap exercises order: normal, additive, normal on the same pixels.
+    push_blend_quad(canvas, image, 8, 64, image_blend_t::normal);
+    push_blend_quad(canvas, image, 16, 64, image_blend_t::additive);
+    push_blend_quad(canvas, image, 24, 64, image_blend_t::normal);
+    // Default draws must still use the borrowed texture's original NONE mode.
+    nk_draw_image(canvas, nk_rect(72, 64, 24, 16), &image, nk_rgba(255, 255, 255, 255));
+    end_sdl_region(backend.context, sdl_region_t::header);
+    nk_end(backend.context);
+}
+auto blend_pixel(const std::vector<unsigned char>& pixels, int x, int y) -> std::array<int, 3> {
+    const auto offset = static_cast<std::size_t>(y * 128 + x) * 4;
+    return {pixels[offset], pixels[offset + 1], pixels[offset + 2]};
+}
+} // namespace
+
+TEST_CASE("SDL deferred image blend survives conversion and compact submission with exact pixels",
+          "[ui][sdl-backend][blend]") {
+    using wormedit::ui::image_blend_t;
+    backend_fixture_t backend;
+    auto* surface = SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGBA32);
+    expect_backend(surface);
+    expect_backend(
+        SDL_FillSurfaceRect(surface, nullptr, SDL_MapSurfaceRGBA(surface, 100, 80, 60, 128)));
+    auto* image = SDL_CreateTextureFromSurface(backend.renderer, surface);
+    SDL_DestroySurface(surface);
+    expect_backend(image);
+    expect_backend(SDL_SetTextureBlendMode(image, SDL_BLENDMODE_NONE));
+    expect_backend(SDL_SetRenderDrawBlendMode(backend.renderer, SDL_BLENDMODE_ADD));
+    build_blend_frame(backend, image);
+    quad_conversion_t converted;
+    converted.convert(backend.context);
+    sdl_region_frame_t retained;
+    expect_backend(retained.prepare(
+        backend.context, &converted.commands, converted.mesh(),
+        {.renderer = backend.renderer,
+         .font = static_cast<SDL_Texture*>(backend.context->style.font->texture.ptr)}));
+    std::vector<image_blend_t> modes;
+    for (const auto& batch : retained.direct_mesh().batches)
+        if (batch.texture == image && batch.index_count)
+            modes.push_back(batch.blend);
+    expect_backend(modes ==
+                   std::vector<image_blend_t>{image_blend_t::normal, image_blend_t::additive,
+                                              image_blend_t::normal, image_blend_t::normal,
+                                              image_blend_t::additive, image_blend_t::normal,
+                                              image_blend_t::inherit});
+    const SDL_Rect saved_clip{3, 4, 100, 101};
+    expect_backend(SDL_SetRenderClipRect(backend.renderer, &saved_clip));
+    render_sdl_backend(backend.context, NK_ANTI_ALIASING_OFF);
+    SDL_Rect restored_clip{};
+    expect_backend(SDL_GetRenderClipRect(backend.renderer, &restored_clip));
+    expect_backend(SDL_RenderClipEnabled(backend.renderer));
+    expect_backend(restored_clip.x == saved_clip.x);
+    expect_backend(restored_clip.y == saved_clip.y);
+    expect_backend(restored_clip.w == saved_clip.w);
+    expect_backend(restored_clip.h == saved_clip.h);
+    const auto pixels = backend_pixels(backend);
+    const auto normal = blend_pixel(pixels, 12, 36);
+    const auto additive = blend_pixel(pixels, 44, 36);
+    expect_backend(normal == blend_pixel(pixels, 76, 36));
+    expect_backend(additive[0] > normal[0]);
+    expect_backend(additive[1] > normal[1]);
+    expect_backend(additive[2] > normal[2]);
+    expect_backend(blend_pixel(pixels, 56, 36) == std::array<int, 3>{40, 60, 80});
+    expect_backend(blend_pixel(pixels, 76, 68) == std::array<int, 3>{100, 80, 60});
+    const auto overlap = blend_pixel(pixels, 28, 68);
+    // SDL's integer software alpha rounding can differ by one from the real-valued equation.
+    expect_backend(std::abs(overlap[0] - 110) <= 2);
+    expect_backend(std::abs(overlap[1] - 95) <= 2);
+    expect_backend(std::abs(overlap[2] - 80) <= 2);
+    for (unsigned frame = 0; frame < 12; ++frame) {
+        build_blend_frame(backend, image);
+        render_sdl_backend(backend.context, NK_ANTI_ALIASING_OFF);
+        expect_backend(backend_pixels(backend) == pixels);
+    }
+    SDL_BlendMode texture_mode{}, renderer_mode{};
+    expect_backend(SDL_GetTextureBlendMode(image, &texture_mode));
+    expect_backend(texture_mode == SDL_BLENDMODE_NONE);
+    expect_backend(SDL_GetRenderDrawBlendMode(backend.renderer, &renderer_mode));
+    expect_backend(renderer_mode == SDL_BLENDMODE_ADD);
+    SDL_DestroyTexture(image);
+}
+
+TEST_CASE("SDL explicit untextured blend restores renderer state and rejects invalid requests",
+          "[ui][sdl-backend][blend]") {
+    backend_fixture_t backend;
+    expect_backend(SDL_SetRenderDrawBlendMode(backend.renderer, SDL_BLENDMODE_MOD));
+    for (const auto mode :
+         {wormedit::ui::image_blend_t::normal, wormedit::ui::image_blend_t::additive}) {
+        {
+            const sdl_blend_scope_t scope{backend.renderer, nullptr, mode};
+            expect_backend(scope.is_ready());
+            SDL_BlendMode actual{};
+            expect_backend(SDL_GetRenderDrawBlendMode(backend.renderer, &actual));
+            expect_backend(actual == (mode == wormedit::ui::image_blend_t::normal
+                                          ? SDL_BLENDMODE_BLEND
+                                          : SDL_BLENDMODE_ADD));
+        }
+        SDL_BlendMode restored{};
+        expect_backend(SDL_GetRenderDrawBlendMode(backend.renderer, &restored));
+        expect_backend(restored == SDL_BLENDMODE_MOD);
+    }
+    const sdl_blend_scope_t invalid{backend.renderer, nullptr,
+                                    static_cast<wormedit::ui::image_blend_t>(99)};
+    expect_backend(!(invalid.is_ready()));
 }

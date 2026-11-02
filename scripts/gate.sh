@@ -62,6 +62,24 @@ if [[ ! -f $build_dir/CMakeCache.txt ]]; then
     echo "gate: $build_dir is not a configured build directory" >&2
     exit 2
 fi
+# A selected local codec SDK can have shared dependencies outside the system
+# loader paths. Use the configured dependency owner's directories for both
+# Catch discovery during the build and CTest execution, including transitive
+# codec libraries. Keep the caller's other runtime paths (such as LLVM).
+if [[ $(uname -s) == Linux ]]; then
+    while IFS=';' read -r -a runtime_directories; do
+        for directory in "${runtime_directories[@]}"; do
+            [[ -d $directory ]] || continue
+            case ":${LD_LIBRARY_PATH:-}:" in
+                *":$directory:"*) ;;
+                *) export LD_LIBRARY_PATH="$directory${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+            esac
+        done
+    done < <(sed -n \
+        -e 's/^WORMEDIT_FFMPEG_LIBRARY_DIRS:INTERNAL=//p' \
+        -e 's/^WORMEDIT_VIDEO_ENCODER_FFMPEG_LIBRARY_DIRS:INTERNAL=//p' \
+        "$build_dir/CMakeCache.txt")
+fi
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/wormedit-gate.XXXXXX")
 failed=()
 summary=()

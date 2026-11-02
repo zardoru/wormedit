@@ -1,3 +1,11 @@
+#include "ui/nuklear/storyboard/assets.h"
+#include "ui/nuklear/compose/compose_bga_panel.h"
+#include "ui/nuklear/storyboard/storyboard_panel.h"
+#include "ui/nuklear/storyboard/export_dialog.h"
+#include "ui/nuklear/storyboard/hierarchy.h"
+#include "ui/nuklear/storyboard/inspector.h"
+#include "ui/nuklear/storyboard/timeline.h"
+#include "ui/nuklear/audio/player_preview_texture.h"
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
@@ -28,6 +36,7 @@
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/nuklear/compose/compose_inspector.h"
 #include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/storyboard/canvas.h"
 #include "ui/nuklear/compose/compose_layers_panel.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
 #include "ui/nuklear/compose/compose_area_menu.h"
@@ -35,7 +44,6 @@
 #include "ui/nuklear/compose/compose_resources.h"
 #include "ui/nuklear/compose/compose_snap_grid.h"
 #include "ui/nuklear/resources/sound_import_runtime.h"
-#include "ui/nuklear/compose/compose_bga_panel.h"
 #include "ui/nuklear/compose/compose_input_panel.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/dialog.h"
@@ -658,6 +666,9 @@ static void reset_frontend_session() {
 }
 
 void worm_ui_frontend_begin_project_session() {
+    wormedit::ui::reset_storyboard_assets_tab();
+    wormedit::ui::reset_storyboard_lua_input();
+    worm_ui_nuklear_reset_image_picker();
     reset_compose_generator_form();
     worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit = false;
     worm_ui_nuklear_reset_sound_import();
@@ -671,6 +682,10 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
                                 int width, int height, bool headless) -> bool {
     if (g_context || (headless ? width <= 0 || height <= 0 : !window || !renderer))
         return false;
+    wormedit::ui::cancel_storyboard_panel_pointer();
+    wormedit::ui::reset_storyboard_assets_tab();
+    wormedit::ui::reset_storyboard_lua_input();
+    worm_ui_nuklear_reset_image_picker();
     reset_frontend_session();
     reset_compose_area_menu();
     g_menu_popup_open = false;
@@ -762,6 +777,10 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    wormedit::ui::reset_storyboard_assets_tab();
+    wormedit::ui::reset_storyboard_lua_input();
+    worm_ui_nuklear_reset_image_picker();
+    wormedit::ui::cancel_storyboard_panel_pointer();
     reset_command_menu();
     wormedit::ui::chrome::context_menu_cancel_keyboard();
     g_context_invocation_allowed = false;
@@ -1516,6 +1535,16 @@ static void queue_uncaptured_keyboard_event(const SDL_KeyboardEvent& event) {
     if (!tab_horizontal) queue_shortcut_key_event(&event);
 }
 
+static bool capture_storyboard_key(const SDL_KeyboardEvent& event) {
+    if (!frontend_event_window_matches(event.windowID)) return false;
+    if (event.down && !event.repeat && event.key == SDLK_ESCAPE && wormedit::ui::storyboard_assets_drag_active()) {
+        wormedit::ui::cancel_storyboard_assets_input(); return true;
+    }
+    return wormedit::ui::capture_storyboard_canvas_key(g_context, event) ||
+        wormedit::ui::capture_storyboard_inspector_key(g_context, event) ||
+        wormedit::ui::capture_storyboard_timeline_key(g_context, event);
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
         if (capture_options_escape(event)) return true;
         if (frontend_event_window_matches(event.windowID) &&
@@ -1543,6 +1572,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
             }
             return true;
         }
+        if (capture_storyboard_key(event)) return true;
         if (capture_audio_list_key(event)) return true;
         if (capture_sound_slot_key(event)) return true;
         if (capture_inline_offset_key(event)) return true;
@@ -1628,6 +1658,7 @@ static void lose_workspace_focus() {
     g_double_click_count = 0;
     worm_ui_nuklear_compose_handle_focus_lost();
     worm_ui_nuklear_cancel_setup_drag();
+    wormedit::ui::cancel_storyboard_panel_pointer();
     worm_ui_nuklear_cancel_options_drag();
     worm_ui_nuklear_cancel_metadata_tag_drag();
     apply_stem_resize_cursor(false);
@@ -1805,6 +1836,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_workspace_error(
     const wormedit::ui::close_confirmation_view_t* close) {
     worm_ui_nuklear_compose_state().layer_editor.layer_creation_request.reset();
     worm_ui_nuklear_begin_image_quad_frame();
+    worm_ui_nuklear_begin_player_preview_texture_frame();
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     consume_project_file_dialog(action);
@@ -2684,10 +2716,34 @@ class compose_input_occlusion_scope_t {
     bool was_occluded_;
 };
 
-static bool audio_content_interactive(const wormedit::ui::workspace_view_t& view) {
+static bool is_workspace_content_interactive(const wormedit::ui::workspace_view_t& view) {
     return g_window_focused && !view.options.visible && !options_owns_content_input(view) &&
         !project_modal_active(view) && !project_dialog_active() && !g_notification_modal &&
         !g_menu_popup_open;
+}
+
+static auto is_storyboard_content_interactive(const wormedit::ui::workspace_view_t& view) -> bool {
+    return view.storyboard.visible && is_workspace_content_interactive(view) && !command_menu_owns_input();
+}
+
+static void consume_storyboard_shortcuts(const wormedit::ui::workspace_view_t& view,
+    wormedit::ui::workspace_action_t& action) {
+    if (is_storyboard_content_interactive(view) && !nuklear_text_entry_active())
+        std::erase_if(action.shortcut_events, [&](const auto& key) {
+            return action.storyboard.kind == wormedit::ui::storyboard_action_kind_t::none &&
+                (wormedit::ui::storyboard_timeline_shortcut(view.storyboard, key, action.storyboard) ||
+                 (!wormedit::ui::storyboard_assets_tab_active() &&
+                  wormedit::ui::storyboard_hierarchy_shortcut(view.storyboard, key, action.storyboard)));
+        });
+}
+
+static void open_storyboard_import_intent(wormedit::ui::workspace_action_t& action) {
+    if (!g_headless && action.storyboard.kind == wormedit::ui::storyboard_action_kind_t::assets &&
+        action.storyboard.assets.kind == wormedit::ui::storyboard_assets_action_kind_t::import_images &&
+        action.storyboard.assets.paths.empty()) {
+        (void)wormedit::ui::open_storyboard_image_picker(action.storyboard);
+        action.storyboard = {};
+    }
 }
 
 static void render_workspace_content(wormedit::ui::workspace_view_t& view,
@@ -2696,7 +2752,10 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
         !options_owns_content_input(view) && !project_modal_active(view) &&
         !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
     if (!metadata_interactive) worm_ui_nuklear_cancel_metadata_tag_drag();
-    prepare_workspace_content_scroll(g_context, view.compose.visible);
+    wormedit::ui::prepare_storyboard_lua_input(view.storyboard);
+    if (!is_storyboard_content_interactive(view))
+        wormedit::ui::cancel_storyboard_panel_pointer();
+    prepare_workspace_content_scroll(g_context, view.compose.visible || view.storyboard.visible);
     // Project and Metadata share the form column and its margins.
     const bool padded = view.metadata.visible || view.setup.visible;
     if (padded) {
@@ -2705,7 +2764,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
                            nk_vec2(margin, wormedit::ui::layout::vertical_margin));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
-                                     workspace_content_flags(view.compose.visible, padded)) != 0;
+                                     workspace_content_flags(view.compose.visible || view.storyboard.visible, padded)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
     retire_sound_picker(view, action);
@@ -2717,6 +2776,10 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
         (void)render_recovery_panel(view, action);
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               metadata_interactive);
+    } else if (view.storyboard.visible) {
+        wormedit::ui::render_storyboard_panel(g_context, view.storyboard, action.storyboard, g_renderer,
+            is_workspace_content_interactive(view) && !command_menu_owns_input());
+        open_storyboard_import_intent(action);
     } else if (view.compose.visible) {
         auto& compose = view.compose;
         worm_ui_nuklear_render_compose_panel(
@@ -2725,7 +2788,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
             g_shortcut_event_count);
     } else if (view.audio_slices.visible) {
         worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
-                                            audio_content_interactive(view));
+                                            is_workspace_content_interactive(view));
     } else if (view.compare.visible) {
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
@@ -2845,7 +2908,7 @@ static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view
         static_cast<long double>(bounded_frame) /
         static_cast<long double>(view.transport_end_frame) * seek_steps);
     const bool draggable = view.transport_available &&
-        (view.compose.scene_available || view.transport_playing || view.transport_paused);
+        (view.compose.scene_available || view.storyboard.visible || view.transport_playing || view.transport_paused);
     const auto bounds = nk_widget_bounds(g_context);
     if (nk_progress(g_context, &seek_position, seek_steps, draggable ? NK_MODIFIABLE : NK_FIXED) &&
         draggable) {
@@ -2990,7 +3053,7 @@ static bool external_project_modal_active(const wormedit::ui::workspace_view_t& 
 
 static bool project_modal_active(const wormedit::ui::workspace_view_t& view) {
     const auto& state = worm_ui_nuklear_compose_state();
-    return external_project_modal_active(view) || state.dialogs.export_dialog_open ||
+    return external_project_modal_active(view) || view.storyboard.video_export.open || state.dialogs.export_dialog_open ||
         view.compose.export_confirmation_required || state.preview_audio.open ||
         state.layer_editor.layer_creation_context.has_value();
 }
@@ -3591,7 +3654,8 @@ static void render_tap_timing_tool(const WorkspaceRenderContext& frame) {
 }
 
 static void render_file_job(const wormedit::ui::file_job_view_t& job, const char* title,
-                            bool& cancel, struct nk_rect bounds) {
+                            bool& cancel, struct nk_rect bounds,
+                            const wormedit::ui::storyboard_video_export_view_t* video = nullptr) {
     if (!job.active) return;
     if (nk_begin(g_context, title, bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
@@ -3600,7 +3664,9 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
         auto completed = static_cast<nk_size>(job.completed);
         nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
         nk_layout_row_dynamic(g_context, 18, 1);
-        if (job.total)
+        if (video && video->running && video->completed)
+            nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu; about %.0f s left", job.completed, job.total, video->remaining_seconds);
+        else if (job.total)
             nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu", job.completed, job.total);
         else
             nk_label(g_context, "Preparing…", NK_TEXT_LEFT);
@@ -3612,6 +3678,13 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
     nk_end(g_context);
 }
 
+static void render_auxiliary_player_preview(const WorkspaceRenderContext& frame) {
+    const bool available = is_workspace_content_interactive(frame.view) && !command_menu_owns_input() &&
+        !nuklear_text_entry_active() && !g_ime_composition_active && !notification_document_gesture_active();
+    worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
+        &frame.action, frame.width, frame.height, &frame.view.storyboard, available);
+}
+
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     if (frame.view.lane_keys && frame.view.lane_keys->visible) {
         wormedit::ui::nuklear::render_lane_keys_dialog(g_context, *frame.view.lane_keys,
@@ -3620,7 +3693,7 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     }
     const auto jobs = file_job_bounds(frame.view.file_jobs, frame.height);
     render_file_job(frame.view.file_jobs.opening, file_job_titles[0], frame.action.file_jobs.cancel_open, jobs[0]);
-    render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1]);
+    render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1], &frame.view.storyboard.video_export);
     render_file_job(frame.view.file_jobs.preview, file_job_titles[2], frame.action.file_jobs.cancel_preview, jobs[2]);
     worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
     render_metadata_timing_link_confirmation(g_context, frame.view.metadata, frame.action);
@@ -3643,8 +3716,7 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     render_frame_timing_overlay(frame.width, frame.height);
     render_tap_timing_tool(frame);
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action);
-    worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
-                                          &frame.action, frame.width, frame.height);
+    render_auxiliary_player_preview(frame);
 }
 
 static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {
@@ -3762,6 +3834,26 @@ static void consume_pending_file_action(const wormedit::ui::workspace_view_t* vi
     else action.kind = pending.kind;
 }
 
+static void update_workspace_window_title(const wormedit::ui::workspace_view_t& view) {
+    const std::string window_title = std::string{view.project_title} +
+                                     (view.dirty ? " *" : "") + " — wormedit";
+    if (g_window && window_title != SDL_GetWindowTitle(g_window))
+        SDL_SetWindowTitle(g_window, window_title.c_str());
+}
+
+static auto finish_storyboard_input(wormedit::ui::workspace_action_t action, bool available = false)
+    -> wormedit::ui::workspace_action_t {
+    if (!available) wormedit::ui::cancel_storyboard_panel_pointer();
+    (void)wormedit::ui::drain_storyboard_panel_cancel(action.storyboard);
+    return action;
+}
+
+static void clear_hidden_storyboard_thumbnails(const wormedit::ui::workspace_view_t* view,
+    wormedit::ui::workspace_action_t& action) {
+    if (view && (!view->storyboard.visible || view->active_tab != WORM_UI_WORKSPACE_TAB_STORYBOARD))
+        wormedit::ui::clear_storyboard_assets_demand(view->storyboard, action.storyboard);
+}
+
 wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspace_view_t* view) {
     struct RequestFrame {
         ~RequestFrame() { wormedit::ui::chrome::context_menu_finish_frame(); }
@@ -3773,6 +3865,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     remember_notification_frame(view);
     remember_context_menu_scope(view);
     worm_ui_nuklear_begin_image_quad_frame();
+    worm_ui_nuklear_begin_player_preview_texture_frame();
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -3781,11 +3874,16 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     consume_project_file_dialog(action);
     if (g_context && view) synchronize_metadata_timing_links(g_context, view->metadata);
     consume_pending_file_action(view, action);
+    const bool storyboard_available = g_context && (g_window || g_headless) && view &&
+        is_storyboard_content_interactive(*view);
+    if (!storyboard_available) wormedit::ui::cancel_storyboard_panel_pointer();
+    clear_hidden_storyboard_thumbnails(view, action);
+    (void)wormedit::ui::drain_storyboard_panel_cancel(action.storyboard);
     if (!g_context || (!g_window && !g_headless) || !view) {
         worm_ui_nuklear_compose_state().layer_editor.layer_creation_request.reset();
         worm_ui_nuklear_compose_discard_frame_input();
         expose_shortcut_input(&action);
-        return action;
+        return finish_storyboard_input(std::move(action));
     }
     (void)wormedit::ui::chrome::popup_update_release_pending(
         g_context, worm_ui_nuklear_compose_state().dialogs.compose_dialog_release_pending);
@@ -3809,7 +3907,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     if (!frontend_window_size(&width, &height)) {
         worm_ui_nuklear_compose_discard_frame_input();
         expose_shortcut_input(&action);
-        return action;
+        return finish_storyboard_input(std::move(action));
     }
     wormedit::ui::nuklear::tooltip::set_viewport(
         nk_rect(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height)));
@@ -3817,7 +3915,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     if (wormedit::ui::gallery::requested()) {
         static wormedit::ui::gallery::state_t gallery_state;
         wormedit::ui::gallery::render(g_context, gallery_state, width, height);
-        return action;
+        return finish_storyboard_input(std::move(action));
     }
 
     if (validation_error) {
@@ -3830,13 +3928,12 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
         render_about(*view);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
-        return action;
+        return finish_storyboard_input(std::move(action));
     }
 
-    const std::string window_title = std::string{view->project_title} +
-                                     (view->dirty ? " *" : "") + " — wormedit";
-    if (g_window && window_title != SDL_GetWindowTitle(g_window))
-        SDL_SetWindowTitle(g_window, window_title.c_str());
+    (void)worm_ui_nuklear_pin_primary_preview_textures(g_renderer, *view);
+    (void)wormedit::ui::consume_storyboard_image_picker(view->storyboard, action.storyboard);
+    update_workspace_window_title(*view);
 
     if (!view->project_loaded) {
         worm_ui_nuklear_compose_discard_frame_input();
@@ -3849,7 +3946,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         expose_shortcut_input(&action);
         g_audio.offset_escape_pending = false;
-        return action;
+        return finish_storyboard_input(std::move(action));
     }
 
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
@@ -3878,6 +3975,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
         worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
+    wormedit::ui::render_storyboard_video_dialog(g_context, view->storyboard, action.storyboard);
     render_about(*view);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
@@ -3892,8 +3990,10 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         std::erase_if(action.shortcut_events, [&](const auto& key) {
             return worm_ui_nuklear_project_chart_shortcut(view->setup, key, action);
         });
+    (void)wormedit::ui::drain_storyboard_panel_cancel(action.storyboard);
+    consume_storyboard_shortcuts(*view, action);
     g_audio.offset_escape_pending = false;
-    return action;
+    return finish_storyboard_input(std::move(action), is_storyboard_content_interactive(*view));
 }
 
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id) {

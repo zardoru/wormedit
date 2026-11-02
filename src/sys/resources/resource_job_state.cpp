@@ -1,5 +1,6 @@
 #include "sys/resources/resource_job_state.h"
 #include "sys/commands/document_edit_feedback.h"
+#include "sys/resources/image_import_probe.h"
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>
@@ -43,7 +44,7 @@ auto copy_task_failure(const resource_copy_job_t::completion_t& completed)
                                                         ? notification_severity_t::info
                                                         : notification_severity_t::error};
     }
-    const auto& copied = *completed->payload;
+    const auto& copied = completed->payload->copied;
     if (copied)
         return std::nullopt;
     return resource_copy_feedback_t{.message = copied.error().message.empty()
@@ -110,6 +111,33 @@ auto complete_resource_copy(const resource_copy_identity_t& request,
 }
 } // namespace
 
+storyboard_import_receipt_t::~storyboard_import_receipt_t() {
+    if (copy_ && !linked_) (void)discard_unlinked_project_asset_copy(request_, *copy_);
+}
+auto storyboard_import_receipt_t::create_copy(std::stop_token stop) -> project_asset_copy_outcome_t {
+    if (copy_) return *copy_;
+    auto plan = plan_project_asset_copies(std::span{&request_, 1}, request_.relative_directory, stop);
+    if (!plan) return std::unexpected(plan.error());
+    request_ = std::move(plan->front());
+    auto copied = create_project_asset_copy(request_, stop);
+    if (copied) {
+        copy_ = *copied;
+        validation_identity_ = project_asset_copy_receipt_t::published_identity_t::from(copied->absolute_path);
+        if (copied->published_identity && validation_identity_ != copied->published_identity)
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict, "Image copy changed after publication."});
+    }
+    return copied;
+}
+
+auto storyboard_import_receipt_t::validate_link() const -> result_t<void, error_t<failure_code_t>> {
+    if (!copy_ || !validation_identity_)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict, "Image copy identity is unavailable."});
+    const auto source = inspect_project_path_source({.source_directory = request_.project_directory,
+        .relative_path = copy_->relative_path, .maximum_bytes = request_.maximum_bytes, .expected_source = validation_identity_});
+    if (!source) return std::unexpected(source.error());
+    return {};
+}
+
 runtime::resource_copy_t::resource_copy_t(wormedit::task_scheduler_t& scheduler,
                                           wormedit::notification_sink_t notifications)
     : notifications_(std::move(notifications)),
@@ -141,10 +169,37 @@ auto runtime::resource_copy_t::poll_project_save() -> std::optional<project_save
     return save_job_.poll();
 }
 
+namespace {
+auto copy_storyboard_image(const resource_copy_request_t& request, std::stop_token stop)
+    -> resource_copy_job_t::work_outcome_t {
+    const auto source_geometry = probe_resource_image(request.target.source_path, stop);
+    if (!source_geometry) return std::unexpected(source_geometry.error());
+    auto copied = request.storyboard_receipt->create_copy(stop);
+    if (!copied) return std::unexpected(copied.error());
+    const auto geometry = probe_resource_image(copied->absolute_path, stop);
+    if (!geometry) return std::unexpected(geometry.error());
+    osbx_place_image_t operation;
+    const auto& target = *request.target.storyboard;
+    if (target.resource) {
+        auto resource = *target.resource;
+        resource.file = copied->relative_path.generic_string(); operation.source = std::move(resource);
+    } else {
+        operation.source = osbx_import_image_t{.file = {.source_path = request.target.source_path,
+            .copied_project_relative_path = copied->relative_path, .expected_new_asset_id = request.target.asset,
+            .role = resource_role_t::bga, .name = request.target.source_path.stem().string(), .image_geometry = *geometry}};
+    }
+    if (target.capture.assets.kind == ui::storyboard_assets_action_kind_t::add_sprite)
+        operation.sprite = osbx_sprite_placement_t{.layer = target.capture.assets.layer,
+            .x = target.capture.assets.position.x, .y = target.capture.assets.position.y};
+    return resource_copy_result_t{.copied = std::move(copied), .storyboard = std::move(operation),
+        .receipt = request.storyboard_receipt};
+}
+}
 auto runtime::resource_copy_t::copy_file(const resource_copy_request_t& request,
                                          std::stop_token stop)
     -> resource_copy_job_t::work_outcome_t {
     using namespace wormedit;
+    if (request.target.storyboard) return copy_storyboard_image(request, stop);
     auto copied =
         request.target.export_copy
             ? create_export_asset_copy({.project_directory = request.project_directory,
@@ -157,7 +212,7 @@ auto runtime::resource_copy_t::copy_file(const resource_copy_request_t& request,
                                          .asset = request.target.asset,
                                          .relative_directory = request.relative_directory},
                                         stop);
-    return resource_copy_job_t::work_outcome_t{std::in_place, std::move(copied)};
+    return resource_copy_result_t{.copied = std::move(copied)};
 }
 
 auto runtime::resource_copy_t::start(resource_copy_request_t request,
@@ -168,6 +223,14 @@ auto runtime::resource_copy_t::start(resource_copy_request_t request,
         return std::unexpected(error_t<failure_code_t>{
             failure_code_t::invalid_request,
             "Wait for the current resource copy, import, or export to finish."});
+    if (request.target.storyboard) {
+        request.storyboard_receipt = std::make_shared<storyboard_import_receipt_t>(project_asset_copy_request_t{
+            .project_directory = request.project_directory, .source_path = request.target.source_path,
+            .asset = request.target.asset,
+            .planned_filename = std::to_string(request.target.asset.value) + "-" + request.target.source_path.filename().string(),
+            .validate_temporary = [](const std::filesystem::path& file) { return probe_resource_image(file).has_value(); },
+            .relative_directory = request.relative_directory});
+    }
     const auto source = request.target.export_copy ? notification_source_t::export_
                                                    : notification_source_t::import_;
     const auto exporting = request.target.export_copy;
@@ -180,7 +243,7 @@ auto runtime::resource_copy_t::start(resource_copy_request_t request,
 }
 
 auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
-                                  wormedit::workspace_controller_t& workspace)
+                                  wormedit::workspace_controller_t& workspace, storyboard_import_completion_t storyboard)
     -> std::optional<std::string> {
     using namespace wormedit;
     const auto completed = job_.poll();
@@ -188,6 +251,21 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
         return std::nullopt;
     const auto& request =
         completed->has_value() ? completed->value().identity : completed->error().identity;
+    if (request.storyboard) {
+        if (const auto failure = copy_task_failure(*completed)) {
+            notifications_.post(failure->severity, notification_source_t::import_, failure->message);
+            return failure->message;
+        }
+        const auto& result = *completed->value().payload;
+        if (!storyboard || !result.storyboard || !result.receipt) return "Storyboard import no longer has an active editor.";
+        if (const auto valid = result.receipt->validate_link(); !valid) {
+            notifications_.post(notification_severity_t::warning, notification_source_t::import_, valid.error().message);
+            return valid.error().message;
+        }
+        const bool applied = storyboard(request.storyboard->capture, *result.storyboard);
+        if (applied && result.receipt) result.receipt->mark_linked();
+        return applied ? "Storyboard image imported." : "Storyboard image import was refused.";
+    }
     const auto source = request.export_copy ? notification_source_t::export_
                                             : notification_source_t::import_;
     const auto finish = [&](std::string message, notification_severity_t severity,
@@ -201,7 +279,7 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
     auto feedback = copy_task_failure(*completed);
     if (!feedback)
         feedback =
-            complete_resource_copy(request, **completed->value().payload, history, workspace);
+            complete_resource_copy(request, *completed->value().payload->copied, history, workspace);
     return finish(std::move(feedback->message), feedback->severity, feedback->publish,
                   feedback->source);
 }
@@ -221,12 +299,33 @@ runtime::output_group_export_t::~output_group_export_t() noexcept {
     }
 }
 
+void runtime::output_group_export_t::bind_prepared_storyboards(
+    std::shared_ptr<const std::vector<osbx_lua_prepared_scene_t>> prepared, std::uint64_t session) {
+    if (prepared_session_ && *prepared_session_ != session) {
+        cancel_confirmation();
+        cancel();
+    }
+    prepared_session_ = session;
+    prepared_storyboards_ = std::move(prepared);
+}
+
 auto runtime::output_group_export_t::start(const song_document_t& document,
     output_group_export_plan_t plan, std::filesystem::path asset_base,
     work_function_t work) -> start_outcome_t {
     if (is_busy() || confirmation_)
         return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
             "Wait for the current resource copy, import, or export to finish."});
+    if (prepared_storyboards_) {
+        const auto capture = [&](conversion_request_t& request) {
+            if (!request.osbx_prepared.empty()) return;
+            for (const auto& scene : *prepared_storyboards_)
+                // The worker prepares the current revision and may need this
+                // session's earlier success if the changed link fails.
+                if (scene.stamp.project == document.id) request.osbx_prepared.push_back(scene);
+        };
+        capture(plan.request);
+        for (auto& target : plan.additional_targets) capture(target.request);
+    }
     auto receipt = std::make_shared<std::optional<output_group_export_task_result_t>>();
     auto progress = std::make_shared<job_progress_t>();
     auto request = std::make_shared<output_group_export_request_t>(
@@ -253,7 +352,7 @@ auto runtime::output_group_export_t::start(const song_document_t& document,
                   .identity = {.project = document.id, .document_revision = document.revision},
                   .receipt = std::move(receipt),
                   .request = std::move(request),
-                  .work = work};
+                  .work = work, .session = prepared_session_};
     notifications_.post(notification_severity_t::info, notification_source_t::export_,
                         "Export target preparation started in the background.");
     return {};
@@ -267,6 +366,7 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     if (!completed)
         return std::nullopt;
 
+    const bool is_current_session = pending_->session == prepared_session_;
     const auto exported_song = pending_->identity.project;
     const auto exported_revision = pending_->identity.document_revision;
     const auto receipt = pending_->receipt;
@@ -275,6 +375,11 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     pending_.reset();
     // A cancellation can replace the scheduler outcome after files were published.
     const auto* exported = receipt->has_value() ? &receipt->value() : nullptr;
+    if (!is_current_session && (!exported || !exported->published)) {
+        const std::string status = "Export cancelled after changing projects.";
+        notifications_.post(notification_severity_t::info, notification_source_t::export_, status);
+        return status;
+    }
     auto status = !exported
                       ? !completed->has_value() ? completed->error().cause.message
                                          : "Output group export returned no result."
@@ -293,7 +398,7 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
         return exported->message;
     }
     if (exported && exported->published &&
-        (history.document.id != exported_song || history.document.revision != exported_revision)) {
+        (history.document.id != exported_song || history.document.revision != exported_revision || !is_current_session)) {
         status += " The editor session changed after this export started.";
         severity = wormedit::notification_severity_t::warning;
     }
@@ -302,7 +407,7 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
                              .source = wormedit::notification_source_t::export_,
                              .message = status,
                              .detail = exported ? exported->detail : std::string{},
-                             .target = current_export_target(exported, history, exported_song, exported_revision)});
+                             .target = current_export_target(is_current_session ? exported : nullptr, history, exported_song, exported_revision)});
     return status;
 }
 

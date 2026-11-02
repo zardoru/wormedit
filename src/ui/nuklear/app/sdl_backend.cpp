@@ -436,6 +436,11 @@ NK_API void nk_sdl_update_TextInput(struct nk_context* ctx) {
 static void submit_sdl_batch(nk_sdl* sdl, const wormedit::ui::nuklear::sdl_draw_batch_t& batch,
     const wormedit::ui::nuklear::sdl_command_mesh_view_t* compact = nullptr) {
     if (!batch.index_count) return;
+    const wormedit::ui::nuklear::sdl_blend_scope_t blend{sdl->renderer, batch.texture, batch.blend};
+    if (!blend.is_ready()) {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Applying draw blend: %s", SDL_GetError());
+        return;
+    }
     SDL_SetRenderClipRect(sdl->renderer, &batch.clip);
     const auto* vertices = compact ? reinterpret_cast<const nk_byte*>(compact->vertices.data()) :
         static_cast<const nk_byte*>(nk_buffer_memory_const(&sdl->ogl.vertices));
@@ -847,8 +852,10 @@ static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
         index_offset += command->elem_count;
         const SDL_Rect clip{static_cast<int>(command->clip_rect.x), static_cast<int>(command->clip_rect.y),
             static_cast<int>(command->clip_rect.w), static_cast<int>(command->clip_rect.h)};
-        if (const auto completed = batches.append(static_cast<SDL_Texture*>(command->texture.ptr), clip,
-            static_cast<unsigned>(count))) submit_sdl_batch(sdl, *completed, compact);
+        if (const auto completed = batches.append(
+                static_cast<SDL_Texture*>(command->texture.ptr), clip, static_cast<unsigned>(count),
+                worm_ui_nuklear_image_quad_blend(command->userdata)))
+            submit_sdl_batch(sdl, *completed, compact);
     }
     if (const auto last = batches.finish()) submit_sdl_batch(sdl, *last, compact);
     account_sdl_regions(sdl);
@@ -1527,11 +1534,15 @@ NK_API void nk_sdl_style_set_debug_font(struct nk_context* ctx) {
 #undef nk_convert
 
 namespace wormedit::ui::nuklear {
-auto sdl_draw_batcher_t::append(SDL_Texture* texture, SDL_Rect clip, unsigned count)
-    -> std::optional<sdl_draw_batch_t> {
+auto sdl_draw_batcher_t::append(SDL_Texture* texture, SDL_Rect clip, unsigned count,
+                                image_blend_t blend) -> std::optional<sdl_draw_batch_t> {
     if (count == 0)
         return std::nullopt;
-    const sdl_draw_batch_t next{texture, clip, next_index_, count};
+    const sdl_draw_batch_t next{.texture = texture,
+                                .clip = clip,
+                                .index_offset = next_index_,
+                                .index_count = count,
+                                .blend = blend};
     next_index_ += count;
     if (!pending_) {
         pending_ = next;
@@ -1541,7 +1552,7 @@ auto sdl_draw_batcher_t::append(SDL_Texture* texture, SDL_Rect clip, unsigned co
     const bool same_clip =
         before.x == clip.x && before.y == clip.y && before.w == clip.w && before.h == clip.h;
     const auto maximum = static_cast<unsigned>(std::numeric_limits<int>::max());
-    if (pending_->texture == texture && same_clip && count <= maximum &&
+    if (pending_->blend == blend && pending_->texture == texture && same_clip && count <= maximum &&
         pending_->index_count <= maximum - count) {
         pending_->index_count += count;
         return std::nullopt;
@@ -2015,11 +2026,22 @@ void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned shor
     if (!list || !quad) {
         return;
     }
-    nk_draw_list_push_image(list, quad->image.handle);
+    const bool explicit_blend = quad->blend != wormedit::ui::image_blend_t::inherit;
+    if (explicit_blend) {
+        const auto previous = list->userdata;
+        list->userdata = callback_data;
+        // Isolate both ends, including same-texture neighbours and empty barriers.
+        nk_draw_list_push_command(list, list->clip_rect, quad->image.handle);
+        list->userdata = previous;
+    } else {
+        nk_draw_list_push_image(list, quad->image.handle);
+    }
     const auto base = static_cast<nk_draw_index>(list->vertex_count);
     auto* vertices = nk_draw_list_alloc_vertices(list, 4);
     auto* indices = nk_draw_list_alloc_elements(list, 6);
     if (!vertices || !indices) {
+        if (explicit_blend)
+            nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
         return;
     }
     indices[0] = static_cast<nk_draw_index>(base + 0);
@@ -2034,4 +2056,6 @@ void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned shor
         vertices =
             nk_draw_vertex(vertices, &list->config, quad->points[index], quad->uvs[index], color);
     }
+    if (explicit_blend)
+        nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
 }

@@ -72,6 +72,7 @@ auto chart_object_target(const chart_document_t& chart, object_id_t id)
 auto resolve_notification_target(const song_document_t& document,
                                  const notification_target_t& target)
     -> notification_history_target_t {
+    if (std::holds_alternative<notification_file_t>(target)) return {.availability = WORM_UI_NOTIFICATION_TARGET_FILE};
     if (const auto* exact = std::get_if<notification_chart_position_t>(&target)) {
         const auto chart = document.read_chart(exact->chart);
         return chart == nullptr ? notification_history_target_t{.availability = WORM_UI_NOTIFICATION_TARGET_MISSING}

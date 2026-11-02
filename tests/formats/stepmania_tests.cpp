@@ -1513,3 +1513,53 @@ TEST_CASE("StepMania retains backgrounds stored by older native projects",
     expect_background(written.value.has_value());
     expect_background(written.value->find("#BACKGROUND:legacy.png;") != std::string::npos);
 }
+
+TEST_CASE("SSC writer emits exact native actor hooks without duplicate retained ownership", "[formats][stepmania][storyboard]") {
+    using namespace wormedit;
+    auto song = cross_measure_hold_song(stepmania_profile_t::ssc);
+    stepmania_write_options_t settings{.profile = stepmania_profile_t::ssc};
+    settings.storyboard_changes = {{.start_beat = {-4,1}, .actor_reference = "native/background"}};
+    const auto first = write_stepmania(song, settings);
+    REQUIRE(first.value);
+    CHECK(first.value->find("#BGCHANGES:-4=native/background=1=0=0=1;") != std::string::npos);
+    song.metadata.format_group_for(format_family_t::stepmania).ordered_fields.emplace_back("BGCHANGES", "0=source.png=1=0=0=1");
+    const auto retained = write_stepmania(song, settings);
+    REQUIRE(retained.value);
+    CHECK(retained.value->find("#BGCHANGES:0=source.png=1=0=0=1;") != std::string::npos);
+    CHECK(retained.value->find("native/background") == std::string::npos);
+}
+
+TEST_CASE("NotITG profile conservatively requires SM and reuses explicit legacy timing policy", "[stepmania][notitg]") {
+    using namespace wormedit;
+    stepmania_export_policy_t policy{.file_profile = stepmania_profile_t::sm,
+        .timing_syntax = stepmania_timing_syntax_t::legacy_negative_bpm,
+        .implementation_profile = stepmania_implementation_profile_t::notitg_v4};
+    const auto options = stepmania_write_options_t::from(policy);
+    REQUIRE(options);
+    CHECK(options->warp_encoding == warp_encoding_t::negative_bpm);
+    const auto written = write_stepmania(cross_measure_hold_song(stepmania_profile_t::sm), *options);
+    REQUIRE(written.value);
+    const auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}),
+        {.profile = stepmania_profile_t::sm, .source_timing_syntax = policy.timing_syntax,
+         .source_implementation_profile = policy.implementation_profile});
+    REQUIRE(parsed.value);
+    policy.file_profile = stepmania_profile_t::ssc;
+    CHECK_FALSE(stepmania_write_options_t::from(policy));
+}
+
+TEST_CASE("NotITG DELAYS retain SM bytes with an explicit unverified-runtime warning", "[stepmania][notitg]") {
+    using namespace wormedit;
+    auto song = cross_measure_hold_song(stepmania_profile_t::sm);
+    song.charts.front().pauses.push_back({.id = object_id_t{99999},
+        .position = {song.charts.front().measures.front().id, 0},
+        .kind = pause_kind_t::delay, .duration = {1,4}});
+    const auto options = stepmania_write_options_t::from({.file_profile = stepmania_profile_t::sm,
+        .implementation_profile = stepmania_implementation_profile_t::notitg_v4});
+    REQUIRE(options);
+    const auto written = write_stepmania(song, *options);
+    REQUIRE(written.value);
+    CHECK(written.value->find("#DELAYS:") != std::string::npos);
+    CHECK(std::ranges::any_of(written.diagnostics, [](const auto& item) {
+        return item.location == "DELAYS" && item.message.find("unverified") != std::string::npos;
+    }));
+}

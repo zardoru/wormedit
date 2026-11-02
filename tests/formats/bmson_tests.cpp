@@ -1,3 +1,4 @@
+#include <wormedit/formats/resource_plan.h>
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/core/bgm_packing.h>
 #include <wormedit/formats/bmson.h>
@@ -834,4 +835,89 @@ TEST_CASE("BMSON shared write warnings retain serialized bytes", "[unit][bmson][
     CHECK(legacy.ok());
     CHECK(legacy.value == "{}");
     CHECK(legacy.diagnostics.front().message == "warning");
+}
+
+namespace {
+using namespace wormedit;
+void check_bmson_channel_table(const song_document_t& song, const bmson_channel_plan_t& query) {
+    const auto written = write_bmson(song, {.chart = song.charts.front().id});
+    REQUIRE(written.value);
+    const auto json = nlohmann::json::parse(*written.value);
+    REQUIRE(query.channels.size() == json["sound_channels"].size());
+    for (std::size_t i = 0; i < query.channels.size(); ++i)
+        CHECK(query.channels[i].filename == json["sound_channels"][i]["name"].get<std::string>());
+}
+void check_bmson_resource_bindings(const resource_plan_t& plan, const bmson_channel_plan_t& query) {
+    REQUIRE(plan.bindings.size() == 3);
+    CHECK(plan.bindings[0].channel_indices != plan.bindings[1].channel_indices);
+    CHECK(plan.bindings[0].channel_indices != plan.bindings[2].channel_indices);
+    for (const auto& binding : plan.bindings) {
+        const auto mapped = std::ranges::find(query.bindings, binding.event, &bmson_channel_binding_t::event);
+        REQUIRE(mapped != query.bindings.end());
+        CHECK(binding.channel_indices == std::vector<std::size_t>{mapped->channel_index});
+    }
+}
+void check_bmson_refusal_preserves_channels(const song_document_t& song) {
+    const auto& chart = song.charts.front();
+    const auto before = chart.sound_channels;
+    const auto query = build_bmson_channel_plan(song, {.chart = chart.id});
+    CHECK_FALSE(query.value);
+    REQUIRE_FALSE(query.diagnostics.empty());
+    CHECK_FALSE(write_bmson(song, {.chart = chart.id}).value);
+    CHECK(chart.sound_channels == before);
+}
+}
+
+TEST_CASE("BMSON channel query and resource plan share concrete retained and authored allocation", "[bmson][resource_plan]") {
+    using namespace wormedit;
+    const auto parsed = fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    for (auto& resource : song.resources) resource.missing = false;
+    auto& chart = song.charts.front();
+    REQUIRE_FALSE(song.resources.empty());
+    const auto audio = std::ranges::find_if(song.resources, [&](const auto& resource) {
+        return song.find_audio_asset(resource.asset) != nullptr;
+    });
+    REQUIRE(audio != song.resources.end());
+    auto first = *audio;
+    first.id = resource_id_t{90001}; first.target_identities.clear();
+    first.roles = {resource_role_t::sample, resource_role_t::bgm};
+    auto second = first; second.id = resource_id_t{90002};
+    song.resources.push_back(first); song.resources.push_back(second);
+    const auto measure = chart.measures.front().id;
+    chart.bgm_source_lanes.push_back({.id = object_id_t{90003}, .name = "First"});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{90004}, .name = "Second"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{90005}, .position = {measure, 0},
+        .source_lane = object_id_t{90003}, .sound = first.id});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{90006}, .position = {measure, 0},
+        .source_lane = object_id_t{90004}, .sound = first.id});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{90007}, .position = {measure, 0},
+        .source_lane = object_id_t{90003}, .sound = second.id});
+    const auto query = build_bmson_channel_plan(song, {.chart = chart.id});
+    for (const auto& diagnostic : query.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(query.value);
+    check_bmson_channel_table(song, *query.value);
+    const std::array requests{
+        resource_plan_request_t{.chart = chart.id, .event = object_id_t{90005}, .resource = first.id},
+        resource_plan_request_t{.chart = chart.id, .event = object_id_t{90006}, .resource = first.id},
+        resource_plan_request_t{.chart = chart.id, .event = object_id_t{90007}, .resource = second.id}};
+    const auto plan = resource_plan_t::from(song, format_family_t::bmson, requests);
+    REQUIRE(plan.value);
+    check_bmson_resource_bindings(*plan.value, *query.value);
+}
+
+TEST_CASE("BMSON channel preflight shares cropped-source and conflicting retained-identity refusals", "[bmson][resource_plan]") {
+    using namespace wormedit;
+    const auto parsed = fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    auto& chart = song.charts.front();
+    REQUIRE_FALSE(chart.sound_channels.empty());
+    SECTION("cropped source") { chart.sound_channels.front().source_clip.begin_frame = 1; }
+    SECTION("conflicting retained audio") {
+        REQUIRE(song.audio_assets.size() > 1);
+        chart.sound_channels.front().source_clip.source = song.audio_assets.back().id;
+    }
+    check_bmson_refusal_preserves_channels(song);
 }

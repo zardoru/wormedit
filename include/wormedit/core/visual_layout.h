@@ -57,19 +57,31 @@ struct visual_point_t {
     auto operator==(const visual_point_t&) const -> bool = default;
 };
 
+// Column-vector affine transform [a,b,c,d,tx,ty] in logical canvas units.
+struct visual_affine_t {
+    std::array<double, 6> values{1, 0, 0, 1, 0, 0};
+
+    [[nodiscard]] static auto from(double x, double y, double scale_x = 1,
+                                  double scale_y = 1, double rotation_radians = 0)
+        -> visual_affine_t;
+    [[nodiscard]] auto operator*(const visual_affine_t& right) const -> visual_affine_t;
+    [[nodiscard]] auto is_finite() const -> bool;
+    [[nodiscard]] auto determinant() const -> double;
+    [[nodiscard]] auto inverse() const -> std::optional<visual_affine_t>;
+    [[nodiscard]] auto apply(visual_point_t point) const -> visual_point_t;
+    [[nodiscard]] auto operator[](std::size_t index) const -> double { return values[index]; }
+    auto operator==(const visual_affine_t&) const -> bool = default;
+};
+
 struct visual_image_quad_request_t {
     std::uint32_t source_width{};
     std::uint32_t source_height{};
     visual_destination_rect_t destination;
     double logical_width{640.0};
     double logical_height{480.0};
-    double x{};
-    double y{};
     double origin_x{0.5};
     double origin_y{0.5};
-    double scale_x{1.0};
-    double scale_y{1.0};
-    double rotation_radians{};
+    visual_affine_t transform;
 };
 
 struct visual_image_quad_t {

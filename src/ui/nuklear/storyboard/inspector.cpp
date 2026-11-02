@@ -143,10 +143,10 @@ auto emit(storyboard_action_t& output, storyboard_action_t action) -> bool {
     output = std::move(action);
     return true;
 }
-auto number_text(double value) -> std::string {
+auto number_text(double value, int precision = 12) -> std::string {
     std::array<char, 64> buffer{};
     const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-                                     std::chars_format::general, 12);
+                                     std::chars_format::general, precision);
     return result.ec == std::errc{} ? std::string(buffer.data(), result.ptr) : std::string{};
 }
 auto parse_number(std::string_view text) -> std::optional<double> {
@@ -155,6 +155,51 @@ auto parse_number(std::string_view text) -> std::optional<double> {
     if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || !std::isfinite(value)) return {};
     return value;
 }
+struct spline_input_t {
+    std::optional<storyboard_action_t> captured;
+    std::array<char, 32> begin{}, end{}, tolerance{};
+    std::array<std::array<std::array<char, 96>, 2>, 4> points{};
+    std::string error;
+    bool cancel_requested{};
+    void reset() { captured.reset(); error.clear(); cancel_requested = false; }
+    void bind(const storyboard_view_t& view) {
+        if (!captured) return;
+        if (!view.visible || captured->project != view.project || captured->revision != view.revision ||
+            captured->session_generation != view.session_generation || captured->storyboard != view.state.selection.storyboard ||
+            captured->prepared_generation != view.canvas.prepared_generation || view.state.selection.nodes.size() != 1 ||
+            view.state.selection.nodes.front() != captured->inspector.node) cancel_requested = true;
+    }
+    void open(const storyboard_view_t& view, const storyboard_op_view_t& op) {
+        reset();
+        captured = capture(view, field_t::bake_spline, op.id); captured->inspector.spline = *op.spline;
+        const auto& curve = captured->inspector.spline;
+        lua_input_t::text(begin, std::to_string(curve.begin_ms)); lua_input_t::text(end, std::to_string(curve.end_ms));
+        lua_input_t::text(tolerance, number_text(curve.tolerance, 17));
+        for (std::size_t i = 0; i < 4; ++i)
+            for (std::size_t d = 0; d < curve.dimensions; ++d)
+                lua_input_t::text(points[i][d], number_text(curve.points[i][d], 17));
+    }
+    auto parse() -> bool {
+        auto curve = captured->inspector.spline;
+        const auto precision = parse_number(tolerance.data());
+        if (!parse_integer(std::string_view{begin.data()}, curve.begin_ms) ||
+            !parse_integer(std::string_view{end.data()}, curve.end_ms) || !precision) {
+            error = "Use signed integer milliseconds and a finite positive tolerance."; return false;
+        }
+        curve.tolerance = *precision;
+        for (std::size_t i = 0; i < 4; ++i) {
+            for (std::size_t d = 0; d < curve.dimensions; ++d) {
+                const auto value = parse_number(points[i][d].data());
+                if (!value) { error = "Control points require finite numbers."; return false; }
+                curve.points[i][d] = *value;
+            }
+        }
+        const auto baked = curve.bake();
+        if (!baked) { error = baked.error().message; return false; }
+        captured->inspector.spline = curve; error.clear(); return true;
+    }
+};
+spline_input_t spline_input;
 void reset_draft(field_draft_t& draft, std::string_view text) {
     std::snprintf(draft.text.data(), draft.text.size(), "%.*s", static_cast<int>(text.size()), text.data());
     draft.baseline = draft.text.data();
@@ -429,6 +474,14 @@ void add_op(nk_context* context, const storyboard_view_t& view, storyboard_actio
     }
     chrome::safe_combo_end(context);
 }
+void spline_button(nk_context* context, const storyboard_view_t& view, const storyboard_op_view_t& op) {
+    if (op.kind != osbx_transform_kind_t::translate && op.kind != osbx_transform_kind_t::rotate && op.kind != osbx_transform_kind_t::scale) return;
+    nk_layout_row_dynamic(context, 24, 1);
+    const bool disable = input.available && !op.spline;
+    if (disable) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Bezier spline...") && input.available && op.spline) { input.reset(); spline_input.open(view, op); }
+    if (disable) nk_widget_disable_end(context);
+}
 void transform_stack(nk_context* context, const storyboard_view_t& view, storyboard_action_t& output) {
     nk_layout_row_dynamic(context, 24, 1); nk_label(context, "TRANSFORM STACK: top to bottom", NK_TEXT_LEFT);
     for (const auto& op : view.inspector.ops) {
@@ -437,6 +490,7 @@ void transform_stack(nk_context* context, const storyboard_view_t& view, storybo
                            (op.track.at_key ? " ◆" : op.track.keyed ? " ◈" : " ◇");
         nk_label(context, title.c_str(), NK_TEXT_LEFT);
         numeric_track(context, view, output, op.label.c_str(), field_t::transform, op.track, op.id);
+        spline_button(context, view, op);
         op_buttons(context, view, output, op);
         if (op.kind == osbx_transform_kind_t::pivot) add_op(context, view, output, op.id);
     }
@@ -528,7 +582,7 @@ void consume_lua_module() {
     if (!picked->value().canceled) lua_input_t::text(lua_input.module, picked->value().path);
 }
 template<std::size_t Size>
-void lua_text_field(nk_context* context, const char* title, std::array<char, Size>& value) {
+void form_text_field(nk_context* context, const char* title, std::array<char, Size>& value) {
     nk_layout_row_dynamic(context, 25, 2); nk_label(context, title, NK_TEXT_LEFT);
     (void)chrome::worm_ui_nuklear_text_field(context,
         static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER, value.data(), static_cast<int>(value.size()), nk_filter_default);
@@ -537,7 +591,7 @@ void lua_parameter_fields(nk_context* context) {
     nk_layout_row_dynamic(context, 110, 1);
     if (nk_group_begin(context, "Lua named parameters", NK_WINDOW_BORDER)) {
         for (auto& parameter : lua_input.parameters) {
-            lua_text_field(context, "Name", parameter.name); lua_text_field(context, "Value", parameter.value);
+            form_text_field(context, "Name", parameter.name); form_text_field(context, "Value", parameter.value);
         }
         nk_group_end(context);
     }
@@ -550,13 +604,13 @@ void lua_parameter_fields(nk_context* context) {
     if (nk_button_label(context, "Remove last parameter") && !lua_input.parameters.empty()) lua_input.parameters.pop_back();
 }
 void lua_form_fields(nk_context* context) {
-    lua_text_field(context, "Module file", lua_input.module);
+    form_text_field(context, "Module file", lua_input.module);
     nk_layout_row_dynamic(context, 25, 1);
     if (nk_button_label(context, "Choose module…")) choose_lua_module();
-    lua_text_field(context, "Entry point", lua_input.entry);
-    lua_text_field(context, "Seed", lua_input.seed);
+    form_text_field(context, "Entry point", lua_input.entry);
+    form_text_field(context, "Seed", lua_input.seed);
     if (!lua_input.captured->lua_link.target.children) {
-        lua_text_field(context, "Begin (ms)", lua_input.begin); lua_text_field(context, "End (ms)", lua_input.end);
+        form_text_field(context, "Begin (ms)", lua_input.begin); form_text_field(context, "End (ms)", lua_input.end);
     }
     lua_parameter_fields(context);
 }
@@ -573,6 +627,7 @@ void defer_new_field_capture(const storyboard_action_t& output) {
 
 void cancel_storyboard_inspector_input() {
     input.reset();
+    spline_input.reset();
     // Native picker focus loss cancels gestures but its own captured result stays
     // valid until the slot completes or a context/stamp/selection change resets it.
     if (!lua_input.picking) lua_input.reset();
@@ -587,9 +642,9 @@ bool capture_storyboard_inspector_key(nk_context* context, const SDL_KeyboardEve
         if (!event.down) input.escape_captured = false;
         return true;
     }
-    if (lua_input.captured) {
+    if (lua_input.captured || spline_input.captured) {
         if (event.key == SDLK_ESCAPE) {
-            if (event.down) { lua_input.reset(); input.escape_captured = true; }
+            if (event.down) { lua_input.reset(); if (spline_input.captured) spline_input.cancel_requested = true; input.escape_captured = true; }
         } else chrome::forward_modal_key(context, event);
         return true;
     }
@@ -633,12 +688,12 @@ void render_storyboard_inspector(nk_context* context, const storyboard_view_t& v
     defer_new_field_capture(output);
     input.escape = false;
 }
-void reset_storyboard_lua_input() { lua_input.reset(); }
-void prepare_storyboard_lua_input(const storyboard_view_t& view) { lua_input.bind(view); }
-auto storyboard_lua_editor_active() -> bool { return lua_input.captured.has_value(); }
+void reset_storyboard_inspector_form() { lua_input.reset(); spline_input.reset(); }
+void prepare_storyboard_inspector_form(const storyboard_view_t& view) { lua_input.bind(view); spline_input.bind(view); }
+auto storyboard_inspector_form_active() -> bool { return lua_input.captured.has_value() || spline_input.captured.has_value(); }
 void open_storyboard_lua_editor(const storyboard_view_t& view, const storyboard_lua_target_t& target) {
     const auto* row = view.inspector.lua_link_for(target);
-    if (row && row->editable) { input.reset(); lua_input.open(view, *row); }
+    if (row && row->editable) { input.reset(); spline_input.reset(); lua_input.open(view, *row); }
 }
 auto begin_storyboard_lua_picker_for_testing() -> std::optional<std::uint64_t> {
     const auto generation = lua_input.picker.begin();
@@ -648,7 +703,36 @@ auto begin_storyboard_lua_picker_for_testing() -> std::optional<std::uint64_t> {
 void complete_storyboard_lua_picker_for_testing(std::uint64_t generation, std::string path) {
     lua_input.picker.complete(generation, std::move(path), {}, false);
 }
-void render_storyboard_lua_editor(nk_context* context, const storyboard_view_t& view, storyboard_action_t& output) {
+void render_spline_form(nk_context* context, storyboard_action_t& output) {
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Bake Bezier spline", NK_WINDOW_BORDER | NK_WINDOW_MOVABLE,
+        nk_rect(12, 30, 460, 480))) { spline_input.reset(); return; }
+    if (spline_input.cancel_requested) { nk_popup_close(context); spline_input.reset(); nk_popup_end(context); return; }
+    nk_layout_row_dynamic(context, 48, 1);
+    nk_label_wrap(context, "Replace keys in this range with editable linear keys. Start, two handles, then end. Rotation: degrees; scale: factors.");
+    form_text_field(context, "From (ms)", spline_input.begin); form_text_field(context, "To (ms)", spline_input.end);
+    form_text_field(context, "Max value error", spline_input.tolerance);
+    constexpr std::array labels{"Start", "Handle 1", "Handle 2", "End"};
+    const auto dims = spline_input.captured->inspector.spline.dimensions;
+    nk_layout_row_dynamic(context, 24, 1); nk_label(context, dims == 1 ? "Control values" : "Control points (X, Y)", NK_TEXT_LEFT);
+    for (std::size_t i = 0; i < 4; ++i) {
+        nk_layout_row_dynamic(context, 26, static_cast<int>(dims + 1)); nk_label(context, labels[i], NK_TEXT_LEFT);
+        for (std::size_t d = 0; d < dims; ++d) {
+            auto& text = spline_input.points[i][d];
+            (void)chrome::worm_ui_nuklear_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
+                text.data(), static_cast<int>(text.size()), nk_filter_default);
+        }
+    }
+    if (!spline_input.error.empty()) { nk_layout_row_dynamic(context, 44, 1); nk_label_wrap(context, spline_input.error.c_str()); }
+    nk_layout_row_dynamic(context, 28, 2);
+    if (nk_button_label(context, "Bake linear keys") && spline_input.parse() && emit(output, *spline_input.captured)) {
+        nk_popup_close(context); spline_input.reset();
+    }
+    if (nk_button_label(context, "Cancel")) { nk_popup_close(context); spline_input.reset(); }
+    nk_popup_end(context);
+}
+void render_storyboard_inspector_form(nk_context* context, const storyboard_view_t& view, storyboard_action_t& output) {
+    spline_input.bind(view);
+    if (spline_input.captured) { render_spline_form(context, output); return; }
     lua_input.bind(view);
     if (!lua_input.captured) return;
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "Link to Lua", NK_WINDOW_BORDER | NK_WINDOW_MOVABLE,

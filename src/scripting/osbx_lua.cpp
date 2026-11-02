@@ -11,7 +11,7 @@ namespace wormedit::scripting {
 namespace {
 namespace values = lua_value_detail;
 constexpr std::string_view declarations = R"lua(
-local caller_location, native_simplify = ...
+local caller_location, native_simplify, native_bezier = ...
 local type, pairs, ipairs, error, tostring = type, pairs, ipairs, error, tostring
 local integer, huge = math.type, math.huge
 local state = {nodes={}, images={}}
@@ -154,6 +154,30 @@ function key(value)
 end
 -- Simplification selects existing linear descriptors; provenance and IDs survive.
 keys = {}
+function keys.bezier(options)
+  fields(options,{from=true,to=true,points=true,tolerance=true},'keys.bezier')
+  if integer(options.from)~='integer' or integer(options.to)~='integer' then malformed('keys.bezier requires integer from/to milliseconds') end
+  array(options.points,'keys.bezier.points')
+  if #options.points~=4 then malformed('keys.bezier requires four control points') end
+  local dims=type(options.points[1])=='number' and 1 or 2
+  local packed={}
+  for _,point in ipairs(options.points) do
+    local v=numeric(point,'keys.bezier point')
+    if #v~=dims then malformed('keys.bezier point dimensions mismatch') end
+    for d=1,dims do packed[#packed+1]=v[d] end
+  end
+  local tolerance=options.tolerance or 0.5
+  number(tolerance,'keys.bezier.tolerance')
+  if tolerance<=0 then malformed('keys.bezier.tolerance must be positive') end
+  local baked=native_bezier(options.from,options.to,packed,dims,tolerance)
+  local result={}
+  for i=1,#baked,dims+1 do
+    local value={}
+    for d=1,dims do value[d]=baked[i+d] end
+    result[#result+1]=key{baked[i],value=value,easing='linear'}
+  end
+  return result
+end
 function keys.simplify(options)
   fields(options,{keys=true,tolerance=true,dims=true},'keys.simplify')
   local input=options.keys

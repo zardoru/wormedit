@@ -1,6 +1,7 @@
 #include <wormedit/core/osbx_osb_export.h>
 #include <wormedit/core/osbx_evaluator.h>
 #include <wormedit/core/keyframe_simplify.h>
+#include <wormedit/core/storyboard_spline.h>
 #include <wormedit/core/storyboard_preview.h>
 #include <wormedit/formats/native_project_storage.h>
 
@@ -757,4 +758,22 @@ TEST_CASE("OSBX independently authored same-valued Samples remain separate event
     const auto emitted = emit_osb(*result.value.model); REQUIRE(emitted.value);
     const auto parsed = parse_osb(*emitted.value); REQUIRE(parsed.value);
     CHECK(parsed.value->samples.size() == 2);
+}
+
+TEST_CASE("OSBX baked Bezier translation rotation and scale survive OSB serialization", "[osbx-osb][storyboard-spline]") {
+    const auto kind = GENERATE(osbx_transform_kind_t::translate, osbx_transform_kind_t::rotate, osbx_transform_kind_t::scale);
+    auto document = scene();
+    storyboard_spline_t curve{.end_ms = 2000, .points = {{{0,0}, {0,100}, {100,100}, {100,0}}}};
+    if (kind == osbx_transform_kind_t::rotate) { curve.dimensions = 1; curve.points = {{{0,0},{30,0},{70,0},{90,0}}}; curve.tolerance = 0.05; }
+    if (kind == osbx_transform_kind_t::scale) { curve.points = {{{1,1},{1,1.2},{1.2,1},{1.2,1.2}}}; curve.tolerance = 0.001; }
+    const auto baked = curve.bake(); REQUIRE(baked);
+    auto operation = op("curve", kind, kind == osbx_transform_kind_t::rotate ? std::vector<double>{0} : std::vector<double>{0,0});
+    for (std::size_t i = 0; i < baked->size(); ++i) {
+        const auto& key = (*baked)[i];
+        operation.track.keys.push_back({.id = "curve-key-" + std::to_string(i), .time_ms = key.time_ms,
+            .value = std::vector<double>(key.value.begin(), key.value.begin() + curve.dimensions)});
+    }
+    document.nodes[0].ops.push_back(operation);
+    const auto result = convert(document); REQUIRE(result.value.model);
+    check_random_corners(document, reparse_osb_model(*result.value.model));
 }

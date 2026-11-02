@@ -333,6 +333,20 @@ Each transform operation and property track has a default value plus ordered key
 
 Initial easing forms are `step`, `linear`, standard OSB easing values, and cubic Bézier control points. Numeric/vector values interpolate component-wise after easing. Rotation values are continuous authored degrees; the evaluator does not silently choose a shorter wraparound. Raw matrix keyframes interpolate their six coefficients component-wise only; OSBX 0.1 has no decomposed interpolation mode. Authors should use component transforms for rigid motion.
 
+Spatial Bézier authoring is a declaration/editor operation, distinct from timing easing.
+`keys.bezier { from, to, points, tolerance }` accepts four scalar or vector2 control
+points and returns ordinary linear keys. The inspector exposes the same baker for
+translation, continuous-degree rotation and scale; its inclusive range replacement is
+one transaction, retains outside keys, and refuses Lua-linked or temporal-program tracks.
+Uniform time parameterization and adaptive De Casteljau subdivision use a control-hull
+bound on Euclidean error relative to the linear time chord, with a conservative binary64
+rounding allowance. Requests below that supported numeric precision refuse explicitly. Tolerance is positive and
+finite in authored value units (Lua default 0.5); it is not a world-space export metric.
+Integer-time resolution, 4096 output keys and a maximum duration of 2147483647 ms are
+hard bounds: an unrepresentable request refuses instead of silently reducing accuracy.
+The existing runtime, native schema 39 and export pipeline consume the baked keys; no
+curve handle metadata, new persisted interpolation kind or runtime path cache is added.
+
 Initial property tracks include opacity, linear RGBA color multiplication, visibility and blend mode. Blend modes are `normal` and `additive`; additive requires renderer support in OSBX-3. If the renderer cannot support it, only the owner may narrow 0.1 to `normal`. Animation frame identity is a numeric value on the evaluated draw, safe to retain across frame-arena resets; its selected filename is derived only in the current adapter arena.
 
 Reusable clips use `clip { id, ops, tracks, parameters, uses }`, grouping ordered transform operations and property tracks. `use_clip { id, clip, start, time_scale, parameters }` appends an instance to the current node; nested `uses` are ordered literal descriptors with the same fields. A parameter has a unique lexical name and a finite vector default; instance bindings supply literal vectors of the same arity. A numeric template track may select a parameter for its default only. Authored keys/easing retain their ordinary meaning; there are no parameter expressions or implicit outer capture. Raw Lua links inside templates reject, while ordinary linked nodes and prepared children retain their existing ownership.

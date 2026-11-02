@@ -6,6 +6,7 @@
 #include <wormedit/core/interaction_types.h>
 #include <wormedit/core/osbx_lua_link.h>
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/storyboard_spline.h>
 #include <set>
 #include <tuple>
 #include <variant>
@@ -212,13 +213,19 @@ struct osbx_detach_storyboard_t {
     recipe_id_t expected_owner;
     auto operator==(const osbx_detach_storyboard_t&) const -> bool = default;
 };
+// Replaces ordinary keys in the inclusive range; linked/program tracks refuse.
+struct osbx_bake_spline_t {
+    osbx_track_target_t track;
+    storyboard_spline_t spline;
+    auto operator==(const osbx_bake_spline_t&) const -> bool = default;
+};
 using osbx_edit_change_t = std::variant<osbx_create_storyboard_t, osbx_delete_storyboard_t,
     osbx_rename_storyboard_t, osbx_add_node_t, osbx_delete_node_t, osbx_rename_node_t,
     osbx_reparent_node_t, osbx_reorder_node_t, osbx_set_layer_t, osbx_set_image_t,
     osbx_set_origin_t, osbx_add_op_t, osbx_remove_op_t, osbx_reorder_op_t,
     osbx_set_default_t, osbx_add_key_t, osbx_move_key_t, osbx_set_key_value_t,
     osbx_set_easing_t, osbx_delete_key_t, osbx_move_keys_t, osbx_add_image_t, osbx_remove_image_t,
-    osbx_set_lifetime_t, osbx_convert_storyboard_t, osbx_duplicate_node_t, osbx_drop_node_t, osbx_set_order_t, osbx_delete_keys_t, osbx_place_image_t, osbx_set_lua_track_t, osbx_set_lua_children_t, osbx_detach_storyboard_t>;
+    osbx_set_lifetime_t, osbx_convert_storyboard_t, osbx_duplicate_node_t, osbx_drop_node_t, osbx_set_order_t, osbx_delete_keys_t, osbx_place_image_t, osbx_set_lua_track_t, osbx_set_lua_children_t, osbx_detach_storyboard_t, osbx_bake_spline_t>;
 
 // Allocation reserves declarations from current, Undo and Redo snapshots. New
 // strings use <parent>/<kind>/<counter>, above every reserved counter.
@@ -229,6 +236,8 @@ struct osbx_edit_ids_t {
     [[nodiscard]] static auto from(const document_history_t&) -> osbx_edit_ids_t;
     [[nodiscard]] auto next(std::string_view parent, std::string_view kind,
                             const osbx_document_t&) const -> std::string;
+    [[nodiscard]] auto next_batch(std::string_view parent, std::string_view kind,
+                                 const osbx_document_t&, std::size_t count) const -> std::vector<std::string>;
     auto operator==(const osbx_edit_ids_t&) const -> bool = default;
 };
 struct osbx_edit_t {

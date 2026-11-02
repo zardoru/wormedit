@@ -76,6 +76,39 @@ player preview use this one project view choice. Neither hides both conditional 
 the choice does not edit the document, create an Undo entry or alter saved export settings.
 Custom state-switch timelines and gameplay-trigger simulation are not part of these controls.
 
+=== Bézier paths and baked transforms
+
+For a directly editable Translate, Rotate or Scale operation, choose *Bezier spline...*
+in the inspector. Enter the *From* and *To* times in signed integer milliseconds, then the
+start value, two control handles and end value. Translation handles are coordinates;
+rotation uses continuous degrees (including turns beyond 360°), and scale uses X/Y factors.
+The form starts with the current sampled value at all four points; enter the desired
+path or value curve. The parameter advances uniformly over the time range.
+
+*Max value error* bounds the Euclidean error in the operation's own units over every
+linear segment. The defaults are 0.5 for translation, 0.1° for rotation and 0.001 for scale.
+*Bake linear keys* replaces keys within the inclusive range in one Undo step; keys outside
+the range remain. The result is ordinary timeline keys, so you can move, edit or delete
+them. The original handles are not retained. Cancel or Escape leaves the document unchanged.
+
+Baking refuses more than 4096 keys, a range longer than 2147483647 ms, or a tolerance
+that integer-millisecond keys or binary64 precision cannot satisfy. Linked and temporal-program tracks must be
+baked/unlinked before using this control. Export retains its own exact/bake/refuse checks;
+an authored-space tolerance does not certify the final screen-space result under parents.
+
+Lua uses the same baker, for example:
+
+[source,lua]
+----
+transform.translate(keys.bezier{
+    from=0, to=1000,
+    points={{0,0}, {0,100}, {100,100}, {100,0}}, tolerance=0.5
+})
+transform.rotate(keys.bezier{
+    from=0, to=1000, points={0,120,240,360}, tolerance=0.1
+})
+----
+
 == Lua links and generated content
 
 The inspector and timeline identify Lua-linked properties and tracks. Their controls use the

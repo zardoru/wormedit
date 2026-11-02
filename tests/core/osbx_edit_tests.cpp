@@ -9,9 +9,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <limits>
+#include <catch2/catch_approx.hpp>
 #include <source_location>
 
 using namespace wormedit;
+
 namespace {
 // Keep Catch's assertion branching at one test boundary, retaining each
 // caller's location in failures (the existing OSBX link tests use this pattern).
@@ -1418,4 +1420,46 @@ TEST_CASE("OSBX subtree clone refreshes every temporal program and nested key id
     require_edit(result);
     require_edit(validate_osbx_document(*history.document.storyboards[0].osbx).value);
     check_edit(history.document.storyboards[0].osbx->nodes.size() == song.storyboards[0].osbx->nodes.size() + 1);
+}
+
+TEST_CASE("OSBX Bezier bake replaces its range as one undoable native-key edit", "[osbx-edit][storyboard-spline]") {
+    const auto curve = storyboard_spline_t{.begin_ms = 0, .end_ms = 1000,
+        .points = {{{0,0}, {0,100}, {100,100}, {100,0}}}};
+    auto history = round_trip(osbx_bake_spline_t{
+        .track = {.node = "sprite", .kind = osbx_track_kind_t::transform, .op = "translate"}, .spline = curve});
+    const auto& keys = sprite(history).ops[1].track.keys;
+    require_edit(keys.size() > 2);
+    check_edit(keys.front().time_ms == 0 && keys.back().time_ms == 1000);
+    const auto parsed = parse_native_project(bytes(history.document)); require_edit(parsed.value);
+    check_edit(parsed.value->storyboards == history.document.storyboards);
+    const auto allocated = keys.front().id;
+    require_edit(undo_document_command(history));
+    require_edit(apply_osbx_edit(history, {.storyboard = storyboard, .change = osbx_bake_spline_t{
+        .track = {.node = "sprite", .kind = osbx_track_kind_t::transform, .op = "translate"}, .spline = curve}}).applied);
+    check_edit(sprite(history).ops[1].track.keys.front().id != allocated);
+}
+
+TEST_CASE("OSBX Bezier preserves outside keys and refuses linked program and unsupported tracks", "[osbx-edit][storyboard-spline]") {
+    auto history = document_history_t::from(edit_song());
+    auto& track = history.document.storyboards[0].osbx->nodes[1].ops[1].track;
+    track.keys = {{.id = "outside-left", .time_ms = -20, .value = {1,2}},
+        {.id = "replaced", .time_ms = 500, .value = {99,99}}, {.id = "outside-right", .time_ms = 2000, .value = {3,4}}};
+    const osbx_bake_spline_t bake{.track = {.node = "sprite", .kind = osbx_track_kind_t::transform, .op = "translate"},
+        .spline = {.points = {{{0,0}, {0,100}, {100,100}, {100,0}}}}};
+    require_edit(apply_osbx_edit(history, {.storyboard = storyboard, .change = bake}).applied);
+    const auto& keys = sprite(history).ops[1].track.keys;
+    check_edit(keys.front().id == "outside-left" && keys.back().id == "outside-right");
+    check_edit(std::ranges::find(keys, "replaced", &osbx_key_t<>::id) == keys.end());
+    auto rejected = document_history_t::from(edit_song());
+    rejected.document.storyboards[0].osbx->nodes[1].ops[1].track.lua = osbx_lua_track_link_t{.link = preview_link("curve-link")};
+    reject_edit(rejected, {.storyboard = storyboard, .change = bake});
+    rejected = document_history_t::from(edit_song());
+    rejected.document.storyboards[0].osbx->nodes[1].ops[1].track.program.push_back({.data = osbx_loop_t<>{
+        .id = "curve-program", .keys = {{.id = "program-start", .time_ms = 0, .value = {0,0}},
+            {.id = "program-end", .time_ms = 100, .value = {1,1}}}}});
+    reject_edit(rejected, {.storyboard = storyboard, .change = bake});
+    auto mismatch = bake; mismatch.spline.dimensions = 1;
+    reject_change(mismatch);
+    mismatch = bake; mismatch.track.op = "pivot";
+    reject_change(mismatch);
 }

@@ -157,7 +157,7 @@ struct lua_workflow_t {
     }
     auto form_action(std::string_view label = "Link to Lua…") -> storyboard_action_t {
         (void)click(label);
-        REQUIRE(storyboard_lua_editor_active());
+        REQUIRE(storyboard_inspector_form_active());
         const auto generation = begin_storyboard_lua_picker_for_testing(); REQUIRE(generation);
         complete_storyboard_lua_picker_for_testing(*generation, (directory->path() / "curve.lua").string());
         (void)harness.frame();
@@ -254,7 +254,7 @@ TEST_CASE("Storyboard Lua native picker result survives its modal focus loss but
     (void)fixture.harness.frame();
     focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
     (void)fixture.harness.frame(std::span{&focus, 1});
-    CHECK(storyboard_lua_editor_active() == !stale);
+    CHECK(storyboard_inspector_form_active() == !stale);
     CHECK(fixture.source_requests == 0);
     CHECK(fixture.history.undo.empty());
 }
@@ -272,7 +272,7 @@ TEST_CASE("Storyboard Lua form Escape and hidden-tab transitions cancel without 
         key.key.scancode = SDL_SCANCODE_ESCAPE; key.key.down = true;
         (void)fixture.harness.frame(std::span{&key, 1});
     }
-    CHECK_FALSE(storyboard_lua_editor_active());
+    CHECK_FALSE(storyboard_inspector_form_active());
     CHECK(fixture.source_requests == 0);
     CHECK(fixture.history.undo.empty());
 }

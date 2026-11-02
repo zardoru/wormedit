@@ -25,7 +25,7 @@ constexpr std::array edit_labels{
     "Add storyboard key", "Move storyboard key", "Set storyboard key value",
     "Set storyboard key easing", "Delete storyboard key", "Move storyboard keys",
     "Add storyboard image asset", "Remove storyboard image asset", "Set storyboard lifetime", "Convert OSB to OSBX",
-    "Duplicate storyboard subtree", "Move storyboard subtree", "Set storyboard order", "Delete storyboard keys", "Place storyboard image", "Set storyboard Lua track", "Set storyboard Lua children", "Detach storyboard from generator"};
+    "Duplicate storyboard subtree", "Move storyboard subtree", "Set storyboard order", "Delete storyboard keys", "Place storyboard image", "Set storyboard Lua track", "Set storyboard Lua children", "Detach storyboard from generator", "Bake storyboard Bezier"};
 static_assert(edit_labels.size() == std::variant_size_v<osbx_edit_change_t>);
 template<class Edit> auto edit_label() -> const char* {
     return edit_labels[osbx_edit_change_t{Edit{}}.index()];
@@ -399,6 +399,30 @@ class scene_edit_t {
             return {};
         } else return edit_key(*found, edit);
     }
+    auto operator()(const osbx_bake_spline_t& edit) -> std::string {
+        auto* owner = node(edit.track.node);
+        auto* op = owner ? transform(*owner, edit.track.op) : nullptr;
+        if (edit.track.kind != osbx_track_kind_t::transform || !op)
+            return "Bezier requires an existing transform";
+        const bool scalar = op->kind == osbx_transform_kind_t::rotate;
+        if ((!scalar && op->kind != osbx_transform_kind_t::translate && op->kind != osbx_transform_kind_t::scale) ||
+            edit.spline.dimensions != (scalar ? 1u : 2u)) return "Bezier requires translation, rotation or scale with matching dimensions";
+        if (op->track.lua || !op->track.program.empty()) return "Bake or unlink scripted/program tracks before adding a Bezier";
+        const auto baked = edit.spline.bake();
+        if (!baked) return baked.error().message;
+        const auto allocated = ids.next_batch(op->id, "key", scene, baked->size());
+        if (allocated.size() != baked->size()) return "Storyboard key IDs are exhausted";
+        std::erase_if(op->track.keys, [&](const auto& key) {
+            return key.time_ms >= edit.spline.begin_ms && key.time_ms <= edit.spline.end_ms;
+        });
+        for (std::size_t i = 0; i < baked->size(); ++i) {
+            const auto& key = (*baked)[i];
+            op->track.keys.push_back({.id = allocated[i], .time_ms = key.time_ms,
+                .value = std::vector<double>(key.value.begin(), key.value.begin() + edit.spline.dimensions)});
+        }
+        changed = true;
+        return {};
+    }
     template<class Edit> requires requires(const Edit& edit) { edit.track; }
     auto operator()(const Edit& edit) -> std::string {
         const auto target = track(edit.track);
@@ -715,6 +739,20 @@ auto osbx_edit_ids_t::next(std::string_view parent, std::string_view kind,
     if (maximum == std::numeric_limits<std::uint64_t>::max()) return {};
     return prefix + std::to_string(maximum + 1);
 }
+auto osbx_edit_ids_t::next_batch(std::string_view parent, std::string_view kind,
+    const osbx_document_t& scene, std::size_t count) const -> std::vector<std::string> {
+    if (!count || count > storyboard_spline_t::maximum_keys) return {};
+    const auto first = next(parent, kind, scene);
+    const auto separator = first.rfind('/');
+    std::uint64_t counter{};
+    if (separator == std::string::npos || !parse_integer(std::string_view{first}.substr(separator + 1), counter) ||
+        count - 1 > UINT64_MAX - counter) return {};
+    const auto prefix = first.substr(0, separator + 1);
+    std::vector<std::string> result;
+    result.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) result.push_back(prefix + std::to_string(counter + i));
+    return result;
+}
 
 auto osbx_edit_t::apply(document_command_transaction_t& transaction, const osbx_edit_ids_t& ids) const
     -> attempt_t<document_edit_effect_t> {
@@ -773,6 +811,7 @@ auto apply_osbx_edit_with_created_ids(document_history_t& history, const osbx_ed
         std::holds_alternative<osbx_duplicate_node_t>(edit.change) ||
         std::holds_alternative<osbx_add_op_t>(edit.change) ||
         std::holds_alternative<osbx_add_key_t>(edit.change) ||
+        std::holds_alternative<osbx_bake_spline_t>(edit.change) ||
         std::holds_alternative<osbx_add_image_t>(edit.change) ||
         std::holds_alternative<osbx_place_image_t>(edit.change) ||
         std::holds_alternative<osbx_set_lua_track_t>(edit.change) ||

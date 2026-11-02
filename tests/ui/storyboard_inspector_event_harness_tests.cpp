@@ -3,6 +3,7 @@
 #include "ui/frontend/storyboard.h"
 #include "sys/app/application_command_state.h"
 #include "sys/storyboard/storyboard_inspector_view.h"
+#include "ui/nuklear/storyboard/storyboard_panel.h"
 #include <wormedit/core/osbx_lua_link.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -55,7 +56,8 @@ auto inspector_runtime_song() -> song_document_t {
             .nodes = {{.id = "sprite", .order = 314}}}}}};
 }
 struct inspector_runtime_workflow_t {
-    nuklear_event_harness_t harness{1280, 900};
+    nuklear_event_harness_t harness;
+    explicit inspector_runtime_workflow_t(int height = 900, int width = 1280) : harness{width, height} {}
     document_history_t history{document_history_t::from(inspector_runtime_song())};
     workspace_controller_t workspace;
     sys::application_command_state_t application;
@@ -366,4 +368,88 @@ TEST_CASE("Storyboard inspector stale terminal apply clears its admitted gesture
     REQUIRE(flow.dispatch(terminal.get().storyboard));
     check_inspector_event(!flow.editor.is_pending() && flow.history.undo.size() == 1);
     check_inspector_event(flow.history.document.storyboards[0].osbx->nodes[0].order == 314);
+}
+
+namespace {
+auto spline_click(nuklear_event_harness_t& harness, std::string_view label) -> storyboard_action_t {
+    const auto [x,y] = find_text(harness, label);
+    for (const auto& frame : test::click_at(harness, x, y))
+        if (frame.get().storyboard.kind != storyboard_action_kind_t::none) return frame.get().storyboard;
+    return {};
+}
+void spline_point(nuklear_event_harness_t& harness, std::string_view label, std::size_t component, const char* value) {
+    const auto bounds = harness.drawn_text_bounds();
+    auto found = std::ranges::find(bounds, label, &testing_drawn_text_view_t::text);
+    REQUIRE(found != bounds.end()); REQUIRE(static_cast<std::size_t>(bounds.end() - found) > component + 1);
+    const auto field = *(found + static_cast<std::ptrdiff_t>(component) + 1);
+    (void)test::click_at(harness, field.x + 8, field.y + field.height * 0.5f);
+    const auto select = key_event(true, SDLK_A, SDL_SCANCODE_A);
+    (void)harness.frame(std::span{&select, 1}, test::primary_modifier);
+    const auto release = key_event(false, SDLK_A, SDL_SCANCODE_A); (void)harness.frame(std::span{&release, 1});
+    const auto text = text_event(value); (void)harness.frame(std::span{&text, 1});
+}
+}
+TEST_CASE("Storyboard Bezier inspector authors a curved path through one shared undoable transaction", "[frontend-state][event-harness][storyboard-spline]") {
+    inspector_runtime_workflow_t flow{1400};
+    auto& node = flow.history.document.storyboards[0].osbx->nodes[0];
+    node.ops = {{.id = "move", .track = {.default_value = {0,0}}}};
+    flow.initialize();
+    check_inspector_event(spline_click(flow.harness, "Bezier spline...").kind == storyboard_action_kind_t::none);
+    REQUIRE(storyboard_inspector_form_active()); (void)flow.harness.frame();
+    spline_point(flow.harness, "Handle 1", 1, "100");
+    spline_point(flow.harness, "Handle 2", 0, "100");
+    spline_point(flow.harness, "Handle 2", 1, "100");
+    spline_point(flow.harness, "End", 0, "100");
+    const auto action = spline_click(flow.harness, "Bake linear keys");
+    REQUIRE(action.kind == storyboard_action_kind_t::inspector);
+    check_inspector_event(action.inspector.field == storyboard_inspector_field_t::bake_spline);
+    REQUIRE(flow.dispatch(action)); flow.project();
+    const auto& keys = flow.history.document.storyboards[0].osbx->nodes[0].ops[0].track.keys;
+    REQUIRE(keys.size() > 2); check_inspector_event(flow.history.undo.size() == 1);
+    const auto middle = std::ranges::find(keys, 500, &osbx_key_t<>::time_ms); REQUIRE(middle != keys.end());
+    check_inspector_event(middle->value == std::vector<double>{50,75});
+    check_inspector_event(static_cast<bool>(undo_document_command(flow.history))); check_inspector_event(flow.history.document.storyboards[0].osbx->nodes[0].ops[0].track.keys.empty());
+    check_inspector_event(static_cast<bool>(redo_document_command(flow.history))); check_inspector_event(flow.history.document.storyboards[0].osbx->nodes[0].ops[0].track.keys.size() > 2);
+}
+TEST_CASE("Storyboard Bezier form cancels and invalidates on selection or revision changes", "[frontend-state][event-harness][storyboard-spline]") {
+    const auto selection_changes = GENERATE(false, true);
+    inspector_runtime_workflow_t flow{1400};
+    flow.history.document.storyboards[0].osbx->nodes[0].ops = {{.id = "move", .track = {.default_value = {0,0}}}};
+    flow.initialize(); (void)spline_click(flow.harness, "Bezier spline..."); (void)flow.harness.frame();
+    REQUIRE(storyboard_inspector_form_active());
+    const auto escape = key_event(true, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE); (void)flow.harness.frame(std::span{&escape, 1});
+    check_inspector_event(!storyboard_inspector_form_active() && flow.history.undo.empty());
+    const auto release = key_event(false, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE); (void)flow.harness.frame(std::span{&release, 1});
+    (void)spline_click(flow.harness, "Bezier spline..."); (void)flow.harness.frame(); REQUIRE(storyboard_inspector_form_active());
+    if (selection_changes) {
+        auto action = storyboard_action_t::from(flow.harness.view().storyboard, storyboard_action_kind_t::select_nodes, storyboard_id_t{11});
+        REQUIRE(flow.dispatch(action));
+    } else ++flow.history.document.revision;
+    flow.project();
+    check_inspector_event(!storyboard_inspector_form_active() && flow.history.undo.empty());
+}
+
+TEST_CASE("Storyboard Bezier inspector supports scalar rotation and vector scale controls", "[frontend-state][event-harness][storyboard-spline]") {
+    const auto kind = GENERATE(osbx_transform_kind_t::rotate, osbx_transform_kind_t::scale);
+    inspector_runtime_workflow_t flow{1400};
+    const auto value = kind == osbx_transform_kind_t::rotate ? std::vector<double>{360} : std::vector<double>{2,3};
+    flow.history.document.storyboards[0].osbx->nodes[0].ops = {{.id = "curve", .kind = kind, .track = {.default_value = value}}};
+    flow.initialize(); (void)spline_click(flow.harness, "Bezier spline..."); (void)flow.harness.frame();
+    REQUIRE(storyboard_inspector_form_active());
+    const auto action = spline_click(flow.harness, "Bake linear keys"); REQUIRE(flow.dispatch(action));
+    const auto& keys = flow.history.document.storyboards[0].osbx->nodes[0].ops[0].track.keys;
+    REQUIRE(keys.size() == 2); check_inspector_event(keys.back().value == value && flow.history.undo.size() == 1);
+}
+
+TEST_CASE("Storyboard Bezier inspector remains reachable at both 720px window widths", "[frontend-state][event-harness][storyboard-spline]") {
+    const auto width = GENERATE(800, 1280);
+    inspector_runtime_workflow_t flow{720, width};
+    flow.history.document.storyboards[0].osbx->nodes[0].ops = {{.id = "move", .track = {.default_value = {0,0}}}};
+    flow.initialize();
+    REQUIRE(test::scroll_to_text(flow.harness, "Bezier spline...", static_cast<float>(width - 100), 350, -1, 40));
+    (void)spline_click(flow.harness, "Bezier spline..."); (void)flow.harness.frame();
+    REQUIRE(storyboard_inspector_form_active());
+    const auto action = spline_click(flow.harness, "Bake linear keys");
+    REQUIRE(action.kind == storyboard_action_kind_t::inspector);
+    check_inspector_event(flow.dispatch(action)); check_inspector_event(flow.history.undo.size() == 1);
 }

@@ -8,6 +8,8 @@
 #include <iterator>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/core/osbx_evaluator.h>
+#include <catch2/catch_approx.hpp>
 using namespace wormedit;
 using namespace wormedit::scripting;
 
@@ -556,4 +558,76 @@ TEST_CASE("OSBX Lua rejects malformed media metadata without activating placehol
         "sample('s',{path='tone.wav',time_ms=1.5})", "sample('s',{path='tone.wav',time_ms=0,volume=0})"}) {
         CHECK_FALSE(run_osbx_lua(std::string{"storyboard('scene'); "} + declaration).ok());
     }
+}
+
+namespace {
+void check_baked_spline_track(const osbx_transform_op_t& op) {
+    CHECK_FALSE(op.track.lua); CHECK(op.track.program.empty());
+    for (const auto& key : op.track.keys) CHECK(std::holds_alternative<osbx_linear_easing_t>(key.easing));
+}
+void check_lua_spline_values(const osbx_document_t& scene) {
+    const auto& ops = scene.nodes[0].ops; REQUIRE(ops.size() == 3);
+    const auto at = sample_osbx_numeric_track(ops[0].track, storyboard_time_t{.milliseconds = 400});
+    REQUIRE(at.size() == 2); CHECK(at[0] == Catch::Approx(50)); CHECK(at[1] == Catch::Approx(75));
+    CHECK(ops[1].track.keys.back().value[0] == 360);
+    CHECK((ops[2].track.keys.back().value == std::vector<double>{3,3}));
+}
+}
+TEST_CASE("OSBX Lua Bezier authoring produces editable linear translation rotation and scale keys", "[lua][osbx][storyboard-spline]") {
+    const auto result = run_osbx_lua(R"lua(storyboard('curves'); group('g')
+transform.translate(keys.bezier{from=-100,to=900,points={{0,0},{0,100},{100,100},{100,0}},tolerance=0.5})
+transform.rotate(keys.bezier{from=0,to=1000,points={0,120,240,360},tolerance=0.1})
+transform.scale(keys.bezier{from=0,to=1000,points={{1,1},{2,0.5},{0.5,2},{3,3}},tolerance=0.001})
+)lua", "@curves.osbx.lua", {.maximum_result_bytes = 256U * 1024U});
+    const auto message = result.diagnostics.empty() ? std::string{} : result.diagnostics.front().message;
+    INFO(message);
+    REQUIRE(result.ok()); REQUIRE(result.value.nodes.size() == 1); check_lua_spline_values(result.value);
+    for (const auto& op : result.value.nodes[0].ops) check_baked_spline_track(op);
+}
+TEST_CASE("OSBX Lua Bezier rejects malformed or impossible curves without publishing a partial scene", "[lua][osbx][storyboard-spline]") {
+    const auto request = GENERATE(
+        "{from=0,to=1,points={{0,0},{0,100},{100,100},{100,0}}}",
+        "{from=0,to=1000,points={0,1,2},tolerance=0.1}",
+        "{from=0,to=1000,points={0,1,2,3},tolerance=0}",
+        "{from=1.5,to=1000,points={0,1,2,3}}",
+        "{from=0,to=1000,points={{0,0},{1},{2,2},{3,3}}}");
+    const auto source = std::string{"storyboard('s'); group('g'); pcall(function() transform.translate(keys.bezier"} + request + ") end)";
+    const auto result = run_osbx_lua(source, "@invalid-bezier.lua");
+    CHECK_FALSE(result.ok());
+}
+
+namespace {
+constexpr std::string_view native_bezier_adapter = R"lua(
+local _,_,bezier=...
+native_curve=bezier
+return function() return {} end
+)lua";
+}
+TEST_CASE("OSBX native Bezier charges scratch memory even inside pcall", "[lua][osbx][storyboard-spline]") {
+        auto sandbox = lua_sandbox_t::from({.maximum_memory_bytes = 64'000}); REQUIRE(sandbox);
+        const auto result = sandbox->evaluate_context(
+            "pcall(native_curve,0,1000,{0,0,0,100,100,100,100,0},2,0.5)", "memory", native_bezier_adapter);
+        REQUIRE_FALSE(result); CHECK(result.error().code == failure_code_t::out_of_memory);
+}
+TEST_CASE("OSBX native Bezier charges work even inside pcall", "[lua][osbx][storyboard-spline]") {
+        auto sandbox = lua_sandbox_t::from({.maximum_instructions = 100}); REQUIRE(sandbox);
+        const auto result = sandbox->evaluate_context(
+            "pcall(native_curve,0,2147483647,{0,0,0,100,100,100,100,0},2,0.000001)", "work", native_bezier_adapter);
+        REQUIRE_FALSE(result); CHECK(result.error().code == failure_code_t::capacity_exceeded);
+}
+
+TEST_CASE("OSBX Lua Bezier translation fits default budgets", "[lua][osbx][storyboard-spline]") {
+    const auto result = run_osbx_lua(R"lua(storyboard('path'); group('g')
+transform.translate(keys.bezier{from=0,to=1000,points={{0,0},{0,100},{100,100},{100,0}}})
+)lua", "@path.lua");
+    REQUIRE(result.ok()); REQUIRE(result.value.nodes.size() == 1);
+    REQUIRE(result.value.nodes[0].ops.size() == 1);
+    CHECK(result.value.nodes[0].ops[0].track.keys.size() > 2);
+}
+
+TEST_CASE("OSBX native Bezier cannot hide result exhaustion inside pcall", "[lua][osbx][storyboard-spline]") {
+    auto sandbox = lua_sandbox_t::from({.maximum_result_bytes = 128}); REQUIRE(sandbox);
+    const auto result = sandbox->evaluate_context(
+        "pcall(native_curve,0,1000,{0,0,0,100,100,100,100,0},2,0.5)", "result", native_bezier_adapter);
+    REQUIRE_FALSE(result); CHECK(result.error().code == failure_code_t::capacity_exceeded);
 }

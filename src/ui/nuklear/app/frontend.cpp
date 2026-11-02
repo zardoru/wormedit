@@ -667,7 +667,7 @@ static void reset_frontend_session() {
 
 void worm_ui_frontend_begin_project_session() {
     wormedit::ui::reset_storyboard_assets_tab();
-    wormedit::ui::reset_storyboard_lua_input();
+    wormedit::ui::reset_storyboard_inspector_form();
     worm_ui_nuklear_reset_image_picker();
     reset_compose_generator_form();
     worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit = false;
@@ -684,7 +684,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         return false;
     wormedit::ui::cancel_storyboard_panel_pointer();
     wormedit::ui::reset_storyboard_assets_tab();
-    wormedit::ui::reset_storyboard_lua_input();
+    wormedit::ui::reset_storyboard_inspector_form();
     worm_ui_nuklear_reset_image_picker();
     reset_frontend_session();
     reset_compose_area_menu();
@@ -778,7 +778,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 
 void worm_ui_frontend_shutdown(void) {
     wormedit::ui::reset_storyboard_assets_tab();
-    wormedit::ui::reset_storyboard_lua_input();
+    wormedit::ui::reset_storyboard_inspector_form();
     worm_ui_nuklear_reset_image_picker();
     wormedit::ui::cancel_storyboard_panel_pointer();
     reset_command_menu();
@@ -2752,7 +2752,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
         !options_owns_content_input(view) && !project_modal_active(view) &&
         !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
     if (!metadata_interactive) worm_ui_nuklear_cancel_metadata_tag_drag();
-    wormedit::ui::prepare_storyboard_lua_input(view.storyboard);
+    wormedit::ui::prepare_storyboard_inspector_form(view.storyboard);
     if (!is_storyboard_content_interactive(view))
         wormedit::ui::cancel_storyboard_panel_pointer();
     prepare_workspace_content_scroll(g_context, view.compose.visible || view.storyboard.visible);

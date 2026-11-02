@@ -1,5 +1,6 @@
 #include <wormedit/scripting/lua_sandbox.h>
 #include <wormedit/core/keyframe_simplify.h>
+#include <wormedit/core/storyboard_spline.h>
 
 extern "C" {
 #include <lauxlib.h>
@@ -42,6 +43,8 @@ struct lua_sandbox_t::implementation_t {
     std::optional<result_t<lua_project_file_t, error_t<failure_code_t>>> project_file;
     std::optional<simplify_result_t> simplified_keys;
     std::size_t simplify_reservation{};
+    std::optional<storyboard_spline_result_t> spline_keys;
+    std::size_t spline_reservation{};
     bool pure{};
     bool bounded_lookup{};
     std::string_view snapshot_name;
@@ -54,6 +57,7 @@ struct lua_sandbox_t::implementation_t {
     ~implementation_t() { close(); }
     void close() noexcept {
         release_simplify();
+        release_spline();
         if (state) lua_close(std::exchange(state, nullptr));
     }
     void record_failure(failure_code_t code, const char* message) noexcept {
@@ -503,6 +507,64 @@ struct lua_sandbox_t::implementation_t {
         self.release_simplify();
         return 1;
     }
+    void release_spline() noexcept {
+        spline_keys.reset();
+        usage.allocated_bytes -= std::exchange(spline_reservation, 0);
+    }
+    void bake_spline(const storyboard_spline_t& curve) noexcept {
+        // No Lua calls here: native RAII unwinds before any luaL_error longjmp.
+        try {
+            spline_keys = curve.bake([this] { return consume_instruction(); });
+            if (!*spline_keys) record_failure(spline_keys->error().code, "Bezier is invalid or exceeds time, key or numeric precision limits.");
+        } catch (...) {
+            record_failure(failure_code_t::out_of_memory, "Native Bezier allocation failed.");
+        }
+    }
+    static auto bezier_keys(lua_State* state) -> int {
+        auto& self = context(state);
+        if (self.spline_reservation || self.spline_keys) return luaL_error(state, "Native Bezier cannot reenter");
+        storyboard_spline_t curve;
+        curve.begin_ms = luaL_checkinteger(state, 1); curve.end_ms = luaL_checkinteger(state, 2);
+        luaL_checktype(state, 3, LUA_TTABLE);
+        const auto dimensions = luaL_checkinteger(state, 4);
+        if (dimensions < 1 || dimensions > 2 || lua_rawlen(state, 3) != static_cast<std::size_t>(4 * dimensions))
+            return luaL_error(state, "Bezier requires four scalar or vector2 points");
+        curve.dimensions = static_cast<std::size_t>(dimensions); curve.tolerance = luaL_checknumber(state, 5);
+        for (std::size_t i = 0; i < 4; ++i) {
+            for (std::size_t d = 0; d < curve.dimensions; ++d) {
+                lua_rawgeti(state, 3, static_cast<lua_Integer>(i * curve.dimensions + d + 1));
+                curve.points[i][d] = luaL_checknumber(state, -1); lua_pop(state, 1);
+            }
+        }
+        const auto reservation = storyboard_spline_t::maximum_keys * sizeof(storyboard_spline_key_t) + 8192;
+        if (reservation > self.limits.maximum_memory_bytes - self.usage.allocated_bytes) {
+            self.record_failure(failure_code_t::out_of_memory, "Native Bezier memory cap exceeded");
+            return luaL_error(state, "Native Bezier memory cap exceeded");
+        }
+        self.spline_reservation = reservation; self.usage.allocated_bytes += reservation;
+        self.usage.peak_bytes = std::max(self.usage.peak_bytes, self.usage.allocated_bytes);
+        self.bake_spline(curve);
+        if (self.abort_code) { self.release_spline(); return luaL_error(state, "%s", self.abort_message); }
+        return self.emit_spline(state, curve.dimensions);
+    }
+    auto emit_spline(lua_State* lua, std::size_t dimensions) -> int {
+        const auto count = spline_keys->value().size();
+        if (count * (dimensions + 1) > limits.maximum_result_bytes / sizeof(lua_Number)) {
+            record_failure(failure_code_t::capacity_exceeded, "Bezier result limit exceeded");
+            release_spline(); return luaL_error(lua, "Bezier result limit exceeded");
+        }
+        lua_createtable(lua, static_cast<int>(count * (dimensions + 1)), 0);
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!consume_instruction()) return luaL_error(lua, "%s", abort_message);
+            lua_pushinteger(lua, spline_keys->value()[i].time_ms);
+            lua_rawseti(lua, -2, static_cast<lua_Integer>(i * (dimensions + 1) + 1));
+            for (std::size_t d = 0; d < dimensions; ++d) {
+                lua_pushnumber(lua, spline_keys->value()[i].value[d]);
+                lua_rawseti(lua, -2, static_cast<lua_Integer>(i * (dimensions + 1) + d + 2));
+            }
+        }
+        release_spline(); return 1;
+    }
     static auto run(lua_State* state) -> int {
         auto& self = context(state);
         if (!self.trusted_adapter.empty()) {
@@ -510,7 +572,8 @@ struct lua_sandbox_t::implementation_t {
             if (self.load_status!=LUA_OK) return lua_error(state);
             lua_pushcfunction(state, declaration_location);
             lua_pushcfunction(state, simplify_keys);
-            lua_call(state,2,1);
+            lua_pushcfunction(state, bezier_keys);
+            lua_call(state,3,1);
             luaL_checktype(state,-1,LUA_TFUNCTION);
         }
         self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), self.chunk_name.empty() ? "sandbox" : self.chunk_name.c_str(), "t");

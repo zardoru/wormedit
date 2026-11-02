@@ -285,3 +285,22 @@ TEST_CASE("Storyboard inspector auto-key scrub stages insertion through the shar
     check_inspector(history.undo.empty());
     check_auto_key_commit_and_undo(history, state, *revised, before);
 }
+
+TEST_CASE("Storyboard inspector offers Bezier controls only on directly editable transform tracks", "[unit][sys][storyboard-inspector][storyboard-spline]") {
+    auto song = inspector_song(); auto view = inspector_frontend();
+    sys::build_storyboard_inspector_view(view, song, storyboard_time_t{.milliseconds = -5});
+    REQUIRE(view.inspector.ops.size() == 2);
+    REQUIRE(view.inspector.ops[0].spline); REQUIRE(view.inspector.ops[1].spline);
+    check_inspector(view.inspector.ops[0].spline->begin_ms == -5 && view.inspector.ops[0].spline->end_ms == 995);
+    check_inspector(view.inspector.ops[0].spline->dimensions == 2 && view.inspector.ops[1].spline->dimensions == 1);
+    const auto plan = sys::plan_storyboard_inspector_edit(song, storyboard_id_t{3},
+        {.field = ui::storyboard_inspector_field_t::bake_spline, .node = "sprite", .op = "translate",
+         .spline = *view.inspector.ops[0].spline});
+    REQUIRE(plan); check_inspector(std::holds_alternative<osbx_bake_spline_t>(*plan));
+    song.storyboards[0].osbx->nodes[0].ops[0].track.lua = osbx_lua_track_link_t{};
+    sys::build_storyboard_inspector_view(view, song, {});
+    check_inspector(!view.inspector.ops[0].spline);
+    song.storyboards[0].owning_generator_recipe = recipe_id_t{8};
+    sys::build_storyboard_inspector_view(view, song, {});
+    check_inspector(!view.inspector.ops[1].spline);
+}

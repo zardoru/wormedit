@@ -177,6 +177,7 @@ add_library(wormedit_core
     src/core/arena.cpp
     src/core/notifications.cpp
     src/core/keyframe_simplify.cpp
+    src/core/storyboard_spline.cpp
     src/core/osbx_export_metric.cpp
     src/core/osbx_osb_export.cpp
     src/core/osbx_evaluator.cpp

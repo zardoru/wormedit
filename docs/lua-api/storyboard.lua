@@ -174,6 +174,23 @@
 -- Times are signed integer milliseconds; IDs must be unique across the document.
 -- @function key
 
+--- Bake a spatial cubic Bézier into ordinary editable linear keys.
+-- Four control points describe start, handle 1, handle 2 and end. Use vector2
+-- points for translation or scale, scalar points for continuous rotation in
+-- degrees. Parameter progress is uniform in time; this is separate from key easing.
+-- Positive finite `tolerance` (default 0.5) bounds Euclidean error in authored
+-- value units over each entire linear segment, not just sampled midpoints.
+-- Choose a smaller factor tolerance for scale, for example 0.001. Rotation never
+-- wraps. Times are ordered signed integer milliseconds, at most 2147483647 ms
+-- apart. Refuses more than 4096 keys, accuracy impossible at integer times, or
+-- tolerance below the supported binary64 precision of the control values.
+-- Native scratch memory, output, work and cancellation share sandbox budgets.
+-- No spline metadata is saved: timeline keys can be edited normally. OSB export
+-- still applies its independent screen-space, rounding and density checks.
+-- @param options `{from=0,to=1000,points={{0,0},{0,100},{100,100},{100,0}},tolerance=0.5}`.
+-- @return An ordered array for `transform.translate`, `transform.rotate` or `transform.scale`.
+-- @function keys.bezier
+
 --- Remove redundant linear key descriptors with the shared native RDP simplifier.
 -- Preserves original descriptors, IDs and provenance in strictly increasing time
 -- order. `dims` is 1, 2 or 3 (default 1); tolerance is finite and nonnegative,

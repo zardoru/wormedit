@@ -4,6 +4,7 @@
 
 #include <wormedit/core/storyboard_vocabulary.h>
 #include <wormedit/core/visual_layout.h>
+#include <wormedit/core/storyboard_spline.h>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -30,6 +31,7 @@ struct storyboard_op_view_t {
     std::size_t depth{}, ordinal{};
     bool can_move_up{}, can_move_down{};
     storyboard_numeric_track_view_t track;
+    std::optional<storyboard_spline_t> spline;
     auto operator==(const storyboard_op_view_t&) const -> bool = default;
 };
 struct storyboard_transform_choice_t {
@@ -65,7 +67,7 @@ struct storyboard_inspector_view_t {
 
 enum class storyboard_inspector_field_t {
     none, id, image, origin, layer, order, blend, transform, opacity, color,
-    lifetime, add_op, remove_op, move_op, convert
+    lifetime, add_op, remove_op, move_op, convert, bake_spline
 };
 // Typed field commits are direct edits; label scrubs use the shared gesture path.
 enum class storyboard_inspector_phase_t { focus, commit, begin, revise, apply, cancel };
@@ -83,6 +85,7 @@ struct storyboard_inspector_action_t {
     int order{}, move{};
     std::optional<osbx_lifetime_t> lifetime;
     bool has_valid_value{true}; // Text parsing failed: reject through the shared outcome/feedback path.
+    storyboard_spline_t spline;
     auto operator==(const storyboard_inspector_action_t&) const -> bool = default;
 };
 

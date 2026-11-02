@@ -292,6 +292,8 @@ auto storyboard_runtime_t::apply_inspector(const ui::storyboard_action_t& action
         else if (action.inspector.field == ui::storyboard_inspector_field_t::remove_op) {
             state_.selection.op.reset(); state_.selection.keys.clear();
         }
+        else if (action.inspector.field == ui::storyboard_inspector_field_t::bake_spline)
+            state_.selection.keys.clear();
     }
     return compose_action_outcome_t::from(std::move(result.command),
         {.success = "Storyboard property changed.", .unchanged = "Storyboard was unchanged.",

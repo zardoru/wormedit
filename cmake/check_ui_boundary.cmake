@@ -62,6 +62,9 @@ set(shared_frontend_headers
     wormedit/core/resource_vocabulary.h
     wormedit/core/shortcut_vocabulary.h
     wormedit/core/storyboard_gizmo.h
+    # Pure geometric control values and a file-free bounded bake query; no model,
+    # history, application services or backend ownership crosses this seam.
+    wormedit/core/storyboard_spline.h
     wormedit/core/storyboard_vocabulary.h
     wormedit/core/timing_edit_policy.h
     wormedit/core/timing_links_types.h

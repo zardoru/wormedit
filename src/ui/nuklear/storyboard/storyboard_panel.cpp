@@ -275,7 +275,7 @@ void render_storyboard_panel(nk_context* context, const storyboard_view_t& view,
     if (!input_available) nk_widget_disable_begin(context);
     render_picker(context, view, action, input_available);
     if (!input_available) nk_widget_disable_end(context);
-    render_storyboard_scenario(context, view, action, input_available && !storyboard_lua_editor_active());
+    render_storyboard_scenario(context, view, action, input_available && !storyboard_inspector_form_active());
     if (const auto* selected = view.selected(); selected && !selected->is_editable()) {
         nk_layout_row_dynamic(context, 24, 1);
         nk_label(context, selected->generator_owned ? "Generated storyboard — detach before editing."
@@ -287,7 +287,7 @@ void render_storyboard_panel(nk_context* context, const storyboard_view_t& view,
         action = storyboard_action_t::from(view, storyboard_action_kind_t::transport, view.state.selection.storyboard);
         action.transport = transport;
     }
-    render_body(context, view, action, input_available && !storyboard_lua_editor_active(), renderer);
-    if (input_available) render_storyboard_lua_editor(context, view, action);
+    render_body(context, view, action, input_available && !storyboard_inspector_form_active(), renderer);
+    if (input_available) render_storyboard_inspector_form(context, view, action);
 }
 } // namespace wormedit::ui

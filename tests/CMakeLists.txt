@@ -25,6 +25,7 @@ endif()
 
 add_executable(wormedit_core_tests
     core/keyframe_simplify_tests.cpp
+    core/storyboard_spline_tests.cpp
     core/osbx_export_metric_tests.cpp
     core/async_job_tests.cpp
     core/lane_occupancy_tests.cpp

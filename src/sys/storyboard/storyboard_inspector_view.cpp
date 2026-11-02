@@ -55,6 +55,18 @@ void build_numeric_track_view(ui::storyboard_numeric_track_view_t& view, const o
     view.editable = editable && direct && !view.value.empty();
     view.reason = direct ? "" : "Linked to Lua: bake or unlink to edit.";
 }
+auto build_spline_view(const osbx_transform_op_t& op, std::optional<std::int64_t> time, bool editable,
+    std::span<const double> value)
+    -> std::optional<storyboard_spline_t> {
+    const bool rotation = op.kind == osbx_transform_kind_t::rotate;
+    if ((!rotation && op.kind != osbx_transform_kind_t::translate && op.kind != osbx_transform_kind_t::scale) ||
+        !editable || !time || *time > INT64_MAX - 1000 || op.track.lua || !op.track.program.empty()) return {};
+    storyboard_spline_t curve{.begin_ms = *time, .end_ms = *time + 1000, .dimensions = rotation ? 1u : 2u,
+        .tolerance = rotation ? 0.1 : op.kind == osbx_transform_kind_t::scale ? 0.001 : 0.5};
+    if (value.size() != curve.dimensions) return {};
+    for (auto& point : curve.points) std::copy(value.begin(), value.end(), point.begin());
+    return curve;
+}
 void build_node_view(ui::storyboard_inspector_view_t& view, const storyboard_document_t& storyboard,
                      const osbx_node_t& node) {
     view.node = node.id;
@@ -86,6 +98,7 @@ void build_node_view(ui::storyboard_inspector_view_t& view, const storyboard_doc
             .depth = source.depth, .ordinal = source.index + 1,
             .can_move_up = source.index != 0, .can_move_down = source.index + 1 < source.count});
         build_numeric_track_view(row.track, op.track, view.time, view.editable);
+        row.spline = build_spline_view(op, view.key_time_ms, view.editable, row.track.value);
     }
 }
 void sample_prepared_values(ui::storyboard_inspector_view_t& view, const osbx_node_t& sampled) {
@@ -386,6 +399,9 @@ auto plan_storyboard_inspector_edit(const song_document_t& song, storyboard_id_t
     case field::add_op: return osbx_add_op_t{.node = node->id, .parent_op = action.parent_op, .kind = action.op_kind};
     case field::remove_op: return osbx_remove_op_t{.node = node->id, .op = action.op};
     case field::move_op: return plan_op_move(*node, action);
+    case field::bake_spline:
+        return osbx_bake_spline_t{.track = {.node = node->id, .kind = osbx_track_kind_t::transform, .op = action.op},
+            .spline = action.spline};
     case field::transform: case field::opacity: case field::color: case field::blend:
         return plan_numeric_edit(*node, action);
     case field::none: case field::convert: return std::unexpected(failure_code_t::invalid_request);

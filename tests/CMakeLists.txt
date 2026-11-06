@@ -750,6 +750,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp
         ui/project_chart_actions_event_harness_tests.cpp
+        ui/export_target_menu_event_harness_tests.cpp
         ui/audio_options_event_harness_tests.cpp
         ui/display_options_event_harness_tests.cpp
         ui/input_options_event_harness_tests.cpp

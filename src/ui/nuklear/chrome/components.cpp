@@ -36,7 +36,8 @@ auto hit_test(const nk_context* context, nk_widget_layout_states state, struct n
     if (context->active != context->current && !popup_panel(context)) return hit;
     const auto& input = context->input;
     hit.hovered = nk_input_is_mouse_hovering_rect(&input, area) &&
-                  nk_input_is_mouse_hovering_rect(&input, context->current->layout->clip);
+                  nk_input_is_mouse_hovering_rect(&input, context->current->layout->clip) &&
+                  !nuklear::tooltip::covered_by_popup(context);
     hit.tooltip_hovered = hit.hovered && nuklear::tooltip::hovered(context, area);
     if (!hit.hovered || !enabled || state == NK_WIDGET_DISABLED) return hit;
     hit.pressed = nk_input_is_mouse_down(&input, NK_BUTTON_LEFT) != 0;

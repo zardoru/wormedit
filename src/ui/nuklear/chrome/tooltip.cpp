@@ -155,8 +155,23 @@ void end(nk_context* context) {
     if (context) nk_tooltip_end(context);
 }
 
+auto open_popup(const nk_context* context) -> const struct nk_window* {
+    if (!context || !context->current) return nullptr;
+    const auto& popup = context->current->popup;
+    const bool open = popup.win && popup.win != context->current && popup.active &&
+                      popup.type != NK_PANEL_TOOLTIP;
+    return open ? popup.win : nullptr;
+}
+
+auto covered_by_popup(const nk_context* context) -> bool {
+    const auto* popup = open_popup(context);
+    return popup && nk_input_is_mouse_hovering_rect(&context->input, popup->bounds);
+}
+
 auto hovered(const nk_context* context, struct nk_rect bounds) -> bool {
     if (!context || !context->current) return false;
+    // A tooltip would take the window's only popup slot from the open menu every other frame.
+    if (open_popup(context)) return false;
     if (!nk_input_is_mouse_hovering_rect(&context->input, bounds)) return false;
     return topmost_window_at_pointer(context) == context->current;
 }

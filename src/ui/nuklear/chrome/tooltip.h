@@ -42,9 +42,16 @@ void end(nk_context* context);
 void text(nk_context* context, std::string_view value,
           float preferred_outer_width = 420.0F);
 
+// The menu or dialog popup open in the window being drawn, or null. Nuklear gives each window
+// one popup slot and keeps popups out of the window list, so the topmost-window test misses them.
+[[nodiscard]] auto open_popup(const nk_context* context) -> const struct nk_window*;
+// True when the pointer is over that popup. Widgets drawn before the popup in the same frame
+// would otherwise take the click meant for it.
+[[nodiscard]] auto covered_by_popup(const nk_context* context) -> bool;
+
 // True when the pointer is over `bounds` and the window being drawn is the topmost window under
 // the pointer. A window drawn over `bounds` (another dialog, a popup) hides the tooltip, while
-// the widget underneath keeps its own hover feedback.
+// the widget underneath keeps its own hover feedback. An open popup in the same window hides it.
 [[nodiscard]] auto hovered(const nk_context* context, struct nk_rect bounds) -> bool;
 
 } // namespace wormedit::ui::nuklear::tooltip

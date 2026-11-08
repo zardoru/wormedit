@@ -119,6 +119,18 @@ jobs:
         env:
           WORMEDIT_BUILD_JOBS: 4
         run: scripts/windows-ffmpeg.sh
+      # Debian's mingw-w64 keeps libwinpthread-1.dll outside the places the SDK script looks.
+      - name: Make sure the SDK carries libwinpthread
+        run: |
+          sdk=build/windows-ffmpeg/prefix
+          if [[ ! -f $sdk/bin/libwinpthread-1.dll ]]; then
+            dll=$(find /usr -name libwinpthread-1.dll -path '*x86_64-w64-mingw32*' | sort | head -1)
+            echo "libwinpthread-1.dll found at: ${dll:-nowhere}"
+            [[ -n $dll ]] || exit 1
+            cp "$dll" "$sdk/bin/"
+            header=$(find /usr -name pthread.h -path '*x86_64-w64-mingw32*' | head -1)
+            cp "$header" "$sdk/share/wormedit-ffmpeg/winpthreads-notices.h"
+          fi
       - name: Package
         env:
           WORMEDIT_BUILD_JOBS: 4

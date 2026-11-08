@@ -40,8 +40,16 @@ cp "$root/source/ffmpeg-$version/COPYING.LGPLv2.1" \
 # Windows threads. Keep that runtime and its copyright notices with the SDK.
 pthread_library=$("$WORMEDIT_WINDOWS_C_COMPILER" -print-file-name=libwinpthread.dll.a)
 pthread_root=$(realpath -m "$(dirname "$pthread_library")/..")
-if [[ -f "$pthread_root/bin/libwinpthread-1.dll" ]]; then
-    cp "$pthread_root/bin/libwinpthread-1.dll" "$root/prefix/bin/"
+# Most toolchains put the DLL in bin/; Debian's mingw-w64 puts it beside the import library.
+pthread_dll=
+for candidate in "$pthread_root/bin/libwinpthread-1.dll" "$pthread_root/lib/libwinpthread-1.dll"; do
+    if [[ -f $candidate ]]; then
+        pthread_dll=$candidate
+        break
+    fi
+done
+if [[ -n $pthread_dll ]]; then
+    cp "$pthread_dll" "$root/prefix/bin/"
     cp "$pthread_root/include/pthread.h" "$root/prefix/share/wormedit-ffmpeg/winpthreads-notices.h"
 fi
 echo "Windows FFmpeg SDK: $root/prefix"

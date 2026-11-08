@@ -23,6 +23,7 @@ docker build --platform linux/amd64 --tag wormedit-appimage:jammy --file packagi
 # Run as the caller so repeated builds and artifacts remain user-owned.
 docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
     --env HOME=/work --env WORMEDIT_BUILD_JOBS="$jobs" \
+    ${WORMEDIT_VERSION_SUFFIX+--env WORMEDIT_VERSION_SUFFIX="$WORMEDIT_VERSION_SUFFIX"} \
     --env WORMEDIT_BUILD_REVISION="$(git rev-parse HEAD)" \
     --mount "type=bind,src=$root,dst=/source,readonly" \
     --mount "type=bind,src=$work,dst=/work" \

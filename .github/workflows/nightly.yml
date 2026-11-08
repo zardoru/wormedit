@@ -90,12 +90,18 @@ jobs:
         run: >-
           apt-get update && apt-get install -y --no-install-recommends
           ca-certificates git gcc libc6-dev gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
-          binutils-mingw-w64-x86-64 mingw-w64-x86-64-dev cmake ninja-build zip pkg-config make curl
-          xz-utils tar zstd python3 ruby-asciidoctor
+          binutils-mingw-w64-x86-64 mingw-w64-x86-64-dev ninja-build zip pkg-config make curl
+          xz-utils tar zstd python3 python3-venv ruby-asciidoctor
       - uses: actions/checkout@v4
         with:
           ref: main
           submodules: true
+      # libotoworm needs CMake 4.2; Debian 13 ships 3.31. Same pin as the CI workflow.
+      - name: Install CMake 4.2
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install cmake==4.2.3
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
       - name: Use the posix thread model
         run: |
           for t in gcc g++; do

@@ -20,13 +20,18 @@ if [[ -f /work/build/CMakeCache.txt ]]; then
         fi
     done
 fi
+# Optional release suffix override (for example a nightly); unset keeps CMakeLists.txt's value.
+suffix_args=()
+if [[ -n ${WORMEDIT_VERSION_SUFFIX+x} ]]; then
+    suffix_args=("-DWORMEDIT_VERSION_SUFFIX=$WORMEDIT_VERSION_SUFFIX")
+fi
 # Use the shared warnings policy, including its non-fatal GCC optimizer diagnostics.
 cmake "${configure_mode[@]}" -S /source -B /work/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DWORMEDIT_WARNINGS_AS_ERRORS=ON \
     -DWORMEDIT_ENABLE_LUA=ON -DWORMEDIT_REQUIRE_FFMPEG=ON \
     -DWORMEDIT_FFMPEG_NOTICES_DIR=/opt/ffmpeg/share/wormedit-ffmpeg \
-    -DCMAKE_INSTALL_PREFIX=/usr
+    -DCMAKE_INSTALL_PREFIX=/usr "${suffix_args[@]}"
 cmake --build /work/build --parallel "$jobs"
 # Prefer T-761's public config.h; older builds generated only the frontend copy.
 config=/work/build/config.h

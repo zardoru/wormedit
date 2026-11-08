@@ -4,8 +4,8 @@
 
 ![Compose on a new BME project: timing lanes, eight playable lanes and the Sounds dock](docs/manual/images/compose-overview.png)
 
-> **Status: release candidate (1.0.0-rc2).** Wormedit is used to make real charts; 1.0.0 follows
-> once this candidate has been tried widely. See the [release notes](docs/release-notes/1.0.0-rc2.md)
+> **Status: release candidate (1.0.0-rc3).** Wormedit is used to make real charts; 1.0.0 follows
+> once this candidate has been tried widely. See the [release notes](docs/release-notes/1.0.0-rc3.md)
 > for downloads and known limitations. Storyboards and Quaver support are planned but not
 > shipped. Work is tracked as task cards in [`docs/chart-editor-plan/`](docs/chart-editor-plan.md).
 
@@ -86,7 +86,7 @@ explicit choice; `target_profile` controls the output profile separately.
 ## Getting wormedit
 
 Release candidates ship a Windows ZIP and a Linux AppImage; see the
-[release notes](docs/release-notes/1.0.0-rc2.md). macOS users build the app bundle with
+[release notes](docs/release-notes/1.0.0-rc3.md). macOS users build the app bundle with
 `scripts/macos-package.sh`. Wormedit is developed on Linux. Windows builds are cross-compiled
 with MinGW-w64 and packaged as a ZIP by `scripts/windows-cross-package.sh`; the AppImage is
 built by `scripts/linux-appimage.sh`. CI builds and tests the headless core on Linux (GCC and Clang)

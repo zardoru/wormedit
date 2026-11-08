@@ -1,7 +1,9 @@
 name: Nightly
 
 # Builds the Linux AppImage and the Windows zip from main and keeps them as workflow
-# artifacts. Nothing is published to Releases.
+# artifacts. A manual run with "release" ticked builds with the version in CMakeLists.txt
+# (for example 1.0.0-rc3) and attaches the packages to a DRAFT pre-release with the notes
+# from docs/release-notes. The draft creates its tag only when the owner publishes it.
 on:
   schedule:
     - cron: "0 6 * * *"
@@ -9,6 +11,10 @@ on:
     inputs:
       force:
         description: Build even if main has no commits in the last 24 hours
+        type: boolean
+        default: false
+      release:
+        description: Release build - use the CMakeLists.txt version and create a draft pre-release
         type: boolean
         default: false
 
@@ -34,9 +40,15 @@ jobs:
       - id: decide
         run: |
           sha=$(git rev-parse --short=8 HEAD)
-          echo "suffix=-nightly.$(date -u +%Y%m%d).$sha" >> "$GITHUB_OUTPUT"
+          if [[ '${{ inputs.release }}' == 'true' ]]; then
+            suffix=$(sed -n 's/^set(WORMEDIT_VERSION_SUFFIX "\([^"]*\)".*/\1/p' CMakeLists.txt)
+            [[ -n $suffix ]] || { echo 'CMakeLists.txt has no release suffix' >&2; exit 1; }
+          else
+            suffix="-nightly.$(date -u +%Y%m%d).$sha"
+          fi
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
           recent=$(git log --since='24 hours ago' --format=%H -1)
-          if [[ -n $recent || '${{ inputs.force }}' == 'true' ]]; then
+          if [[ -n $recent || '${{ inputs.force }}' == 'true' || '${{ inputs.release }}' == 'true' ]]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"
@@ -106,3 +118,30 @@ jobs:
           path: dist/*
           retention-days: 14
           if-no-files-found: error
+
+  draft-release:
+    name: draft pre-release
+    needs: [check, linux-appimage, windows-zip]
+    if: inputs.release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ needs.check.outputs.suffix }}
+        run: |
+          version="1.0.0${SUFFIX}"
+          notes="docs/release-notes/${version}.md"
+          [[ -f $notes ]] || { echo "Missing $notes" >&2; exit 1; }
+          gh release create "v${version}" dist/* \
+            --draft --prerelease --target "$(git rev-parse HEAD)" \
+            --title "Wormedit ${version}" --notes-file "$notes"

@@ -89,7 +89,7 @@ jobs:
       - name: Install tools
         run: >-
           apt-get update && apt-get install -y --no-install-recommends
-          ca-certificates git gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+          ca-certificates git gcc libc6-dev gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
           binutils-mingw-w64-x86-64 mingw-w64-x86-64-dev cmake ninja-build zip pkg-config make curl
           xz-utils tar zstd python3 ruby-asciidoctor
       - uses: actions/checkout@v4

@@ -81,21 +81,37 @@ jobs:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-24.04
+    # Ubuntu's mingw-w64 is GCC 13, whose libstdc++ has no std::bind_back. Debian 13 ships
+    # mingw-w64 GCC 14.
+    container: debian:trixie
+    # Job containers default to sh; the steps below use bash features.
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 120
     steps:
+      - name: Install tools
+        run: >-
+          apt-get update && apt-get install -y --no-install-recommends
+          ca-certificates git gcc libc6-dev gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+          binutils-mingw-w64-x86-64 mingw-w64-x86-64-dev ninja-build zip pkg-config make curl
+          xz-utils tar zstd python3 python3-venv asciidoctor
       - uses: actions/checkout@v4
         with:
           ref: main
           submodules: true
-      - name: Install tools
-        run: >-
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends
-          mingw-w64 ninja-build zip pkg-config make curl xz-utils python3 ruby-asciidoctor
+      # libotoworm needs CMake 4.2; Debian 13 ships 3.31. Same pin as the CI workflow.
+      - name: Install CMake 4.2
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install cmake==4.2.3
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
       - name: Use the posix thread model
         run: |
           for t in gcc g++; do
-            sudo update-alternatives --set x86_64-w64-mingw32-$t /usr/bin/x86_64-w64-mingw32-$t-posix
+            update-alternatives --set x86_64-w64-mingw32-$t /usr/bin/x86_64-w64-mingw32-$t-posix
           done
+          x86_64-w64-mingw32-g++ --version | head -1
       # The pinned FFmpeg and LAME SDK only changes with these scripts.
       - uses: actions/cache@v4
         id: sdk
@@ -111,7 +127,24 @@ jobs:
         env:
           WORMEDIT_BUILD_JOBS: 4
           CMAKE_ARGS: -DWORMEDIT_VERSION_SUFFIX=${{ needs.check.outputs.suffix }}
-        run: scripts/windows-cross-package.sh dist
+        run: |
+          # Debian's mingw-w64 keeps libwinpthread-1.dll beside its import library, outside
+          # the places windows-ffmpeg.sh looks, so make sure the SDK carries it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sdk=build/windows-ffmpeg/prefix
+          dll=/usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll
+          if [[ ! -f $sdk/bin/libwinpthread-1.dll ]]; then
+            cp -v "$dll" "$sdk/bin/"
+            cp -v /usr/x86_64-w64-mingw32/include/pthread.h "$sdk/share/wormedit-ffmpeg/winpthreads-notices.h"
+          fi
+          ls -la "$sdk/bin" | grep -i pthread
+          scripts/windows-cross-package.sh dist || {
+            status=$?
+            echo '--- diagnostics ---'
+            ls -la "$sdk/bin"
+            ls -la build/windows-cross-stage/*/ | head -30
+            exit $status
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: wormedit-nightly-windows

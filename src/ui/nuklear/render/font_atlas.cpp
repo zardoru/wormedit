@@ -1,4 +1,5 @@
 #include "ui/nuklear/render/font_atlas.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -86,7 +87,7 @@ void editor_font_t::initialize(nk_context* context, const std::filesystem::path&
     } else {
         codepoints_.insert(replacement);
     }
-    handle_ = {.userdata = nk_handle_ptr(this), .height = 15.0f, .width = width, .query = query, .texture = {}};
+    handle_ = {.userdata = nk_handle_ptr(this), .height = ui::metrics::font_body, .width = width, .query = query, .texture = {}};
     rebuild(context);
 }
 
@@ -182,7 +183,7 @@ void editor_font_t::rebuild(nk_context* context) {
         nk_font_atlas_add_from_memory(atlas, fallback_data_.data(), fallback_data_.size(),
                                       raster_height, &config);
     }
-    const auto display_height = 28.0f * raster_scale_;
+    const auto display_height = ui::metrics::font_display * raster_scale_;
     auto display_config = nk_font_config(display_height);
     static constexpr nk_rune display_ranges[]{0x20, 0xff, 0x2014, 0x2014, 0};
     display_config.range = display_ranges;
@@ -190,7 +191,7 @@ void editor_font_t::rebuild(nk_context* context) {
     if (!display) display = nk_font_atlas_add_default(atlas, display_height, &display_config);
     nk_sdl_font_stash_end(context);
     display_handle_ = display->handle;
-    display_handle_.height = 28;
+    display_handle_.height = ui::metrics::font_display;
     glyphs_.clear();
     for (nk_rune index = 0; index < baked_->info.glyph_count; ++index)
         glyphs_.emplace(baked_->glyphs[index].codepoint, &baked_->glyphs[index]);

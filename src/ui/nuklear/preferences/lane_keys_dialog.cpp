@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include "ui/nuklear/chrome/ui_metrics.h"
 
 namespace wormedit::ui::nuklear {
 namespace {
@@ -97,7 +98,7 @@ void keyboard(nk_context* context, const lane_keys_view_t& view, lane_keys_actio
     }
 }
 void presets(nk_context* context, const lane_keys_view_t& view, lane_keys_action_t& action) {
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     nk_label(context, view.layout.c_str(), NK_TEXT_LEFT);
     constexpr std::array<std::pair<lane_key_preset_t, const char*>, 3> presets{{
         {lane_key_preset_t::wormedit, "Wormedit default"},
@@ -137,13 +138,13 @@ void body(nk_context* context, const lane_keys_view_t& view, lane_keys_action_t&
         ? "Press a key. Escape keeps the current key; Backspace unbinds the lane."
         : "Select a lane to bind it. Space, Tab, arrows and editing keys are reserved.",
         NK_TEXT_LEFT, view.capturing ? nk_rgb(244, 204, 75) : nk_rgb(186, 184, 176));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Keyboard · bound keys show their lane", NK_TEXT_LEFT);
     keyboard(context, view, action, compact ? 48.0f : 62.0f);
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label_colored(context, view.diagnostic.c_str(), NK_TEXT_LEFT,
                      view.can_apply ? nk_rgb(117, 209, 139) : nk_rgb(246, 161, 80));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Saved to your preferences · every chart with this layout uses these keys", NK_TEXT_LEFT);
 }
 }

@@ -26,7 +26,7 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
                         const wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t>& catalog) {
     const auto* label = catalog.label(static_cast<wormedit::sound_kind_t>(item.kind), "Sound");
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(130, 120))) return;
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     // Keep the import dialog's Keysound, Stem, Sample order; unspecified is not offered.
     constexpr wormedit::sound_kind_t order[]{wormedit::sound_kind_t::keysound,
         wormedit::sound_kind_t::stem, wormedit::sound_kind_t::sample};
@@ -208,7 +208,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
     if (state.groups.empty()) return;
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Groups", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, "Leave all ungrouped"))
         worm_ui_nuklear_sound_import_leave_all_ungrouped(state);
     nk_layout_row_dynamic(context, 138, 1);
@@ -250,7 +250,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         state.items, [](const auto& item) { return !item.group_index.has_value(); }));
     char ungrouped[80];
     std::snprintf(ungrouped, sizeof(ungrouped), "Ungrouped · %zu files", ungrouped_count);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, state.ungrouped_expanded ? "Hide ungrouped files" : ungrouped))
         worm_ui_nuklear_sound_import_set_ungrouped_expanded(state,
                                                             !state.ungrouped_expanded);

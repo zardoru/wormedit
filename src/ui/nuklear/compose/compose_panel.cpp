@@ -1360,7 +1360,7 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
     else
         nk_labelf(context, NK_TEXT_LEFT, "Measure M1-M%llu",
                   static_cast<unsigned long long>(view.compose_measure_count));
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     if (state.dialogs.go_to_measure_focus_pending) {
         nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
         state.dialogs.go_to_measure_focus_pending = false;

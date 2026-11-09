@@ -2064,7 +2064,7 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
                                   wormedit::ui::workspace_action_t* action) {
     int visible_tabs = 0;
     for (const auto& item : view->tabs) visible_tabs += !item.label.empty();
-    nk_layout_row_dynamic(g_context, 32, visible_tabs);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, visible_tabs);
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         const auto& item = view->tabs[tab];
         if (item.label.empty()) continue;
@@ -2258,7 +2258,7 @@ static void render_notification_landing_status(const wormedit::ui::workspace_vie
         ? view.status_text : view.notifications.current_text;
     nk_text_wrap(g_context, text.data(), static_cast<int>(text.size()));
     if (!notification_badge_visible(view.notifications)) return;
-    nk_layout_row_dynamic(g_context, 28, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
     render_notification_badge(view.notifications, action);
 }
 
@@ -2746,7 +2746,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
     } else if (view.compare.visible) {
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
-        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (view.summary_lines.size() == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
         for (size_t line = 0; line < view.summary_lines.size(); ++line) {
             if (!view.summary_lines[line].empty()) nk_label(g_context, view.summary_lines[line].c_str(), NK_TEXT_LEFT);
@@ -2960,7 +2960,7 @@ static void render_empty_project_content(const wormedit::ui::workspace_view_t& v
         nk_spacing(g_context, 1);
         nk_layout_row_dynamic(g_context, 48, 1);
         nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
-        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
         nk_label(g_context, "Create a project or open an existing chart to begin.", NK_TEXT_CENTERED);
         render_startup_buttons(action);
         nk_layout_row_dynamic(g_context, 36, 1);
@@ -3612,7 +3612,7 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
     if (!job.active) return;
     if (nk_begin(g_context, title, bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
-        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.data(), NK_TEXT_LEFT);
         auto completed = static_cast<nk_size>(job.completed);
         nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
@@ -3621,7 +3621,7 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
             nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu", job.completed, job.total);
         else
             nk_label(g_context, "Preparing…", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
         if (job.cancelling) nk_widget_disable_begin(g_context);
         if (nk_button_label(g_context, "Cancel")) cancel = true;
         if (job.cancelling) nk_widget_disable_end(g_context);

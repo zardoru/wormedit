@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "ui/nuklear/chrome/ui_metrics.h"
 
 namespace {
 
@@ -208,7 +209,7 @@ struct PreviewCanvas {
 void render_preview_skin_buttons(struct nk_context* context,
                                  const wormedit::ui::player_preview_view_t* view,
                                  wormedit::ui::workspace_action_t* action) {
-    nk_layout_row_dynamic(context, 24, 4);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 4);
     const struct {
         const char* label;
         wormedit::player_preview_skin_t skin;

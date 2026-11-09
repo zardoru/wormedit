@@ -229,12 +229,12 @@ void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::comp
     nk_label(context, "Rename layer", NK_TEXT_LEFT);
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
         state.layer_editor.semantic_layer_name.data(), static_cast<int>(state.layer_editor.semantic_layer_name.size()),
         nk_filter_default, state.layer_editor.semantic_layer_name_focus_pending);
     if (!allowed) nk_widget_disable_end(context);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto valid = state.layer_editor.semantic_layer_name[0] != '\0';
     if (!allowed || !valid) nk_widget_disable_begin(context);
     const auto apply = nk_button_label(context, "Apply");
@@ -257,7 +257,7 @@ void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::com
     nk_layout_row_dynamic(context, 110, 1);
     const auto value = nk_color_picker(context, state.layer_editor.semantic_layer_color, NK_RGBA);
     state.layer_editor.semantic_layer_color = {value.r, value.g, value.b, value.a};
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto apply = nk_button_label(context, "Apply");
     if (!allowed) nk_widget_disable_end(context);
     const auto cancel = nk_button_label(context, "Cancel");

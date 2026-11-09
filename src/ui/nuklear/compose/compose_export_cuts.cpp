@@ -86,7 +86,7 @@ void render_cut_rows(nk_context* context, const wormedit::ui::compose_view_t& vi
     for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view.export_cuts.size())); ++index) {
         const auto& cut = view.export_cuts[static_cast<std::size_t>(index)];
         nk_bool selected = cut.id == editor.selected;
-        nk_layout_row_dynamic(context, 24, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (nk_selectable_label(context, cut.label.empty() ? "Export cut" : cut.label.c_str(), NK_TEXT_LEFT, &selected))
             editor.select(cut);
     }

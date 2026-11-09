@@ -321,7 +321,7 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     nk_layout_row_dynamic(context, 38, 1);
     nk_label_wrap(context, "Remove this measure and its contents?");
     render_measure_removal_summary(inspector);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto blocked = view->measure_removal_blocked;
     if (blocked) nk_widget_disable_begin(context);
     const auto confirmed = nk_button_label(context, "Confirm removal");
@@ -384,7 +384,7 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
     const auto enabled = view->scene_available && view->selected_note_count != 0;
     if (!enabled) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
-        nk_layout_row_dynamic(context, 24, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (!nk_button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
@@ -661,7 +661,7 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
 void render_quantize_custom_popup(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
-    nk_layout_row_dynamic(c, 24, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     nk_label(c, "Grid divisions", NK_TEXT_LEFT);
     nk_layout_row_dynamic(c, 25, 1);
     const auto edit = wormedit::ui::chrome::worm_ui_nuklear_text_field(
@@ -688,7 +688,7 @@ void render_quantize_custom_popup(const ComposeInspectorContext& i) {
 void render_quantize_name_popup(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
-    nk_layout_row_dynamic(c, 24, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     nk_label(c, quantize_rename ? "Rename preset" : "Preset name", NK_TEXT_LEFT);
     nk_layout_row_dynamic(c, 25, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(c, NK_EDIT_FIELD, quantize_preset_name.data(),
@@ -931,7 +931,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Blocked: %zu issue(s), %zu colliding objects",
                   view->quantize_preview_blocked, view->quantize_preview_colliding_objects);
-        nk_layout_row_dynamic(context, 32, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label_wrap(context, view->quantize_preview_message.c_str());
     } else {
         nk_layout_row_dynamic(context, 18, 1);

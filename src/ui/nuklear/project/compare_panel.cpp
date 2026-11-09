@@ -44,7 +44,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     if (!context || !view || !action || !view->visible) return;
     render_diagnostics(context, *view, *action);
     if (!view->has_two_difficulties || !view->first_pane || !view->second_pane) {
-        nk_layout_row_dynamic(context, 24, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "Choose two difficulties to compare.", NK_TEXT_LEFT);
         return;
     }
@@ -52,7 +52,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     for (size_t index = 0; index < view->charts.size(); ++index)
         if (view->charts[index].id == view->second_chart_id) selected = static_cast<int>(index);
     if (!view->charts.empty()) {
-        nk_layout_row_dynamic(context, 28, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         const auto next = wormedit::ui::chrome::safe_combo(context,
             std::span<const wormedit::ui::compare_chart_view_t>{view->charts},
             selected, 24, nk_vec2(220, 300), &wormedit::ui::compare_chart_view_t::label);

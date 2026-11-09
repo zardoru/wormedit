@@ -58,7 +58,7 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "Pack BMSON channel",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) return;
     confirmation.visible = true;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label(context, "continuation points need a stem lane", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 66, 1);
     nk_label_wrap(context, "Packing requires converting every continuation point in this channel to a restart. This changes how the audio plays. Undo restores the channel and its stem lane.");

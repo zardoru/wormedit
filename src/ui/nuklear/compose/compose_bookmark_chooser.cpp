@@ -227,7 +227,7 @@ auto render_sort_controls(nk_context* context, const wormedit::ui::bookmark_choo
 
 auto render_search(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                    bookmark_chooser_state_t& state) -> bool {
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto previous_query = state.query;
     (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD,
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default,
@@ -361,7 +361,7 @@ void worm_ui_nuklear_render_bookmark_list(nk_context* context,
     const bool sort_current = render_sort_controls(context, view, state);
     if (search_current && sort_current) render_rows(context, view, *action, state);
     else {
-        nk_layout_row_dynamic(context, 24, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "Updating markers…", NK_TEXT_LEFT);
     }
 }

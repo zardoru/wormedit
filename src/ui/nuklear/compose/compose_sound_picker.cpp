@@ -30,7 +30,7 @@ void render_search(nk_context* context, sound_picker_state_t& state) {
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Go to sound", NK_TEXT_LEFT);
     const auto previous = state.query;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context,
         static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER, state.query.data(),
         static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);

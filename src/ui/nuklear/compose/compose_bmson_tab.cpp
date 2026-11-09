@@ -24,7 +24,7 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     auto* context = panel.context;
     const auto& view = *panel.view;
     auto* action = panel.action;
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!can_move) nk_widget_disable_begin(context);
     const auto move_clicked = nk_button_label(context, "Move BMSON BGM to cursor");
     const auto delete_clicked = nk_button_label(context, "Delete BMSON BGM");
@@ -39,7 +39,7 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
         }
     }
 
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!can_move) nk_widget_disable_begin(context);
     const auto assign_key_clicked = nk_button_label(context, "BGM to active key lane");
     if (!can_move) nk_widget_disable_end(context);
@@ -65,7 +65,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     nk_layout_row_dynamic(context, 12, 1);
     nk_rule_horizontal(context, wormedit::ui::theme::ui(
                                     wormedit::ui::theme::UiColor::border), false);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!can_move) nk_widget_disable_begin(context);
     const auto insert_continue = nk_button_label(context, "Insert continue at cursor");
     const auto insert_restart = nk_button_label(context, "Insert restart at cursor");
@@ -80,7 +80,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Staged BMSON markers: %zu",
               view.staged_bmson_marker_restarts.size());
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!can_move) nk_widget_disable_begin(context);
     const auto stage_continue = nk_button_label(context, "Stage continue");
     const auto stage_restart = nk_button_label(context, "Stage restart");
@@ -109,7 +109,7 @@ void render_bmson_razor_mode(const BmsonTab& panel, bool can_move) {
         state->bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
         nk_widget_disable_begin(context);
     }
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto continue_clicked = wormedit::ui::chrome::mode_button(
         context, "Razor continue", "Slice the selected BGM lane without restarting",
         state->bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
@@ -132,7 +132,7 @@ void render_staged_bmson_actions(const BmsonTab& panel) {
     auto* context = panel.context;
     auto* action = panel.action;
     const auto has_staged = view.staged_bmson_marker_restarts.size() != 0;
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!has_staged) nk_widget_disable_begin(context);
     const auto commit_clicked = nk_button_label(context, "Commit staged");
     const auto cancel_clicked = nk_button_label(context, "Cancel staged");
@@ -160,7 +160,7 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
                          view.selected_bmson_source_lane_id.value != 0;
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "BMSON slice", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!enabled) nk_widget_disable_begin(context);
     const auto restart_clicked = nk_button_label(context, "Restart");
     const auto continue_clicked = nk_button_label(context, "Continue");
@@ -183,7 +183,7 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
         return;
     inspector.state->sounds_dock.bmson_audition_index = std::clamp(inspector.state->sounds_dock.bmson_audition_index, 1,
                                             static_cast<int>(view->staged_bmson_marker_restarts.size()));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_property_int(context, "Region", 1, &inspector.state->sounds_dock.bmson_audition_index,
                     static_cast<int>(view->staged_bmson_marker_restarts.size()), 1, 1.0f);
     const auto selected_index = static_cast<std::size_t>(inspector.state->sounds_dock.bmson_audition_index - 1);
@@ -196,7 +196,7 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
                              0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (nk_button_label(context, "Assign key"))
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
                              0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,

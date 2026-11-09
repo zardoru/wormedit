@@ -366,7 +366,7 @@ void render_mode_row(const SoundsPanel& panel) {
     if (!panel.view->keysound_ids_available) return;
     auto& state = *panel.state;
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (sound_mode_button(context, "Automatic IDs", !state.keysound_filters.keysound_slots_mode)) {
         state.keysound_filters.keysound_slots_mode = false;
         state.keysound_catalog.keysound_selected_slot_explicit = false;
@@ -638,7 +638,7 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
                   slot_label.c_str());
     nk_layout_row_dynamic(context, 66, 1);
     nk_label_wrap(context, message);
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (nk_button_label(context, "Replace")) {
         raise_sound_slot_assignment(panel, state.keysound_slots.keysound_slot_confirmation_number,
                                     state.keysound_slots.keysound_slot_confirmation_path, true);
@@ -948,7 +948,7 @@ void render_use_filter(const SoundsPanel& panel) {
 }
 
 void render_group_filter(const SoundsPanel& panel) {
-    nk_layout_row_dynamic(panel.context, 24, 2);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 2);
     render_group_filter_choices(panel);
     render_layer_filter_choice(panel);
     clear_sound_filters(panel);
@@ -1018,7 +1018,7 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     nk_layout_row_dynamic(context, 66, 1);
     nk_label_wrap(context, "Some notes using these sounds have different layers. Keep their "
                            "layers, or replace them with the sounds' layers?");
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     if (nk_button_label(context, "Keep existing layers")) confirm_sound_layer(panel, false);
     if (nk_button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
     if (nk_button_label(context, "Cancel")) state.keysound_slots.sound_layer_confirmation_open = false;
@@ -1080,7 +1080,7 @@ void render_layer_section(const SoundsPanel& panel) {
             render_layer_row(panel, index);
         nk_group_end(context);
     }
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto can_clear = !panel.state->keysound_catalog.keysound_selection.selected.empty();
     if (!can_clear) nk_widget_disable_begin(context);
     const auto clear = nk_button_label(context, "Clear layers of selected sounds");
@@ -1533,7 +1533,7 @@ void render_sound_panel_controls(const SoundsPanel& panel) {
 
 // Sounds and BMSON tabs; the strip exists only on BMSON charts.
 static void render_sounds_dock_tabs(const SoundsPanel& panel) {
-    nk_layout_row_dynamic(panel.context, 24, 2);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 2);
     const auto sounds = wormedit::ui::chrome::mode_button(
         panel.context, "Sounds", "Sample list and sound tools", !panel.state->dock_layout.sounds_dock_bmson_tab);
     const auto bmson = wormedit::ui::chrome::mode_button(

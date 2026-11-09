@@ -64,7 +64,7 @@ void render_history_row(nk_context* context, const wormedit::ui::notification_hi
         static_cast<unsigned long long>(row.age_seconds), row.read ? "" : " · unread");
     nk_layout_row_dynamic(context, 70, 1);
     nk_text_wrap(context, row.message.data(), static_cast<int>(row.message.size()));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, state.expanded_id == row.id ? "Collapse details" : "Expand details"))
         state.expanded_id = state.expanded_id == row.id ? 0 : row.id;
     if (state.expanded_id == row.id) render_expanded_detail(context, row, state);
@@ -75,7 +75,7 @@ void render_history_row(nk_context* context, const wormedit::ui::notification_hi
 
 void render_history_body(nk_context* context, const wormedit::ui::notification_history_view_t& view,
                          notification_panel_state_t& state, wormedit::ui::notification_action_t& action) {
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     state.severity_filter = chrome::safe_combo(context, filter_names, 6,
         std::clamp(state.severity_filter, 0, 5), 24, nk_vec2(190, 170));
     if (nk_button_label(context, "Clear all"))

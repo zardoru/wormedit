@@ -16,7 +16,7 @@ void edit_player_field(nk_context* context, const wormedit::ui::options_view_t& 
     std::snprintf(text.data(), text.size(), "%.*s", static_cast<int>(value.size()), value.empty() ? "" : value.data());
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, label, NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         text.data(), text.size(), nk_filter_default);
     if (value == text.data() || action.kind != WORM_UI_OPTIONS_NONE) return;
@@ -27,14 +27,14 @@ void edit_player_field(nk_context* context, const wormedit::ui::options_view_t& 
 
 void worm_ui_nuklear_render_external_players_page(nk_context* context,
     const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     for (std::size_t index = 0; index < view->players.size(); ++index) {
         const auto name = view->players[index].name;
         if (nk_option_label(context, name.empty() ? "Unnamed player" : name.data(), index == view->selected_player) &&
             index != view->selected_player && action->kind == WORM_UI_OPTIONS_NONE)
             emit(*action, *view, WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED, static_cast<std::uint32_t>(index));
     }
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (nk_button_label(context, "Add") && action->kind == WORM_UI_OPTIONS_NONE)
         emit(*action, *view, WORM_UI_OPTIONS_FIELD_PLAYER_ADD, 0);
     const bool removable = view->players.size() > 1;

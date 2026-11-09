@@ -24,11 +24,9 @@ inline constexpr float gap_large = 16.0f;
 inline constexpr float menu_item_height = control_compact;
 inline constexpr float menu_separator_height = gap_medium;
 
-// Font sizes. The editor's font is rasterised once, so these name the sizes that cards
-// may request instead of scattering literals.
-inline constexpr float font_small = 12.0f;
-inline constexpr float font_body = 13.0f;
-inline constexpr float font_label = 15.0f;
+// Font sizes. The editor's font is rasterised once per size, so these name the sizes the
+// atlas bakes; font_atlas.cpp reads them instead of carrying literals.
+inline constexpr float font_body = 15.0f;
 inline constexpr float font_display = 28.0f;
 
 inline constexpr float checkbox_box = 16.0f;

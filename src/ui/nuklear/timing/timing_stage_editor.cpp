@@ -221,7 +221,7 @@ static void render_stage_title(const TimingStageEditor& editor) {
 }
 
 static void render_stage_kiai(TimingStageEditor& editor) {
-    nk_layout_row_dynamic(editor.context, 24, 1);
+    nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
     editor.changed |= nk_checkbox_label(editor.context, "Kiai enabled",
                                         &editor.toggle_primary) != 0;
 }
@@ -237,7 +237,7 @@ static void render_stage_anchor(TimingStageEditor& editor) {
     editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_numerator.data(), state.primary_numerator.size(), nk_filter_decimal) != 0;
     nk_layout_row_end(context);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     editor.changed |= nk_checkbox_label(context, "Lock anchor", &editor.toggle_primary) != 0;
 }
 
@@ -274,7 +274,7 @@ static void render_stage_bpm(TimingStageEditor& editor) {
     nk_label(context, view.stage_primary_decimal_exact ? "Decimal BPM (exact)"
                                                        : "Decimal BPM (approximate; fraction retained)",
              NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto decimal_changed = wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.bpm_decimal.data(), state.bpm_decimal.size(), nk_filter_float) != 0;
     nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
@@ -289,7 +289,7 @@ static void render_stage_bpm(TimingStageEditor& editor) {
     }
     editor.changed = editor.changed || editor.bpm_step != 0;
     nk_bool advanced = state.bpm_advanced_fraction ? 1 : 0;
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_checkbox_label(context, "Advanced exact fraction", &advanced) != 0)
         state.bpm_advanced_fraction = advanced != 0;
     render_bpm_fraction(editor);
@@ -345,7 +345,7 @@ static void render_stage_secondary(TimingStageEditor& editor) {
         nk_label(context, bool(view.stage_existing_object_id) ? "Length in exact chart rows"
                                                               : "Length in current grid steps",
                  NK_TEXT_LEFT);
-        nk_layout_row_dynamic(context, 28, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             state.secondary_numerator.data(), state.secondary_numerator.size(),
             nk_filter_decimal) != 0;
@@ -379,12 +379,12 @@ static void render_stage_anchoring(TimingStageEditor& editor) {
         view.stage_lane != timing_lane_kind_t::delay && view.stage_lane != timing_lane_kind_t::warp) return;
     auto settings = view.stage_anchoring;
     nk_bool keep_audio = settings.positions == wormedit::timing_position_policy_t::audio;
-    nk_layout_row_dynamic(editor.context, 24, 1);
+    nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
     bool changed = nk_checkbox_label(editor.context, "Keep audio time of notes", &keep_audio) != 0;
     settings.positions = keep_audio ? wormedit::timing_position_policy_t::audio : wormedit::timing_position_policy_t::musical;
     if (keep_audio) {
         nk_bool quantize = settings.allow_quantization;
-        nk_layout_row_dynamic(editor.context, 24, 1);
+        nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
         changed = (nk_checkbox_label(editor.context, "Allow quantization", &quantize) != 0) || changed;
         settings.allow_quantization = quantize != 0;
         nk_layout_row_dynamic(editor.context, 36, 1);
@@ -416,7 +416,7 @@ static void render_stage_actions(TimingStageEditor& editor) {
     bool remove = false;
     nk_layout_row_end(context);
     if (bool(view.stage_existing_object_id)) {
-        nk_layout_row_dynamic(context, 28, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         remove = nk_button_label(context, "Delete event");
     }
     if (action && action->timing_stage_action == wormedit::ui::timing_stage_action_t::none && editor.changed)

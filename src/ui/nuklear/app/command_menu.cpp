@@ -79,7 +79,7 @@ void activate_command(const wormedit::ui::workspace_view_t& view, std::size_t in
 }
 void render_query(nk_context* context) {
     const auto previous = state.query;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD,
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);
     if (previous != state.query) state.selected = 0;

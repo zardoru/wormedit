@@ -312,7 +312,7 @@ void render_slicer_controls(nk_context* context, const wormedit::ui::audio_slice
     nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.slicer_offset, sizeof(audio.slicer_offset), nk_filter_float);
     nk_layout_row_dynamic(context, 22, 1);
     nk_label_wrap(context, view.slicer.message.c_str());
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const bool enabled = view.slicer.can_slice && view.selected_resource_id.value != 0;
     if (!enabled) nk_widget_disable_begin(context);
     const auto clicked = nk_button_label(context, "Slice");
@@ -536,7 +536,7 @@ auto handle_sound_list_keys(nk_context* context, const wormedit::ui::audio_slice
 void render_sound_list_row(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
                            const wormedit::ui::sound_row_view_t& row, wormedit::ui::workspace_action_t& action) {
     nk_bool active = row.resource_id.value == audio.selected_resource_id ? nk_true : nk_false;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto bounds = nk_widget_bounds(context);
     char label[320]{};
     std::snprintf(label, sizeof(label), "%s%s  ·  %s", row.missing ? "! " : "",
@@ -585,7 +585,7 @@ void render_sound_list_column(struct nk_context* context, const wormedit::ui::au
     if (nk_list_view_begin(context, &list, "Sounds rows", 0, 28,
                             static_cast<int>(std::max<std::size_t>(1, rows.size())))) {
         if (rows.empty()) {
-            nk_layout_row_dynamic(context, 28, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
             nk_label(context, view.sound_rows.size() ? "No matches" : "No sounds yet", NK_TEXT_LEFT);
         } else {
             for (int index = list.begin; index < list.end && index < static_cast<int>(rows.size()); ++index)
@@ -766,18 +766,18 @@ void render_editable_sound_properties(nk_context* context, const wormedit::ui::a
         reset_sound_properties(view, sound);
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Name", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         audio.properties_name, sizeof(audio.properties_name), nk_filter_default);
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Kind", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     render_sound_kind_properties(context, view.sound_kinds);
     const bool changed = std::string_view{audio.properties_name} != (sound.name.c_str() ? sound.name.c_str() : "") ||
                          audio.properties_kind != static_cast<int>(sound.kind);
     const bool can_apply = changed && audio.properties_name[0] && view.usage_song_id.value &&
                            sound.resource_id.value && view.document_revision;
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (!can_apply) nk_widget_disable_begin(context);
     const auto apply = nk_button_label(context, "Apply");
     if (!can_apply) nk_widget_disable_end(context);
@@ -920,7 +920,7 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         audio.import_drop_width = overlap.w;
         audio.import_drop_height = overlap.h;
         audio.import_drop_valid = audio.import_drop_width > 0 && audio.import_drop_height > 0;
-        nk_layout_row_dynamic(context, 28, 2);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
         if (nk_button_label(context, "Add sounds…"))
             action->sound_import_pick_requested = true;
         nk_label(context, "Drop audio files anywhere here to import", NK_TEXT_RIGHT);

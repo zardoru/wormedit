@@ -385,7 +385,7 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bms_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bms_format_family));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "BMS fields", NK_TEXT_LEFT);
     if (!target) {
         muted_label(context, "BMS fields are unavailable while metadata rows are truncated.");
@@ -488,7 +488,7 @@ static void render_bmson_fields(struct nk_context* context, const wormedit::ui::
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bmson_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bmson_format_family));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "BMSON info", NK_TEXT_LEFT);
     if (!target) {
         muted_label(context, "BMSON fields are unavailable while metadata rows are truncated.");
@@ -654,7 +654,7 @@ static void render_typed_fields(const MetadataPanel& panel) {
     if (!metadata.has_chart) return;
     const auto schemas = generic_typed_schemas(static_cast<std::uint8_t>(metadata.selected_chart_source_family));
     if (schemas.empty()) return;
-    nk_layout_row_dynamic(panel.context, 24, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     nk_label(panel.context, "Typed fields", NK_TEXT_LEFT);
     for (size_t slot = 0; slot < schemas.size(); ++slot)
         render_typed_field(panel, slot, *schemas[slot]);

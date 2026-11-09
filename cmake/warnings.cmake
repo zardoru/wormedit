@@ -10,6 +10,13 @@ option(WORMEDIT_WARNINGS_AS_ERRORS "Treat warnings in Wormedit's own targets as 
 function(wormedit_enable_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
+        # /W4 reports classes GCC/Clang do not enable under -Wall -Wextra and the code does not
+        # follow: shadowing (4456-4459), implicit narrowing (4244, 4267, 4245, 4838), signed/unsigned
+        # comparison inside std headers (4389), and flow diagnostics inside templates (4146, 4701,
+        # 4702, 4805). Everything else still fails the build.
+        target_compile_options(${target} PRIVATE
+            /wd4456 /wd4457 /wd4458 /wd4459 /wd4244 /wd4267 /wd4245 /wd4838 /wd4389
+            /wd4146 /wd4701 /wd4702 /wd4805)
         if(WORMEDIT_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
         endif()

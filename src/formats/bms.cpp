@@ -6,6 +6,7 @@
 #include <wormedit/core/bms36.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
+#include "../core/wide_int.h"
 #include <wormedit/core/bms_profile_detection.h>
 #include <wormedit/core/numeric_text.h>
 #include <wormedit/formats/bms.h>
@@ -1919,7 +1920,7 @@ auto collect_resource_statement(active_statement_scan_context_t& context,
     return false;
 }
 
-__extension__ using wide_t = unsigned __int128;
+using wide_t = wide_int::wide_unsigned_t;
 
 // The fraction with the smallest denominator in the closed interval [low, high] (both positive,
 // low <= high), by continued fractions.

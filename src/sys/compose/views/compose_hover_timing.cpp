@@ -1,5 +1,7 @@
 #include "sys/compose/views/compose_hover_timing.h"
 
+#include "../../../core/wide_int.h"
+
 #include <cstdio>
 #include <limits>
 #include <numeric>
@@ -9,8 +11,8 @@
 namespace wormedit::sys {
 namespace {
 
-__extension__ using wide_unsigned_t = unsigned __int128;
-__extension__ using wide_signed_t = __int128;
+using wide_int::wide_signed_t;
+using wide_int::wide_unsigned_t;
 
 auto wide_magnitude(wide_signed_t value) -> wide_unsigned_t {
     return value < 0 ? static_cast<wide_unsigned_t>(-(value + 1)) + 1
@@ -114,7 +116,7 @@ auto format_compose_hover_timing(const chart_document_t& chart,
     wide_signed_t display_time_numerator{};
     const auto source_scaled = static_cast<wide_signed_t>(source_frame) * offset.denominator;
     const auto offset_scaled = static_cast<wide_signed_t>(offset.numerator) * sample_rate;
-    if (__builtin_sub_overflow(source_scaled, offset_scaled, &display_time_numerator))
+    if (wide_int::sub_overflow(source_scaled, offset_scaled, display_time_numerator))
         return false;
     const auto display_time_denominator =
         static_cast<wide_unsigned_t>(sample_rate) * offset.denominator;

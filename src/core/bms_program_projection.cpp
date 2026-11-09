@@ -470,7 +470,7 @@ struct content_position_t {
 };
 auto content_positions(const bms_content_item_t& item) -> std::vector<content_position_t> {
     return std::visit([](const auto& value) -> std::vector<content_position_t> {
-        if constexpr (requires { value.position; }) return {{.position = value.position}};
+        if constexpr (has_position_field<decltype(value)>) return {{.position = value.position}};
         else if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, bms_native_content_t>) {
             std::vector<content_position_t> result;
             for (std::size_t i = 0; i < value.positions().size(); ++i)

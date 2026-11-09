@@ -135,7 +135,16 @@ jobs:
         env:
           WORMEDIT_BUILD_JOBS: 4
           CMAKE_ARGS: -DWORMEDIT_VERSION_SUFFIX=${{ needs.check.outputs.suffix }}
-        run: scripts/windows-cross-package.sh dist
+        run: |
+          scripts/windows-cross-package.sh dist || {
+            status=$?
+            echo '--- diagnostics ---'
+            ls -la build/windows-ffmpeg/prefix/bin
+            find / -name 'libwinpthread*' -not -path '/proc/*' 2>/dev/null
+            grep -n 'FFMPEG_LIBRARY_DIRS' build/windows-cross-release/CMakeCache.txt || true
+            x86_64-w64-mingw32-objdump -p build/windows-cross-release/wormedit.exe | grep -i 'DLL Name'
+            exit $status
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: wormedit-nightly-windows

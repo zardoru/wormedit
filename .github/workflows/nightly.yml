@@ -84,6 +84,10 @@ jobs:
     # Ubuntu's mingw-w64 is GCC 13, whose libstdc++ has no std::bind_back. Debian 13 ships
     # mingw-w64 GCC 14.
     container: debian:trixie
+    # Job containers default to sh; the steps below use bash features.
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 120
     steps:
       - name: Install tools

@@ -130,6 +130,7 @@ jobs:
         run: |
           # Debian's mingw-w64 keeps libwinpthread-1.dll beside its import library, outside
           # the places windows-ffmpeg.sh looks, so make sure the SDK carries it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           sdk=build/windows-ffmpeg/prefix
           dll=/usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll
           if [[ ! -f $sdk/bin/libwinpthread-1.dll ]]; then

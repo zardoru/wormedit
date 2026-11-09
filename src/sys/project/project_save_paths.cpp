@@ -138,7 +138,8 @@ auto nonportable_project_asset_count(const song_document_t& document) -> std::si
     const auto external = [](const std::filesystem::path& path) {
         if (path.empty()) return false;
         const auto text = path.generic_string();
-        if (path.is_absolute() || (text.size() > 2 && text[1] == ':') || text.starts_with("\\")) return true;
+        if (path.is_absolute() || path.has_root_directory() || (text.size() > 2 && text[1] == ':') ||
+            text.starts_with("\\")) return true;
         const auto normalized = path.lexically_normal();
         return normalized.begin() != normalized.end() && *normalized.begin() == "..";
     };

@@ -295,6 +295,10 @@ namespace {
 auto is_output_group_path_valid(const std::filesystem::path& path) -> bool {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
         path != path.lexically_normal()) return false;
+    // A backslash is a separator to std::filesystem on Windows but a name byte elsewhere; the
+    // stored path uses '/' only, so reject it everywhere.
+    if (path.native().find(std::filesystem::path::value_type{'\\'}) != std::filesystem::path::string_type::npos)
+        return false;
     for (const auto& part : path) {
         const auto text = part.generic_string();
         if (text.empty() || text == "." || text == ".." ||

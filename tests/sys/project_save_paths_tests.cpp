@@ -282,7 +282,7 @@ TEST_CASE("project save retains external links and names missing or conflicting 
     require_save(saved.storage.value);
     require_save(saved.copy_errors.size() == 1);
     check_save(saved.copy_errors[0].code == (missing ? failure_code_t::unavailable : failure_code_t::conflict));
-    check_save(saved.status_message().find(fixture.music.string()) != std::string::npos);
+    check_save(saved.status_message().find(std::filesystem::weakly_canonical(fixture.music).string()) != std::string::npos);
     check_save(fixture.reopen().audio_assets.front().source_path == fixture.music);
     check_save(saved.relinks.empty());
 }
@@ -368,7 +368,7 @@ TEST_CASE("project save persists successful copies while keeping a failed asset 
     const auto reopened = fixture.reopen();
     check_save(reopened.audio_assets.front().source_path == "assets/music.ogg");
     check_save(reopened.visual_assets.front().source_path == missing);
-    check_save(saved.status_message().find(missing.string()) != std::string::npos);
+    check_save(saved.status_message().find(std::filesystem::weakly_canonical(missing).string()) != std::string::npos);
 }
 
 TEST_CASE("project Save As copies assets from the previous project into the new folder",

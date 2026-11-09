@@ -3863,9 +3863,12 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
         {.document = *document, .plan = plan, .asset_base = root}, {});
     INFO(exported.message);
     check_export_policy(exported.published);
-    std::ifstream input{root / group.relative_output_path, std::ios::binary};
-    const std::string written{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-    check_export_policy(written == bytes);
+    {
+        // Closed before remove_all below: Windows cannot delete an open file.
+        std::ifstream input{root / group.relative_output_path, std::ios::binary};
+        const std::string written{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+        check_export_policy(written == bytes);
+    }
     group.relative_output_path = "rejected/song.sm";
     policy.file_profile = stepmania_profile_t::sm;
     policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;

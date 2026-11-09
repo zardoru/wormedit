@@ -1154,7 +1154,18 @@ TEST_CASE("Audio availability requires a base for relative sources and accepts a
     temporary_project_directory_t directory;
     const auto absolute = directory.path / "present.wav";
     std::ofstream(absolute) << "corrupt but present";
-    const auto relative = std::filesystem::relative(absolute, std::filesystem::current_path());
+    // Relative to the working directory; on Windows the temporary directory can be on another
+    // drive, where no relative path exists, so the relative source gets its own file there.
+    auto relative = std::filesystem::relative(absolute, std::filesystem::current_path());
+    struct remove_on_exit_t {
+        std::filesystem::path path;
+        ~remove_on_exit_t() { std::error_code ignored; if (!path.empty()) std::filesystem::remove(path, ignored); }
+    } relative_copy;
+    if (relative.empty() || relative.is_absolute() || relative.has_root_name()) {
+        relative = "wormedit-relative-audio-test.wav";
+        std::ofstream(relative) << "corrupt but present";
+        relative_copy.path = relative;
+    }
     wormedit::song_document_t document;
     document.audio_assets = {{.id = wormedit::asset_id_t{1}, .source_path = relative},
                              {.id = wormedit::asset_id_t{2}, .source_path = absolute}};

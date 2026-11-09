@@ -4,6 +4,7 @@
 #include <wormedit/core/command.h>
 
 #include "timing_arithmetic.h"
+#include "wide_int.h"
 #include "wide_math.h"
 
 #include <algorithm>
@@ -3277,8 +3278,8 @@ auto timing_index_t::seconds_at_approx(std::uint64_t row, chart_end_policy_t pol
 }
 
 namespace {
-__extension__ using wide_unsigned_t = unsigned __int128;
-__extension__ using wide_signed_t = __int128;
+using wide_int::wide_signed_t;
+using wide_int::wide_unsigned_t;
 
 auto gcd_wide(wide_unsigned_t left, wide_unsigned_t right) -> wide_unsigned_t {
     while (right != 0) {
@@ -3313,7 +3314,7 @@ auto tail_delta(const timing_index_t& timing, signed_rational_t seconds)
     const auto seconds_scaled = static_cast<wide_signed_t>(seconds.numerator) * seconds_scale;
     const auto end_scaled = static_cast<wide_signed_t>(end.numerator) * end_scale;
     wide_signed_t difference{};
-    if (__builtin_sub_overflow(seconds_scaled, end_scaled, &difference) || difference <= 0)
+    if (wide_int::sub_overflow(seconds_scaled, end_scaled, difference) || difference <= 0)
         return std::nullopt;
     auto delta_denominator = multiply_wide(seconds.denominator, seconds_scale);
     if (!delta_denominator) return std::nullopt;

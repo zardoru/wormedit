@@ -99,7 +99,7 @@ auto read_bms_variant(const json& value) -> Variant {
         throw std::invalid_argument("Unknown scoped BMS payload tag.");
     } else {
         using type = std::variant_alternative_t<Index, Variant>;
-        if (value.at("type") == bms_codec_tag_t<type>::name) {
+        if (value.at("type") == std::string{bms_codec_tag_t<type>::name}) {
             if constexpr (std::same_as<type, bms_native_content_t>)
                 return read_bms_native_content(value.at("data"));
             else return value.at("data").get<type>();

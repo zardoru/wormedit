@@ -47,6 +47,10 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 include(cmake/dependencies/nlohmann_json.cmake)
+if(MSVC)
+  # Source files and literals are UTF-8; MSVC otherwise reads them in the ANSI code page.
+  add_compile_options(/utf-8)
+endif()
 include(cmake/warnings.cmake)
 
 option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)

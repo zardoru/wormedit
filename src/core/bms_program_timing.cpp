@@ -84,7 +84,7 @@ struct timing_program_builder_t {
     void remap_content(bms_content_value_t& value) {
         std::visit([&](auto& content) {
             using type = std::remove_cvref_t<decltype(content)>;
-            if constexpr (requires { content.position; }) map_position(content.position);
+            if constexpr (has_position_field<decltype(content)>) map_position(content.position);
             if constexpr (std::same_as<type, bms_native_content_t>) {
                 auto positions = std::vector<bms_program_position_t>(content.positions().begin(), content.positions().end());
                 for (auto& position : positions) map_position(position);

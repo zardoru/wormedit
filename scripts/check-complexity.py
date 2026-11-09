@@ -45,7 +45,7 @@ def read_baseline(path):
             raise ValueError(f"Invalid baseline row {path}:{number}")
         row = Finding(**data)
         relative = Path(row.file)
-        if (relative.is_absolute() or ".." in relative.parts or
+        if (relative.is_absolute() or row.file.startswith(("/", "\\")) or ".." in relative.parts or
                 not row.function or not row.name or type(row.score) is not int or
                 row.score <= THRESHOLD or row.key in findings):
             raise ValueError(f"Invalid or duplicate baseline row {path}:{number}")

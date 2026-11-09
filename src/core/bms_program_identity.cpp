@@ -46,7 +46,7 @@ struct program_identity_map_t {
         else valid = false;
     }
     template<class Value> void content(Value& value) {
-        if constexpr (requires { value.position; }) remap(value.position.measure);
+        if constexpr (has_position_field<Value>) remap(value.position.measure);
         if constexpr (requires { value.measure; }) remap(value.measure);
         if constexpr (requires { value.column; }) remap(value.column);
         if constexpr (requires { value.resource; }) remap(value.resource);

@@ -2,9 +2,18 @@
 
 #include <wormedit/core/document.h>
 #include <span>
+#include <type_traits>
 #include <variant>
 
 namespace wormedit {
+
+// True only for a `position` data member. bms_native_content_t has a position() member function,
+// and MSVC accepts the bare expression `value.position` for it inside a requires clause, so
+// `requires { value.position; }` is not a portable test for the data member.
+template<class T>
+concept has_position_field = requires {
+    requires std::is_member_object_pointer_v<decltype(&std::remove_cvref_t<T>::position)>;
+};
 
 struct bms_program_position_t {
     measure_id_t measure;

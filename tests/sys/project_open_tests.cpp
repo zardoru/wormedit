@@ -273,7 +273,10 @@ void check_bmson_resource_opening_error(std::string_view field) {
     chart.write(source.dump());
     const auto opened = wormedit::sys::open_project_file(chart.path);
     require_bmson_condition(!opened.is_success());
-    for (const auto& expected : {chart.path.generic_string(), resource, std::string{field},
+    // generic_string() is the ANSI code page on Windows; the error text is UTF-8.
+    const auto chart_u8 = chart.path.generic_u8string();
+    for (const auto& expected : {std::string{reinterpret_cast<const char*>(chart_u8.data()), chart_u8.size()},
+                                 resource, std::string{field},
                                  std::string{"resource path may not escape its asset directory"}})
         check_bmson_condition(opened.error.find(expected) != std::string::npos);
 }
@@ -1154,7 +1157,18 @@ TEST_CASE("Audio availability requires a base for relative sources and accepts a
     temporary_project_directory_t directory;
     const auto absolute = directory.path / "present.wav";
     std::ofstream(absolute) << "corrupt but present";
-    const auto relative = std::filesystem::relative(absolute, std::filesystem::current_path());
+    // Relative to the working directory; on Windows the temporary directory can be on another
+    // drive, where no relative path exists, so the relative source gets its own file there.
+    auto relative = std::filesystem::relative(absolute, std::filesystem::current_path());
+    struct remove_on_exit_t {
+        std::filesystem::path path;
+        ~remove_on_exit_t() { std::error_code ignored; if (!path.empty()) std::filesystem::remove(path, ignored); }
+    } relative_copy;
+    if (relative.empty() || relative.is_absolute() || relative.has_root_name()) {
+        relative = "wormedit-relative-audio-test.wav";
+        std::ofstream(relative) << "corrupt but present";
+        relative_copy.path = relative;
+    }
     wormedit::song_document_t document;
     document.audio_assets = {{.id = wormedit::asset_id_t{1}, .source_path = relative},
                              {.id = wormedit::asset_id_t{2}, .source_path = absolute}};

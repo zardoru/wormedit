@@ -273,7 +273,10 @@ void check_bmson_resource_opening_error(std::string_view field) {
     chart.write(source.dump());
     const auto opened = wormedit::sys::open_project_file(chart.path);
     require_bmson_condition(!opened.is_success());
-    for (const auto& expected : {chart.path.generic_string(), resource, std::string{field},
+    // generic_string() is the ANSI code page on Windows; the error text is UTF-8.
+    const auto chart_u8 = chart.path.generic_u8string();
+    for (const auto& expected : {std::string{reinterpret_cast<const char*>(chart_u8.data()), chart_u8.size()},
+                                 resource, std::string{field},
                                  std::string{"resource path may not escape its asset directory"}})
         check_bmson_condition(opened.error.find(expected) != std::string::npos);
 }

@@ -119,30 +119,25 @@ jobs:
         env:
           WORMEDIT_BUILD_JOBS: 4
         run: scripts/windows-ffmpeg.sh
-      # Debian's mingw-w64 keeps libwinpthread-1.dll outside the places the SDK script looks.
-      - name: Make sure the SDK carries libwinpthread
-        run: |
-          sdk=build/windows-ffmpeg/prefix
-          if [[ ! -f $sdk/bin/libwinpthread-1.dll ]]; then
-            dll=$(find /usr -name libwinpthread-1.dll -path '*x86_64-w64-mingw32*' | sort | head -1)
-            echo "libwinpthread-1.dll found at: ${dll:-nowhere}"
-            [[ -n $dll ]] || exit 1
-            cp "$dll" "$sdk/bin/"
-            header=$(find /usr -name pthread.h -path '*x86_64-w64-mingw32*' | head -1)
-            cp "$header" "$sdk/share/wormedit-ffmpeg/winpthreads-notices.h"
-          fi
       - name: Package
         env:
           WORMEDIT_BUILD_JOBS: 4
           CMAKE_ARGS: -DWORMEDIT_VERSION_SUFFIX=${{ needs.check.outputs.suffix }}
         run: |
+          # Debian's mingw-w64 keeps libwinpthread-1.dll beside its import library, outside
+          # the places windows-ffmpeg.sh looks, so make sure the SDK carries it.
+          sdk=build/windows-ffmpeg/prefix
+          dll=/usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll
+          if [[ ! -f $sdk/bin/libwinpthread-1.dll ]]; then
+            cp -v "$dll" "$sdk/bin/"
+            cp -v /usr/x86_64-w64-mingw32/include/pthread.h "$sdk/share/wormedit-ffmpeg/winpthreads-notices.h"
+          fi
+          ls -la "$sdk/bin" | grep -i pthread
           scripts/windows-cross-package.sh dist || {
             status=$?
             echo '--- diagnostics ---'
-            ls -la build/windows-ffmpeg/prefix/bin
-            find / -name 'libwinpthread*' -not -path '/proc/*' 2>/dev/null
-            grep -n 'FFMPEG_LIBRARY_DIRS' build/windows-cross-release/CMakeCache.txt || true
-            x86_64-w64-mingw32-objdump -p build/windows-cross-release/wormedit.exe | grep -i 'DLL Name'
+            ls -la "$sdk/bin"
+            ls -la build/windows-cross-stage/*/ | head -30
             exit $status
           }
       - uses: actions/upload-artifact@v4

@@ -1,6 +1,6 @@
 name: Nightly
 
-# Builds the Linux AppImage and the Windows zip from main and keeps them as workflow
+# Builds the Linux AppImage, the Windows zip and the unsigned macOS zips (arm64, Intel) from main and keeps them as workflow
 # artifacts. A manual run with "release" ticked builds with the version in CMakeLists.txt
 # (for example 1.0.0-rc3) and attaches the packages to a DRAFT pre-release with the notes
 # from docs/release-notes. The draft creates its tag only when the owner publishes it.
@@ -152,9 +152,48 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  macos-zip:
+    name: macos zip (${{ matrix.arch }})
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: macos-14
+          - arch: x86_64
+            os: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: true
+      - name: Install tools
+        run: brew install ninja pkgconf asciidoctor ffmpeg
+      # libotoworm needs CMake 4.2; pin it like the other jobs instead of trusting brew.
+      - name: Install CMake 4.2
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install cmake==4.2.3
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+      # Unsigned, ad-hoc signed build: Gatekeeper needs a right-click Open on first launch.
+      - name: Package
+        env:
+          WORMEDIT_BUILD_JOBS: 4
+        run: scripts/macos-package.sh dist -DWORMEDIT_VERSION_SUFFIX=${{ needs.check.outputs.suffix }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wormedit-nightly-macos-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 14
+          if-no-files-found: error
+
   draft-release:
     name: draft pre-release
-    needs: [check, linux-appimage, windows-zip]
+    needs: [check, linux-appimage, windows-zip, macos-zip]
     if: inputs.release
     runs-on: ubuntu-24.04
     permissions:

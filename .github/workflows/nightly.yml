@@ -163,7 +163,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            os: macos-14
+            os: macos-latest
           - arch: x86_64
             os: macos-15-intel
     steps:
@@ -171,6 +171,14 @@ jobs:
         with:
           ref: main
           submodules: true
+      # The default Xcode on some images has a libc++ without std::stop_token (the Intel
+      # image's Xcode 16.4 failed on it), so use the newest installed Xcode.
+      - name: Select the newest Xcode
+        run: |
+          ls -d /Applications/Xcode_*.app
+          newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
       - name: Install tools
         run: brew install ninja pkgconf asciidoctor ffmpeg
       # libotoworm needs CMake 4.2; pin it like the other jobs instead of trusting brew.

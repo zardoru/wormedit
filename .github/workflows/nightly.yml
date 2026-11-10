@@ -191,6 +191,9 @@ jobs:
       - name: Package
         env:
           WORMEDIT_BUILD_JOBS: 4
+          # libc++ in the macOS 26 SDK only offers floating-point std::from_chars from 26.0, and
+          # the Intel runner is macOS 15, so state the target instead of inheriting the host's.
+          WORMEDIT_MACOS_DEPLOYMENT_TARGET: "26.0"
         run: scripts/macos-package.sh dist -DWORMEDIT_VERSION_SUFFIX=${{ needs.check.outputs.suffix }}
       - uses: actions/upload-artifact@v4
         with:

@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/notification_toasts.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/render/theme.h"
 

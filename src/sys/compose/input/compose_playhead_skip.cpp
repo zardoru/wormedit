@@ -72,13 +72,7 @@ auto skip_origin_row(const application_command_state_t& application, chart_id_t 
     return *application.project.transport.preview_playhead_absolute_row;
 }
 
-} // namespace
-
-auto is_preview_playing(const application_command_state_t& application) -> bool {
-    return application.services.transport_preview_playing && application.services.transport_preview_playing();
-}
-
-auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
+auto playhead_skip_target_row_uncut(const measure_index_t& measures, double playhead_row,
                               playhead_skip_unit_t unit, double amount,
                               std::uint64_t divisions_per_measure, std::uint64_t snap_denominator)
     -> std::optional<std::uint64_t> {
@@ -117,9 +111,60 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
     return std::nullopt;
 }
 
+// The nearest visible row from `row` in the travel direction, else the other way.
+auto visible_row(const export_cut_axis_t& axis, std::uint64_t row, bool forward,
+                 const measure_index_t& measures) -> std::optional<std::uint64_t> {
+    const auto resolve = [&](std::uint64_t start, bool ahead) -> std::optional<std::uint64_t> {
+        auto candidate = start;
+        while (axis.contains_row(candidate)) {
+            const auto edge = ahead ? std::ceil(axis.next_kept_row(candidate))
+                                    : std::floor(axis.previous_kept_row(candidate));
+            if (edge < 0.0L || edge > static_cast<long double>(measures.total_rows - 1)) return std::nullopt;
+            const auto next = static_cast<std::uint64_t>(edge);
+            if (next == candidate) return std::nullopt;
+            candidate = next;
+        }
+        return candidate;
+    };
+    if (const auto found = resolve(row, forward)) return found;
+    return resolve(row, !forward);
+}
+
+} // namespace
+
+auto is_preview_playing(const application_command_state_t& application) -> bool {
+    return application.services.transport_preview_playing && application.services.transport_preview_playing();
+}
+
+auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
+                              playhead_skip_unit_t unit, double amount,
+                              std::uint64_t divisions_per_measure, std::uint64_t snap_denominator,
+                              const export_cut_axis_t* cut_axis) -> std::optional<std::uint64_t> {
+    if (!cut_axis || cut_axis->is_empty())
+        return playhead_skip_target_row_uncut(measures, playhead_row, unit, amount,
+                                              divisions_per_measure, snap_denominator);
+    if (!std::isfinite(amount) || !std::isfinite(playhead_row)) return std::nullopt;
+    const auto forward = amount > 0.0;
+    const auto stepped = unit == playhead_skip_unit_t::snap || unit == playhead_skip_unit_t::beat;
+    // Count only visible steps: resolve after every single step.
+    const auto steps = stepped ? std::max<long long>(1, std::llabs(std::llround(amount))) : 1;
+    const auto each = stepped ? (forward ? 1.0 : -1.0) : amount;
+    auto row = playhead_row;
+    for (long long step = 0; step < steps; ++step) {
+        auto target = playhead_skip_target_row_uncut(measures, row, unit, each,
+                                                     divisions_per_measure, snap_denominator);
+        if (!target) return std::nullopt;
+        target = visible_row(*cut_axis, *target, forward, measures);
+        if (!target) return std::nullopt;
+        row = static_cast<double>(*target);
+    }
+    return static_cast<std::uint64_t>(row);
+}
+
 auto skip_playing_playhead(const document_history_t& history,
                            application_command_state_t& application, const chart_document_t& chart,
-                           std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount)
+                           std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount,
+                           const export_cut_axis_t* cut_axis)
     -> compose_action_outcome_t {
     if (!application.project.transport.preview_playhead_absolute_row)
         return compose_action_outcome_t::from("The playhead row is not available yet.",
@@ -135,7 +180,7 @@ auto skip_playing_playhead(const document_history_t& history,
     const auto row = playhead_skip_target_row(measures,
                                               skip_origin_row(application, chart.id, forward),
                                               unit, amount, chart.divisions_per_standard_measure,
-                                              snap_denominator);
+                                              snap_denominator, cut_axis);
     const auto position = row ? (measures).position_at(*row) : std::nullopt;
     if (!position) {
         application.project.transport.last_playhead_skip.reset();

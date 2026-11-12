@@ -158,6 +158,7 @@ auto edit_editor(program_preferences_t& p, const wormedit::ui::options_action_t&
     case WORM_UI_OPTIONS_FIELD_LANE_LEGEND: p.editor.lane_key_legend_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK: p.editor.audition_on_click = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL: p.editor.invert_scroll_wheel = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_PLAYHEAD_STEP_FOLLOWS_SNAP: p.editor.playhead_step_follows_snap = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK: p.minimap.click_moves_paused_playhead = a.boolean; return true;
     default: return false;
     }
@@ -392,6 +393,7 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
         .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
         .audition_on_click = p.editor.audition_on_click,
         .invert_scroll_wheel = p.editor.invert_scroll_wheel,
+        .playhead_step_follows_snap = p.editor.playhead_step_follows_snap,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .snap_colored_grid = p.display.snap_colored_grid,

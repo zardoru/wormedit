@@ -95,10 +95,14 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                          action == editor_navigation_action_t::double_page_forward;
     const auto measures = navigation_measure_count(action);
     const auto paged = measures != 0;
+    // Single steps resolve by beat or by the active snap (a preference); pages stay measure-based.
+    const auto step_unit = application.preferences.editor_preferences.playhead_step_follows_snap
+        ? playhead_skip_unit_t::snap : playhead_skip_unit_t::beat;
     return skip_playing_playhead(history, application, *found, state.active_snap_denominator,
-                                 paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
+                                 paged ? playhead_skip_unit_t::page : step_unit,
                                  (forward ? 1.0 : -1.0) *
-                                     (paged ? static_cast<double>(measures) : 1.0));
+                                     (paged ? static_cast<double>(measures) : 1.0),
+                                 state.cut_axis.get());
 }
 
 } // namespace compose_navigation_input_detail

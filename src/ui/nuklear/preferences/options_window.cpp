@@ -72,6 +72,8 @@ void editor_page(nk_context* context, const wormedit::ui::options_view_t* view, 
     scroll_directions(context, *view, *action);
     edit_toggle(context, *view, *action, "Invert field scroll wheel",
         WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, view->invert_scroll_wheel);
+    edit_toggle(context, *view, *action, "Playing wheel steps by snap (off: by beat)",
+        WORM_UI_OPTIONS_FIELD_PLAYHEAD_STEP_FOLLOWS_SNAP, view->playhead_step_follows_snap);
     edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);
     edit_toggle(context, *view, *action, "Show note-kind palette", WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, view->note_kind_palette_visible);
     edit_toggle(context, *view, *action, "Show lane legend", WORM_UI_OPTIONS_FIELD_LANE_LEGEND, view->lane_key_legend_visible);

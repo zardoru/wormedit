@@ -79,6 +79,8 @@ struct editor_preferences_t {
     // Live playback monitoring only; offline audio export retains the authored mix.
     bool audition_on_playback{true};
     bool invert_scroll_wheel{};
+    // Playing-wheel skip resolution: false steps one beat, true steps one active-snap step.
+    bool playhead_step_follows_snap{};
     std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;
 };

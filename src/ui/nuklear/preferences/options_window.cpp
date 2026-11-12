@@ -19,6 +19,10 @@ constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_names
 // One setting: its label on the left and the control in a fixed-width column on the right, so
 // every control in a page lines up regardless of label length.
 constexpr float control_column = 240.0f;
+// Space between groups of related settings inside one page.
+void group_break(nk_context* context) {
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
+}
 void setting_row(nk_context* context) {
     nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     nk_layout_row_template_push_dynamic(context);
@@ -158,8 +162,11 @@ void audio_rate_controls(nk_context* context, const wormedit::ui::options_view_t
 }
 void audio_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     audio_output_controls(context, *view, *action);
+    group_break(context);
     audio_level_controls(context, *view, *action);
+    group_break(context);
     audio_rate_controls(context, *view, *action);
+    group_break(context);
     edit_integer(context, *view, *action, "Keysound memory (MiB)", WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY,
         view->keysound_budget_mib, 256, 8192);
     nk_layout_row_dynamic(context, 48, 1);
@@ -314,8 +321,10 @@ void interface_scale_picker(nk_context* context, const wormedit::ui::options_vie
 void appearance_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     interface_theme_picker(context, *view, *action);
     interface_scale_picker(context, *view, *action);
+    group_break(context);
     edit_toggle(context, *view, *action, "Frame timing overlay", WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY, view->frame_timing_overlay);
     edit_toggle(context, *view, *action, "Reduced motion", WORM_UI_OPTIONS_FIELD_REDUCED_MOTION, view->reduced_motion);
+    group_break(context);
     field_scheme_picker(context, view, action);
     layout_field_scheme_picker(context, *view, *action);
     const auto& schemes = wormedit::ui::theme::field_schemes();
@@ -323,8 +332,10 @@ void appearance_page(nk_context* context, const wormedit::ui::options_view_t* vi
         &wormedit::ui::theme::field_scheme_t::id);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Preview: %s", current != schemes.end() ? current->name.c_str() : "Wormedit");
+    group_break(context);
     scratch_position_picker(context, *view, *action, false);
     scratch_position_picker(context, *view, *action, true);
+    group_break(context);
     edit_toggle(context, *view, *action, "Snap-colored grid",
         WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, view->snap_colored_grid);
     grid_opacity_slider(context, *view, *action);

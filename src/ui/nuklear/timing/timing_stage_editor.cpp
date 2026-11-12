@@ -213,11 +213,17 @@ static auto timing_stage_primary_label(wormedit::timing_lane_kind_t lane) -> con
 
 static void render_stage_title(const TimingStageEditor& editor) {
     const auto& view = *editor.view;
-    nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
+    char title[64]{};
     if (bool(view.stage_existing_object_id))
-        nk_labelf(editor.context, NK_TEXT_LEFT, "Editing timing event #%llu",
-                  static_cast<unsigned long long>(view.stage_existing_object_id.value));
-    else nk_label(editor.context, "Staged timing event — confirm to write.", NK_TEXT_LEFT);
+        std::snprintf(title, sizeof(title), "Editing timing event #%llu",
+                      static_cast<unsigned long long>(view.stage_existing_object_id.value));
+    else std::snprintf(title, sizeof(title), "New timing event");
+    wormedit::ui::chrome::panel_header(editor.context, title);
+    if (!bool(view.stage_existing_object_id)) {
+        nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::row_text, 1);
+        wormedit::ui::chrome::caption(editor.context, "Confirm to write it to the chart.",
+            wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
+    }
 }
 
 static void render_stage_kiai(TimingStageEditor& editor) {
@@ -377,6 +383,7 @@ static void render_stage_anchoring(TimingStageEditor& editor) {
     using wormedit::timing_lane_kind_t;
     if (view.stage_lane != timing_lane_kind_t::bpm && view.stage_lane != timing_lane_kind_t::stop &&
         view.stage_lane != timing_lane_kind_t::delay && view.stage_lane != timing_lane_kind_t::warp) return;
+    if (!wormedit::ui::chrome::section_push(editor.context, NK_TREE_NODE, "Anchoring", NK_MAXIMIZED, true)) return;
     auto settings = view.stage_anchoring;
     nk_bool keep_audio = settings.positions == wormedit::timing_position_policy_t::audio;
     nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
@@ -397,6 +404,7 @@ static void render_stage_anchoring(TimingStageEditor& editor) {
         set_timing_action(editor.action, &view, wormedit::ui::timing_stage_action_t::update);
         editor.action->timing_anchoring = settings;
     }
+    wormedit::ui::chrome::section_pop(editor.context);
 }
 
 static void render_stage_actions(TimingStageEditor& editor) {

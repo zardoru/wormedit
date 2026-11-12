@@ -551,9 +551,7 @@ void render_sound_list_row(nk_context* context, const wormedit::ui::audio_slices
 
 void render_sound_list_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
                               wormedit::ui::workspace_action_t& action) {
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    nk_label(context, "Sounds", NK_TEXT_LEFT);
-    wormedit::ui::chrome::section_separator(context);
+    wormedit::ui::chrome::panel_header(context, "Sounds");
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto search_bounds = nk_widget_bounds(context);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, audio.search_text,
@@ -796,9 +794,7 @@ void render_editable_sound_properties(nk_context* context, const wormedit::ui::a
 
 void render_sound_properties_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
                                     wormedit::ui::workspace_action_t& action) {
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    nk_label(context, "Properties", NK_TEXT_LEFT);
-    wormedit::ui::chrome::section_separator(context);
+    wormedit::ui::chrome::panel_header(context, "Properties");
     const auto* selected = selected_sound(view);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!selected) {
@@ -863,9 +859,7 @@ void render_sound_columns(struct nk_context* context, const wormedit::ui::audio_
     const auto waveform_flags = static_cast<nk_flags>(NK_WINDOW_BORDER) |
         (height < 380.0f ? 0U : static_cast<nk_flags>(NK_WINDOW_NO_SCROLLBAR));
     if (nk_group_begin(context, "sound_wave", waveform_flags)) {
-        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        nk_label(context, "Waveform", NK_TEXT_LEFT);
-        wormedit::ui::chrome::section_separator(context);
+        wormedit::ui::chrome::panel_header(context, "Waveform");
         render_waveform_column(context, &view, &action, false, view.waveform_columns);
         nk_group_end(context);
     }

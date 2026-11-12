@@ -1989,7 +1989,8 @@ void check_clickable_compare_diagnostic(const std::vector<workspace_action_snaps
 }
 
 void check_rowless_compare_diagnostic(nuklear_event_harness_t& harness, float y) {
-    const auto rowless = click_at(harness, 640, y + 22.0f);
+    // The diagnostic rows are control_compact (24) tall plus spacing; aim at the middle of the second.
+    const auto rowless = click_at(harness, 640, y + 40.0f);
     REQUIRE(rowless.size() == 2);
     CHECK(rowless[0].get().kind != WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP);
 }

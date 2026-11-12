@@ -245,13 +245,15 @@ auto Checkbox::render(nk_context* context) const -> bool {
     // lines up with stock text and buttons in the same row.
     const auto label_x = box.x + box.w + metrics::gap_medium;
     const auto label_area = nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h);
-    struct nk_text label_style{};
-    label_style.padding = nk_vec2(0.0f, 0.0f);
-    label_style.color = !usable ? chrome::text_faint()
-                                : lit ? color(UiColor::text_bright) : color(UiColor::text);
-    if (label && label[0])
-        nk_widget_text(canvas, label_area, label, static_cast<int>(std::strlen(label)), &label_style,
-                       NK_TEXT_LEFT, context->style.font);
+    const auto* font = context->style.font;
+    const auto label_color = !usable ? chrome::text_faint()
+                             : lit ? color(UiColor::text_bright) : color(UiColor::text);
+    if (label && label[0] && font) {
+        const auto text_area = nk_rect(label_area.x, label_area.y + (label_area.h - font->height) * 0.5f,
+                                       label_area.w, font->height);
+        nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
+                     nk_rgba(0, 0, 0, 0), label_color);
+    }
     tooltip_if_hovered(context, hit, tooltip);
     return usable && hit.clicked;
 }

@@ -1155,6 +1155,12 @@ target_include_directories(wormedit_frame_pacing_tests PRIVATE "${CMAKE_SOURCE_D
 add_test(NAME frame-pacing COMMAND wormedit_frame_pacing_tests)
 set_tests_properties(frame-pacing PROPERTIES LABELS "unit;sys")
 
+# Frame demand merging and wait budgets are header-only and SDL-free.
+add_executable(wormedit_frame_demand_tests sys/frame_demand_tests.cpp)
+target_include_directories(wormedit_frame_demand_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+add_test(NAME frame-demand COMMAND wormedit_frame_demand_tests)
+set_tests_properties(frame-demand PROPERTIES LABELS "unit;sys")
+
 if(APPLE AND WORMEDIT_BUILD_APP)
     add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/app/macos_menu.mm)
     set_target_properties(wormedit_macos_menu_tests PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)

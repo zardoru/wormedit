@@ -5,6 +5,8 @@
 
 #include "sys/project/project_open.h"
 #include "sys/resources/resource_drop_router.h"
+#include "sys/app/event_loop_wake.h"
+#include "sys/app/frame_demand.h"
 #include "sys/app/frame_pacing.h"
 
 #include "ui/frontend.h"
@@ -101,6 +103,7 @@ auto poll_frontend_events(WormWindow& window, frontend_event_batch_t& batch, con
     auto pending = batch.pending();
     while (pending || SDL_PollEvent(&event)) {
         if (pending) { event = *pending; pending.reset(); }
+        if (is_event_loop_wake(event)) { acknowledge_event_loop_wake(); continue; }
         if (!batch.admit(event)) break;
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
@@ -174,7 +177,8 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace, document_his
     feedback.rebind(workspace, history, notifications);
 }
 
-void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) {
+void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns,
+                              const frame_demand_t& demand) {
     const auto presentation = common::window_presentation_t::from(window.handle);
     const auto inactive = presentation.is_inactive();
     if (inactive) {
@@ -190,8 +194,16 @@ void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) 
     if (pending) worm_ui_frontend_discard_frame();
     else worm_ui_frontend_render(width, height);
     worm_window_swap(&window);
-    const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), inactive);
-    if (remainder != 0) SDL_DelayPrecise(remainder);
+    const auto now_ns = SDL_GetTicksNS();
+    // A pending presentation keeps the loop paced like a continuous frame.
+    if (demand.continuous || pending) {
+        const auto remainder = frame_pacing_remainder_ns(frame_start_ns, now_ns, inactive);
+        if (remainder != 0) SDL_DelayPrecise(remainder);
+        return;
+    }
+    // Nothing needs the next frame yet: sleep until input, a wake, or the deadline. The
+    // event stays queued for the next frame's poll.
+    SDL_WaitEventTimeout(nullptr, wait_timeout_ms(frame_wait_budget_ns(demand, now_ns, idle_limit_ns)));
 }
 
 } // namespace wormedit::sys

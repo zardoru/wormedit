@@ -1,5 +1,6 @@
 #include "sys/app/application_startup.h"
 #include "sys/app/display_health.h"
+#include "sys/app/event_loop_wake.h"
 #include "sys/project/project_file_types.h"
 #include "core/text_util.h"
 
@@ -62,6 +63,7 @@ auto initialize_sdl_runtime(application_runtime_t& runtime) -> bool {
         return false;
     }
     runtime.sdl_initialized = true;
+    init_event_loop_wake();
     return true;
 }
 

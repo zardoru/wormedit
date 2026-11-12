@@ -12,6 +12,7 @@
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/app/macos_menu.h"
 #endif
+#include "sys/app/frame_demand.h"
 #include "sys/app/frame_timing.h"
 #include "sys/app/display_watchdog.h"
 #include "sys/app/thread_priority.h"
@@ -153,7 +154,9 @@
 #endif
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_timer.h>
 
@@ -1825,6 +1828,8 @@ struct application_t::implementation_t {
     application_worker_set_t workers{platform.lifetime, worker_schedulers};
     bool& running;
     bool started_{}, shutdown_started_{};
+    // Nuklear settles in the frames after an input event (popups open, hover resolves).
+    int input_settle_frames_{};
 
     struct AudioOffsetDragContext {
         const wormedit::ui::workspace_action_t& action;
@@ -4541,11 +4546,40 @@ struct application_t::implementation_t {
         compose_frame_ui(flattened, frame.viewport_delta_seconds);
     }
 
+    static constexpr int input_settle_frame_count = 3;
+
+    static auto is_keyboard_key_held() -> bool {
+        int count = 0;
+        const bool* keys = SDL_GetKeyboardState(&count);
+        return keys && std::any_of(keys, keys + count, [](bool down) { return down; });
+    }
+
+    // What the next frame needs, from the state this frame left behind. Sources that are
+    // not listed here are covered by the idle limit in frame_pacing.h, which keeps a
+    // slow refresh until each one reports its own demand.
+    auto next_frame_demand() -> wormedit::sys::frame_demand_t {
+        using wormedit::sys::frame_demand_t;
+        if (platform.event_batch.events_admitted() > 0) input_settle_frames_ = input_settle_frame_count;
+        if (platform.event_batch.has_pending()) return frame_demand_t::every_frame("retained input event");
+        if (input_settle_frames_ > 0) {
+            --input_settle_frames_;
+            return frame_demand_t::every_frame("input settle");
+        }
+        if (SDL_GetMouseState(nullptr, nullptr) != 0) return frame_demand_t::every_frame("pointer button held");
+        if (is_keyboard_key_held()) return frame_demand_t::every_frame("key held");
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        if (audio_runtime.preview_output.playing() || audio_runtime.audition_session.is_active())
+            return frame_demand_t::every_frame("audio playback");
+#endif
+        return frame_demand_t::none();
+    }
+
     void finish_frame(std::uint64_t frame_start_ns) {
         persist_session_preferences(preferences.program_preferences, commands,
                                     platform.notification_sink);
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
-        wormedit::sys::render_application_frame(platform.lifetime.runtime.window, frame_start_ns);
+        wormedit::sys::render_application_frame(platform.lifetime.runtime.window, frame_start_ns,
+                                                next_frame_demand());
         wormedit::sys::frame_timing().end_frame();
         if (platform.display_watchdog) {
             auto* window = platform.lifetime.runtime.window.handle;

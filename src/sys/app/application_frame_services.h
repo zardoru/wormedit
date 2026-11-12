@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/app/application_edit_inputs.h"
+#include "sys/app/frame_demand.h"
 #include "sys/app/frontend_event_batch.h"
 
 #include "sys/metadata/metadata_asset_runtime.h"
@@ -50,6 +51,10 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace, document_his
                                  notification_sink_t notifications,
                                  workspace_edit_feedback_t& feedback);
 
-void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns);
+// Renders and presents, then paces the next frame: a continuous demand keeps the
+// vsync/5 ms cadence; otherwise the loop sleeps for the demand's budget or until an
+// event or wake_event_loop() arrives.
+void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns,
+                              const frame_demand_t& demand);
 
 } // namespace wormedit::sys

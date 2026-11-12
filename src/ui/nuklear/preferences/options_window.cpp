@@ -385,6 +385,9 @@ void emit(wormedit::ui::options_action_t& action, const wormedit::ui::options_vi
 void render_categories(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     if (!nk_group_begin(context, "Options categories", 0)) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
+    // Text sits gap_large (16 px) in from the highlight's edge instead of Nuklear's 4 px.
+    nk_style_push_vec2(context, &context->style.selectable.padding,
+                       nk_vec2(wormedit::ui::metrics::gap_large, context->style.selectable.padding.y));
     for (int category = 0; category < WORM_UI_OPTIONS_CATEGORY_COUNT; ++category) {
         nk_bool selected = view.category == category;
         std::array<char, 64> label{};
@@ -395,6 +398,7 @@ void render_categories(nk_context* context, const wormedit::ui::options_view_t& 
         emit(action, view, WORM_UI_OPTIONS_SELECT_CATEGORY);
         action.category = static_cast<WormUiOptionsCategory>(category);
     }
+    nk_style_pop_vec2(context);
     nk_group_end(context);
 }
 void render_page(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,

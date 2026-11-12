@@ -839,6 +839,14 @@ void worm_ui_frontend_begin_input(void) {
     }
 }
 
+void worm_ui_frontend_set_caret_visible(bool visible) {
+    if (g_context) wormedit::ui::chrome::apply_caret_visibility(g_context, visible);
+}
+
+bool worm_ui_frontend_text_caret_active(void) {
+    return g_context && wormedit::ui::chrome::has_active_text_edit(g_context);
+}
+
 static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
     if (event.scancode != SDL_SCANCODE_T) return false;
     bool& captured = g_tap_key_captured;

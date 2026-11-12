@@ -659,6 +659,20 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.selectable.rounding = metrics::radius_control;
 }
 
+// Blinks the text caret by styling it, not by drawing: the visible phase restores the colors
+// apply_field_theme() gave the cursor, the hidden phase makes the cursor block transparent and
+// leaves the character under it in the ordinary active text color. Covers the edit style and
+// the copy a property box edits with.
+inline void apply_caret_visibility(nk_context* context, bool visible) {
+    const auto cursor = visible ? color(UiColor::text_bright) : nk_rgba(0, 0, 0, 0);
+    for (auto* edit : {&context->style.edit, &context->style.property.edit}) {
+        edit->cursor_normal = cursor;
+        edit->cursor_hover = cursor;
+        edit->cursor_text_normal = visible ? color(UiColor::surface) : edit->text_active;
+        edit->cursor_text_hover = visible ? color(UiColor::surface_hover) : edit->text_active;
+    }
+}
+
 // Edit fields, property boxes, sliders and progress bars share one control surface, border and
 // radius. Sizes and padding stay as Nuklear set them, so only colors and rounding change here.
 inline void apply_field_theme(nk_context* context) {

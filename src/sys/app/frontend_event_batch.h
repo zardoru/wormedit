@@ -12,7 +12,10 @@ namespace wormedit::sys {
 // never outlive their event pump.
 class frontend_event_batch_t {
   public:
-    void begin() { keys_.fill(false); buttons_.fill(false); admitted_ = 0; }
+    void begin() { keys_.fill(false); buttons_.fill(false); admitted_ = 0; caret_input_ = false; }
+    // A key, text or click event reached the frontend since begin(): the text caret
+    // restarts visible. Pointer motion alone does not count.
+    [[nodiscard]] auto has_caret_input() const noexcept -> bool { return caret_input_; }
     // Events handed to the frontend since begin(); zero means the frame saw no input.
     [[nodiscard]] auto events_admitted() const noexcept -> std::size_t { return admitted_; }
     // A retained event needs the next frame to run immediately.
@@ -23,6 +26,9 @@ class frontend_event_batch_t {
     [[nodiscard]] auto admit(const SDL_Event& event) -> bool {
         bool* changed{};
         ++admitted_;
+        caret_input_ = caret_input_ || event.type == SDL_EVENT_KEY_DOWN ||
+                       event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_TEXT_EDITING ||
+                       event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
         if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
             const auto code = static_cast<std::size_t>(event.key.scancode);
             if (code < keys_.size() && !event.key.repeat) changed = &keys_[code];
@@ -39,6 +45,7 @@ class frontend_event_batch_t {
     std::array<bool, 256> buttons_{};
     std::optional<SDL_Event> pending_;
     std::size_t admitted_{};
+    bool caret_input_{};
 };
 
 } // namespace wormedit::sys

@@ -80,7 +80,9 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
     const auto outer_width = std::min(std::max(natural_width(context, text) +
                                                    text_padding_x + 2.0F * padding.x + 2.0F * border,
                                                minimum_width), max_outer_width);
-    const auto content_width = outer_width - text_padding_x - 2.0F * padding.x - 2.0F * border;
+    // Lines wrap as if only the left inset existed, so the right inset never costs a line; it is
+    // only added back to boxes that are narrower than the limit.
+    const auto content_width = outer_width - text_padding_x + text_inset - 2.0F * padding.x - 2.0F * border;
     if (content_width < context->style.font->height) return std::nullopt;
 
     text_plan_t plan;

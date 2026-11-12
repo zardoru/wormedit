@@ -798,7 +798,7 @@ void render_group_filter_items(const SoundsPanel& panel) {
         const auto& group = panel.view->compose_sound_groups[index];
         const auto selected = !filters.group_filter_active ||
             std::ranges::find(filters.group_ids, group.group_id.value) != filters.group_ids.end();
-        const auto checked = nk_check_label(context, group.name.c_str(), selected);
+        const auto checked = wormedit::ui::chrome::checkbox_value(context, group.name.c_str(), selected);
         if (checked == selected) continue;
         if (!filters.group_filter_active) start_group_filter_from_all(panel);
         if (checked) filters.group_ids.push_back(group.group_id.value);
@@ -807,7 +807,7 @@ void render_group_filter_items(const SoundsPanel& panel) {
         reset_automatic_window(panel);
     }
     const auto ungrouped = !filters.group_filter_active || filters.include_ungrouped;
-    const auto checked_ungrouped = nk_check_label(context, "Ungrouped", ungrouped);
+    const auto checked_ungrouped = wormedit::ui::chrome::checkbox_value(context, "Ungrouped", ungrouped);
     if (checked_ungrouped != ungrouped) {
         if (!filters.group_filter_active) start_group_filter_from_all(panel);
         filters.include_ungrouped = checked_ungrouped;

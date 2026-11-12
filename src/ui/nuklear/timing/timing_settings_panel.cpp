@@ -46,7 +46,7 @@ static void render_metronome_controls(nk_context* context, const wormedit::ui::w
     nk_layout_row_dynamic(context, row, 1);
     nk_bool enabled = view.transport_metronome_enabled;
     if (!view.transport_metronome_available) nk_widget_disable_begin(context);
-    if (nk_checkbox_label(context, "Metronome", &enabled)) {
+    if (wormedit::ui::chrome::checkbox_label(context, "Metronome", &enabled)) {
         action.timing_settings.change_enable = true;
         action.timing_settings.enabled = enabled;
     }

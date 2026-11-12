@@ -1,6 +1,7 @@
 #include "ui/nuklear/audio/preview_audio_dialog.h"
 #include <cstdio>
 #include "ui/nuklear/chrome/ui_metrics.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 namespace wormedit::ui {
 void preview_audio_dialog_t::start(const wormedit::ui::compose_view_t& view, preview_audio_range_view_t source,
@@ -49,7 +50,7 @@ void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::com
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         nk_property_int(context, "Fade out (ms)", 0, &fade_out_ms, 10000, 100, 10);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        nk_checkbox_label(context, "Replace an existing file", &replace_existing);
+        wormedit::ui::chrome::checkbox_label(context, "Replace an existing file", &replace_existing);
         nk_layout_row_dynamic(context, 36, 1);
         nk_label_wrap(context, "The interval is mixed as chart autoplay. A shorter duration trims its end; fades do not change chart data.");
         chrome::dialog_footer_begin(dialog, context, 2);

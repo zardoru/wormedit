@@ -229,6 +229,21 @@ struct Checkbox {
     auto render(nk_context* context) const -> bool;
 };
 
+// Drop-in for nk_checkbox_label: the same rounded box as Checkbox, `active` updated in place,
+// true when the user toggled it. Honors nk_widget_disable_begin like the stock widget.
+inline auto checkbox_label(nk_context* context, const char* label, nk_bool* active) -> bool {
+    const Checkbox box{label, *active ? CheckState::on : CheckState::off};
+    if (!box.render(context)) return false;
+    *active = !*active;
+    return true;
+}
+
+// Drop-in for nk_check_label: returns the value after the user's click.
+inline auto checkbox_value(nk_context* context, const char* label, bool current) -> bool {
+    const Checkbox box{label, current ? CheckState::on : CheckState::off};
+    return box.render(context) ? !current : current;
+}
+
 // Which of `count` equal segments of `bounds` holds x; -1 outside.
 auto segment_at(struct nk_rect bounds, int count, float x) -> int;
 // Left/Right step, clamped (no wrap).

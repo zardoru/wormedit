@@ -73,7 +73,7 @@ void draw_batch_rows(nk_context* context, worm_ui_sound_slot_batch_t& state,
         nk_layout_row_push(context, 0.20f);
         if (item.occupied_resource_id != 0 && !item.ambiguous) {
             auto replacing = static_cast<nk_bool>(item.replace);
-            (void)nk_checkbox_label(context, "Replace", &replacing);
+            (void)wormedit::ui::chrome::checkbox_label(context, "Replace", &replacing);
             item.replace = replacing != 0;
         }
         else

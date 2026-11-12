@@ -868,7 +868,7 @@ void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     nk_bool preview = inspector.view->quantize_preview_enabled;
     if (compose_quantize_owns_input()) nk_widget_disable_begin(context);
-    const auto changed = nk_checkbox_label(context, "Preview", &preview);
+    const auto changed = wormedit::ui::chrome::checkbox_label(context, "Preview", &preview);
     if (compose_quantize_owns_input()) nk_widget_disable_end(context);
     if (changed && !compose_quantize_owns_input() &&
         inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)

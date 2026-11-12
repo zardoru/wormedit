@@ -222,7 +222,7 @@ static void render_stage_title(const TimingStageEditor& editor) {
 
 static void render_stage_kiai(TimingStageEditor& editor) {
     nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
-    editor.changed |= nk_checkbox_label(editor.context, "Kiai enabled",
+    editor.changed |= wormedit::ui::chrome::checkbox_label(editor.context, "Kiai enabled",
                                         &editor.toggle_primary) != 0;
 }
 
@@ -238,7 +238,7 @@ static void render_stage_anchor(TimingStageEditor& editor) {
         state.primary_numerator.data(), state.primary_numerator.size(), nk_filter_decimal) != 0;
     nk_layout_row_end(context);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    editor.changed |= nk_checkbox_label(context, "Lock anchor", &editor.toggle_primary) != 0;
+    editor.changed |= wormedit::ui::chrome::checkbox_label(context, "Lock anchor", &editor.toggle_primary) != 0;
 }
 
 static void render_bpm_fraction(TimingStageEditor& editor) {
@@ -290,7 +290,7 @@ static void render_stage_bpm(TimingStageEditor& editor) {
     editor.changed = editor.changed || editor.bpm_step != 0;
     nk_bool advanced = state.bpm_advanced_fraction ? 1 : 0;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    if (nk_checkbox_label(context, "Advanced exact fraction", &advanced) != 0)
+    if (wormedit::ui::chrome::checkbox_label(context, "Advanced exact fraction", &advanced) != 0)
         state.bpm_advanced_fraction = advanced != 0;
     render_bpm_fraction(editor);
 }
@@ -339,7 +339,7 @@ static void render_stage_secondary(TimingStageEditor& editor) {
             nk_filter_decimal) != 0;
         nk_layout_row_end(context);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        editor.changed |= nk_checkbox_label(context, "Seconds", &editor.seconds) != 0;
+        editor.changed |= wormedit::ui::chrome::checkbox_label(context, "Seconds", &editor.seconds) != 0;
     } else if (view.stage_lane == wormedit::timing_lane_kind_t::warp) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, bool(view.stage_existing_object_id) ? "Length in exact chart rows"
@@ -380,12 +380,12 @@ static void render_stage_anchoring(TimingStageEditor& editor) {
     auto settings = view.stage_anchoring;
     nk_bool keep_audio = settings.positions == wormedit::timing_position_policy_t::audio;
     nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
-    bool changed = nk_checkbox_label(editor.context, "Keep audio time of notes", &keep_audio) != 0;
+    bool changed = wormedit::ui::chrome::checkbox_label(editor.context, "Keep audio time of notes", &keep_audio) != 0;
     settings.positions = keep_audio ? wormedit::timing_position_policy_t::audio : wormedit::timing_position_policy_t::musical;
     if (keep_audio) {
         nk_bool quantize = settings.allow_quantization;
         nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
-        changed = (nk_checkbox_label(editor.context, "Allow quantization", &quantize) != 0) || changed;
+        changed = (wormedit::ui::chrome::checkbox_label(editor.context, "Allow quantization", &quantize) != 0) || changed;
         settings.allow_quantization = quantize != 0;
         nk_layout_row_dynamic(editor.context, 36, 1);
         char counts[128]{};

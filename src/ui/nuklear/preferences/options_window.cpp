@@ -28,7 +28,7 @@ void edit_toggle(nk_context* context, const wormedit::ui::options_view_t& view, 
     const char* label, WormUiOptionsField field, bool value) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_bool draft = value;
-    if (!nk_checkbox_label(context, label, &draft) || action.kind != WORM_UI_OPTIONS_NONE) return;
+    if (!wormedit::ui::chrome::checkbox_label(context, label, &draft) || action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = field, .boolean = draft != 0};
 }

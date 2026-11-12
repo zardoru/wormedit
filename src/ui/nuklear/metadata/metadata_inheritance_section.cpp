@@ -14,7 +14,7 @@ void render_inheritance_row(const MetadataPanel& panel,
     std::snprintf(label, sizeof(label), "Inherit %s", field.label.c_str());
     if (!editable) nk_widget_disable_begin(context);
     nk_bool inherit = row.inherit;
-    (void)nk_checkbox_label(context, label, &inherit);
+    (void)wormedit::ui::chrome::checkbox_label(context, label, &inherit);
     if (!editable) nk_widget_disable_end(context);
     if (editable) row.inherit = inherit != 0;
     if (row.inherit) nk_label_colored(context, field.inherited.empty() ? "(empty)" : field.inherited.c_str(),

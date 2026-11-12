@@ -110,7 +110,7 @@ void render_group_proposals(nk_context* context,
         nk_layout_row_template_push_static(context, 80);
         nk_layout_row_template_end(context);
         int accepted = group.accepted ? 1 : 0;
-        nk_checkbox_label(context, "", &accepted);
+        wormedit::ui::chrome::checkbox_label(context, "", &accepted);
         worm_ui_keysound_group_review_set_accepted(state, index, accepted != 0);
         std::array<char, 65> name{};
         std::snprintf(name.data(), name.size(), "%s", group.name.c_str());
@@ -226,7 +226,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         nk_layout_row_template_push_static(context, 84);
         nk_layout_row_template_end(context);
         int accepted = group.accepted ? 1 : 0;
-        nk_checkbox_label(context, "", &accepted);
+        wormedit::ui::chrome::checkbox_label(context, "", &accepted);
         worm_ui_nuklear_sound_import_set_group_accepted(state, index, accepted != 0);
         std::array<char, 65> name{};
         std::snprintf(name.data(), name.size(), "%s", group.name.c_str());
@@ -386,7 +386,7 @@ void render_group_review_footer(nk_context* context, const wormedit::ui::compose
     auto& dialog = group_review_dialog();
     int keep = state.keep_ids_together ? 1 : 0;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    nk_checkbox_label(context, "Keep IDs together", &keep);
+    wormedit::ui::chrome::checkbox_label(context, "Keep IDs together", &keep);
     state.keep_ids_together = keep != 0;
     if (!state.message.empty())
         chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));

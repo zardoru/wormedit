@@ -270,7 +270,7 @@ void render_project_metadata_fields(nk_context* context, const wormedit::ui::set
             state.author, sizeof(state.author), nk_filter_default, focus_pending);
     } else {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        nk_checkbox_label(context, "Unset rating", &state.unset_rating);
+        wormedit::ui::chrome::checkbox_label(context, "Unset rating", &state.unset_rating);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
         nk_label(context, "Numerator", NK_TEXT_LEFT);
         nk_label(context, "Denominator", NK_TEXT_LEFT);
@@ -841,7 +841,7 @@ auto render_chart_membership(nk_context* context, const wormedit::ui::setup_view
     const auto blocked = !compatible && !included;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (blocked) nk_widget_disable_begin(context);
-    const auto changed = nk_checkbox_label(context, group.name.data(), &included);
+    const auto changed = wormedit::ui::chrome::checkbox_label(context, group.name.data(), &included);
     if (blocked) nk_widget_disable_end(context);
     if (!compatible) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
@@ -891,7 +891,7 @@ void render_output_group_members(nk_context* context, const wormedit::ui::setup_
             (view.charts[i].compatible_output_families & (std::uint32_t{1} << family));
         const auto blocked = !compatible && !project_state.group_charts[i];
         if (blocked) nk_widget_disable_begin(context);
-        nk_checkbox_label(context, !view.charts[i].name.empty() ? view.charts[i].name.data() : "Untitled chart",
+        wormedit::ui::chrome::checkbox_label(context, !view.charts[i].name.empty() ? view.charts[i].name.data() : "Untitled chart",
             &project_state.group_charts[i]);
         if (blocked) nk_widget_disable_end(context);
         if (!compatible) {
@@ -1050,7 +1050,7 @@ void render_output_group_form(nk_context* context, const wormedit::ui::setup_vie
     if (state.group_family != 0) render_export_audio_settings(context);
     if (state.group_family >= 2) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-        nk_checkbox_label(context, "Flatten BMS branches to the active outcome",
+        wormedit::ui::chrome::checkbox_label(context, "Flatten BMS branches to the active outcome",
                           &state.group_flatten_bms_branches);
     }
     dialog_text(
@@ -1459,7 +1459,7 @@ auto project_default_toggle(nk_context* context, const char* label, bool overrid
     wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium); // Separates each setting from the previous one.
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_bool use_default = !overridden;
-    return nk_checkbox_label(context, label, &use_default) != 0;
+    return wormedit::ui::chrome::checkbox_label(context, label, &use_default) != 0;
 }
 void render_project_snap(nk_context* context, const wormedit::ui::setup_view_t& view,
                          wormedit::ui::workspace_action_t& action) {

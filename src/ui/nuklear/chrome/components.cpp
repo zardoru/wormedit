@@ -212,24 +212,28 @@ auto Checkbox::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
     if (cell == NK_WIDGET_INVALID) return false;
-    const auto hit = hit_test(context, cell, bounds, enabled);
+    // nk_widget_disable_begin marks the cell disabled; draw it like an explicitly disabled box.
+    const auto usable = enabled && cell != NK_WIDGET_DISABLED;
+    const auto hit = hit_test(context, cell, bounds, usable);
     auto* canvas = nk_window_get_canvas(context);
-    const auto box = nk_rect(bounds.x + metrics::gap_small,
-                             bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f,
+    // Whole pixels, so every side of the border is the same thickness.
+    const auto box = nk_rect(std::floor(bounds.x + metrics::gap_small),
+                             std::floor(bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f),
                              metrics::checkbox_box, metrics::checkbox_box);
-    const bool lit = hit.hovered && enabled;
+    const bool lit = hit.hovered && usable;
     // The border is a filled rounded rect with the interior inset, not a stroked path:
     // Nuklear's rounded stroke is polygonal and drifts off the fill at small radii.
-    const auto border = !enabled ? color(UiColor::border)
+    const auto border = !usable ? color(UiColor::border)
                         : state == CheckState::off ? (lit ? color(UiColor::text_bright) : color(UiColor::border_hover))
                         : (lit ? color(UiColor::border_hover) : color(UiColor::selected));
-    const auto inside = state != CheckState::off && enabled ? color(UiColor::selected) : color(UiColor::surface);
-    constexpr float edge = 1.5f;
+    const auto inside = state == CheckState::off ? color(UiColor::surface)
+                        : usable ? color(UiColor::selected) : disabled_fill();
+    constexpr float edge = 1.0f;
     nk_fill_rect(canvas, box, metrics::radius_control, border);
     nk_fill_rect(canvas, nk_rect(box.x + edge, box.y + edge, box.w - 2 * edge, box.h - 2 * edge),
                  metrics::radius_control - edge, inside);
-    if (enabled && state != CheckState::off) {
-        const auto mark = color(UiColor::selected_text);
+    if (state != CheckState::off) {
+        const auto mark = usable ? color(UiColor::selected_text) : chrome::text_faint();
         if (state == CheckState::on) {
             nk_stroke_line(canvas, box.x + 3.5f, box.y + 8.5f, box.x + 6.8f, box.y + 11.8f, 2.0f, mark);
             nk_stroke_line(canvas, box.x + 6.8f, box.y + 11.8f, box.x + 12.5f, box.y + 4.8f, 2.0f, mark);
@@ -241,11 +245,11 @@ auto Checkbox::render(nk_context* context) const -> bool {
     const auto label_x = box.x + box.w + metrics::gap_medium;
     draw_centered_text(context, nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h),
                        label,
-                       !enabled ? chrome::text_faint()
+                       !usable ? chrome::text_faint()
                                 : lit ? color(UiColor::text_bright) : color(UiColor::text),
                        NK_TEXT_LEFT);
     tooltip_if_hovered(context, hit, tooltip);
-    return enabled && hit.clicked;
+    return usable && hit.clicked;
 }
 
 auto segment_at(struct nk_rect bounds, int count, float x) -> int {

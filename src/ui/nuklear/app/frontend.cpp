@@ -56,6 +56,7 @@
 #include "ui/nuklear/timing/timing_state.h"
 #include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/resize_cursor.h"
 #include "ui/nuklear/chrome/notification_toasts.h"
 #include "ui/nuklear/chrome/notification_panel.h"
 #include "ui/nuklear/project/compare_panel.h"
@@ -141,27 +142,42 @@ static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
 static bool g_headless;
-static SDL_Cursor* g_stem_resize_cursor;
-static bool g_stem_resize_cursor_attempted;
-static bool g_stem_resize_cursor_applied;
+static SDL_Cursor* g_resize_cursors[3];
+static bool g_resize_cursors_attempted;
+static wormedit::ui::nuklear::resize_cursor_t g_resize_cursor_applied;
 
-static void apply_stem_resize_cursor(bool requested) {
+// One pointer-shape path for every resize handle: stem lanes set a Compose flag, the dock
+// requests through chrome/resize_cursor.h, and both land here once per frame.
+static void apply_resize_cursor(wormedit::ui::nuklear::resize_cursor_t requested) {
+    using wormedit::ui::nuklear::resize_cursor_t;
     if (g_headless || !g_window || !(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) return;
-    if (requested && !g_stem_resize_cursor_attempted) {
-        g_stem_resize_cursor_attempted = true;
-        g_stem_resize_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+    if (requested != resize_cursor_t::none && !g_resize_cursors_attempted) {
+        g_resize_cursors_attempted = true;
+        g_resize_cursors[static_cast<int>(resize_cursor_t::horizontal)] =
+            SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+        g_resize_cursors[static_cast<int>(resize_cursor_t::vertical)] =
+            SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
     }
-    const auto apply = requested && g_stem_resize_cursor;
-    if (apply == g_stem_resize_cursor_applied) return;
-    auto* cursor = apply ? g_stem_resize_cursor : SDL_GetDefaultCursor();
-    if (cursor && SDL_SetCursor(cursor)) g_stem_resize_cursor_applied = apply;
+    if (requested != resize_cursor_t::none && !g_resize_cursors[static_cast<int>(requested)])
+        requested = resize_cursor_t::none;
+    if (requested == g_resize_cursor_applied) return;
+    auto* cursor = requested == resize_cursor_t::none ? SDL_GetDefaultCursor()
+                                                      : g_resize_cursors[static_cast<int>(requested)];
+    if (cursor && SDL_SetCursor(cursor)) g_resize_cursor_applied = requested;
+}
+static void apply_stem_resize_cursor(bool requested) {
+    apply_resize_cursor(requested ? wormedit::ui::nuklear::resize_cursor_t::horizontal
+                                  : wormedit::ui::nuklear::resize_cursor_t::none);
 }
 static void shutdown_stem_resize_cursor() {
-    apply_stem_resize_cursor(false);
-    if (g_stem_resize_cursor && (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO))
-        SDL_DestroyCursor(g_stem_resize_cursor);
-    g_stem_resize_cursor = nullptr;
-    g_stem_resize_cursor_applied = g_stem_resize_cursor_attempted = false;
+    apply_resize_cursor(wormedit::ui::nuklear::resize_cursor_t::none);
+    if (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)
+        for (auto*& cursor : g_resize_cursors) {
+            if (cursor) SDL_DestroyCursor(cursor);
+            cursor = nullptr;
+        }
+    g_resize_cursor_applied = wormedit::ui::nuklear::resize_cursor_t::none;
+    g_resize_cursors_attempted = false;
 }
 
 static void clear_inactive_compose_controls(const wormedit::ui::workspace_view_t& view, bool focused) {
@@ -810,6 +826,7 @@ void worm_ui_frontend_shutdown(void) {
 
 void worm_ui_frontend_begin_input(void) {
     worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested = false;
+    wormedit::ui::nuklear::resize_cursor_request() = wormedit::ui::nuklear::resize_cursor_t::none;
     if (g_context) {
         // Before this frame's input is converted, so a resize refits the scale consistently.
         fit_interface_scale();
@@ -3977,7 +3994,13 @@ void worm_ui_frontend_discard_frame() {
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {
-    apply_stem_resize_cursor(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
+    {
+        using wormedit::ui::nuklear::resize_cursor_t;
+        auto requested = wormedit::ui::nuklear::resize_cursor_request();
+        if (worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested)
+            requested = resize_cursor_t::horizontal;
+        apply_resize_cursor(requested);
+    }
     if (window_width <= 0 || window_height <= 0) {
         (void)frontend_window_size(&window_width, &window_height);
     } else {

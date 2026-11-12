@@ -1,6 +1,7 @@
 #include "ui/nuklear/dock.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/resize_cursor.h"
 #include "ui/nuklear/render/vector_icons.h"
 #include <nuklear.h>
 #include <SDL3/SDL.h>
@@ -54,6 +55,14 @@ void render_handle(nk_context* context, const compose_rect_t& bounds, const char
         nk_input_is_mouse_hovering_rect(&context->input, actual);
     nk_fill_rect(nk_window_get_canvas(context), actual, 2,
                  highlighted ? cell.tint() : context->style.window.border_color);
+    if (capture == dock_capture_t::width || capture == dock_capture_t::split) {
+        // The split handle separates side-by-side panes with a vertical bar and stacked panes
+        // with a horizontal one; it is dragged along x or y respectively.
+        const auto drags_x = capture == dock_capture_t::width || geometry.is_side_by_side();
+        if (highlighted)
+            nuklear::request_resize_cursor(drags_x ? nuklear::resize_cursor_t::horizontal
+                                                   : nuklear::resize_cursor_t::vertical);
+    }
     if (capture == dock_capture_t::none || !nk_input_is_mouse_hovering_rect(&context->input, actual)) return;
     if (!pointer.is_active() && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT))
         begin_capture(context, capture, geometry, pointer);

@@ -60,7 +60,7 @@ inline auto wrap_words(const nk_user_font* font, std::string_view text, float wi
     return lines;
 }
 
-// Tooltips preserve explicit newlines and the whitespace at a wrap boundary.
+// Tooltips preserve explicit newlines; the whitespace at a wrap boundary is dropped.
 inline auto wrap_lines(const nk_user_font* font, std::string_view text, float width)
     -> std::vector<std::string> {
     std::vector<std::string> lines;
@@ -78,7 +78,9 @@ inline auto wrap_lines(const nk_user_font* font, std::string_view text, float wi
         const auto break_at = line.find_last_of(" \t", line.size() - length);
         if (break_at != std::string::npos && break_at != 0) {
             lines.push_back(line.substr(0, break_at));
-            line.erase(0, break_at);
+            // The space that caused the break is consumed, so the next line starts at its word.
+            const auto resume = line.find_first_not_of(" \t", break_at);
+            line.erase(0, resume == std::string::npos ? line.size() : resume);
         } else {
             const auto last = line.substr(line.size() - length);
             line.resize(line.size() - length);

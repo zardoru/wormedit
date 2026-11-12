@@ -12,7 +12,8 @@ namespace {
 
 struct nk_rect app_viewport{};
 // Space between the popup's clip edge and its text. Nuklear scissors popup content at the
-// layout edge, so text starting exactly there loses the left side of its first glyph.
+// layout edge, so text starting exactly there loses the left side of its first glyph. The same
+// gap is kept on the right so the text sits centered between the borders.
 constexpr float text_inset = 4.0F;
 
 auto text_width(nk_context* context, std::string_view text) -> float {
@@ -73,7 +74,7 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
     const auto padding = initial_padding(context);
     const auto border = initial_border(context);
     const auto max_outer_width = std::min(std::max(1.0F, preferred_outer_width), app_viewport.w);
-    const auto text_padding_x = 2.0F * context->style.text.padding.x + text_inset;
+    const auto text_padding_x = 2.0F * context->style.text.padding.x + 2.0F * text_inset;
     const auto minimum_width = context->style.font->height + text_padding_x +
                                2.0F * padding.x + 2.0F * border;
     const auto outer_width = std::min(std::max(natural_width(context, text) +
@@ -83,8 +84,12 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
     if (content_width < context->style.font->height) return std::nullopt;
 
     text_plan_t plan;
-    plan.outer_width = outer_width;
     plan.lines = chrome::wrap_text(context->style.font, text, content_width, chrome::text_wrap_policy_t::tooltip_lines);
+    // Wrapped lines are usually narrower than the limit, so the box shrinks to the widest one.
+    auto widest = 0.0F;
+    for (const auto& line : plan.lines) widest = std::max(widest, text_width(context, line));
+    plan.outer_width = std::min(outer_width, std::max(widest + text_padding_x + 2.0F * padding.x + 2.0F * border,
+                                                      minimum_width));
     const auto row_height = context->style.font->height + context->style.text.padding.y * 2.0F +
                             context->style.window.min_row_height_padding * 2.0F;
     plan.content_height = static_cast<float>(plan.lines.size()) *
@@ -109,7 +114,7 @@ auto place(nk_context* context, float outer_width, float content_height)
     const auto border = initial_border(context);
     const auto width = std::min(outer_width, app_viewport.w);
     const auto height = content_height + 2.0F * padding.y + 2.0F * border;
-    if (width - 2.0F * context->style.text.padding.x - text_inset -
+    if (width - 2.0F * context->style.text.padding.x - 2.0F * text_inset -
             2.0F * padding.x - 2.0F * border < context->style.font->height ||
         height > app_viewport.h)
         return std::nullopt;
@@ -131,8 +136,17 @@ auto place(nk_context* context, float outer_width, float content_height)
 }
 
 auto begin(nk_context* context, const placement_t& placement) -> bool {
-    return context && nk_tooltip_begin_offset(context, placement.outer_bounds.w, NK_TOP_LEFT,
-                                              placement.offset);
+    if (!context) return false;
+    // Nuklear begins the tooltip as a popup, so its panel takes popup_padding, and then relabels
+    // it a tooltip, so nk_panel_end fills the right edge with menu_padding. When the two differ,
+    // that fill pokes out past the border. Both phases must see the same padding.
+    auto& window = context->style.window;
+    const auto popup_padding = window.popup_padding;
+    window.popup_padding = window.menu_padding;
+    const auto opened = nk_tooltip_begin_offset(context, placement.outer_bounds.w, NK_TOP_LEFT,
+                                                placement.offset) != 0;
+    window.popup_padding = popup_padding;
+    return opened;
 }
 
 void draw_text(nk_context* context, const text_plan_t& plan) {
@@ -147,6 +161,18 @@ void draw_text(nk_context* context, const text_plan_t& plan) {
         nk_layout_row_template_end(context);
         nk_spacer(context);
         nk_text(context, line.data(), static_cast<int>(line.size()), NK_TEXT_LEFT);
+    }
+    // Nuklear sizes a dynamic popup to its rows and adds the top padding but no bottom padding, so
+    // the text would sit low. One short row restores the missing space (it takes the layout's row
+    // spacing too), measured from the inside of the border like the top.
+    const auto& window = context->style.window;
+    const auto missing = window.menu_padding.y + window.popup_border - window.spacing.y;
+    const auto filler = missing - window.spacing.y;
+    if (filler > 0.0F) {
+        nk_layout_set_min_row_height(context, 0.0F);
+        nk_layout_row_dynamic(context, filler, 1);
+        nk_spacer(context);
+        nk_layout_reset_min_row_height(context);
     }
     nk_style_pop_vec2(context);
 }

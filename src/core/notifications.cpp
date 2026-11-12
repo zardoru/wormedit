@@ -257,6 +257,7 @@ void notification_center_t::post_transient_hint(notification_source_t source, st
 }
 
 void notification_center_t::signal_post() const noexcept {
+    // Contract (notifications.h): exceptions from the listener are swallowed silently.
     if (!on_post_) return;
     try {
         on_post_();

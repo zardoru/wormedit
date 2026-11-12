@@ -141,6 +141,7 @@ void mark_terminal_locked(scheduler_state_t& scheduler, graph_state_t& graph, st
     --graph.remaining;
     --scheduler.outstanding;
     if (scheduler.on_terminal) {
+        // Contract (task_graph.h): exceptions from the hook are swallowed silently.
         try {
             scheduler.on_terminal();
         } catch (...) {

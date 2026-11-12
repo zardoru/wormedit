@@ -116,7 +116,12 @@ class notification_center_t {
   public:
     // A null clock means std::chrono::steady_clock. `on_post`, when set, runs on the
     // posting thread after every post (outside the inbox lock) so a sleeping frame
-    // loop can wake and drain; it must be cheap, thread-safe and must not throw.
+    // loop can wake and drain.
+    //
+    // Contract: `on_post` must be cheap and thread-safe. The center swallows every
+    // exception it throws, silently: the post is already stored, and there is no
+    // reporting channel. A listener that can fail must handle or log its own failure,
+    // and its signal must stay safe to lose (the drain also happens on the next frame).
     explicit notification_center_t(notification_clock_t clock = {},
                                    std::function<void()> on_post = {});
 

@@ -1,9 +1,14 @@
 #pragma once
 
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/text_layout.h"
 #include "wormedit/nuklear_config.h"
 
+#include <algorithm>
+#include <cmath>
+#include <initializer_list>
 #include <optional>
+#include <string_view>
 #include <span>
 
 namespace wormedit::ui::chrome {
@@ -103,6 +108,16 @@ void dialog_text(Dialog& dialog, nk_context* context, const char* text, struct n
 void dialog_footer_begin(Dialog& dialog, nk_context* context, int buttons,
                          bool destructive_first = false,
                          float button_width = dialog_button_width);
+
+// A footer button width that fits the widest label with `gap_large` (16 px) of padding on each
+// side, never below `minimum`. Pass it as `dialog_footer_begin`'s `button_width`.
+inline auto dialog_button_width_for(const nk_context* context,
+                                    std::initializer_list<std::string_view> labels,
+                                    float minimum = dialog_button_width) -> float {
+    auto widest = 0.0f;
+    for (const auto label : labels) widest = std::max(widest, text_width(context->style.font, label));
+    return std::max(minimum, std::ceil(widest + 2.0f * metrics::gap_large));
+}
 
 // One footer button. Records its role as the result when clicked; the enabled primary button
 // also reports Enter (when the dialog allows it) as a click.

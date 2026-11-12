@@ -172,7 +172,8 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
             chrome::dialog_text(dialog, context, "Check each occupied slot you intend to replace.",
                                 chrome::color(chrome::UiColor::text_muted));
         }
-        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, context, 2, false,
+            chrome::dialog_button_width_for(context, {"Cancel", "Assign files"}));
         if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary,
                                   !state.commit_pending))
             worm_ui_sound_slot_batch_cancel(state);

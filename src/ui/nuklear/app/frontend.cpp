@@ -1781,14 +1781,15 @@ static void render_close_confirmation(const wormedit::ui::close_confirmation_vie
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_close_dialog;
     if (chrome::dialog_begin(dialog, g_context, "Unsaved changes", "Unsaved changes",
-                             {.modal = true, .width = 440.0f,
+                             {.modal = true, .width = 560.0f,
                               .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
         chrome::dialog_text(dialog, g_context, view.application
             ? "Save your changes before quitting WormEdit?"
             : "Save your changes before closing this project?", chrome::color(chrome::UiColor::text));
         if (!view.status_text.empty())
             chrome::dialog_text(dialog, g_context, view.status_text.data(), chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, g_context, 3, true, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 3, true,
+            chrome::dialog_button_width_for(g_context, {"Discard changes", "Cancel", "Save"}));
         chrome::dialog_button(dialog, g_context, "Discard changes", chrome::DialogButtonRole::destructive);
         chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary);
         chrome::dialog_button(dialog, g_context, "Save", chrome::DialogButtonRole::primary);
@@ -3306,7 +3307,8 @@ static void render_new_project_wizard(const wormedit::ui::workspace_view_t& view
         if (audio_path_too_long)
             chrome::dialog_text(dialog, g_context, "Audio path is too long to import.",
                                 chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 2, false,
+            chrome::dialog_button_width_for(g_context, {"Cancel", "Create project", "Open chart"}));
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_new_project_wizard(action);
         if (chrome::dialog_button(dialog, g_context, "Create project",
@@ -3389,7 +3391,8 @@ static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& vie
             chrome::dialog_text(dialog, g_context, "This chart contains non-ASCII text without a UTF-8 BOM.",
                                 chrome::color(chrome::UiColor::text));
         const auto encoding = render_bms_encoding_choice(view);
-        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 2, false,
+            chrome::dialog_button_width_for(g_context, {"Cancel", "Create project", "Open chart"}));
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_bms_encoding_dialog(action);
         if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary,

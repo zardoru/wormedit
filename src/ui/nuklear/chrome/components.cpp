@@ -218,15 +218,17 @@ auto Checkbox::render(nk_context* context) const -> bool {
                              bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f,
                              metrics::checkbox_box, metrics::checkbox_box);
     const bool lit = hit.hovered && enabled;
-    if (!enabled) {
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f, color(UiColor::border));
-    } else if (state == CheckState::off) {
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f,
-                       lit ? color(UiColor::text_bright) : color(UiColor::border_hover));
-    } else {
-        nk_fill_rect(canvas, box, 3.0f, color(UiColor::selected));
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f,
-                       lit ? color(UiColor::border_hover) : color(UiColor::selected));
+    // The border is a filled rounded rect with the interior inset, not a stroked path:
+    // Nuklear's rounded stroke is polygonal and drifts off the fill at small radii.
+    const auto border = !enabled ? color(UiColor::border)
+                        : state == CheckState::off ? (lit ? color(UiColor::text_bright) : color(UiColor::border_hover))
+                        : (lit ? color(UiColor::border_hover) : color(UiColor::selected));
+    const auto inside = state != CheckState::off && enabled ? color(UiColor::selected) : color(UiColor::surface);
+    constexpr float edge = 1.5f;
+    nk_fill_rect(canvas, box, metrics::radius_control, border);
+    nk_fill_rect(canvas, nk_rect(box.x + edge, box.y + edge, box.w - 2 * edge, box.h - 2 * edge),
+                 metrics::radius_control - edge, inside);
+    if (enabled && state != CheckState::off) {
         const auto mark = color(UiColor::selected_text);
         if (state == CheckState::on) {
             nk_stroke_line(canvas, box.x + 3.5f, box.y + 8.5f, box.x + 6.8f, box.y + 11.8f, 2.0f, mark);
@@ -235,11 +237,9 @@ auto Checkbox::render(nk_context* context) const -> bool {
             nk_stroke_line(canvas, box.x + 4.0f, box.y + 8.0f, box.x + 12.0f, box.y + 8.0f, 2.0f, mark);
         }
     }
-    const auto label_area = nk_rect(box.x + box.w + metrics::gap_medium, bounds.y,
-                                    std::max(0.0f, bounds.x + bounds.w - box.x - box.w - metrics::gap_medium),
-                                    bounds.h);
-    draw_centered_text(context, nk_rect(label_area.x - metrics::gap_medium, label_area.y,
-                                        label_area.w + metrics::gap_medium, label_area.h),
+    // The label sits gap_medium to the right of the box.
+    const auto label_x = box.x + box.w + metrics::gap_medium;
+    draw_centered_text(context, nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h),
                        label,
                        !enabled ? chrome::text_faint()
                                 : lit ? color(UiColor::text_bright) : color(UiColor::text),

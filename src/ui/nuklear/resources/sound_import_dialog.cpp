@@ -284,7 +284,8 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
         }
         if (!state.message.empty())
             chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0F);
+        chrome::dialog_footer_begin(dialog, context, 2, false,
+            chrome::dialog_button_width_for(context, {"Cancel", "Confirm import"}));
         if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary))
             result = worm_ui_sound_import_dialog_action_t::cancel;
         if (chrome::dialog_button(dialog, context, "Confirm import", chrome::DialogButtonRole::primary))

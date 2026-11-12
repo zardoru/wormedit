@@ -404,7 +404,8 @@ void render_footer(wormedit::ui::chrome::Dialog& dialog, nk_context* context,
         nk_layout_row_dynamic(context, 34, 1);
         nk_label_wrap(context, view.status.data());
     }
-    chrome::dialog_footer_begin(dialog, context, 4, false, 128);
+    chrome::dialog_footer_begin(dialog, context, 4, false,
+        chrome::dialog_button_width_for(context, {"Revert all", "Restore defaults", "Close", "Apply all"}));
     if (chrome::dialog_button(dialog, context, "Revert all", chrome::DialogButtonRole::secondary))
         emit(action, view, WORM_UI_OPTIONS_REVERT);
     if (chrome::dialog_button(dialog, context, "Restore defaults", chrome::DialogButtonRole::secondary))
@@ -421,7 +422,8 @@ void render_discard_confirmation(wormedit::ui::chrome::Dialog& dialog, nk_contex
     namespace chrome = wormedit::ui::chrome;
     chrome::dialog_text(dialog, context, "Discard unapplied changes from all Options pages?",
                         chrome::color(chrome::UiColor::text));
-    chrome::dialog_footer_begin(dialog, context, 2, true, 140);
+    chrome::dialog_footer_begin(dialog, context, 2, true,
+        chrome::dialog_button_width_for(context, {"Discard changes", "Keep editing"}));
     if (chrome::dialog_button(dialog, context, "Discard changes", chrome::DialogButtonRole::destructive))
         emit(action, view, WORM_UI_OPTIONS_DISCARD_AND_CLOSE);
     if (chrome::dialog_button(dialog, context, "Keep editing", chrome::DialogButtonRole::secondary))
@@ -454,7 +456,7 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const wormedit::
     auto& dialog = options_dialog;
     if (chrome::dialog_begin(dialog, context, "Options", "Options",
         {.modal = true, .closable = true, .width = 800, .escape_cancels = true,
-         .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {640, 400}, .movable = true})) {
+         .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {720, 400}, .movable = true})) {
         if (view->confirm_discard) {
             render_discard_confirmation(dialog, context, *view, *action);
         } else {

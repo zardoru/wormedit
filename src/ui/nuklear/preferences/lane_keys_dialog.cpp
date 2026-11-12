@@ -119,7 +119,8 @@ void presets(nk_context* context, const lane_keys_view_t& view, lane_keys_action
     action.preset = values[static_cast<std::size_t>(selected)];
 }
 void footer(nk_context* context, const lane_keys_view_t& view, lane_keys_action_t& action) {
-    chrome::dialog_footer_begin(dialog, context, 3, true, 150);
+    chrome::dialog_footer_begin(dialog, context, 3, true,
+        chrome::dialog_button_width_for(context, {"Reset to preset", "Cancel", "Apply"}));
     if (chrome::dialog_button(dialog, context, "Reset to preset", chrome::DialogButtonRole::secondary))
         emit(action, view, lane_keys_action_kind_t::reset);
     nk_spacing(context, 1);

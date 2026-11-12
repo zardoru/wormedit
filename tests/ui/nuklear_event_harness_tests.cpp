@@ -5761,7 +5761,7 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
     button.button.y = y;
     (void)harness.frame(std::array{motion, button});
     motion.motion.x += 240;
-    motion.motion.y += 280;
+    motion.motion.y += 220;
     motion.motion.state = SDL_BUTTON_LMASK;
     (void)harness.frame(std::array{motion});
     button.type = SDL_EVENT_MOUSE_BUTTON_UP;

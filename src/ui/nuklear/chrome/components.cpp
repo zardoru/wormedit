@@ -249,10 +249,15 @@ auto Checkbox::render(nk_context* context) const -> bool {
     const auto label_color = !usable ? chrome::text_faint()
                              : lit ? color(UiColor::text_bright) : color(UiColor::text);
     if (label && label[0] && font) {
-        // The same middle-aligned rect nk_widget_text builds for a stock toggle, so the label
-        // sits exactly where a stock label (and a button's text) in the same row would.
-        const auto text_h = std::max(label_area.h / 2.0f, label_area.h - (label_area.h / 2.0f + font->height / 2.0f));
-        const auto text_area = nk_rect(label_area.x, label_area.y + label_area.h / 2.0f - font->height / 2.0f,
+        // Built the way a stock button builds its centered text rect (same content inset, same
+        // nk_widget_text middle alignment), so a checkbox label and a button label in one row
+        // share a baseline and the same drawn text bounds.
+        const auto& button = context->style.button;
+        const auto content_h = label_area.h - (2.0f * button.padding.y + button.border + 2.0f * button.rounding);
+        const auto text_h = std::max(content_h / 2.0f, content_h - (content_h / 2.0f + font->height / 2.0f));
+        const auto text_area = nk_rect(label_area.x,
+                                       label_area.y + button.padding.y + button.border + button.rounding +
+                                           content_h / 2.0f - font->height / 2.0f,
                                        label_area.w, text_h);
         nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
                      nk_rgba(0, 0, 0, 0), label_color);

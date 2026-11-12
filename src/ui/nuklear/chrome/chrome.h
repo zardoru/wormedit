@@ -491,6 +491,23 @@ inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.fixed_background = saved.fixed_background;
 }
 
+// The dropdown chevron: Lucide `chevron-down` at `chevron_size`, inside the right end of the
+// combo's own bounds, muted until the pointer is over the combo.
+inline constexpr float chevron_size = 14.0f;
+inline void draw_combo_chevron(nk_context* context, struct nk_rect bounds) {
+    const auto hovered = nk_input_is_mouse_hovering_rect(&context->input, bounds);
+    const auto cell = nk_rect(bounds.x + bounds.w - metrics::gap_small - metrics::control_compact,
+                              bounds.y, metrics::control_compact, bounds.h);
+    lucide::draw(context, cell, lucide::Glyph::chevron_down,
+                 color(hovered ? UiColor::text_bright : UiColor::text_muted), chevron_size);
+}
+// Bounds of the combo whose popup is open, so safe_combo_end() can draw its chevron once the
+// parent window is current again.
+inline struct nk_rect& open_combo_bounds() {
+    static struct nk_rect bounds{};
+    return bounds;
+}
+
 // Keep both the popup body and its end-of-panel padding transparent while the
 // shared rounded popup surface supplies the fill. Every successful begin pairs with end.
 inline auto safe_combo_begin_label(nk_context* context, const char* label,
@@ -507,12 +524,15 @@ inline auto safe_combo_begin_label(nk_context* context, const char* label,
         nk_style_pop_color(context);
         return nk_false;
     }
+    const auto bounds = nk_widget_bounds(context);
     if (nk_combo_begin_label(context, label, size)) {
+        open_combo_bounds() = bounds;
         menu_panel(context);
         return nk_true;
     }
     nk_style_pop_style_item(context);
     nk_style_pop_color(context);
+    draw_combo_chevron(context, bounds);
     return nk_false;
 }
 
@@ -520,6 +540,7 @@ inline void safe_combo_end(nk_context* context) {
     nk_combo_end(context);
     nk_style_pop_style_item(context);
     nk_style_pop_color(context);
+    draw_combo_chevron(context, open_combo_bounds());
 }
 
 template<class Row, class Label>
@@ -631,6 +652,9 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.combo.label_normal = color(UiColor::text);
     style.combo.label_hover = color(UiColor::text_bright);
     style.combo.label_active = color(UiColor::text_bright);
+    // The chevron is drawn by safe_combo_*; Nuklear's own symbol is a filled triangle sized to the
+    // whole button, which reads far heavier than the text.
+    style.combo.sym_normal = style.combo.sym_hover = style.combo.sym_active = NK_SYMBOL_NONE;
     style.combo.symbol_normal = color(UiColor::text_muted);
     style.combo.symbol_hover = color(UiColor::text_bright);
     style.combo.symbol_active = color(UiColor::text_bright);

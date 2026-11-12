@@ -135,8 +135,17 @@ auto place(nk_context* context, float outer_width, float content_height)
 }
 
 auto begin(nk_context* context, const placement_t& placement) -> bool {
-    return context && nk_tooltip_begin_offset(context, placement.outer_bounds.w, NK_TOP_LEFT,
-                                              placement.offset);
+    if (!context) return false;
+    // Nuklear begins the tooltip as a popup, so its panel takes popup_padding, and then relabels
+    // it a tooltip, so nk_panel_end fills the right edge with menu_padding. When the two differ,
+    // that fill pokes out past the border. Both phases must see the same padding.
+    auto& window = context->style.window;
+    const auto popup_padding = window.popup_padding;
+    window.popup_padding = window.menu_padding;
+    const auto opened = nk_tooltip_begin_offset(context, placement.outer_bounds.w, NK_TOP_LEFT,
+                                                placement.offset) != 0;
+    window.popup_padding = popup_padding;
+    return opened;
 }
 
 void draw_text(nk_context* context, const text_plan_t& plan) {

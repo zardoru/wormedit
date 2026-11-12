@@ -83,8 +83,12 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
     if (content_width < context->style.font->height) return std::nullopt;
 
     text_plan_t plan;
-    plan.outer_width = outer_width;
     plan.lines = chrome::wrap_text(context->style.font, text, content_width, chrome::text_wrap_policy_t::tooltip_lines);
+    // Wrapped lines are usually narrower than the limit, so the box shrinks to the widest one.
+    auto widest = 0.0F;
+    for (const auto& line : plan.lines) widest = std::max(widest, text_width(context, line));
+    plan.outer_width = std::min(outer_width, std::max(widest + text_padding_x + 2.0F * padding.x + 2.0F * border,
+                                                      minimum_width));
     const auto row_height = context->style.font->height + context->style.text.padding.y * 2.0F +
                             context->style.window.min_row_height_padding * 2.0F;
     plan.content_height = static_cast<float>(plan.lines.size()) *

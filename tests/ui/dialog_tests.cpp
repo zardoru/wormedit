@@ -282,6 +282,9 @@ TEST_CASE("Text fitting preserves empty suffix and marker overflow policies",
     verify(chrome::wrap_text(&font, "one two", 32) == std::vector<std::string>{"one", "two"});
     verify(chrome::wrap_text(&font, "one\ntwo", 64, chrome::text_wrap_policy_t::tooltip_lines) ==
           std::vector<std::string>{"one", "two"});
+    // A wrap consumes the space it broke at, so the next line starts at its word.
+    verify(chrome::wrap_text(&font, "one two", 32, chrome::text_wrap_policy_t::tooltip_lines) ==
+          std::vector<std::string>{"one", "two"});
     verify(chrome::unit_to_byte(0.5f) == 128);
     verify(chrome::percent_to_alpha(50) == 128);
     verify(chrome::percent_to_alpha(50, 153) == 77);

@@ -75,9 +75,9 @@ void style_metadata_footer_button(nk_style_button& style, bool enabled, bool acc
 }
 
 void muted_label(nk_context* context, const char* text) {
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label_colored(context, text, NK_TEXT_LEFT,
-                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+    wormedit::ui::chrome::caption(context, text,
+                                  wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
 }
 
 int copy_metadata_text(char* destination, size_t capacity, const char* source,

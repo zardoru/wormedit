@@ -225,7 +225,7 @@ auto layer_editor_allowed(const LayersPanel& panel, const wormedit::ui::compose_
 void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Rename layer", NK_TEXT_LEFT);
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
@@ -250,7 +250,7 @@ void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::comp
 void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Layer color", NK_TEXT_LEFT);
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
@@ -285,7 +285,7 @@ void render_layer_editors(const LayersPanel& panel) {
 
 void render_header(const LayersPanel& panel) {
     auto* context = panel.context;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.84f);
     nk_labelf(context, NK_TEXT_LEFT, "Layers  %zu", panel.view->semantic_layer_total_count);
     nk_layout_row_push(context, 0.16f);

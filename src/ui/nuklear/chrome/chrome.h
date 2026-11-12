@@ -838,6 +838,15 @@ inline auto section_push(nk_context* context, nk_tree_type type, const char* tit
 }
 void section_pop(nk_context* context);
 
+// One line of caption, hint or unit text: the small font in the given color. Falls back to
+// the body font where the small one does not exist yet.
+inline void caption(nk_context* context, const char* text, nk_color tint) {
+    const auto* small = theme::small_font;
+    if (small) nk_style_push_font(context, small);
+    nk_label_colored(context, text, NK_TEXT_LEFT, tint);
+    if (small) nk_style_pop_font(context);
+}
+
 // An empty row that separates groups inside one section. Rows already sit `window.spacing`
 // apart, so the visible gap is the height plus that spacing on both sides.
 inline void group_gap(nk_context* context, float height = metrics::gap_small) {

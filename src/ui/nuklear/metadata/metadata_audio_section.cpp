@@ -101,7 +101,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
                      wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
     const auto parsed = metadata_audio_offset_value();
     if (!parsed) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, "Enter a number or fraction, e.g. -0.125, 1/3 or -125 ms.",
                          NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
@@ -173,11 +173,11 @@ static void metadata_register_drop_target(struct nk_context* context,
 
 static void metadata_read_only_path(struct nk_context* context, const char* label,
                                     const std::string& path, wormedit::ui::metadata_drop_target_t target = {}) {
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, label, NK_TEXT_LEFT);
     std::vector<char> buffer(path.begin(), path.end());
     buffer.push_back('\0');
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     metadata_register_drop_target(context, target);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
@@ -206,7 +206,7 @@ static void metadata_copy_inspection_button(struct nk_context* context,
                                             const wormedit::ui::metadata_view_t* metadata,
                                             wormedit::ui::workspace_action_t* action, bool export_copy,
                                             size_t group_index) {
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (metadata->copy_preview_pending)
         nk_widget_disable_begin(context);
     const auto inspect = nk_button_label(context, export_copy ? "Inspect export destination"
@@ -226,7 +226,7 @@ static void metadata_copy_inspection_button(struct nk_context* context,
         metadata->copy_preview_asset_id.value == metadata->selected_music_asset_id.value &&
         metadata->copy_preview_export == export_copy &&
         (!export_copy || metadata->copy_preview_group_index == group_index)) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, metadata->copy_preview_text.c_str(), NK_TEXT_LEFT);
     }
 }
@@ -263,7 +263,7 @@ static void request_external_copy_inspection(const MetadataPanel& panel,
                                              std::size_t group_index, bool can_copy) {
     const auto& metadata = *panel.metadata;
     auto* action = panel.action;
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     const auto disabled = !can_copy || metadata.copy_preview_pending;
     if (disabled) nk_widget_disable_begin(panel.context);
     const auto inspect = nk_button_label(panel.context,
@@ -296,7 +296,7 @@ static void render_external_copy_preview(const MetadataPanel& panel,
                                          const std::filesystem::path& source,
                                          bool export_copy, std::size_t group_index) {
     if (!external_copy_preview_matches(*panel.metadata, source, export_copy, group_index)) return;
-    nk_layout_row_dynamic(panel.context, 19, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::row_text, 1);
     nk_label(panel.context, panel.metadata->copy_preview_text.c_str(), NK_TEXT_LEFT);
 }
 
@@ -307,7 +307,7 @@ static void request_external_copy(const MetadataPanel& panel, const char* source
     auto* action = panel.action;
     const auto export_copy = export_group != nullptr;
     const auto group_index = export_copy ? export_group->document_index : 0;
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     if (!can_copy) nk_widget_disable_begin(panel.context);
     const auto* label = metadata.import_copy_pending ? "Copying and validating audio"
         : export_copy ? "Copy and link audio into export" : "Copy and link audio into project";
@@ -422,7 +422,7 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
     if (disabled) nk_widget_disable_end(context);
     if (browse && !disabled) open_metadata_file_dialog();
     if (state.external_music_error[0]) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, state.external_music_error.data(), NK_TEXT_LEFT);
     }
 }
@@ -490,7 +490,7 @@ static void render_dropped_selected_music_copy(
     metadata_copy_inspection_button(panel.context, &metadata, panel.action,
                                     destination == WORM_UI_METADATA_DROP_EXPORT,
                                     group ? group->document_index : 0);
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     const auto label = destination == WORM_UI_METADATA_DROP_PROJECT
         ? "Confirm drop: copy selected music to project"
         : "Confirm drop: copy selected music to export";
@@ -515,7 +515,7 @@ static void render_dropped_music_link(const MetadataPanel& panel,
     const auto& metadata = *panel.metadata;
     const auto can_link = metadata.has_chart && !metadata.import_copy_pending &&
         std::strlen(metadata.dropped_music_path.c_str()) <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES;
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     if (!can_link) nk_widget_disable_begin(panel.context);
     const auto link = nk_button_label(panel.context, "Use as song audio");
     if (!can_link) nk_widget_disable_end(panel.context);
@@ -562,7 +562,7 @@ static auto render_output_group_combo(const MetadataPanel& panel)
     const auto* label = selected->name[0] ? selected->name.c_str() : selected->relative_output_path.c_str();
     if (wormedit::ui::chrome::safe_combo_begin_label(panel.context, label,
                              nk_vec2(nk_widget_width(panel.context), 180.0f))) {
-        nk_layout_row_dynamic(panel.context, 22, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
         for (size_t index = 0; index < metadata.output_groups.size(); ++index) {
             const auto& group = metadata.output_groups[index];
             const auto* group_label = group.name[0] ? group.name.c_str() : group.relative_output_path.c_str();
@@ -648,7 +648,7 @@ static void render_dropped_output_path(const MetadataPanel& panel) {
     muted_label(panel.context, group
         ? "Apply this path to the output group under the drop target."
         : "The dropped output group is no longer available.");
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     if (!group) nk_widget_disable_begin(panel.context);
     const auto apply = nk_button_label(panel.context, "Apply dropped output path");
     if (!group) nk_widget_disable_end(panel.context);
@@ -669,7 +669,7 @@ static auto render_project_copy_info(const MetadataPanel& panel) -> std::optiona
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
     if (!metadata.project_directory.c_str() || !metadata.project_directory.c_str()[0]) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, "Save the project to copy audio files.", NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
         return std::nullopt;
@@ -697,7 +697,7 @@ static auto render_project_copy_info(const MetadataPanel& panel) -> std::optiona
     metadata_read_only_path(context, "Project copy destination",
                             (info.project / "assets" / info.destination_name).generic_string());
     metadata_copy_inspection_button(context, &metadata, panel.action, false, 0);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, "Copy music into project assets") &&
         !panel.action->metadata_inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
@@ -715,7 +715,7 @@ static void render_export_copy_info(const MetadataPanel& panel,
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
     if (selected.relative_asset_directory[0] == '\0') {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, "The output group has no safe asset directory.", NK_TEXT_LEFT);
         return;
     }
@@ -729,7 +729,7 @@ static void render_export_copy_info(const MetadataPanel& panel,
             .lexically_normal().generic_string());
     metadata_copy_inspection_button(context, &metadata, panel.action, true,
                                     selected.document_index);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, "Copy music into selected export folder") &&
         !panel.action->metadata_inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {

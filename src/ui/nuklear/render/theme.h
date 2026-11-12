@@ -15,6 +15,8 @@ namespace wormedit::ui::theme {
 
 // Stable 28 px numeric readout handle, refreshed with the editor atlas.
 inline const nk_user_font* display_font{};
+// Body font at the caption size (metrics::font_small); null before the atlas exists.
+inline const nk_user_font* small_font{};
 
 enum class UiColor {
     background,

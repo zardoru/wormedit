@@ -448,17 +448,17 @@ auto audio_navigation_tip(const wormedit::ui::compose_view_t& view, bool previou
 }
 
 void render_audio_form_fields(struct nk_context* context, bool bookmark) {
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     auto& label = bookmark ? state.audio_bookmark_label : state.audio_section_label;
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, label.data(),
                                                            label.size(), nk_filter_default);
     if (bookmark) {
-        nk_layout_row_dynamic(context, 25, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             state.audio_bookmark_time.data(), state.audio_bookmark_time.size(), nk_filter_default);
         return;
     }
-    nk_layout_row_dynamic(context, 25, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.audio_section_begin.data(), state.audio_section_begin.size(), nk_filter_default);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
@@ -601,13 +601,13 @@ void render_song_preview(struct nk_context* context, const wormedit::ui::compose
     nk_label_colored(context, view.preview_span.chart_override ? "Song preview · this chart's own" : "Song preview",
                      NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
     if (!view.preview_span.available) render_empty_list(context, "No preview set");
-    nk_layout_row_dynamic(context, 18, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
     nk_label(context, "Start (ms)", NK_TEXT_LEFT);
     const auto end_label = nk_widget_bounds(context);
     nk_label(context, "End (ms)", NK_TEXT_LEFT);
     if (wormedit::ui::nuklear::tooltip::hovered(context, end_label))
         wormedit::ui::nuklear::tooltip::text(context, "Leave the end empty for a point-only preview.");
-    nk_layout_row_dynamic(context, 25, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.preview_start.data(), state.preview_start.size(), nk_filter_decimal);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,

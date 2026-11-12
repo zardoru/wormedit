@@ -735,7 +735,7 @@ void render_sound_slot_list(const SoundsPanel& panel, float height) {
 void render_sound_slot_search(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto before = state.keysound_catalog.keysound_slots_search;
-    nk_layout_row_dynamic(panel.context, 25, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
         panel.context, NK_EDIT_FIELD, state.keysound_catalog.keysound_slots_search.data(),
         static_cast<int>(state.keysound_catalog.keysound_slots_search.size()), nk_filter_default);
@@ -747,7 +747,7 @@ void render_sound_slot_search(const SoundsPanel& panel) {
 
 void render_search(const SoundsPanel& panel) {
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, NK_EDIT_FIELD, panel.state->keysound_catalog.keysound_search.data(),
         static_cast<int>(panel.state->keysound_catalog.keysound_search.size()), nk_filter_default);
@@ -793,7 +793,7 @@ auto close_filter_popup_if_requested(const SoundsPanel& panel, bool group_popup,
 void render_group_filter_items(const SoundsPanel& panel) {
     auto& filters = panel.state->keysound_filters.keysound_filters;
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     for (std::size_t index = 0; index < panel.view->compose_sound_groups.size(); ++index) {
         const auto& group = panel.view->compose_sound_groups[index];
         const auto selected = !filters.group_filter_active ||
@@ -819,7 +819,7 @@ void render_group_filter_items(const SoundsPanel& panel) {
 auto render_layer_filter_items(const SoundsPanel& panel) -> bool {
     auto& filters = panel.state->keysound_filters.keysound_filters;
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (panel.state->keysound_filters.keysound_filter_layer_first > 0 &&
         nk_combo_item_label(context, "Previous layers...", NK_TEXT_LEFT)) {
         panel.state->keysound_filters.keysound_filter_layer_first =
@@ -1602,7 +1602,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     render_sound_renumber_confirmation(panel);
     render_sound_slot_confirmation(panel);
     if (!state->keysound_slots.keysound_slot_feedback.empty()) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, state->keysound_slots.keysound_slot_feedback.c_str(), NK_TEXT_LEFT,
                          nk_rgb(226, 166, 64));
     }

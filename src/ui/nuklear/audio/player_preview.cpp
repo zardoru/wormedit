@@ -253,7 +253,7 @@ const char* preview_image_state(const wormedit::ui::player_preview_visual_layer_
 
 void render_preview_visual_layer(struct nk_context* context,
                                  const wormedit::ui::player_preview_visual_layer_view_t& layer) {
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     const auto* label = preview_visual_label(layer.kind);
     const auto* image_state = preview_image_state(layer);
     if (layer.video_clock_ready) {
@@ -266,7 +266,7 @@ void render_preview_visual_layer(struct nk_context* context,
                   static_cast<unsigned long long>(layer.resource_id.value), image_state);
     }
     if (layer.diagnostic != wormedit::ui::player_preview_visual_diagnostic_t::none) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Event %llu: %s",
                   static_cast<unsigned long long>(layer.object_id.value), layer.diagnostic_text.data());
     }
@@ -274,7 +274,7 @@ void render_preview_visual_layer(struct nk_context* context,
 
 void render_preview_status(struct nk_context* context,
                            const wormedit::ui::player_preview_view_t* view) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     if (!view->scene_available) {
         nk_label(context, !view->status_text.empty() ? view->status_text.c_str() : "Preview unavailable",
                  NK_TEXT_LEFT);

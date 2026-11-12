@@ -38,7 +38,7 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
 
 void render_import_items(nk_context* context, worm_ui_sound_import_state_t& state,
                          const wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t>& catalog) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Files", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 112, 1);
     struct nk_list_view list{};
@@ -79,7 +79,7 @@ void render_member_move(nk_context* context, worm_ui_sound_import_state_t& state
     const auto group = state.items[member].group_index;
     const auto label = group ? state.groups[*group].name : std::string{"Ungrouped"};
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label.c_str(), nk_vec2(200, 220))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Ungrouped", NK_TEXT_LEFT))
         worm_ui_nuklear_sound_import_move_member(state, member, std::nullopt);
     for (std::size_t index = 0; index < state.groups.size(); ++index) {
@@ -142,7 +142,7 @@ void render_group_candidate(nk_context* context, worm_ui_keysound_group_review_t
     const auto current = candidate_group_index(state, candidate.id);
     const char* label = current ? state.groups[*current].name.c_str() : "Ungrouped";
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(200, 200))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Ungrouped", NK_TEXT_LEFT))
         worm_ui_keysound_group_review_move(state, candidate.id, std::nullopt);
     for (std::size_t index = 0; index < state.groups.size(); ++index)
@@ -206,7 +206,7 @@ void render_member_list(nk_context* context, worm_ui_sound_import_state_t& state
 
 void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state) {
     if (state.groups.empty()) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Groups", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_button_label(context, "Leave all ungrouped"))
@@ -321,7 +321,7 @@ void render_manual_group_contents(nk_context* context, const wormedit::ui::compo
         if (group != end) destination = group->name.c_str();
     }
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, destination, nk_vec2(280, 250))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Create new group", NK_TEXT_LEFT)) state.target_group_id = 0;
     for (std::size_t index = 0; index < view.compose_sound_groups.size(); ++index)
         if (nk_combo_item_label(context, view.compose_sound_groups[index].name.c_str(), NK_TEXT_LEFT))

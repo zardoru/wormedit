@@ -53,7 +53,7 @@ void scope_message(nk_context* context, const char* text, bool warning, bool err
     const auto color = error ? nk_rgb(255, 130, 130) : warning ? scope_warning_color() : context->style.text.color;
     nk_style_push_color(context, &context->style.text.color, color);
     if (warning) {
-        nk_layout_row_begin(context, NK_DYNAMIC, 20.0f, 2);
+        nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::row_text, 2);
         nk_layout_row_push(context, 0.09f); scope_warning_icon(context, color);
         nk_layout_row_push(context, 0.91f); nk_label(context, count > 1 ? ("Warning ×" + std::to_string(count)).c_str() : "Warning", NK_TEXT_LEFT);
         nk_layout_row_end(context);
@@ -392,7 +392,7 @@ void render_scope_detail(nk_context* context, const scope_view_t& view, wormedit
     constexpr char hash[] = "scope-node-detail";
     if (!chrome::section_push(context, NK_TREE_NODE, title.c_str(), NK_MAXIMIZED, hash, sizeof(hash) - 1, 0)) return;
     if (view.has_parameter) {
-        nk_layout_row_dynamic(context, 20.0f, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, selected != view.rows.end() && selected->kind == scope_kind_t::random ?
             "Outcome count" : "Value (DEF = default case)", NK_TEXT_LEFT);
         scope_text_input(context, view, action, view.parameter, scope_operation_t::draft_parameter);
@@ -406,7 +406,7 @@ void render_scope_detail(nk_context* context, const scope_view_t& view, wormedit
 void render_scope_preview(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
     constexpr char hash[] = "scope-preview-detail";
     if (!chrome::section_push(context, NK_TREE_NODE, "Playback preview", NK_MAXIMIZED, hash, sizeof(hash) - 1, 0)) return;
-    nk_layout_row_dynamic(context, 20.0f, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     if (view.playback_choice) nk_labelf(context, NK_TEXT_LEFT, "Choice: %lld", static_cast<long long>(*view.playback_choice));
     else nk_label(context, "Choice: unresolved", NK_TEXT_LEFT);
     scope_text_input(context, view, action, view.preview, scope_operation_t::draft_preview);

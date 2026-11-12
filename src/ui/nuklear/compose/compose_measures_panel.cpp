@@ -123,7 +123,7 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
     nk_layout_row_dynamic(context, 34, 1);
     nk_label_wrap(context, "Length clears incompatible meters.");
     worm_ui_keysound_prune(state->measures_dock.measure_selection, ids_of(*view));
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "No.   Meter   Length", NK_TEXT_LEFT);
     const auto height = wormedit::ui::layout::remaining_content_height(context,
         {.minimum = 60.0f, .reserved = 5.0f});

@@ -22,6 +22,8 @@ class editor_font_t {
     void observe(std::string_view text);
     [[nodiscard]] auto handle() const -> const nk_user_font* { return &handle_; }
     [[nodiscard]] auto display_handle() const -> const nk_user_font* { return &display_handle_; }
+    // The body font at metrics::font_small, sharing its atlas raster, glyph query and fallback.
+    [[nodiscard]] auto small_handle() const -> const nk_user_font* { return &small_handle_; }
     [[nodiscard]] auto glyph(nk_rune codepoint) const -> const nk_font_glyph*;
     [[nodiscard]] auto glyph_count() const -> std::size_t { return codepoints_.size(); }
     [[nodiscard]] auto supported(nk_rune codepoint) const -> bool;
@@ -39,6 +41,7 @@ class editor_font_t {
     void warn(const char* reason);
     nk_user_font handle_{};
     nk_user_font display_handle_{};
+    nk_user_font small_handle_{};
     nk_font* baked_{};
     std::filesystem::path directory_;
     std::vector<unsigned char> fallback_data_;

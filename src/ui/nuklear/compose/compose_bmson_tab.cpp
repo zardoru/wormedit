@@ -77,7 +77,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
             ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Staged BMSON markers: %zu",
               view.staged_bmson_marker_restarts.size());
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
@@ -158,7 +158,7 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
     auto* action = inspector.action;
     const bool enabled = view.scene_available && view.selected_bmson_bgm_event_id.value != 0 &&
                          view.selected_bmson_source_lane_id.value != 0;
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "BMSON slice", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!enabled) nk_widget_disable_begin(context);

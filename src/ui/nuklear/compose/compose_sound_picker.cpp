@@ -27,7 +27,7 @@ void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_
     cancel_compose_sound_picker(picker);
 }
 void render_search(nk_context* context, sound_picker_state_t& state) {
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Go to sound", NK_TEXT_LEFT);
     const auto previous = state.query;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -55,7 +55,7 @@ void render_results(nk_context* context, const wormedit::ui::compose_view_t& vie
                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!results.ready || std::strcmp(results.query.c_str(), picker.query.data()) != 0) {
         nk_label(context, "Searching…", NK_TEXT_LEFT);
         return;

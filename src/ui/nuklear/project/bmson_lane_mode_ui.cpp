@@ -62,7 +62,7 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
     nk_label(context, "continuation points need a stem lane", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 66, 1);
     nk_label_wrap(context, "Packing requires converting every continuation point in this channel to a restart. This changes how the audio plays. Undo restores the channel and its stem lane.");
-    nk_layout_row_dynamic(context, 30, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
     if (nk_button_label(context, "Convert continue points to restarts and pack") &&
         action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         emit(action, project, chart, revision, confirmation.channel,

@@ -47,7 +47,7 @@ void stage(nk_context* context, const lane_keys_view_t& view, lane_keys_action_t
     const char* id = right ? "Lane keys P2" : "Lane keys P1";
     if (!nk_group_begin(context, id, NK_WINDOW_NO_SCROLLBAR)) return;
     const auto count = std::ranges::count(view.lanes, right, &lane_key_lane_view_t::right_stage);
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label_colored(context, right ? "P2 · RIGHT STAGE" : "P1 · LEFT STAGE", NK_TEXT_LEFT,
                      right ? nk_rgb(247, 167, 66) : nk_rgb(89, 178, 255));
     const auto columns = std::min<std::ptrdiff_t>(12, std::max<std::ptrdiff_t>(1, count));
@@ -130,10 +130,10 @@ void footer(nk_context* context, const lane_keys_view_t& view, lane_keys_action_
 }
 void body(nk_context* context, const lane_keys_view_t& view, lane_keys_action_t& action, bool compact) {
     presets(context, view, action);
-    nk_layout_row_dynamic(context, 26, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label(context, "Lanes  Click a lane, then press its key. Keys are physical positions on every keyboard language.", NK_TEXT_LEFT);
     lanes(context, view, action, compact ? 100.0f : 144.0f);
-    nk_layout_row_dynamic(context, 30, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
     nk_label_colored(context, view.capturing
         ? "Press a key. Escape keeps the current key; Backspace unbinds the lane."
         : "Select a lane to bind it. Space, Tab, arrows and editing keys are reserved.",

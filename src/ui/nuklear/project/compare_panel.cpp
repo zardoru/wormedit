@@ -11,7 +11,7 @@ namespace {
 void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t& view,
                         wormedit::ui::workspace_action_t& action) {
     if (view.diagnostics.size() == 0) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "No validation diagnostics.", NK_TEXT_LEFT);
         return;
     }
@@ -22,7 +22,7 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
     for (size_t index = 0; index < view.diagnostics.size(); ++index) {
         const auto& diagnostic = view.diagnostics[index];
         const char* label = diagnostic.label.data();
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (diagnostic.has_row) {
             if (nk_button_label(context, label)) {
                 action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
@@ -61,7 +61,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
             action->compare_chart_id = view->charts[next].id;
         }
     }
-    nk_layout_row_dynamic(context, 18, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
     nk_label(context, view->first_difficulty.data(), NK_TEXT_CENTERED);
     nk_label(context, view->second_difficulty.data(), NK_TEXT_CENTERED);
     struct nk_rect first{}, second{};

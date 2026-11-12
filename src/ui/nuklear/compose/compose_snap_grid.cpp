@@ -42,20 +42,20 @@ void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& 
         labels[index] = storage[index].data();
     }
     move_choice(context, count, state.snap_grid.snap_grid_choice);
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Editing grid", NK_TEXT_LEFT);
     const auto chosen = ChipGrid{labels.data(), count, state.snap_grid.snap_grid_choice, 4}.render(context).chosen;
     if (chosen >= 0) emit_snap(context, view, action, view.supported_snap_denominators[chosen]);
     else if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
         emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid.snap_grid_choice]);
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (Button{"Find fitting snap", ButtonKind::secondary, nullptr,
                view.selected_note_count + view.selected_bgm_event_count != 0}.render(context)) {
         emit_snap(context, view, action, 0);
         if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
             action.compose_action = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Arrows · Enter · Esc", NK_TEXT_LEFT);
     context_menu_end(menu, context);
 }

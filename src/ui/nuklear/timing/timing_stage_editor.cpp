@@ -213,7 +213,7 @@ static auto timing_stage_primary_label(wormedit::timing_lane_kind_t lane) -> con
 
 static void render_stage_title(const TimingStageEditor& editor) {
     const auto& view = *editor.view;
-    nk_layout_row_dynamic(editor.context, 22, 1);
+    nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
     if (bool(view.stage_existing_object_id))
         nk_labelf(editor.context, NK_TEXT_LEFT, "Editing timing event #%llu",
                   static_cast<unsigned long long>(view.stage_existing_object_id.value));
@@ -228,7 +228,7 @@ static void render_stage_kiai(TimingStageEditor& editor) {
 
 static void render_stage_anchor(TimingStageEditor& editor) {
     auto* context = editor.context;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Exact source sample frame", NK_TEXT_LEFT);
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 2);
     nk_layout_row_push(context, 0.38f);
@@ -244,12 +244,12 @@ static void render_stage_anchor(TimingStageEditor& editor) {
 static void render_bpm_fraction(TimingStageEditor& editor) {
     auto* context = editor.context;
     if (!state.bpm_advanced_fraction) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Exact value: %s / %s",
                   state.primary_numerator.data(), state.primary_denominator.data());
         return;
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Exact BPM", NK_TEXT_LEFT);
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
     nk_layout_row_push(context, 0.46f);
@@ -270,14 +270,14 @@ static void render_bpm_fraction(TimingStageEditor& editor) {
 static void render_stage_bpm(TimingStageEditor& editor) {
     auto* context = editor.context;
     const auto& view = *editor.view;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, view.stage_primary_decimal_exact ? "Decimal BPM (exact)"
                                                        : "Decimal BPM (approximate; fraction retained)",
              NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto decimal_changed = wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.bpm_decimal.data(), state.bpm_decimal.size(), nk_filter_float) != 0;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.50f);
     if (nk_button_label(context, "-1")) editor.bpm_step = -1;
     nk_layout_row_push(context, 0.50f);
@@ -297,7 +297,7 @@ static void render_stage_bpm(TimingStageEditor& editor) {
 
 static void render_stage_rational_primary(TimingStageEditor& editor) {
     auto* context = editor.context;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "%s (numerator / denominator)",
               timing_stage_primary_label(editor.view->stage_lane));
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
@@ -324,7 +324,7 @@ static void render_stage_secondary(TimingStageEditor& editor) {
     const auto& view = *editor.view;
     auto* context = editor.context;
     if (view.stage_lane == wormedit::timing_lane_kind_t::speed) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, "Transition", NK_TEXT_LEFT);
         nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
         nk_layout_row_push(context, 0.46f);
@@ -338,10 +338,10 @@ static void render_stage_secondary(TimingStageEditor& editor) {
             state.secondary_denominator.data(), state.secondary_denominator.size(),
             nk_filter_decimal) != 0;
         nk_layout_row_end(context);
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         editor.changed |= nk_checkbox_label(context, "Seconds", &editor.seconds) != 0;
     } else if (view.stage_lane == wormedit::timing_lane_kind_t::warp) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, bool(view.stage_existing_object_id) ? "Length in exact chart rows"
                                                               : "Length in current grid steps",
                  NK_TEXT_LEFT);
@@ -351,7 +351,7 @@ static void render_stage_secondary(TimingStageEditor& editor) {
             nk_filter_decimal) != 0;
     } else if (view.stage_lane == wormedit::timing_lane_kind_t::stop ||
                view.stage_lane == wormedit::timing_lane_kind_t::delay) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Pause duration uses its authored unit: %s.",
                   timing_stage_pause_label(view.stage_pause_unit));
     }
@@ -404,7 +404,7 @@ static void render_stage_actions(TimingStageEditor& editor) {
     auto* action = editor.action;
     const auto& view = *editor.view;
     if (!view.stage_status_text.empty()) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, view.stage_status_text.c_str(), NK_TEXT_LEFT);
     }
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 2);

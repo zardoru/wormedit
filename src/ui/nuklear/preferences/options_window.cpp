@@ -81,7 +81,7 @@ void editor_page(nk_context* context, const wormedit::ui::options_view_t* view, 
 }
 void audio_output_controls(nk_context* context, const wormedit::ui::options_view_t& view,
                            wormedit::ui::options_action_t& action) {
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Output device", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     const auto label = view.output_device.empty() ? std::string{"System default"} : std::string{view.output_device};
@@ -103,7 +103,7 @@ void audio_output_controls(nk_context* context, const wormedit::ui::options_view
     edit_integer(context, view, action, "Buffer (frames; 0 = automatic)", WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
         view.buffer_frames, 0, 8192);
     if (view.audio_output_pending) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "Output changes apply after Stop.", NK_TEXT_LEFT);
     }
 }
@@ -148,7 +148,7 @@ void audio_page(nk_context* context, const wormedit::ui::options_view_t* view, w
         view->keysound_budget_mib, 256, 8192);
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "osu! hitsound skin folder (empty uses bundled samples)", NK_TEXT_LEFT);
     std::array<char, wormedit::maximum_preference_string_bytes + 1> folder{};
     std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.empty() ? "" : view->osu_skin_directory.data());
@@ -288,7 +288,7 @@ void interface_scale_picker(nk_context* context, const wormedit::ui::options_vie
         selected, 28, nk_vec2(180, 220));
     if (const auto in_use = worm_ui_frontend_interface_scale_percent();
         view.ui_scale_percent > in_use) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Using %u%% to fit this window", static_cast<unsigned>(in_use));
     }
     if (value == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
@@ -305,7 +305,7 @@ void appearance_page(nk_context* context, const wormedit::ui::options_view_t* vi
     const auto& schemes = wormedit::ui::theme::field_schemes();
     const auto current = std::ranges::find(schemes, wormedit::ui::theme::field_scheme_id(),
         &wormedit::ui::theme::field_scheme_t::id);
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Preview: %s", current != schemes.end() ? current->name.c_str() : "Wormedit");
     scratch_position_picker(context, *view, *action, false);
     scratch_position_picker(context, *view, *action, true);
@@ -387,7 +387,7 @@ void render_page(nk_context* context, const wormedit::ui::options_view_t& view, 
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label(context, category_names[view.category], NK_TEXT_LEFT);
     if (view.category == WORM_UI_OPTIONS_INPUT && lane_keys) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         if (nk_button_label(context, "Lane keys…"))
             lane_keys->kind = wormedit::ui::lane_keys_action_kind_t::open;
     }

@@ -707,6 +707,9 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         static nk_user_font display_font = test_font;
         display_font.height = 28;
         wormedit::ui::theme::display_font = &display_font;
+        static nk_user_font small_font = test_font;
+        small_font.height = wormedit::ui::metrics::font_small;
+        wormedit::ui::theme::small_font = &small_font;
     }
     if (!headless) {
         const auto font_directory = SDL_GetBasePath()
@@ -714,6 +717,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
             : std::filesystem::path{"assets/fonts"};
         g_editor_font.initialize(context, font_directory);
         wormedit::ui::theme::display_font = g_editor_font.display_handle();
+        wormedit::ui::theme::small_font = g_editor_font.small_handle();
         const auto theme_directory = SDL_GetBasePath()
                                          ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
                                          : std::filesystem::path{"assets/themes"};
@@ -808,6 +812,7 @@ void worm_ui_frontend_shutdown(void) {
     wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
     wormedit::ui::theme::display_font = nullptr;
+    wormedit::ui::theme::small_font = nullptr;
     g_editor_font.reset();
     g_window = NULL;
     g_renderer = NULL;
@@ -1796,7 +1801,7 @@ static void render_workspace_error(wormedit::ui::workspace_action_t* action, int
     worm_ui_nuklear_compose_discard_frame_input();
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
-        nk_layout_row_dynamic(g_context, 30, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
         worm_ui_nuklear_retire_setup_popups(g_context);
         worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
@@ -1804,7 +1809,7 @@ static void render_workspace_error(wormedit::ui::workspace_action_t* action, int
         nk_label_wrap(g_context, diagnostic && diagnostic[0]
                                      ? diagnostic
                                      : "No diagnostic was provided for the workspace error.");
-        nk_layout_row_dynamic(g_context, 30, 2);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 2);
         if (nk_button_label(g_context, "Project")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
             action->tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -2108,7 +2113,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         return;
     }
-    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
     if (nk_button_label(g_context, label) &&
@@ -2907,7 +2912,7 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
                                        wormedit::ui::workspace_action_t& action, float height) {
     const auto count = view.recent_files.size();
     if (!count) return;
-    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     nk_label(g_context, "Recent projects and charts", NK_TEXT_LEFT);
     const auto list_height = wormedit::ui::layout::remaining_content_height(g_context,
         {.minimum = 48.0f, .reserved = 12.0f, .maximum = height});
@@ -2956,7 +2961,7 @@ static void render_empty_project_content(const wormedit::ui::workspace_view_t& v
     nk_spacing(g_context, 1);
     nk_layout_row_push(g_context, width);
     if (nk_group_begin(g_context, "startup-column", 0)) {
-        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
         nk_spacing(g_context, 1);
         nk_layout_row_dynamic(g_context, 48, 1);
         nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
@@ -3244,7 +3249,7 @@ static auto new_project_lane_color(new_project_lane_role_t role) -> nk_color {
 
 static void render_new_project_preview(const new_project_layout_entry_view_t& selected) {
     namespace chrome = wormedit::ui::chrome;
-    nk_layout_row_dynamic(g_context, 18.0f, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
     nk_label_colored(g_context, selected.label.data(), NK_TEXT_LEFT,
                      chrome::color(chrome::UiColor::text_bright));
     nk_layout_row_dynamic(g_context, 54.0f, 1);
@@ -3440,14 +3445,14 @@ struct GpuWorkSection {
 
 static void render_gpu_work_section(const wormedit::ui::frame_timing_view_t& timer,
                                     const GpuWorkSection& section) {
-    nk_layout_row_dynamic(g_context, 22, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
     nk_label(g_context, section.heading, NK_TEXT_LEFT);
     const std::array latest{section.latest.vertices,
         section.latest.indices, section.latest.draw_calls, section.latest.clip_rect_changes,
         section.latest.texture_switches};
     for (std::size_t metric = 0; metric < timer.gpu_work.size(); ++metric) {
         const auto summary = section.stats[metric];
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (!section.available || summary.count == 0)
             nk_labelf(g_context, NK_TEXT_LEFT, "  %s: N/A", timer.gpu_work_names[metric].data());
         else
@@ -3511,14 +3516,14 @@ static void render_frame_timing_overlay(int width, int height) {
                  bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
         const auto frame = timer.frame;
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (frame.cpu_count == 0)
             nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
                       frame.count, frame.average_ms, frame.p99_ms);
         else nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
                        frame.count, frame.average_ms, frame.p99_ms, frame.cpu_p99_ms);
         render_frame_time_graph(timer);
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (timer.heap_allocations_available)
             nk_labelf(g_context, NK_TEXT_LEFT,
                 "Projection new: %llu / %llu bytes (avg %.1f, p99 %.0f)",
@@ -3530,7 +3535,7 @@ static void render_frame_timing_overlay(int width, int height) {
         render_gpu_work_summary(timer);
         for (std::size_t i = 0; i < timer.phases.size(); ++i) {
             const auto summary = timer.phases[i];
-            nk_layout_row_dynamic(g_context, 22, 1);
+            nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
             if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i].data());
             else if (summary.cpu_count == 0)
                 nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
@@ -3616,7 +3621,7 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
         nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.data(), NK_TEXT_LEFT);
         auto completed = static_cast<nk_size>(job.completed);
         nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
-        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
         if (job.total)
             nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu", job.completed, job.total);
         else

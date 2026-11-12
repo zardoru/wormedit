@@ -96,6 +96,7 @@ void editor_font_t::reset() {
     baked_ = nullptr;
     handle_ = {};
     display_handle_ = {};
+    small_handle_ = {};
     directory_.clear();
     fallback_data_.clear();
     coverage_.clear();
@@ -196,6 +197,8 @@ void editor_font_t::rebuild(nk_context* context) {
     for (nk_rune index = 0; index < baked_->info.glyph_count; ++index)
         glyphs_.emplace(baked_->glyphs[index].codepoint, &baked_->glyphs[index]);
     handle_.texture = baked_->handle.texture;
+    small_handle_ = handle_;
+    small_handle_.height = ui::metrics::font_small;
     nk_style_set_font(context, &handle_);
     dirty_ = false;
 }

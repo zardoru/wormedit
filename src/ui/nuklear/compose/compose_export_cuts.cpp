@@ -75,7 +75,7 @@ auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose
 
 void render_cut_rows(nk_context* context, const wormedit::ui::compose_view_t& view, editor_t& editor) {
     if (view.export_cuts.empty()) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "No export cuts", NK_TEXT_LEFT);
         return;
     }
@@ -94,15 +94,15 @@ void render_cut_rows(nk_context* context, const wormedit::ui::compose_view_t& vi
 }
 
 void render_cut_fields(nk_context* context, editor_t& editor) {
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Label (optional)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         editor.label.data(), static_cast<int>(editor.label.size()), nk_filter_default);
-    nk_layout_row_dynamic(context, 18, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
     nk_label(context, "Start (ms)", NK_TEXT_LEFT);
     nk_label(context, "End (ms)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 25, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         editor.begin.data(), static_cast<int>(editor.begin.size()), nk_filter_decimal);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
@@ -140,7 +140,7 @@ void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
         nk_label_wrap(context, "Some cut bands exceed the display limit; every cut remains in this list.");
     }
     render_cut_rows(context, view, editor);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto can_create = view.scene_available && view.preview_audio_range.available;
     if (!can_create) nk_widget_disable_begin(context);
     const auto create = nk_button_label(context, "Create from selection");
@@ -149,7 +149,7 @@ void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION, editor);
     if (!editor.selected.value) nk_widget_disable_begin(context);
     render_cut_fields(context, editor);
-    nk_layout_row_dynamic(context, 25, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto apply = nk_button_label(context, "Apply cut");
     const auto remove = nk_button_label(context, "Delete cut");
     if (!editor.selected.value) nk_widget_disable_end(context);

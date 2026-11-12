@@ -262,7 +262,7 @@ void render_project_metadata_fields(nk_context* context, const wormedit::ui::set
     auto& popup = state.metadata_popup;
     const bool quiet = popup_input_is_quiet(context, PopupReleaseKeys::all);
     bool focus_pending = popup.focus_pending && quiet;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, state.edit_author ? "Set author" : "Set rating", NK_TEXT_LEFT);
     if (state.edit_author) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -271,7 +271,7 @@ void render_project_metadata_fields(nk_context* context, const wormedit::ui::set
     } else {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_checkbox_label(context, "Unset rating", &state.unset_rating);
-        nk_layout_row_dynamic(context, 20, 2);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
         nk_label(context, "Numerator", NK_TEXT_LEFT);
         nk_label(context, "Denominator", NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
@@ -359,7 +359,7 @@ void render_chart_actions(nk_context* context, const wormedit::ui::setup_view_t&
         nk_style_pop_vec2(context);
         return;
     }
-    nk_layout_row_dynamic(context, 26, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     const auto open_tip = std::string{"Open in Compose: "} + std::string{row.name};
     if (IconButton{wormedit::ui::lucide::Glyph::chevron_right, open_tip.c_str()}.render(context))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id.value);
@@ -614,7 +614,7 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
     render_chart_actions(context, view, row, hovered, action);
     preview_chart_drop(context, view, row.chart_id.value, row_bounds);
     if (row.diagnostic.data() && row.diagnostic.data()[0]) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label_colored(context, row.diagnostic.data(), NK_TEXT_LEFT, nk_rgb(235, 150, 120));
     }
 }
@@ -623,7 +623,7 @@ void render_creation_sources(nk_context* context, const wormedit::ui::setup_view
     for (const auto& category : view.timing_categories) {
         auto& source = project_state.creation_timing.sources.at(static_cast<std::size_t>(category.category));
         const auto selected = std::ranges::find(view.charts, source, &wormedit::ui::project_chart_row_view_t::chart_id);
-        nk_layout_row_dynamic(context, 26, 2);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
         nk_label(context, category.label.c_str(), NK_TEXT_LEFT);
         const std::string_view label = selected == view.charts.end() ? "Independent" : selected->name;
         if (!wormedit::ui::chrome::safe_combo_begin_label(context, label.data(), nk_vec2(300, 220))) continue;
@@ -687,7 +687,7 @@ void render_project_charts(nk_context* context, const wormedit::ui::setup_view_t
     (void)wormedit::ui::chrome::context_menu_update(project_state.row_menu, context);
     (void)wormedit::ui::chrome::popup_update_release_pending(context, project_state.release_pending);
     // The table fills the panel's row, not the whole window: a one-column row supplies that width.
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto available = nk_widget_width(context);
     const auto widths = column_widths(available);
     const auto ratios = table_ratios(available, widths);
@@ -839,12 +839,12 @@ auto render_chart_membership(nk_context* context, const wormedit::ui::setup_view
     nk_bool included = chart_is_in_output_group(group, chart.chart_id.value);
     const auto compatible = chart_supports_output_group(chart, group);
     const auto blocked = !compatible && !included;
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (blocked) nk_widget_disable_begin(context);
     const auto changed = nk_checkbox_label(context, group.name.data(), &included);
     if (blocked) nk_widget_disable_end(context);
     if (!compatible) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, output_incompatibility_reason(chart, static_cast<std::uint8_t>(group.family)), NK_TEXT_LEFT,
                          color(UiColor::text_muted));
     }
@@ -867,7 +867,7 @@ void render_chart_memberships(nk_context* context, const wormedit::ui::setup_vie
     }
     if (dialog_begin(project_state.membership_dialog, context, "Chart export memberships",
                      "Edit chart exports", {.width = 480.0f, .enter_confirms = false})) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, !chart->name.empty() ? chart->name.data() : "Untitled chart",
                  NK_TEXT_LEFT);
         for (size_t index = 0; index < view.output_groups.size(); ++index)
@@ -882,7 +882,7 @@ void render_chart_memberships(nk_context* context, const wormedit::ui::setup_vie
         project_state.membership_chart = 0;
 }
 void render_output_group_members(nk_context* context, const wormedit::ui::setup_view_t& view) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Included charts", NK_TEXT_LEFT);
     for (size_t i = 0; i < view.charts.size(); ++i) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
@@ -895,7 +895,7 @@ void render_output_group_members(nk_context* context, const wormedit::ui::setup_
             &project_state.group_charts[i]);
         if (blocked) nk_widget_disable_end(context);
         if (!compatible) {
-            nk_layout_row_dynamic(context, 20, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
             const auto reason = family < 5 ? view.charts[i].output_incompatibility_reasons[family]
                                             : "This output format is not supported.";
             nk_label_colored(context, !reason.empty() ? reason.data() : "This output format is not supported.",
@@ -1010,14 +1010,14 @@ void render_export_audio_settings(nk_context* context) {
         nk_property_float(context, "Quality", -0.1F, &audio.ogg_quality, 1.0F, 0.1F, 0.01F);
         return;
     }
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "MP3 bitrate", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 5);
     if (nk_option_label(context, "Auto", audio.mp3_bitrate_kbps == 0)) audio.mp3_bitrate_kbps = 0;
     for (const auto bitrate : mp3_bitrates_kbps)
         if (nk_option_label(context, (std::to_string(bitrate) + " kbps").c_str(), audio.mp3_bitrate_kbps == bitrate))
             audio.mp3_bitrate_kbps = bitrate;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Auto uses source bitrate, up to 192 kbps", NK_TEXT_LEFT);
 }
 
@@ -1258,14 +1258,14 @@ void render_output_group_card(nk_context* context, const wormedit::ui::setup_vie
             nk_label(context, bytes, NK_TEXT_RIGHT);
         }
         for (size_t index = 0; index < group.diagnostics.size(); ++index) {
-            nk_layout_row_dynamic(context, 22, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
             nk_label_colored(context, group.diagnostics[index].message.data(), NK_TEXT_LEFT,
                              color(group.diagnostics[index].severity == wormedit::diagnostic_severity_t::error
                                        ? UiColor::conflict
                                        : UiColor::text_muted));
         }
         if (group.plan_rows_truncated || group.diagnostics_truncated) {
-            nk_layout_row_dynamic(context, 22, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
             nk_label_colored(context, "Preview rows truncated.", NK_TEXT_LEFT,
                              color(UiColor::status));
         }
@@ -1365,7 +1365,7 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
             : "No export targets yet. Start with a target suggested for this layout:");
         // An empty row would still take its height, so only lay it out for suggestions.
         constexpr int columns = 3;
-        if (!view.output_suggestions.empty()) nk_layout_row_dynamic(context, 30, columns);
+        if (!view.output_suggestions.empty()) nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, columns);
         for (const auto& suggestion : view.output_suggestions)
             if (wormedit::ui::chrome::Button{suggestion.name.data(),
                     wormedit::ui::chrome::ButtonKind::secondary,
@@ -1457,7 +1457,7 @@ void emit_project_setting(const wormedit::ui::setup_view_t& view,
 }
 auto project_default_toggle(nk_context* context, const char* label, bool overridden) -> bool {
     wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium); // Separates each setting from the previous one.
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_bool use_default = !overridden;
     return nk_checkbox_label(context, label, &use_default) != 0;
 }
@@ -1478,7 +1478,7 @@ void render_project_snap(nk_context* context, const wormedit::ui::setup_view_t& 
         const wormedit::ui::chrome::DisabledFieldStyle disabled{context};
         nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Program default: 1/%u", settings.program_default_snap);
 }
 void render_project_directory(nk_context* context, const wormedit::ui::setup_view_t& view,
@@ -1529,7 +1529,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     if (!context || !view || !action || !view->visible)
         return;
 
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_labelf_colored(context, NK_TEXT_LEFT, wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted),
                       "Audio assets: %zu · Visual assets: %zu", view->audio_asset_count, view->visual_asset_count);
     render_project_charts(context, *view, *action);

@@ -24,7 +24,7 @@ void emit_notification_action(wormedit::ui::notification_action_t& action,
 
 void render_row_buttons(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
                         wormedit::ui::notification_action_t& action) {
-    nk_layout_row_dynamic(context, 26, 3);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 3);
     if (nk_button_label(context, "Copy details"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS, row.id);
     const bool positional = row.target == WORM_UI_NOTIFICATION_TARGET_POSITION;
@@ -81,7 +81,7 @@ void render_history_body(nk_context* context, const wormedit::ui::notification_h
     if (nk_button_label(context, "Clear all"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL);
     if (view.rows.empty()) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, "No notifications", NK_TEXT_LEFT);
     }
     for (std::size_t index = 0; index < view.rows.size(); ++index) {

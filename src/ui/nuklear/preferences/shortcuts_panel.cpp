@@ -59,7 +59,7 @@ void render_shortcuts_page(nk_context* context, const wormedit::ui::options_view
         nk_label(context, "No commands are registered.", NK_TEXT_LEFT);
         return;
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Find shortcut by command or chord", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,

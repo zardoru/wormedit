@@ -14,7 +14,7 @@ void edit_player_field(nk_context* context, const wormedit::ui::options_view_t& 
                        std::string_view value, WormUiOptionsField field) {
     std::array<char, wormedit::maximum_preference_string_bytes + 1> text{};
     std::snprintf(text.data(), text.size(), "%.*s", static_cast<int>(value.size()), value.empty() ? "" : value.data());
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, label, NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,

@@ -36,10 +36,10 @@ void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::com
     }
     if (chrome::dialog_begin(dialog, context, "Export preview audio", "Export preview audio",
         {.width = 600, .enter_confirms = false})) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Source interval: %.3f–%.3f s (%.3f s)",
             range.begin_seconds, range.end_seconds, range.end_seconds - range.begin_seconds);
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "Output filename (relative to the project folder)", NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, filename.data(), filename.size(), nk_filter_default);

@@ -2865,8 +2865,22 @@ static void draw_compose_note(const ComposePaintContext& paint,
     }
     const auto tile = nk_rect(rect.x + 1.0f, rect.y, std::max(1.0f, rect.w - 2.0f),
                               std::max(2.0f, rect.h));
-    if (draw_compose_note_glyph(paint, note, tile)) {
-        if (!note.proposal_ghost) draw_compose_note_hitsound(paint, note, tile, style.fill);
+    // Artwork (arrow, hitsound icons, sound label) is sized and centered on the unclipped note so it
+    // does not shrink or slide while the note scrolls in at the view edge; the clip cuts it instead.
+    const auto raw = compose_unclipped_screen_rect(&note.bounds, paint.view, paint.viewport);
+    const auto full = nk_rect(raw.x + 1.0f, raw.y, std::max(1.0f, raw.w - 2.0f),
+                              std::max(2.0f, raw.h));
+    auto& field = paint_field(paint.context);
+    const auto clipped_artwork = [&](auto&& draw) {
+        const auto previous = field.push_clip({tile.x, tile.y, tile.w, tile.h});
+        draw();
+        field.pop_clip(previous);
+    };
+    auto arrow = false;
+    clipped_artwork([&] { arrow = draw_compose_note_glyph(paint, note, full); });
+    if (arrow) {
+        if (!note.proposal_ghost)
+            clipped_artwork([&] { draw_compose_note_hitsound(paint, note, full, style.fill); });
         return;
     }
     field_rect(paint, tile, 0.0f, style.fill, 2);
@@ -2876,7 +2890,7 @@ static void draw_compose_note(const ComposePaintContext& paint,
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105), 2);
-    draw_compose_note_sound_label(paint, note, tile, style.fill);
+    clipped_artwork([&] { draw_compose_note_sound_label(paint, note, full, style.fill); });
 }
 
 static void draw_compose_paint_ghost(const ComposePaintContext& paint) {

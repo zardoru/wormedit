@@ -400,9 +400,8 @@ void render_categories(nk_context* context, const wormedit::ui::options_view_t& 
 void render_page(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
                  wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!nk_group_begin(context, "Options page", 0)) return;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    nk_label_colored(context, category_names[view.category], NK_TEXT_LEFT,
-                     wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_bright));
+    nk_layout_row_dynamic(context, wormedit::ui::chrome::title_row_height, 1);
+    wormedit::ui::chrome::title_label(context, category_names[view.category]);
     wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     if (view.category == WORM_UI_OPTIONS_INPUT && lane_keys) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);

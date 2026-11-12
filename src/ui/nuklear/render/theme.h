@@ -17,6 +17,8 @@ namespace wormedit::ui::theme {
 inline const nk_user_font* display_font{};
 // Body font at the caption size (metrics::font_small); null before the atlas exists.
 inline const nk_user_font* small_font{};
+// Title face (metrics::font_title); null before the atlas exists.
+inline const nk_user_font* title_font{};
 
 enum class UiColor {
     background,

@@ -887,6 +887,16 @@ inline void caption(nk_context* context, const char* text, nk_color tint) {
     if (small) nk_style_pop_font(context);
 }
 
+// A dialog or page title: the title face in text_bright. Lay out a row of at least
+// `title_row_height` first.
+inline constexpr float title_row_height = 24.0f;
+inline void title_label(nk_context* context, const char* text) {
+    const auto* face = theme::title_font;
+    if (face) nk_style_push_font(context, face);
+    nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
+    if (face) nk_style_pop_font(context);
+}
+
 // An empty row that separates groups inside one section. Rows already sit `window.spacing`
 // apart, so the visible gap is the height plus that spacing on both sides.
 inline void group_gap(nk_context* context, float height = metrics::gap_small) {

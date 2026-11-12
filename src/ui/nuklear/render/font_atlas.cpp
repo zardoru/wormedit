@@ -97,6 +97,7 @@ void editor_font_t::reset() {
     handle_ = {};
     display_handle_ = {};
     small_handle_ = {};
+    title_handle_ = {};
     directory_.clear();
     fallback_data_.clear();
     coverage_.clear();
@@ -190,7 +191,14 @@ void editor_font_t::rebuild(nk_context* context) {
     display_config.range = display_ranges;
     auto* display = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), display_height, &display_config);
     if (!display) display = nk_font_atlas_add_default(atlas, display_height, &display_config);
+    const auto title_height = ui::metrics::font_title * raster_scale_;
+    auto title_config = nk_font_config(title_height);
+    title_config.range = display_ranges;
+    auto* title = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), title_height, &title_config);
+    if (!title) title = nk_font_atlas_add_default(atlas, title_height, &title_config);
     nk_sdl_font_stash_end(context);
+    title_handle_ = title->handle;
+    title_handle_.height = ui::metrics::font_title;
     display_handle_ = display->handle;
     display_handle_.height = ui::metrics::font_display;
     glyphs_.clear();

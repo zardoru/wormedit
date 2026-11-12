@@ -710,6 +710,9 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         static nk_user_font small_font = test_font;
         small_font.height = wormedit::ui::metrics::font_small;
         wormedit::ui::theme::small_font = &small_font;
+        static nk_user_font title_font = test_font;
+        title_font.height = wormedit::ui::metrics::font_title;
+        wormedit::ui::theme::title_font = &title_font;
     }
     if (!headless) {
         const auto font_directory = SDL_GetBasePath()
@@ -718,6 +721,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         g_editor_font.initialize(context, font_directory);
         wormedit::ui::theme::display_font = g_editor_font.display_handle();
         wormedit::ui::theme::small_font = g_editor_font.small_handle();
+        wormedit::ui::theme::title_font = g_editor_font.title_handle();
         const auto theme_directory = SDL_GetBasePath()
                                          ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
                                          : std::filesystem::path{"assets/themes"};
@@ -813,6 +817,7 @@ void worm_ui_frontend_shutdown(void) {
     nk_sdl_shutdown(g_context);
     wormedit::ui::theme::display_font = nullptr;
     wormedit::ui::theme::small_font = nullptr;
+    wormedit::ui::theme::title_font = nullptr;
     g_editor_font.reset();
     g_window = NULL;
     g_renderer = NULL;

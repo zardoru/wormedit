@@ -30,6 +30,7 @@ inline constexpr float menu_separator_height = gap_medium;
 // atlas bakes; font_atlas.cpp reads them instead of carrying literals.
 inline constexpr float font_small = 12.0f; // captions, hints and units: the body raster drawn smaller
 inline constexpr float font_body = 15.0f;
+inline constexpr float font_title = 18.0f; // dialog and page titles
 inline constexpr float font_display = 28.0f;
 
 inline constexpr float checkbox_box = 16.0f;

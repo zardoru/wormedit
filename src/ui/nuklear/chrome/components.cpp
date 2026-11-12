@@ -569,7 +569,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
         nk_vec2(context->style.tab.padding.x, context->style.tab.padding.y + metrics::gap_small));
     const bool indent_pushed = !level_one && nk_style_push_float(context, &context->style.tab.indent,
                                                                  metrics::card_indent);
+    // Level-one bars carry the title face; cards keep the body face.
+    const bool title_pushed = level_one && theme::title_font && nk_style_push_font(context, theme::title_font);
     const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (title_pushed) nk_style_pop_font(context);
     if (indent_pushed) nk_style_pop_float(context);
     if (padding_pushed) nk_style_pop_vec2(context);
     if (text_pushed) nk_style_pop_color(context);

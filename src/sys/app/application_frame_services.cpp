@@ -5,6 +5,8 @@
 
 #include "sys/project/project_open.h"
 #include "sys/resources/resource_drop_router.h"
+#include "sys/app/event_loop_wake.h"
+#include "sys/app/frame_demand.h"
 #include "sys/app/frame_pacing.h"
 
 #include "ui/frontend.h"
@@ -101,6 +103,7 @@ auto poll_frontend_events(WormWindow& window, frontend_event_batch_t& batch, con
     auto pending = batch.pending();
     while (pending || SDL_PollEvent(&event)) {
         if (pending) { event = *pending; pending.reset(); }
+        if (is_event_loop_wake(event)) { acknowledge_event_loop_wake(); continue; }
         if (!batch.admit(event)) break;
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
@@ -174,14 +177,15 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace, document_his
     feedback.rebind(workspace, history, notifications);
 }
 
-void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) {
+auto render_application_frame(WormWindow& window, std::uint64_t frame_start_ns,
+                              const frame_demand_t& demand) -> bool {
     const auto presentation = common::window_presentation_t::from(window.handle);
     const auto inactive = presentation.is_inactive();
     if (inactive) {
         worm_ui_frontend_discard_frame();
         const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), true);
         if (remainder) SDL_WaitEventTimeout(nullptr, static_cast<int>(remainder / 1'000'000));
-        return;
+        return false;
     }
     int width = 0;
     int height = 0;
@@ -190,8 +194,20 @@ void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) 
     if (pending) worm_ui_frontend_discard_frame();
     else worm_ui_frontend_render(width, height);
     worm_window_swap(&window);
+    // A pending presentation keeps the loop paced like a continuous frame. An idle frame
+    // does not pace here: the loop sleeps in wait_for_next_frame() once the frame has
+    // been accounted, so the sleep never counts as frame time.
+    if (!demand.continuous && !pending) return true;
     const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), inactive);
     if (remainder != 0) SDL_DelayPrecise(remainder);
+    return false;
+}
+
+void wait_for_next_frame(const frame_demand_t& demand) {
+    // Sleep until input, a wake, or the deadline. The event stays queued for the next
+    // frame's poll.
+    SDL_WaitEventTimeout(nullptr,
+                         wait_timeout_ms(frame_wait_budget_ns(demand, SDL_GetTicksNS(), idle_limit_ns)));
 }
 
 } // namespace wormedit::sys

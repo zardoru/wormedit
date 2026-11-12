@@ -37,14 +37,15 @@ struct graph_state_t {
 };
 
 struct scheduler_state_t {
-    explicit scheduler_state_t(std::size_t capacity)
-        : queue(capacity), scratch(capacity), stop_scratch(capacity),
-          maximum_outstanding(capacity) {
+    explicit scheduler_state_t(std::size_t capacity, std::function<void()> terminal_hook = {})
+        : on_terminal(std::move(terminal_hook)), queue(capacity), scratch(capacity),
+          stop_scratch(capacity), maximum_outstanding(capacity) {
         graphs.reserve(capacity);
     }
 
     mutable std::mutex mutex;
     std::condition_variable_any changed;
+    std::function<void()> on_terminal;
     std::vector<work_item_t> queue;
     std::vector<work_item_t> scratch;
     std::vector<std::shared_ptr<graph_state_t>> stop_scratch;
@@ -139,6 +140,13 @@ void mark_terminal_locked(scheduler_state_t& scheduler, graph_state_t& graph, st
                    : node_status_t::failed);
     --graph.remaining;
     --scheduler.outstanding;
+    if (scheduler.on_terminal) {
+        // Contract (task_graph.h): exceptions from the hook are swallowed silently.
+        try {
+            scheduler.on_terminal();
+        } catch (...) {
+        }
+    }
 }
 
 void prune_graphs_locked(scheduler_state_t& scheduler) {
@@ -383,7 +391,8 @@ task_graph_handle_t::operator bool() const noexcept {
 struct task_scheduler_t::impl_t {
     explicit impl_t(std::size_t worker_count, std::size_t capacity,
                     task_scheduler_options_t options)
-        : state(std::make_shared<scheduler_state_t>(std::max<std::size_t>(1, capacity))) {
+        : state(std::make_shared<scheduler_state_t>(std::max<std::size_t>(1, capacity),
+                                                    std::move(options.on_task_terminal))) {
         const auto count =
             clamp_worker_count(worker_count, std::thread::hardware_concurrency());
         workers.reserve(count);

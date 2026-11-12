@@ -119,6 +119,17 @@ struct task_scheduler_options_t {
     // Runs once on each worker thread before it takes work (for example to lower its
     // priority). A throwing hook is ignored; the worker continues at default priority.
     std::function<void()> on_worker_start;
+    // Runs on a worker or cancelling thread each time a task reaches a terminal state
+    // (success, failure or cancellation), while the scheduler lock is held. Intended for
+    // a thread-safe "wake the consumer" signal so pollers can sleep until a job finishes
+    // instead of checking every frame.
+    //
+    // Contract: it must be cheap, thread-safe and must not call back into the scheduler.
+    // The scheduler swallows every exception it throws, silently: there is no reporting
+    // channel and the task outcome is unaffected. A hook that can fail must handle or
+    // log its own failure, and its signal must stay safe to lose (a poller that also
+    // wakes on a timeout, as the frame loop does with idle_limit_ns, recovers).
+    std::function<void()> on_task_terminal;
 };
 
 // Workers a scheduler may start: the request, capped at hardware_threads - 2 so the

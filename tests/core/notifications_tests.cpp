@@ -1054,3 +1054,42 @@ TEST_CASE("Rejection feedback posts one diagnostic or one fallback warning", "[n
                entry.target == notification_target_t{object_id_t{42}};
     }) == 1);
 }
+
+TEST_CASE("notification center signals every post from any thread and survives a throwing listener",
+          "[notifications]") {
+    std::atomic<int> signals{0};
+    notification_center_t center{{}, [&] { ++signals; }};
+    center.post(notification_severity_t::info, notification_source_t::input, "one");
+    center.post_transient_hint(notification_source_t::input, "hint");
+    std::thread worker{[&] { center.post(notification_severity_t::warning, notification_source_t::audio, "two"); }};
+    worker.join();
+    CHECK(signals.load() == 3);
+
+    notification_center_t throwing{{}, [] { throw std::runtime_error("denied"); }};
+    throwing.post(notification_severity_t::info, notification_source_t::input, "still stored");
+    CHECK(throwing.drain_inbox(notification_time_t{0}) == 1);
+}
+
+TEST_CASE("notification next_expiry reports the earliest line or toast expiry after the last drain",
+          "[notifications]") {
+    const manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    CHECK(!center.next_expiry());
+
+    post_and_drain(center, clock, notification_severity_t::warning, "Underrun");
+    // The status line (4 s) expires before the warning toast (8 s).
+    CHECK(center.next_expiry() == clock.now() + notification_current_line_hold);
+
+    clock.advance(notification_current_line_hold);
+    center.drain_inbox(clock.now());
+    CHECK(center.next_expiry() == notification_warning_toast_hold);
+
+    clock.advance(notification_warning_toast_hold);
+    center.drain_inbox(clock.now());
+    CHECK(!center.next_expiry());
+
+    post_and_drain(center, clock, notification_severity_t::error, "Save failed");
+    clock.advance(notification_current_line_hold);
+    center.drain_inbox(clock.now());
+    CHECK(!center.next_expiry());  // errors stay until dismissed; only the status line aged out
+}

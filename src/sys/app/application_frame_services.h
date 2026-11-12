@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/app/application_edit_inputs.h"
+#include "sys/app/frame_demand.h"
 #include "sys/app/frontend_event_batch.h"
 
 #include "sys/metadata/metadata_asset_runtime.h"
@@ -50,6 +51,15 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace, document_his
                                  notification_sink_t notifications,
                                  workspace_edit_feedback_t& feedback);
 
-void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns);
+// Renders and presents. A continuous demand (or a pending presentation) also keeps
+// the vsync/5 ms cadence here, and an inactive window sleeps here. Returns true when
+// the frame was idle and the caller should call wait_for_next_frame() once the frame is
+// accounted.
+[[nodiscard]] auto render_application_frame(WormWindow& window, std::uint64_t frame_start_ns,
+                                            const frame_demand_t& demand) -> bool;
+
+// Call after the frame is fully accounted when render_application_frame() returned true:
+// sleeps until input, wake_event_loop() or the demand's deadline (capped by idle_limit_ns).
+void wait_for_next_frame(const frame_demand_t& demand);
 
 } // namespace wormedit::sys

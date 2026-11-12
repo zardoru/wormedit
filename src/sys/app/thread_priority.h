@@ -2,6 +2,8 @@
 
 #include <wormedit/core/task_graph.h>
 
+#include "sys/app/event_loop_wake.h"
+
 #include <atomic>
 
 #include <SDL3/SDL_log.h>
@@ -21,9 +23,11 @@ inline void apply_current_thread_priority(SDL_ThreadPriority priority) noexcept 
 }
 
 // Scheduler options for decode, preload, analysis, copy, and autosave workers: they run
-// below the frame thread so heavy background work cannot starve it.
+// below the frame thread so heavy background work cannot starve it. A finished task
+// wakes the frame loop, so a sleeping loop notices the result at once.
 [[nodiscard]] inline auto background_scheduler_options() -> task_scheduler_options_t {
-    return {.on_worker_start = [] { apply_current_thread_priority(SDL_THREAD_PRIORITY_LOW); }};
+    return {.on_worker_start = [] { apply_current_thread_priority(SDL_THREAD_PRIORITY_LOW); },
+            .on_task_terminal = [] { sys::wake_event_loop(); }};
 }
 
 }  // namespace wormedit

@@ -266,6 +266,37 @@ TEST_CASE("task scheduler runs the worker start hook once per worker and survive
     CHECK(*task_value_cast<int>(*submitted.value().outcome(*added)) == 7);
 }
 
+TEST_CASE("task scheduler signals every terminal task and survives a throwing signal",
+          "[core][task-graph]") {
+    std::atomic<int> terminal{0};
+    task_scheduler_t scheduler(1, 4, {.on_task_terminal = [&] { ++terminal; }});
+    task_graph_t graph(2);
+    const auto first = graph.create_task({}, [](std::span<const task_outcome_t>, std::stop_token) {
+        return task_value_t::from(std::make_shared<const int>(1));
+    });
+    REQUIRE(first);
+    const task_id_t dependencies[] = {*first};
+    const auto second = graph.create_task(dependencies, [](std::span<const task_outcome_t>, std::stop_token) {
+        return task_value_t::from(std::make_shared<const int>(2));
+    });
+    REQUIRE(second);
+    auto submitted = scheduler.begin(std::move(graph));
+    REQUIRE(submitted);
+    REQUIRE(submitted.value().wait());
+    CHECK(terminal.load() == 2);
+
+    task_scheduler_t throwing(1, 2, {.on_task_terminal = [] { throw std::runtime_error("denied"); }});
+    task_graph_t other(1);
+    const auto added = other.create_task({}, [](std::span<const task_outcome_t>, std::stop_token) {
+        return task_value_t::from(std::make_shared<const int>(9));
+    });
+    REQUIRE(added);
+    auto handle = throwing.begin(std::move(other));
+    REQUIRE(handle);
+    REQUIRE(handle.value().wait());
+    CHECK(*task_value_cast<int>(*handle.value().outcome(*added)) == 9);
+}
+
 TEST_CASE("task outcomes retain failure payloads through callbacks",
           "[unit][core][task-graph][result]") {
     const auto value = std::make_shared<const int>(91);

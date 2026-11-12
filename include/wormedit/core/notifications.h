@@ -42,6 +42,8 @@ inline constexpr std::size_t notification_message_max_bytes = 200;
 inline constexpr std::size_t notification_detail_max_bytes = 4 * 1024;
 inline constexpr notification_time_t notification_dedupe_window = std::chrono::seconds{2};
 inline constexpr notification_time_t notification_current_line_hold = std::chrono::seconds{4};
+// A warning stays a toast this long; errors stay until dismissed.
+inline constexpr notification_time_t notification_warning_toast_hold = std::chrono::seconds{8};
 
 struct notification_chart_position_t {
     chart_id_t chart;
@@ -112,8 +114,16 @@ void truncate_notification_text(std::string& text, std::size_t max_bytes);
 // visible only after the next drain.
 class notification_center_t {
   public:
-    // A null clock means std::chrono::steady_clock.
-    explicit notification_center_t(notification_clock_t clock = {});
+    // A null clock means std::chrono::steady_clock. `on_post`, when set, runs on the
+    // posting thread after every post (outside the inbox lock) so a sleeping frame
+    // loop can wake and drain.
+    //
+    // Contract: `on_post` must be cheap and thread-safe. The center swallows every
+    // exception it throws, silently: the post is already stored, and there is no
+    // reporting channel. A listener that can fail must handle or log its own failure,
+    // and its signal must stay safe to lose (the drain also happens on the next frame).
+    explicit notification_center_t(notification_clock_t clock = {},
+                                   std::function<void()> on_post = {});
 
     notification_center_t(const notification_center_t&) = delete;
     auto operator=(const notification_center_t&) -> notification_center_t& = delete;
@@ -157,12 +167,19 @@ class notification_center_t {
     // therefore never replaces a non-hint posted in the same frame. Explicit
     // transient hints expire four seconds after posting and never enter history.
     [[nodiscard]] auto current_line() const -> const notification_entry_t*;
+    // The earliest frame time after the last drain at which the status line or a
+    // warning toast expires by itself, so an idle loop can wake exactly then.
+    // nullopt when nothing is waiting to expire. Frame-thread only.
+    [[nodiscard]] auto next_expiry() const -> std::optional<notification_time_t>;
     [[nodiscard]] auto unread_counts() const -> notification_unread_counts_t;
     [[nodiscard]] auto size() const noexcept -> std::size_t;
     [[nodiscard]] auto statistics() const -> notification_statistics_t;
 
   private:
+    void signal_post() const noexcept;
+
     notification_clock_t clock_;
+    std::function<void()> on_post_;
 
     mutable std::mutex inbox_mutex_;
     std::vector<notification_entry_t> inbox_;

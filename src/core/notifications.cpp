@@ -207,8 +207,10 @@ void truncate_notification_text(std::string& text, std::size_t max_bytes) {
     text.append(ellipsis);
 }
 
-notification_center_t::notification_center_t(notification_clock_t clock)
-    : clock_(clock ? std::move(clock) : notification_clock_t{steady_clock_now}) {
+notification_center_t::notification_center_t(notification_clock_t clock,
+                                             std::function<void()> on_post)
+    : clock_(clock ? std::move(clock) : notification_clock_t{steady_clock_now}),
+      on_post_(std::move(on_post)) {
     inbox_.reserve(notification_capacity);
     draining_.reserve(notification_capacity);
     ring_.reserve(notification_capacity);
@@ -223,15 +225,18 @@ void notification_center_t::post(notification_post_t request) {
                                .detail = std::move(request.detail),
                                .target = request.target};
 
-    const std::scoped_lock lock{inbox_mutex_};
-    // Taking the time under the lock keeps inbox order and timestamps aligned.
-    last_post_time_ = std::max(last_post_time_, clock_());
-    entry.id = next_id_++;
-    entry.post_sequence = entry.id;
-    entry.first_timestamp = last_post_time_;
-    entry.timestamp = last_post_time_;
-    ++inbox_statistics_.posted;
-    insert_bounded(inbox_, std::move(entry), inbox_statistics_);
+    {
+        const std::scoped_lock lock{inbox_mutex_};
+        // Taking the time under the lock keeps inbox order and timestamps aligned.
+        last_post_time_ = std::max(last_post_time_, clock_());
+        entry.id = next_id_++;
+        entry.post_sequence = entry.id;
+        entry.first_timestamp = last_post_time_;
+        entry.timestamp = last_post_time_;
+        ++inbox_statistics_.posted;
+        insert_bounded(inbox_, std::move(entry), inbox_statistics_);
+    }
+    signal_post();
 }
 
 void notification_center_t::post_transient_hint(notification_source_t source, std::string message) {
@@ -239,13 +244,25 @@ void notification_center_t::post_transient_hint(notification_source_t source, st
     truncate_notification_text(message, notification_message_max_bytes);
     notification_entry_t entry{.severity = notification_severity_t::hint, .source = source,
                                .message = std::move(message), .detail = {}, .target = {}};
-    const std::scoped_lock lock{inbox_mutex_};
-    last_post_time_ = std::max(last_post_time_, clock_());
-    entry.id = next_id_++;
-    entry.post_sequence = entry.id;
-    entry.first_timestamp = last_post_time_;
-    entry.timestamp = last_post_time_;
-    transient_inbox_ = std::move(entry);
+    {
+        const std::scoped_lock lock{inbox_mutex_};
+        last_post_time_ = std::max(last_post_time_, clock_());
+        entry.id = next_id_++;
+        entry.post_sequence = entry.id;
+        entry.first_timestamp = last_post_time_;
+        entry.timestamp = last_post_time_;
+        transient_inbox_ = std::move(entry);
+    }
+    signal_post();
+}
+
+void notification_center_t::signal_post() const noexcept {
+    // Contract (notifications.h): exceptions from the listener are swallowed silently.
+    if (!on_post_) return;
+    try {
+        on_post_();
+    } catch (...) {
+    }
 }
 
 void notification_center_t::post(notification_severity_t severity, notification_source_t source,
@@ -437,6 +454,25 @@ auto notification_center_t::current_line() const -> const notification_entry_t* 
          (transient_line_->timestamp == newest_hint->timestamp && transient_line_->post_sequence > newest_hint->post_sequence)))
         return &*transient_line_;
     return newest_hint == ring_.rend() ? nullptr : &*newest_hint;
+}
+
+auto notification_center_t::next_expiry() const -> std::optional<notification_time_t> {
+    std::optional<notification_time_t> earliest;
+    const auto consider = [&](notification_time_t when) {
+        if (when > frame_time_ && (!earliest || when < *earliest)) earliest = when;
+    };
+    const auto newest_non_hint =
+        std::find_if(ring_.rbegin(), ring_.rend(), [](const notification_entry_t& entry) {
+            return entry.severity != notification_severity_t::hint;
+        });
+    if (newest_non_hint != ring_.rend())
+        consider(newest_non_hint->timestamp + notification_current_line_hold);
+    if (transient_line_) consider(transient_line_->timestamp + notification_current_line_hold);
+    for (const auto& entry : ring_) {
+        if (entry.severity == notification_severity_t::warning)
+            consider(entry.timestamp + notification_warning_toast_hold);
+    }
+    return earliest;
 }
 
 auto notification_center_t::unread_counts() const -> notification_unread_counts_t {

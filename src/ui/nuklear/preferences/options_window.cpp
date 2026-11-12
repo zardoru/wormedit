@@ -13,6 +13,7 @@
 
 namespace {
 wormedit::ui::chrome::Dialog options_dialog;
+wormedit::ui::chrome::Dialog discard_dialog;
 constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_names{
     "General", "Editor", "Playback & audio", "Appearance", "Input & shortcuts", "External players"};
 // One setting: its label on the left and the control in a fixed-width column on the right, so
@@ -469,29 +470,36 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const wormedit::
         return;
     }
     namespace chrome = wormedit::ui::chrome;
+    if (view->confirm_discard) {
+        // A question gets its own small dialog instead of filling the Options window.
+        worm_ui_nuklear_cancel_options_drag();
+        if (chrome::dialog_begin(discard_dialog, context, "Discard changes?", "Discard changes",
+            {.modal = true, .closable = true, .width = 520, .escape_cancels = true,
+             .enter_confirms = false, .movable = true}))
+            render_discard_confirmation(discard_dialog, context, *view, *action);
+        if (chrome::dialog_end(discard_dialog, context) == chrome::DialogResult::cancel)
+            emit(*action, *view, WORM_UI_OPTIONS_KEEP_EDITING);
+        return;
+    }
     auto& dialog = options_dialog;
     if (chrome::dialog_begin(dialog, context, "Options", "Options",
         {.modal = true, .closable = true, .width = 800, .escape_cancels = true,
          .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {720, 400}, .movable = true})) {
-        if (view->confirm_discard) {
-            render_discard_confirmation(dialog, context, *view, *action);
-        } else {
-            const auto content = nk_window_get_content_region(context);
-            const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +
-                (!view->status.empty() ? 34.0f + chrome::dialog_spacing : 0.0f);
-            const auto bottom = std::min(content.y + content.h,
-                dialog.bounds.y + dialog.bounds.h - chrome::dialog_padding);
-            const auto body_height = std::max(1.0f, bottom -
-                nk_widget_bounds(context).y - footer_height);
-            constexpr float ratios[]{0.28f, 0.72f};
-            nk_layout_row(context, NK_DYNAMIC, body_height, 2, ratios);
-            render_categories(context, *view, *action);
-            render_page(context, *view, *action, lane_keys);
-            render_footer(dialog, context, *view, *action);
-        }
+        const auto content = nk_window_get_content_region(context);
+        const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +
+            (!view->status.empty() ? 34.0f + chrome::dialog_spacing : 0.0f);
+        const auto bottom = std::min(content.y + content.h,
+            dialog.bounds.y + dialog.bounds.h - chrome::dialog_padding);
+        const auto body_height = std::max(1.0f, bottom -
+            nk_widget_bounds(context).y - footer_height);
+        constexpr float ratios[]{0.28f, 0.72f};
+        nk_layout_row(context, NK_DYNAMIC, body_height, 2, ratios);
+        render_categories(context, *view, *action);
+        render_page(context, *view, *action, lane_keys);
+        render_footer(dialog, context, *view, *action);
     }
     if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
-        emit(*action, *view, view->confirm_discard ? WORM_UI_OPTIONS_KEEP_EDITING : WORM_UI_OPTIONS_CLOSE);
+        emit(*action, *view, WORM_UI_OPTIONS_CLOSE);
     if (action->kind == WORM_UI_OPTIONS_CLOSE) worm_ui_nuklear_cancel_options_drag();
 }
 

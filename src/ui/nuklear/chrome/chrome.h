@@ -649,7 +649,7 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.combo.hover = hover;
     style.combo.active = active;
     style.combo.border_color = color(UiColor::border);
-    style.combo.label_normal = color(UiColor::text);
+    style.combo.label_normal = color(UiColor::text_bright);
     style.combo.label_hover = color(UiColor::text_bright);
     style.combo.label_active = color(UiColor::text_bright);
     // The chevron is drawn by safe_combo_*; Nuklear's own symbol is a filled triangle sized to the
@@ -719,7 +719,8 @@ inline void apply_field_theme(nk_context* context) {
     edit.cursor_hover = text_bright;
     edit.cursor_text_normal = color(UiColor::surface);
     edit.cursor_text_hover = color(UiColor::surface_hover);
-    edit.text_normal = text;
+    // What the user entered or chose is data: brighter than the labels around it.
+    edit.text_normal = text_bright;
     edit.text_hover = text_bright;
     edit.text_active = text_bright;
     edit.selected_normal = accent;

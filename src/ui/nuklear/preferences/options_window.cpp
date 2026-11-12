@@ -117,8 +117,9 @@ void audio_output_controls(nk_context* context, const wormedit::ui::options_view
     edit_integer(context, view, action, "Buffer (frames; 0 = automatic)", WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
         view.buffer_frames, 0, 8192);
     if (view.audio_output_pending) {
-        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        nk_label(context, "Output changes apply after Stop.", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+        wormedit::ui::chrome::caption(context, "Output changes apply after Stop.",
+                                      wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
     }
 }
 void audio_level_controls(nk_context* context, const wormedit::ui::options_view_t& view,

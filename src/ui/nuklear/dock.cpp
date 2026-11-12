@@ -15,6 +15,7 @@ constexpr float dock_button_height = 30.0f;
 constexpr float minimum_field_width = 400.0f;
 // The icon rail is flush with the window's right edge and full height; panels keep an 8 px gap to it.
 constexpr float dock_strip_width = 40.0f;
+constexpr float dock_panel_gap = 8.0f;
 auto rect(const compose_rect_t& r) -> struct nk_rect {
     return nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
                    static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top));
@@ -40,7 +41,7 @@ void begin_capture(nk_context* context, dock_capture_t kind, const dock_geometry
     pointer.y = context->input.mouse.pos.y;
     if (!geometry.panes[0]) return;
     const auto& first = geometry.panes[0]->bounds;
-    pointer.width = static_cast<float>(geometry.strip.left - 4 - first.left);
+    pointer.width = static_cast<float>(geometry.strip.left - dock_panel_gap - first.left);
     if (geometry.panes[1]) {
         const auto extent = geometry.is_side_by_side() ? first.right - first.left : first.bottom - first.top;
         pointer.split = static_cast<float>(extent / geometry.split_extent());
@@ -178,7 +179,7 @@ auto dock_geometry_t::from(float width, float height, const ui_layout_preference
     const auto desired_width = columns ? 2 * layout.width() + 6 : layout.width();
     const auto panel_width = std::min(desired_width, column_space);
     if (!count || panel_width < dock_minimum_width || height < (count == 1 ? 96.0f : 140.0f)) return result;
-    const auto right = width - dock_strip_width - 8.0f;
+    const auto right = width - dock_strip_width - dock_panel_gap;
     const auto left = right - panel_width;
     result.reserved_width = width - left + 6;
     result.width_handle = compose_rect_t{left - 6, 8, left - 1, height - 8};

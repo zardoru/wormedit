@@ -5688,6 +5688,15 @@ TEST_CASE("Appearance scratch dropdown emits a typed independent stage override"
         .p1_scratch_position = 1, .p2_scratch_position = 0,
         .field_scheme = "wormedit", .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
+    // The Appearance page has group breaks now, so the scratch rows start below the first view.
+    SDL_Event scroll{};
+    scroll.type = SDL_EVENT_MOUSE_WHEEL;
+    scroll.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    scroll.wheel.y = -1.0f;
+    scroll.wheel.mouse_x = 700.0f;
+    scroll.wheel.mouse_y = 450.0f;
+    (void)harness.frame(std::span{&scroll, 1});
+    (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Single / P1 scratch position"));
     REQUIRE(harness.drawn_text_center("P2 scratch position"));
     const auto picker = harness.drawn_text_center("Chart layout");
@@ -5731,7 +5740,7 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
     button.button.y = y;
     (void)harness.frame(std::array{motion, button});
     motion.motion.x += 240;
-    motion.motion.y += 200;
+    motion.motion.y += 280;
     motion.motion.state = SDL_BUTTON_LMASK;
     (void)harness.frame(std::array{motion});
     button.type = SDL_EVENT_MOUSE_BUTTON_UP;

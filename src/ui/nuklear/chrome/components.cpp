@@ -241,13 +241,17 @@ auto Checkbox::render(nk_context* context) const -> bool {
             nk_stroke_line(canvas, box.x + 4.0f, box.y + 8.0f, box.x + 12.0f, box.y + 8.0f, 2.0f, mark);
         }
     }
-    // The label sits gap_medium to the right of the box.
+    // The label sits gap_medium to the right of the box, placed like a stock toggle's label so it
+    // lines up with stock text and buttons in the same row.
     const auto label_x = box.x + box.w + metrics::gap_medium;
-    draw_centered_text(context, nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h),
-                       label,
-                       !usable ? chrome::text_faint()
-                                : lit ? color(UiColor::text_bright) : color(UiColor::text),
-                       NK_TEXT_LEFT);
+    const auto label_area = nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h);
+    struct nk_text label_style{};
+    label_style.padding = nk_vec2(0.0f, 0.0f);
+    label_style.color = !usable ? chrome::text_faint()
+                                : lit ? color(UiColor::text_bright) : color(UiColor::text);
+    if (label && label[0])
+        nk_widget_text(canvas, label_area, label, static_cast<int>(std::strlen(label)), &label_style,
+                       NK_TEXT_LEFT, context->style.font);
     tooltip_if_hovered(context, hit, tooltip);
     return usable && hit.clicked;
 }

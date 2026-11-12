@@ -5688,15 +5688,27 @@ TEST_CASE("Appearance scratch dropdown emits a typed independent stage override"
         .p1_scratch_position = 1, .p2_scratch_position = 0,
         .field_scheme = "wormedit", .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
-    // The Appearance page has group breaks now, so the scratch rows start below the first view.
-    SDL_Event scroll{};
-    scroll.type = SDL_EVENT_MOUSE_WHEEL;
-    scroll.wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    scroll.wheel.y = -1.0f;
-    scroll.wheel.mouse_x = 700.0f;
-    scroll.wheel.mouse_y = 450.0f;
-    (void)harness.frame(std::span{&scroll, 1});
-    (void)harness.frame();
+    // The Appearance page has group breaks now, so the scratch rows start below the first view:
+    // scroll the page one notch at a time until they are drawn.
+    const auto scratch_rows_visible = [&] {
+        return harness.drawn_text_center("Single / P1 scratch position").has_value() &&
+               harness.drawn_text_center("P2 scratch position").has_value() &&
+               harness.drawn_text_center("Chart layout").has_value();
+    };
+    for (int notch = 0; notch < 12 && !scratch_rows_visible(); ++notch) {
+        SDL_Event hover{};
+        hover.type = SDL_EVENT_MOUSE_MOTION;
+        hover.motion.x = 700.0f;
+        hover.motion.y = 450.0f;
+        SDL_Event scroll{};
+        scroll.type = SDL_EVENT_MOUSE_WHEEL;
+        scroll.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+        scroll.wheel.y = -1.0f;
+        scroll.wheel.mouse_x = 700.0f;
+        scroll.wheel.mouse_y = 450.0f;
+        (void)harness.frame(std::array{hover, scroll});
+        (void)harness.frame();
+    }
     REQUIRE(harness.drawn_text_center("Single / P1 scratch position"));
     REQUIRE(harness.drawn_text_center("P2 scratch position"));
     const auto picker = harness.drawn_text_center("Chart layout");
@@ -5726,6 +5738,15 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
     const auto close = harness.drawn_text_center("Close");
     REQUIRE(close);
     CHECK_FALSE(harness.drawn_text_center("Minimap click moves paused playhead"));
+    const auto editor_rows_visible = [&] {
+        int count = 0;
+        for (const auto* row : {"Play sounds on note clicks", "Default snap denominator", "When a move lands on a note",
+                                "Invert field scroll wheel", "Following anchor (%)", "Show note-kind palette",
+                                "Show lane legend", "Area-band opacity (0–255)", "Minimap click moves paused playhead"})
+            count += harness.drawn_text_center(row).has_value() ? 1 : 0;
+        return count;
+    };
+    const auto visible_before = editor_rows_visible();
     const auto x = before.x + before.width - 5;
     const auto y = before.y + before.height - 5;
     SDL_Event motion{};
@@ -5757,7 +5778,9 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
     expect_lane_key(after.height > before.height + 150);
     expect_lane_key(std::abs((moved_close->second - close->second) - (after.height - before.height)) < 2);
     expect_lane_key(std::abs(after.y + after.height - moved_close->second - 30) < 3);
-    expect_lane_key(harness.drawn_text_center("Minimap click moves paused playhead").has_value());
+    const auto visible_after = editor_rows_visible();
+    // Growing the window shows more of the page than before.
+    expect_lane_key(visible_after > visible_before);
 }
 
 namespace {

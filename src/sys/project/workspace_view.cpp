@@ -1148,7 +1148,7 @@ void wormedit::ui::notification_view_t::refill(const notification_center_t& cent
             entry->severity != notification_severity_t::error)
             continue;
         if (entry->severity == notification_severity_t::warning &&
-            now - entry->timestamp >= std::chrono::seconds{8})
+            now - entry->timestamp >= notification_warning_toast_hold)
             continue;
         toasts.push_back({.id = entry->id, .severity = entry->severity,
                          .message = entry->message, .repeat_count = entry->count});

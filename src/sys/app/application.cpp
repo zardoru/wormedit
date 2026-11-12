@@ -13,6 +13,7 @@
 #include "sys/app/macos_menu.h"
 #endif
 #include "sys/app/frame_demand.h"
+#include "sys/app/frame_pacing.h"
 #include "sys/app/frame_timing.h"
 #include "sys/app/display_watchdog.h"
 #include "sys/app/thread_priority.h"
@@ -1678,7 +1679,8 @@ namespace wormedit::sys {
 struct application_t::implementation_t {
     explicit implementation_t(bool& running_value) : running(running_value) {}
     struct platform_t {
-        notification_center_t notifications{};
+        // A post from any thread wakes a sleeping frame loop so the next frame drains it.
+        notification_center_t notifications{{}, [] { wake_event_loop(); }};
         notification_sink_t notification_sink{notifications};
         application_platform_t lifetime{};
         std::optional<frontend_notification_sink_t> frontend_notifications{};
@@ -4551,12 +4553,20 @@ struct application_t::implementation_t {
     static auto is_keyboard_key_held() -> bool {
         int count = 0;
         const bool* keys = SDL_GetKeyboardState(&count);
-        return keys && std::any_of(keys, keys + count, [](bool down) { return down; });
+        if (!keys) return false;
+        // Lock keys can read as down while merely toggled on; they are not a held input.
+        const auto is_lock = [](int code) {
+            return code == SDL_SCANCODE_CAPSLOCK || code == SDL_SCANCODE_NUMLOCKCLEAR ||
+                   code == SDL_SCANCODE_SCROLLLOCK;
+        };
+        for (int code = 0; code < count; ++code)
+            if (keys[code] && !is_lock(code)) return true;
+        return false;
     }
 
-    // What the next frame needs, from the state this frame left behind. Sources that are
-    // not listed here are covered by the idle limit in frame_pacing.h, which keeps a
-    // slow refresh until each one reports its own demand.
+    // What the next frame needs, from the state this frame left behind. Anything that
+    // changes on screen without input, a job, a wake or one of these demands is caught
+    // late by the idle limit in frame_pacing.h, so a missed source is slow, not frozen.
     auto next_frame_demand() -> wormedit::sys::frame_demand_t {
         using wormedit::sys::frame_demand_t;
         if (platform.event_batch.events_admitted() > 0) input_settle_frames_ = input_settle_frame_count;
@@ -4571,15 +4581,42 @@ struct application_t::implementation_t {
         if (audio_runtime.preview_output.playing() || audio_runtime.audition_session.is_active())
             return frame_demand_t::every_frame("audio playback");
 #endif
-        return frame_demand_t::none();
+        const auto& viewport = views.compose_viewport_input;
+        if (viewport.is_autoscroll_active() || viewport.is_momentum_active() ||
+            viewport.is_trackpad_active())
+            return frame_demand_t::every_frame("viewport scroll");
+        const auto now_ns = SDL_GetTicksNS();
+        return wormedit::sys::merge(notification_expiry_demand(now_ns),
+                                    background_job_demand(now_ns));
+    }
+
+    // The status line and warning toasts expire by themselves; wake when they do.
+    auto notification_expiry_demand(std::uint64_t now_ns) const -> wormedit::sys::frame_demand_t {
+        const auto expiry = platform.notifications.next_expiry();
+        if (!expiry) return wormedit::sys::frame_demand_t::none();
+        const auto remaining = std::max(*expiry - notification_frame_time(),
+                                        wormedit::notification_time_t::zero());
+        return wormedit::sys::frame_demand_t::at(
+            now_ns + static_cast<std::uint64_t>(remaining.count()), "notification expiry");
+    }
+
+    // Jobs that report progress or hold a busy UI redraw at a low cadence; their
+    // completion also wakes the loop through the scheduler hook.
+    auto background_job_demand(std::uint64_t now_ns) const -> wormedit::sys::frame_demand_t {
+        if (!jobs.is_file_job_busy() && !jobs.project_open_runtime.is_busy() &&
+            !session.autosave_loop.is_busy())
+            return wormedit::sys::frame_demand_t::none();
+        return wormedit::sys::frame_demand_t::after(now_ns, wormedit::sys::low_cadence_period_ns,
+                                                    "background job");
     }
 
     void finish_frame(std::uint64_t frame_start_ns) {
         persist_session_preferences(preferences.program_preferences, commands,
                                     platform.notification_sink);
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
-        wormedit::sys::render_application_frame(platform.lifetime.runtime.window, frame_start_ns,
-                                                next_frame_demand());
+        const auto demand = next_frame_demand();
+        const auto idle = wormedit::sys::render_application_frame(
+            platform.lifetime.runtime.window, frame_start_ns, demand);
         wormedit::sys::frame_timing().end_frame();
         if (platform.display_watchdog) {
             auto* window = platform.lifetime.runtime.window.handle;
@@ -4587,6 +4624,9 @@ struct application_t::implementation_t {
             const auto pending = !presentation.is_inactive() && presentation.is_pending();
             platform.display_watchdog->record_frame(SDL_GetTicksNS() - frame_start_ns, pending);
         }
+        // Sleeping after the frame is accounted keeps the wait out of frame timing and the
+        // display watchdog's slow-frame and stall measurements.
+        if (idle) wormedit::sys::wait_for_next_frame(demand);
     }
 
     void run_frame() {

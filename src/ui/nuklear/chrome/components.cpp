@@ -217,7 +217,7 @@ auto Checkbox::render(nk_context* context) const -> bool {
     const auto hit = hit_test(context, cell, bounds, usable);
     auto* canvas = nk_window_get_canvas(context);
     // Whole pixels, so every side of the border is the same thickness.
-    const auto box = nk_rect(std::floor(bounds.x + metrics::gap_small),
+    const auto box = nk_rect(std::floor(bounds.x),
                              std::floor(bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f),
                              metrics::checkbox_box, metrics::checkbox_box);
     const bool lit = hit.hovered && usable;

@@ -15,11 +15,21 @@ namespace {
 wormedit::ui::chrome::Dialog options_dialog;
 constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_names{
     "General", "Editor", "Playback & audio", "Appearance", "Input & shortcuts", "External players"};
+// One setting: its label on the left and the control in a fixed-width column on the right, so
+// every control in a page lines up regardless of label length.
+constexpr float control_column = 240.0f;
+void setting_row(nk_context* context) {
+    nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, control_column);
+    nk_layout_row_template_end(context);
+}
 void edit_integer(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
     const char* label, WormUiOptionsField field, uint32_t value, int minimum, int maximum) {
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    setting_row(context);
+    nk_label(context, label, NK_TEXT_LEFT);
     int draft = static_cast<int>(value);
-    nk_property_int(context, label, minimum, &draft, maximum, 1, 1);
+    nk_property_int(context, "#", minimum, &draft, maximum, 1, 1);
     if (draft == static_cast<int>(value) || action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = field, .integer = static_cast<uint64_t>(draft)};
@@ -44,7 +54,7 @@ void scroll_directions(nk_context* context, const wormedit::ui::options_view_t& 
     constexpr std::array<const char*, 6> families{"Beat keys", "Pop’n buttons", "Dance", "Pump", "Keyboard", "Other modes"};
     constexpr const char* directions[]{"Profile default", "Up", "Down"};
     for (size_t index = 0; index < families.size(); ++index) {
-        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+        setting_row(context);
         nk_label(context, families[index], NK_TEXT_LEFT);
         const auto value = static_cast<int>(view.scroll_directions[index]);
         const auto selected = wormedit::ui::chrome::safe_combo(context, directions, 3, value, 24, nk_vec2(180, 120));
@@ -56,7 +66,7 @@ void scroll_directions(nk_context* context, const wormedit::ui::options_view_t& 
 }
 void move_collision_policy(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     constexpr const char* labels[]{"Reject", "Move it to a BGM lane"};
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, "When a move lands on a note", NK_TEXT_LEFT);
     const auto value = static_cast<int>(view.move_collision_policy);
     const auto selected = wormedit::ui::chrome::safe_combo(context, labels, 2, value, 24, nk_vec2(240, 100));
@@ -68,8 +78,11 @@ void editor_page(nk_context* context, const wormedit::ui::options_view_t* view, 
     edit_toggle(context, *view, *action, "Play sounds on note clicks",
         WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, view->audition_on_click);
     edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     move_collision_policy(context, *view, *action);
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     scroll_directions(context, *view, *action);
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     edit_toggle(context, *view, *action, "Invert field scroll wheel",
         WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, view->invert_scroll_wheel);
     edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);
@@ -117,9 +130,10 @@ void audio_level_controls(nk_context* context, const wormedit::ui::options_view_
         view.count_in_measures, 0, 4);
     edit_integer(context, view, action, "Audition volume (%)", WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
         view.audition_volume, 0, 100);
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    setting_row(context);
+    nk_label(context, "Preview latency (ms; positive = ahead)", NK_TEXT_LEFT);
     int latency = view.preview_latency_ms;
-    nk_property_int(context, "Preview latency (ms; positive = ahead)", -1000, &latency, 1000, 1, 1);
+    nk_property_int(context, "#", -1000, &latency, 1000, 1, 1);
     if (latency != view.preview_latency_ms && action.kind == WORM_UI_OPTIONS_NONE)
         action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
             .field = WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, .signed_integer = latency};
@@ -127,7 +141,7 @@ void audio_level_controls(nk_context* context, const wormedit::ui::options_view_
 void audio_rate_controls(nk_context* context, const wormedit::ui::options_view_t& view,
                          wormedit::ui::options_action_t& action) {
     using namespace wormedit::audio;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, "Default playback rate", NK_TEXT_LEFT);
     std::array<const char*, playback_rate_count> labels{};
     for (std::size_t index = 0; index < labels.size(); ++index) labels[index] = playback_rate_catalog[index].label.data();
@@ -169,7 +183,7 @@ void field_scheme_picker(nk_context* context, const wormedit::ui::options_view_t
         labels.push_back(schemes[index].name.c_str());
         if (schemes[index].id == view->field_scheme) selected = static_cast<int>(index);
     }
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, "Default field skin", NK_TEXT_LEFT);
     if (labels.empty()) { nk_label(context, "Wormedit", NK_TEXT_LEFT); return; }
     const auto value = wormedit::ui::chrome::safe_combo(context, labels.data(),
@@ -222,7 +236,7 @@ void scratch_position_picker(nk_context* context, const wormedit::ui::options_vi
                              wormedit::ui::options_action_t& action, bool second_player) {
     static constexpr const char* labels[]{"Skin default", "Chart layout", "Left", "Right"};
     const auto current = second_player ? view.p2_scratch_position : view.p1_scratch_position;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, second_player ? "P2 scratch position" : "Single / P1 scratch position", NK_TEXT_LEFT);
     const auto selected = wormedit::ui::chrome::safe_combo(context, labels, 4,
         static_cast<int>(std::min(current, std::uint32_t{3})), 24, nk_vec2(220, 140));
@@ -266,7 +280,7 @@ void interface_theme_picker(nk_context* context, const wormedit::ui::options_vie
         ids.push_back(view.theme.data());
         selected = static_cast<int>(ids.size() - 1);
     }
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, "Interface theme", NK_TEXT_LEFT);
     const auto value = wormedit::ui::chrome::safe_combo(context, names.data(), static_cast<int>(names.size()),
         selected, 28, nk_vec2(260, 200));
@@ -282,7 +296,7 @@ void interface_scale_picker(nk_context* context, const wormedit::ui::options_vie
     const auto found = std::ranges::find(values, view.ui_scale_percent);
     const auto selected = static_cast<int>(found - values.begin());
     const auto count = selected == 6 ? 7 : 6;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
+    setting_row(context);
     nk_label(context, "UI scale", NK_TEXT_LEFT);
     const auto value = wormedit::ui::chrome::safe_combo(context, names.data(), count,
         selected, 28, nk_vec2(180, 220));
@@ -385,7 +399,9 @@ void render_page(nk_context* context, const wormedit::ui::options_view_t& view, 
                  wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!nk_group_begin(context, "Options page", 0)) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    nk_label(context, category_names[view.category], NK_TEXT_LEFT);
+    nk_label_colored(context, category_names[view.category], NK_TEXT_LEFT,
+                     wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_bright));
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     if (view.category == WORM_UI_OPTIONS_INPUT && lane_keys) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         if (nk_button_label(context, "Lane keys…"))

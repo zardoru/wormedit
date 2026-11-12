@@ -9,6 +9,7 @@
 #include "ui/nuklear/chrome/ui_metrics.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <span>
@@ -491,15 +492,18 @@ inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.fixed_background = saved.fixed_background;
 }
 
-// The dropdown chevron: Lucide `chevron-down` at `chevron_size`, inside the right end of the
-// combo's own bounds, muted until the pointer is over the combo.
+// The dropdown chevron, drawn as two strokes in the Lucide `chevron-down` shape. Header-only
+// on purpose: tests that only draw combos do not link the icon textures.
 inline constexpr float chevron_size = 14.0f;
 inline void draw_combo_chevron(nk_context* context, struct nk_rect bounds) {
     const auto hovered = nk_input_is_mouse_hovering_rect(&context->input, bounds);
-    const auto cell = nk_rect(bounds.x + bounds.w - metrics::gap_small - metrics::control_compact,
-                              bounds.y, metrics::control_compact, bounds.h);
-    lucide::draw(context, cell, lucide::Glyph::chevron_down,
-                 color(hovered ? UiColor::text_bright : UiColor::text_muted), chevron_size);
+    const auto tint = color(hovered ? UiColor::text_bright : UiColor::text_muted);
+    const auto cx = std::floor(bounds.x + bounds.w - metrics::gap_small - metrics::control_compact * 0.5f);
+    const auto cy = std::floor(bounds.y + bounds.h * 0.5f);
+    const auto half = chevron_size * 0.3f; // 4.2 px: the Lucide proportions at 14 px
+    auto* canvas = nk_window_get_canvas(context);
+    nk_stroke_line(canvas, cx - half, cy - half * 0.5f, cx, cy + half * 0.5f, 1.5f, tint);
+    nk_stroke_line(canvas, cx, cy + half * 0.5f, cx + half, cy - half * 0.5f, 1.5f, tint);
 }
 // Bounds of the combo whose popup is open, so safe_combo_end() can draw its chevron once the
 // parent window is current again.

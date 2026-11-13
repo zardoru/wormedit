@@ -80,7 +80,12 @@ ComposePointerFocusState update_compose_pointer_focus(
                    &context.input, nk_rect(0.0f, 0.0f, 1000000.0f, 1000000.0f)) &&
                !pointer_inside && !nk_input_is_mouse_hovering_rect(&context.input, focus.overview)) {
         state.input_queue.keyboard_focus = false;
-        if (!state.keyboard_navigation.pointer_navigation_active) {
+        // Only a held key or Tab needs ending; an idle click elsewhere (a dock, a menu) would
+        // otherwise post "Compose navigation canceled." every time.
+        const auto& navigation = state.keyboard_navigation;
+        const bool navigation_pending = navigation.navigation_key_active || navigation.raw_tab_down ||
+                                        navigation.tab_navigation.tab_down || navigation.tab_navigation_needs_cancel;
+        if (!navigation.pointer_navigation_active && navigation_pending) {
             append_compose_input(focus.action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
         }
         if (state.range_selection.space_range_hold_active && !state.range_selection.space_range_latched) {

@@ -145,6 +145,10 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
         const auto inset = cell_inset + context->style.window.group_padding.x + context->style.window.group_border;
         draw_cells(nk_window_get_canvas(context), context->style.font, header, inset, "No.", "Meter", "Length",
                    wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
+        if (nk_input_is_mouse_hovering_rect(&context->input, header))
+            wormedit::ui::nuklear::tooltip::text(context,
+                "Length: duration relative to a 4/4 measure (1/1 = four beats).\n"
+                "Meter: the time signature as authored, kept unreduced; -- means none.");
     }
     const auto height = wormedit::ui::layout::remaining_content_height(context,
         {.minimum = 60.0f, .reserved = 5.0f});

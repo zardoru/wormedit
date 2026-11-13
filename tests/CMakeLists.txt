@@ -626,14 +626,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
+        ../src/ui/nuklear/chrome/components.cpp
     )
     target_include_directories(wormedit_player_preview_texture_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
     )
     target_link_libraries(wormedit_player_preview_texture_tests
         PRIVATE
             wormedit::core
             wormedit::ui_frontend wormedit_ui_player_preview
+            wormedit_ui_nuklear_tooltip wormedit_ui_arrow_glyph nlohmann_json::nlohmann_json
             SDL3::SDL3
             Catch2::Catch2WithMain
     )

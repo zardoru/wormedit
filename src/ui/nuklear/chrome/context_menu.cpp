@@ -69,11 +69,16 @@ auto directly_in_window(const nk_context* context) -> bool {
 auto begin_menu_popup(ContextMenu& menu, nk_context* context) -> bool {
     // Menubar menus use menu_padding and no stock border; menu_surface_begin() frames them.
     auto& window = context->style.window;
+    // nk_popup_begin adds the stock square border itself; a zero popup border at begin leaves
+    // menu_surface_begin()'s rounded stroke as the only border.
     const auto padding = window.popup_padding;
+    const auto border = window.popup_border;
     window.popup_padding = nk_vec2(menu_padding, menu_padding);
+    window.popup_border = 0.0f;
     const auto began = nk_popup_begin(context, NK_POPUP_STATIC, menu.title,
                                       NK_WINDOW_NO_SCROLLBAR, menu.bounds) != 0;
     window.popup_padding = padding;
+    window.popup_border = border;
     return began;
 }
 

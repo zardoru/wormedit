@@ -33,7 +33,7 @@ auto hit_test(const nk_context* context, nk_widget_layout_states state, struct n
               bool enabled) -> hit_t {
     hit_t hit;
     if (state == NK_WIDGET_INVALID || !context->current || !context->current->layout) return hit;
-    if (context->active != context->current && !popup_panel(context)) return hit;
+    if (context->active != context->current && !inside_popup(context)) return hit;
     const auto& input = context->input;
     hit.hovered = nk_input_is_mouse_hovering_rect(&input, area) &&
                   nk_input_is_mouse_hovering_rect(&input, context->current->layout->clip) &&
@@ -344,7 +344,7 @@ namespace {
 
 auto is_number_field_hovered(const nk_context* context, struct nk_rect bounds) -> bool {
     if (!context->current || !context->current->layout) return false;
-    if (context->active != context->current && !popup_panel(context)) return false;
+    if (context->active != context->current && !inside_popup(context)) return false;
     return nk_input_is_mouse_hovering_rect(&context->input, bounds) &&
            nk_input_is_mouse_hovering_rect(&context->input, context->current->layout->clip);
 }

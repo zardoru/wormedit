@@ -82,6 +82,15 @@ inline auto popup_panel(const nk_context* context) -> bool {
            (static_cast<nk_flags>(context->current->layout->type) & NK_PANEL_SET_POPUP) != 0;
 }
 
+// True inside a popup or inside a group nested in one (a list view in a picker): the group's own
+// panel type is NK_PANEL_GROUP, so the popup is found by walking up the parent panels.
+inline auto inside_popup(const nk_context* context) -> bool {
+    if (!context || !context->current) return false;
+    for (const auto* panel = context->current->layout; panel; panel = panel->parent)
+        if ((static_cast<nk_flags>(panel->type) & NK_PANEL_SET_POPUP) != 0) return true;
+    return false;
+}
+
 // Equal label/control shares keep property rows usable in narrow side panels.
 inline constexpr float property_label_ratio = 0.5f;
 

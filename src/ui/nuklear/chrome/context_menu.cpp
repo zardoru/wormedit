@@ -189,6 +189,12 @@ auto context_menu_height(float rows, float extra) -> float {
            2.0f * menu_padding + extra;
 }
 
+void context_menu_hint(nk_context* context, const char* text) {
+    section_separator(context);
+    nk_layout_row_dynamic(context, metrics::row_text, 1);
+    caption(context, text, color(theme::UiColor::text_muted));
+}
+
 void context_menu_open(ContextMenu& menu, struct nk_vec2 anchor, PopupContextStamp stamp, bool keyboard) {
     context_menu_reset_navigation(menu);
     menu.keyboard_mode = keyboard;

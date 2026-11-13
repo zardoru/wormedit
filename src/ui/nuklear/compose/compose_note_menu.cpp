@@ -256,7 +256,7 @@ void render(nk_context* context, const wormedit::ui::compose_view_t& view, worme
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(7));
+        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(7, chrome::context_menu_hint_extra));
     if (!chrome::context_menu_begin(menu.popup, context, wormedit::ui::chrome::PopupContextStamp::from(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -287,9 +287,7 @@ void render(nk_context* context, const wormedit::ui::compose_view_t& view, worme
             chrome::context_menu_close(menu.popup);
         render_bgm_action(context, view, action);
         render_sound_selection(context, action);
-        nk_layout_row_dynamic(context, row_height, 1);
-        nk_label(context, "Shift + lane key moves one, then deselects", NK_TEXT_LEFT);
-
+        chrome::context_menu_hint(context, "Shift + lane key moves one, then deselects");
     }
     chrome::context_menu_end(menu.popup, context);
     if (bgm_tooltip_pending)

@@ -1557,7 +1557,8 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     state.dock_layout.layout.show(wormedit::dock_panel_t::measures, true);
     state.measures_dock.measure_selection = {};
     (void)harness.frame();
-    const auto second = harness.drawn_text_center("2    3/4    3/4");
+    // Each cell is drawn on its own now; row 2 is the only one with a 3/4 meter.
+    const auto second = harness.drawn_text_center("3/4");
     REQUIRE(second);
     const auto jump = click_at(harness, second->first, second->second);
     CHECK(state.measures_dock.measure_selection.primary == 12);

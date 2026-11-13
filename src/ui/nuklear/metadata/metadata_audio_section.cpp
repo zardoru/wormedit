@@ -89,7 +89,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
         return;
     }
     const auto editable = metadata.audio_offset_editable && !metadata.timing_locked;
-    metadata_form_row(context, 26, {metadata_unit_width});
+    metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_unit_width});
     nk_label(context, "Audio offset", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_offset_text.data(),
@@ -173,6 +173,8 @@ static void metadata_register_drop_target(struct nk_context* context,
 
 static void metadata_read_only_path(struct nk_context* context, const char* label,
                                     const std::string& path, wormedit::ui::metadata_drop_target_t target = {}) {
+    // Each label belongs to the field below it: air above separates it from the previous block.
+    wormedit::ui::chrome::group_gap(context);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, label, NK_TEXT_LEFT);
     std::vector<char> buffer(path.begin(), path.end());
@@ -409,7 +411,7 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
     apply_picked_music(panel);
     const auto dialog_open = worm_ui_nuklear_metadata_file_dialog_open();
     const auto filename = current_music_filename(*panel.metadata);
-    metadata_form_row(context, 25, {metadata_row_button_width});
+    metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
     nk_label(context, "Audio file", NK_TEXT_LEFT);
     if (!filename.empty())
         nk_label(context, filename.c_str(), NK_TEXT_LEFT);
@@ -557,7 +559,7 @@ static auto render_output_group_combo(const MetadataPanel& panel)
         selected = &metadata.output_groups[0];
         state.selected_output_group_index = selected->document_index;
     }
-    metadata_form_row(panel.context, 25);
+    metadata_form_row(panel.context, wormedit::ui::metrics::control_default);
     nk_label(panel.context, "Export format", NK_TEXT_LEFT);
     const auto* label = selected->name[0] ? selected->name.c_str() : selected->relative_output_path.c_str();
     if (wormedit::ui::chrome::safe_combo_begin_label(panel.context, label,
@@ -608,7 +610,7 @@ static void render_output_path_editor(const MetadataPanel& panel,
                                      const wormedit::ui::compose_output_group_view_t& selected) {
     auto* context = panel.context;
     synchronize_output_path_buffer(*panel.metadata, selected);
-    metadata_form_row(context, 25);
+    metadata_form_row(context, wormedit::ui::metrics::control_default);
     nk_label(context, "Export folder", NK_TEXT_LEFT);
     metadata_register_drop_target(context,
         {WORM_UI_METADATA_DROP_OUTPUT_PATH, selected.document_index});

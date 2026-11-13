@@ -163,7 +163,7 @@ void metadata_form_row(nk_context* context, float height, std::initializer_list<
 
 void metadata_input_row(struct nk_context* context, const char* label, char* buffer,
                         size_t capacity, int enabled) {
-    metadata_form_row(context, 26);
+    metadata_form_row(context, wormedit::ui::metrics::control_default);
     nk_label(context, label, NK_TEXT_LEFT);
     if (!enabled) {
         nk_widget_disable_begin(context);

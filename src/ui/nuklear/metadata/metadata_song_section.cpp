@@ -159,7 +159,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
     finish_tag_drag(context);
     if (state.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count)
         muted_label(context, "Some search tags are hidden by the row limit.");
-    metadata_form_row(context, 25, {metadata_row_button_width});
+    metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
     nk_label(context, "Search tags", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.new_search_tag.data(),

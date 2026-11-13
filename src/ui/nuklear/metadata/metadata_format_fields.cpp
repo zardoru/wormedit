@@ -406,7 +406,7 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
 static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, bool editable) {
     auto* context = panel.context;
     auto& buffer = state.bmson_fields[typed];
-    metadata_form_row(context, typed == 1 ? 58 : 26);
+    metadata_form_row(context, typed == 1 ? 58.0f : wormedit::ui::metrics::control_default);
     nk_label(context, bmson_field_labels[typed], NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,

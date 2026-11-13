@@ -138,7 +138,7 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
     const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
     const auto redivide_enabled = editable && resolution &&
         *resolution != metadata.chart_divisions_per_standard_measure;
-    metadata_form_row(context, 26, {metadata_row_button_width});
+    metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
     nk_label(context, "Resolution", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
@@ -414,8 +414,8 @@ void render_difficulty_section(const MetadataPanel& panel) {
     metadata_input_row(context, "Name", state.chart_name.data(), state.chart_name.size(), editable);
     metadata_input_row(context, "Mapper", state.chart_author.data(), state.chart_author.size(), editable);
     const auto has_rating = metadata.has_chart_rating;
-    if (has_rating) metadata_form_row(context, 26, {metadata_row_button_width});
-    else metadata_form_row(context, 26);
+    if (has_rating) metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
+    else metadata_form_row(context, wormedit::ui::metrics::control_default);
     nk_label(context, "Rating", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.chart_rating_text.data(),

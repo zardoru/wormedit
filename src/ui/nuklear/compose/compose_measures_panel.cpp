@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose/compose_action_stamp.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -154,12 +155,12 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
         {.minimum = 60.0f, .reserved = 5.0f});
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
-    if (nk_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,
                            static_cast<int>(row_height),
                            static_cast<int>(std::max<std::size_t>(view->measure_rows.size(), 1)))) {
         for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->measure_rows.size())); ++index)
             row(context, *view, *action, *state, static_cast<std::size_t>(index));
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
 
 }

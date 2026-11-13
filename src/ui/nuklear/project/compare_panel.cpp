@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose/compose_canvas.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include "ui/nuklear/render/theme.h"
 
 #include <algorithm>
@@ -18,7 +19,7 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
     const auto group_height = std::min(154.0f, 44.0f +
         22.0f * static_cast<float>(view.diagnostics.size()));
     nk_layout_row_dynamic(context, group_height, 1);
-    if (!nk_group_begin(context, "Validation diagnostics", NK_WINDOW_BORDER)) return;
+    if (!wormedit::ui::chrome::scroll_group_begin(context, "Validation diagnostics", NK_WINDOW_BORDER)) return;
     for (size_t index = 0; index < view.diagnostics.size(); ++index) {
         const auto& diagnostic = view.diagnostics[index];
         const char* label = diagnostic.label.data();
@@ -34,7 +35,7 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
             nk_label(context, label, NK_TEXT_LEFT);
         }
     }
-    nk_group_end(context);
+    wormedit::ui::chrome::scroll_group_end(context);
 }
 } // namespace
 

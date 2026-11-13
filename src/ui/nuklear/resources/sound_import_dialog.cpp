@@ -1,6 +1,7 @@
 #include "ui/nuklear/resources/sound_import_dialog.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/dialog.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <array>
@@ -42,7 +43,7 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
     nk_label(context, "Files", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 112, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Sound import files", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Sound import files", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.items.size(), 1)))) return;
     if (state.items.empty()) {
@@ -71,7 +72,7 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
         if (wormedit::ui::chrome::button_label(context, "×"))
             worm_ui_nuklear_sound_import_remove(state, static_cast<std::size_t>(index));
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_member_move(nk_context* context, worm_ui_sound_import_state_t& state,
@@ -98,7 +99,7 @@ void render_group_proposals(nk_context* context,
                             worm_ui_keysound_group_review_t& state) {
     nk_layout_row_dynamic(context, 170, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Suggested existing sound groups", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Suggested existing sound groups", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.groups.size(), 1)))) return;
     for (int row = list.begin; row < std::min<int>(list.end, state.groups.size()); ++row) {
@@ -121,7 +122,7 @@ void render_group_proposals(nk_context* context,
         std::snprintf(count, sizeof(count), "%zu sounds", group.member_ids.size());
         nk_label(context, count, NK_TEXT_LEFT);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 auto candidate_group_index(const worm_ui_keysound_group_review_t& state,
@@ -156,11 +157,11 @@ void render_group_candidates(nk_context* context,
     nk_layout_row_dynamic(context, 146, 1);
     struct nk_list_view members{};
     const auto member_count = static_cast<int>(state.candidates.size());
-    if (!nk_list_view_begin(context, &members, "Suggested members", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &members, "Suggested members", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), std::max(member_count, 1))) return;
     for (int row = members.begin; row < std::min(members.end, member_count); ++row)
         render_group_candidate(context, state, state.candidates[static_cast<std::size_t>(row)]);
-    nk_list_view_end(&members);
+    wormedit::ui::chrome::scroll_list_view_end(&members);
 }
 
 void render_keysound_group_rows(nk_context* context,
@@ -185,7 +186,7 @@ void render_member_list(nk_context* context, worm_ui_sound_import_state_t& state
                                    }));
     nk_layout_row_dynamic(context, 104, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, title, NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, title, NK_WINDOW_BORDER,
                             static_cast<int>(row_height), static_cast<int>(count))) return;
     std::size_t member_row = 0;
     for (std::size_t index = 0; index < state.items.size(); ++index) {
@@ -201,7 +202,7 @@ void render_member_list(nk_context* context, worm_ui_sound_import_state_t& state
         }
         ++member_row;
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state) {
@@ -213,7 +214,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         worm_ui_nuklear_sound_import_leave_all_ungrouped(state);
     nk_layout_row_dynamic(context, 138, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Suggested sound groups", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Suggested sound groups", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.groups.size(), 1)))) return;
     for (int visible = list.begin; visible < std::min<int>(list.end, state.groups.size()); ++visible) {
@@ -239,7 +240,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         if (wormedit::ui::chrome::button_label(context, group.expanded ? "Hide files" : "Show files"))
             worm_ui_nuklear_sound_import_set_group_expanded(state, index, !group.expanded);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
     const auto expanded = std::ranges::find(state.groups, true,
                                              &worm_ui_sound_import_group_t::expanded);
     if (expanded != state.groups.end())
@@ -277,10 +278,10 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
                               .area = nk_vec2(static_cast<float>(window_width),
                                               static_cast<float>(window_height))})) {
         nk_layout_row_dynamic(context, body_height, 1);
-        if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
+        if (wormedit::ui::chrome::scroll_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
             render_import_items(context, state, catalog);
             render_group_rows(context, state);
-            nk_group_end(context);
+            wormedit::ui::chrome::scroll_group_end(context);
         }
         if (!state.message.empty())
             chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));

@@ -8,6 +8,7 @@
 #include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <cmath>
@@ -144,7 +145,7 @@ void render_submenu(nk_context* context, const wormedit::ui::compose_view_t& vie
                                             nk_widget_bounds(context).h);
     nk_list_view list{};
     const auto count = static_cast<int>(view.note_menu_layer_total_count + 1);
-    if (!nk_list_view_begin(context, &list, "Note layer rows", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Note layer rows", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), count)) return;
     chrome::context_menu_set_row_cursor(menu.popup, list.begin);
     for (int offset = list.begin; offset < list.end; ++offset)
@@ -153,7 +154,7 @@ void render_submenu(nk_context* context, const wormedit::ui::compose_view_t& vie
     const auto requested = std::min<std::size_t>(wormedit::ui::note_layer_window_limit,
                                                std::min(view.note_menu_layer_total_count - std::min(first, view.note_menu_layer_total_count),
                                                    static_cast<std::size_t>(list.end - list.begin)));
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
     if (menu.popup.open && view.note_menu_layer_total_count &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size()) &&
         raise(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW)) {

@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/compose_mode.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -81,7 +82,7 @@ void render_cut_rows(nk_context* context, const wormedit::ui::compose_view_t& vi
     }
     nk_layout_row_dynamic(context, std::min(156.0f, 26.0f * view.export_cuts.size()), 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Song export cuts", NK_WINDOW_BORDER, 26,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Song export cuts", NK_WINDOW_BORDER, 26,
                             static_cast<int>(view.export_cuts.size()))) return;
     for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view.export_cuts.size())); ++index) {
         const auto& cut = view.export_cuts[static_cast<std::size_t>(index)];
@@ -90,7 +91,7 @@ void render_cut_rows(nk_context* context, const wormedit::ui::compose_view_t& vi
         if (nk_selectable_label(context, cut.label.empty() ? "Export cut" : cut.label.c_str(), NK_TEXT_LEFT, &selected))
             editor.select(cut);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_cut_fields(nk_context* context, editor_t& editor) {

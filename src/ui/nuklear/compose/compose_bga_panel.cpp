@@ -12,6 +12,7 @@
 #include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/render/vector_icons.h"
 #include "wormedit/core/document.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
@@ -345,7 +346,7 @@ void render_bga_usage_rows(nk_context* context, const wormedit::ui::compose_view
     nk_label(context, summary.c_str(), NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 120, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "BGA resource uses", NK_WINDOW_BORDER, 26,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "BGA resource uses", NK_WINDOW_BORDER, 26,
                             static_cast<int>(std::max<std::size_t>(1, uses.rows.size())))) return;
     for (auto index = list.begin; index < std::min(list.end, static_cast<int>(uses.rows.size())); ++index) {
         const auto& row = uses.rows[static_cast<std::size_t>(index)];
@@ -357,7 +358,7 @@ void render_bga_usage_rows(nk_context* context, const wormedit::ui::compose_view
         if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, row.label.c_str());
     }
     if (uses.rows.empty()) { nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1); nk_label(context, "No BGA uses.", NK_TEXT_LEFT); }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 void render_bga_usage(nk_context* context, const wormedit::ui::compose_view_t& view,
                       wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state,
@@ -407,7 +408,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     reveal_armed_bga(context, *view, *state);
     struct nk_list_view list{};
     const auto matching = std::strcmp(view->bga_search.c_str(), state->bga_catalog.bga_search.data()) == 0;
-    if (nk_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
                           static_cast<int>(std::max<std::size_t>(view->bga_total_matching, 1)))) {
         state->bga_catalog.bga_first_row = static_cast<std::size_t>(list.begin);
         state->bga_catalog.bga_row_limit = static_cast<std::size_t>(std::max(1, list.end - list.begin + 1));
@@ -416,7 +417,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
                 row(context, *view, *state, *action, static_cast<std::size_t>(index));
             if (!view->bga_total_matching) { nk_layout_row_dynamic(context, 36, 1); nk_label(context, "No BGA matches. Add or drop images here.", NK_TEXT_LEFT); }
         }
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
     if (block_list_pointer) nk_widget_disable_end(context);
     render_bga_usage(context, *view, *action, *state, block_list_pointer);
@@ -507,7 +508,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         }));
     nk_layout_row_dynamic(context, 300, 1);
     bool selected_event = false;
-    if (nk_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
                            std::max(1, count))) {
         const auto events = std::span(view->bga_events);
         int row_index = 0;
@@ -522,7 +523,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
             }
             ++row_index;
         }
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
     if (selected_event) {
         nk_popup_close(context);

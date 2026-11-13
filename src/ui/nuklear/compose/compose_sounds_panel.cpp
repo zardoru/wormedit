@@ -18,6 +18,7 @@
 #include "ui/nuklear/render/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <SDL3/SDL_keyboard.h>
 
@@ -715,7 +716,7 @@ void render_sound_slot_list(const SoundsPanel& panel, float height) {
     }
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Compose sound slots", NK_WINDOW_BORDER, 27,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose sound slots", NK_WINDOW_BORDER, 27,
                             static_cast<int>(std::max<std::size_t>(view.sound_slot_total_matching, 1))))
         return;
     state.keysound_catalog.keysound_slots_first_row = static_cast<std::size_t>(list.begin);
@@ -729,7 +730,7 @@ void render_sound_slot_list(const SoundsPanel& panel, float height) {
                                                 view.sound_slot_first_row + view.sound_slots.size());
         for (auto index = first; index < end; ++index) render_sound_slot_row(panel, index);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_sound_slot_search(const SoundsPanel& panel) {
@@ -1075,10 +1076,10 @@ void render_layer_section(const SoundsPanel& panel) {
     const auto height = static_cast<float>(visible) * (layer_row_height +
                         context->style.window.spacing.y) + 6.0f;
     nk_layout_row_dynamic(context, height, 1);
-    if (nk_group_begin(context, "Sound layers", NK_WINDOW_BORDER)) {
+    if (wormedit::ui::chrome::scroll_group_begin(context, "Sound layers", NK_WINDOW_BORDER)) {
         for (std::size_t index = 0; index < view.keysound_layers.size(); ++index)
             render_layer_row(panel, index);
-        nk_group_end(context);
+        wormedit::ui::chrome::scroll_group_end(context);
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto can_clear = !panel.state->keysound_catalog.keysound_selection.selected.empty();
@@ -1461,7 +1462,7 @@ void render_list(const SoundsPanel& panel, float height) {
     nk_layout_row_dynamic(context, height, 1);
     reveal_sound_primary(panel);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Compose sound list", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose sound list", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), std::max(count, 1))) return;
     if (count == 0) {
         render_list_hint(panel);
@@ -1485,7 +1486,7 @@ void render_list(const SoundsPanel& panel, float height) {
         for (int index = list.begin; index < std::min(list.end, count); ++index)
             render_row(panel, static_cast<std::size_t>(index));
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
     render_sound_group_context_menu(panel);
 }
 

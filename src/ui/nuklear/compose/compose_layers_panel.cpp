@@ -10,6 +10,7 @@
 #include "ui/nuklear/render/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -389,7 +390,7 @@ void render_list(const LayersPanel& panel, float height) {
     const auto total = static_cast<int>(panel.view->semantic_layer_total_count) + 1;
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Compose layer list", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose layer list", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), total)) return;
     for (int index = list.begin; index < std::min(list.end, total); ++index)
         render_list_row(panel, index);
@@ -402,7 +403,7 @@ void render_list(const LayersPanel& panel, float height) {
         panel.action->compose_semantic_layer_first_row = first;
         panel.action->compose_semantic_layer_row_count = count;
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void reveal_added_layer(const LayersPanel& panel) {

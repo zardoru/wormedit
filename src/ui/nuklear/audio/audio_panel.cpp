@@ -11,6 +11,7 @@
 #include "ui/nuklear/chrome/chrome.h"
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <cmath>
@@ -580,7 +581,7 @@ void render_sound_list_column(struct nk_context* context, const wormedit::ui::au
         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT))
         audio.sound_list_focused = nk_input_is_mouse_hovering_rect(&context->input, bounds);
     struct nk_list_view list{};
-    if (nk_list_view_begin(context, &list, "Sounds rows", 0, 28,
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Sounds rows", 0, 28,
                             static_cast<int>(std::max<std::size_t>(1, rows.size())))) {
         if (rows.empty()) {
             nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -589,7 +590,7 @@ void render_sound_list_column(struct nk_context* context, const wormedit::ui::au
             for (int index = list.begin; index < list.end && index < static_cast<int>(rows.size()); ++index)
                 render_sound_list_row(context, view, *rows[static_cast<std::size_t>(index)], action);
         }
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "↑/↓ Select · Space / double-click Play", NK_TEXT_LEFT);
@@ -852,9 +853,9 @@ void render_sound_columns(struct nk_context* context, const wormedit::ui::audio_
                              available * 0.30f, gutter};
     nk_layout_row(context, NK_STATIC, height, 5, widths);
     nk_label(context, "", NK_TEXT_LEFT);
-    if (nk_group_begin(context, "sound_list", NK_WINDOW_BORDER)) {
+    if (wormedit::ui::chrome::scroll_group_begin(context, "sound_list", NK_WINDOW_BORDER)) {
         render_sound_list_column(context, view, action);
-        nk_group_end(context);
+        wormedit::ui::chrome::scroll_group_end(context);
     }
     const auto waveform_flags = static_cast<nk_flags>(NK_WINDOW_BORDER) |
         (height < 380.0f ? 0U : static_cast<nk_flags>(NK_WINDOW_NO_SCROLLBAR));
@@ -863,9 +864,9 @@ void render_sound_columns(struct nk_context* context, const wormedit::ui::audio_
         render_waveform_column(context, &view, &action, false, view.waveform_columns);
         nk_group_end(context);
     }
-    if (nk_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
+    if (wormedit::ui::chrome::scroll_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
         render_sound_properties_column(context, view, action);
-        nk_group_end(context);
+        wormedit::ui::chrome::scroll_group_end(context);
     }
     nk_label(context, "", NK_TEXT_LEFT);
 }

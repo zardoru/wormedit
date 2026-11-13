@@ -237,9 +237,9 @@ void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::comp
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto valid = state.layer_editor.semantic_layer_name[0] != '\0';
     if (!allowed || !valid) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!allowed || !valid) nk_widget_disable_end(context);
-    const auto cancel = nk_button_label(context, "Cancel");
+    const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && valid && raise_captured(panel, WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER)) {
         panel.action->compose_semantic_layer_name = state.layer_editor.semantic_layer_name.data();
         close_layer_editors(state);
@@ -258,9 +258,9 @@ void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::com
     const auto value = nk_color_picker(context, state.layer_editor.semantic_layer_color, NK_RGBA);
     state.layer_editor.semantic_layer_color = {value.r, value.g, value.b, value.a};
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
-    const auto apply = nk_button_label(context, "Apply");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!allowed) nk_widget_disable_end(context);
-    const auto cancel = nk_button_label(context, "Cancel");
+    const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && raise_captured(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR)) {
         panel.action->compose_semantic_layer_red = wormedit::ui::chrome::unit_to_byte(value.r);
         panel.action->compose_semantic_layer_green = wormedit::ui::chrome::unit_to_byte(value.g);

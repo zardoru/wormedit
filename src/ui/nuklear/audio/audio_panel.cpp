@@ -125,7 +125,7 @@ void render_audio_asset_catalog(struct nk_context* context, const wormedit::ui::
                 view.has_selected_asset && view.selected_asset_id.value == view.asset_ids[index].value;
             std::snprintf(label, sizeof(label), "%sAsset %llu", selected ? "• " : "",
                           static_cast<unsigned long long>(view.asset_ids[index].value));
-            if (nk_button_label(context, label) && !selected) {
+            if (wormedit::ui::chrome::button_label(context, label) && !selected) {
                 audio.selected_resource_id = 0;
                 audio.selected_channel_id = 0;
                 audio.selected_clip_id = 0;
@@ -315,7 +315,7 @@ void render_slicer_controls(nk_context* context, const wormedit::ui::audio_slice
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const bool enabled = view.slicer.can_slice && view.selected_resource_id.value != 0;
     if (!enabled) nk_widget_disable_begin(context);
-    const auto clicked = nk_button_label(context, "Slice");
+    const auto clicked = wormedit::ui::chrome::button_label(context, "Slice");
     if (!enabled) nk_widget_disable_end(context);
     if (clicked && enabled) action.audio_slicer = wormedit::ui::audio_slicer_action_t{
         .project = view.usage_song_id, .chart = view.chart_id, .resource = view.selected_resource_id,
@@ -358,13 +358,13 @@ void render_waveform_column(struct nk_context* context, const wormedit::ui::audi
     nk_labelf(context, NK_TEXT_LEFT, "Stereo overview · %.2f seconds · %u Hz", seconds,
               view->sample_rate);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 3);
-    if (nk_button_label(context, "−"))
+    if (wormedit::ui::chrome::button_label(context, "−"))
         audio.waveform_viewport = wormedit::audio::zoom_waveform_viewport(audio.waveform_viewport,
             audio.waveform_viewport.pixel_width * 0.5, 0.8);
-    if (nk_button_label(context, "+"))
+    if (wormedit::ui::chrome::button_label(context, "+"))
         audio.waveform_viewport = wormedit::audio::zoom_waveform_viewport(audio.waveform_viewport,
             audio.waveform_viewport.pixel_width * 0.5, 1.25);
-    if (nk_button_label(context, "Fit"))
+    if (wormedit::ui::chrome::button_label(context, "Fit"))
         audio.waveform_viewport = wormedit::audio::fit_waveform_viewport(view->total_frames,
             audio.waveform_viewport.pixel_width);
     nk_layout_row_dynamic(context, waveform_height(context, embedded), 1);
@@ -685,7 +685,7 @@ void render_sound_source_copy_button(struct nk_context* context, const wormedit:
     const auto can_copy = sound_source_copy_available(view, sound);
     if (!can_copy)
         nk_widget_disable_begin(context);
-    const auto clicked = nk_button_label(context, "Copy source into project");
+    const auto clicked = wormedit::ui::chrome::button_label(context, "Copy source into project");
     if (!can_copy)
         nk_widget_disable_end(context);
     if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
@@ -734,7 +734,7 @@ void render_sound_tags(nk_context* context, const wormedit::ui::audio_slices_vie
     const auto edit = wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
         static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
         audio.new_tag, sizeof(audio.new_tag), nk_filter_default);
-    const bool add = nk_button_label(context, "Add tag") || (edit & NK_EDIT_COMMITED);
+    const bool add = wormedit::ui::chrome::button_label(context, "Add tag") || (edit & NK_EDIT_COMMITED);
     if (add && audio.new_tag[0]) {
         std::vector<std::string> tags(sound.tags.begin(), sound.tags.end());
         tags.emplace_back(audio.new_tag);
@@ -777,7 +777,7 @@ void render_editable_sound_properties(nk_context* context, const wormedit::ui::a
                            sound.resource_id.value && view.document_revision;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (!can_apply) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!can_apply) nk_widget_disable_end(context);
     if (apply && can_apply && !action.sound_properties_apply) {
         action.sound_properties_apply = true;
@@ -788,7 +788,7 @@ void render_editable_sound_properties(nk_context* context, const wormedit::ui::a
         action.sound_properties_name = audio.properties_name;
         action.sound_properties_kind = static_cast<wormedit::sound_kind_t>(audio.properties_kind);
     }
-    if (nk_button_label(context, "Revert")) reset_sound_properties(view, sound);
+    if (wormedit::ui::chrome::button_label(context, "Revert")) reset_sound_properties(view, sound);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
 }
 
@@ -804,7 +804,7 @@ void render_sound_properties_column(struct nk_context* context, const wormedit::
     render_editable_sound_properties(context, view, *selected, action);
     if (selected->bmson_channel_id && view.has_chart && !view.timing_locked) {
         const bool stem = selected->kind == wormedit::sound_kind_t::stem;
-        if (nk_button_label(context, stem ? "Kind: Keysound (pack into columns)" : "Kind: Stem (make stem)"))
+        if (wormedit::ui::chrome::button_label(context, stem ? "Kind: Keysound (pack into columns)" : "Kind: Stem (make stem)"))
             request_bmson_lane_mode(action, view.usage_song_id.value, view.chart_id.value, view.document_revision,
                 selected->bmson_channel_id.value, !stem, selected->bmson_channel_continues, true);
     }
@@ -829,7 +829,7 @@ void render_sound_properties_column(struct nk_context* context, const wormedit::
                   static_cast<unsigned long long>(view.selected_clip_id.value));
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    if (nk_button_label(context, audio.find_uses_open ? "Hide uses" : "Find uses")) {
+    if (wormedit::ui::chrome::button_label(context, audio.find_uses_open ? "Hide uses" : "Find uses")) {
         if (!audio.find_uses_open && audio.selected_resource_id == 0) {
             audio.selected_project_id = view.usage_song_id.value;
             audio.selected_resource_id = selected->resource_id.value;
@@ -915,7 +915,7 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         audio.import_drop_height = overlap.h;
         audio.import_drop_valid = audio.import_drop_width > 0 && audio.import_drop_height > 0;
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
-        if (nk_button_label(context, "Add sounds…"))
+        if (wormedit::ui::chrome::button_label(context, "Add sounds…"))
             action->sound_import_pick_requested = true;
         nk_label(context, "Drop audio files anywhere here to import", NK_TEXT_RIGHT);
         render_sound_columns(context, *view, *action);

@@ -11,6 +11,9 @@ find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 add_test(NAME tooling.complexity
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_complexity_tests.py")
 set_tests_properties(tooling.complexity PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.raw-buttons
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_buttons.py")
+set_tests_properties(tooling.raw-buttons PROPERTIES LABELS "unit;tooling")
 
 if(UNIX)
     add_executable(wormedit_crash_backtrace_tests

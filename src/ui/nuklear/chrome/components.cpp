@@ -200,12 +200,14 @@ auto Button::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
     if (cell == NK_WIDGET_INVALID) return false;
-    const auto hit = hit_test(context, cell, bounds, enabled);
-    paint_look(context, bounds, metrics::radius_control, button_look(kind, state_of(hit, enabled)));
-    draw_centered_text(context, bounds, label,
-                       button_look(kind, state_of(hit, enabled)).text);
+    // nk_widget_disable_begin marks the cell disabled; draw it like an explicitly disabled button.
+    const auto usable = enabled && cell != NK_WIDGET_DISABLED;
+    const auto hit = hit_test(context, cell, bounds, usable);
+    const auto look = button_look(kind, state_of(hit, usable));
+    paint_look(context, bounds, metrics::radius_control, look);
+    draw_centered_text(context, bounds, label, look.text);
     tooltip_if_hovered(context, hit, tooltip);
-    return enabled && hit.clicked;
+    return usable && hit.clicked;
 }
 
 auto Checkbox::render(nk_context* context) const -> bool {
@@ -249,16 +251,9 @@ auto Checkbox::render(nk_context* context) const -> bool {
     const auto label_color = !usable ? chrome::text_faint()
                              : lit ? color(UiColor::text_bright) : color(UiColor::text);
     if (label && label[0] && font) {
-        // Built the way a stock button builds its centered text rect (same content inset, same
-        // nk_widget_text middle alignment), so a checkbox label and a button label in one row
-        // share a baseline and the same drawn text bounds.
-        const auto& button = context->style.button;
-        const auto content_h = label_area.h - (2.0f * button.padding.y + button.border + 2.0f * button.rounding);
-        const auto text_h = std::max(content_h / 2.0f, content_h - (content_h / 2.0f + font->height / 2.0f));
-        const auto text_area = nk_rect(label_area.x,
-                                       label_area.y + button.padding.y + button.border + button.rounding +
-                                           content_h / 2.0f - font->height / 2.0f,
-                                       label_area.w, text_h);
+        // Centered like a Button's label, so both share a baseline and drawn text bounds in a row.
+        const auto text_area = nk_rect(label_area.x, label_area.y + (label_area.h - font->height) * 0.5f,
+                                       label_area.w, font->height);
         nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
                      nk_rgba(0, 0, 0, 0), label_color);
     }

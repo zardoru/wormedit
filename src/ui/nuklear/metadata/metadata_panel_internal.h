@@ -42,7 +42,6 @@ inline constexpr float metadata_unit_width = 24.0f;
 void metadata_form_row(nk_context* context, float height, std::initializer_list<float> trailing = {});
 void metadata_input_row(nk_context* context, const char* label, char* buffer, std::size_t capacity,
                         int enabled);
-void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented);
 void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_enabled,
                            const char* revert_label, const char* apply_label, bool& revert,
                            bool& apply);

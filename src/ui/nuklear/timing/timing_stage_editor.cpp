@@ -285,9 +285,9 @@ static void render_stage_bpm(TimingStageEditor& editor) {
         state.bpm_decimal.data(), state.bpm_decimal.size(), nk_filter_float) != 0;
     nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.50f);
-    if (nk_button_label(context, "-1")) editor.bpm_step = -1;
+    if (wormedit::ui::chrome::button_label(context, "-1")) editor.bpm_step = -1;
     nk_layout_row_push(context, 0.50f);
-    if (nk_button_label(context, "+1")) editor.bpm_step = 1;
+    if (wormedit::ui::chrome::button_label(context, "+1")) editor.bpm_step = 1;
     nk_layout_row_end(context);
     if (decimal_changed) {
         state.bpm_decimal_edited = true;
@@ -417,15 +417,15 @@ static void render_stage_actions(TimingStageEditor& editor) {
     }
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 2);
     nk_layout_row_push(context, 0.50f);
-    const auto confirm = nk_button_label(context,
+    const auto confirm = wormedit::ui::chrome::button_label(context,
         bool(view.stage_existing_object_id) ? "Apply timing edit" : "Confirm event");
     nk_layout_row_push(context, 0.50f);
-    const auto cancel = nk_button_label(context, "Cancel");
+    const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     bool remove = false;
     nk_layout_row_end(context);
     if (bool(view.stage_existing_object_id)) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-        remove = nk_button_label(context, "Delete event");
+        remove = wormedit::ui::chrome::button_label(context, "Delete event");
     }
     if (action && action->timing_stage_action == wormedit::ui::timing_stage_action_t::none && editor.changed)
         set_timing_action(action, &view, wormedit::ui::timing_stage_action_t::update, view.stage_value,

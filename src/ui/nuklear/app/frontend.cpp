@@ -1816,11 +1816,11 @@ static void render_workspace_error(wormedit::ui::workspace_action_t* action, int
                                      ? diagnostic
                                      : "No diagnostic was provided for the workspace error.");
         nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 2);
-        if (nk_button_label(g_context, "Project")) {
+        if (wormedit::ui::chrome::button_label(g_context, "Project")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
             action->tab = WORM_UI_WORKSPACE_TAB_SETUP;
         }
-        if (nk_button_label(g_context, "Quit")) {
+        if (wormedit::ui::chrome::button_label(g_context, "Quit")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
         }
     }
@@ -2122,7 +2122,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
     nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
-    if (nk_button_label(g_context, label) &&
+    if (wormedit::ui::chrome::button_label(g_context, label) &&
         action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
         auto& input = action->compose_inputs.emplace_back();
         input = {};
@@ -2254,7 +2254,7 @@ static void render_notification_badge(const wormedit::ui::notification_view_t& v
     }
     const auto bounds = nk_widget_bounds(g_context);
     const auto hovered_visible_badge = nk_widget_is_hovered(g_context) != 0;
-    const auto clicked = nk_button_label(g_context, label) != 0;
+    const auto clicked = wormedit::ui::chrome::button_label(g_context, label) != 0;
     const auto click_matches_visible_badge =
         nk_input_is_mouse_hovering_rect(&g_context->input, bounds) != 0 &&
         hovered_visible_badge;
@@ -2930,7 +2930,7 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
         nk_layout_row_dynamic(g_context, 34, 1);
         const auto bounds = nk_widget_bounds(g_context);
         if (blocked) nk_widget_disable_begin(g_context);
-        const bool chosen = nk_button_label(g_context, entry.label.data());
+        const bool chosen = wormedit::ui::chrome::button_label(g_context, entry.label.data());
         if (blocked) nk_widget_disable_end(g_context);
         if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
@@ -2946,10 +2946,10 @@ static void render_startup_buttons(wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(g_context, 42, 1);
     const bool dialog_busy = project_dialog_active();
     if (dialog_busy) nk_widget_disable_begin(g_context);
-    if (nk_button_label(g_context, "New project") &&
+    if (wormedit::ui::chrome::button_label(g_context, "New project") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         request_manual_new_project();
-    if (nk_button_label(g_context, dialog_busy ? "Choosing file…" : "Open chart or project…") &&
+    if (wormedit::ui::chrome::button_label(g_context, dialog_busy ? "Choosing file…" : "Open chart or project…") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
     if (dialog_busy) nk_widget_disable_end(g_context);
@@ -3038,10 +3038,10 @@ static void render_about_body(const wormedit::ui::workspace_view_t& view) {
     chrome::dialog_text(g_about_dialog, g_context,
         "Public domain (The Unlicense). Dependencies retain their own licenses.", muted);
     nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
-    if (nk_button_label(g_context, "github.com/zardoru/wormedit"))
+    if (wormedit::ui::chrome::button_label(g_context, "github.com/zardoru/wormedit"))
         (void)SDL_OpenURL("https://github.com/zardoru/wormedit");
     nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
-    if (nk_button_label(g_context, "Open user manual")) open_user_manual();
+    if (wormedit::ui::chrome::button_label(g_context, "Open user manual")) open_user_manual();
 }
 
 static void render_shortcut_sheet(const wormedit::ui::workspace_view_t& view) {
@@ -3636,7 +3636,7 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
             nk_label(g_context, "Preparing…", NK_TEXT_LEFT);
         nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
         if (job.cancelling) nk_widget_disable_begin(g_context);
-        if (nk_button_label(g_context, "Cancel")) cancel = true;
+        if (wormedit::ui::chrome::button_label(g_context, "Cancel")) cancel = true;
         if (job.cancelling) nk_widget_disable_end(g_context);
     }
     nk_end(g_context);

@@ -354,7 +354,7 @@ void render_bookmarks(struct nk_context* context, const wormedit::ui::compose_vi
     if (!selected) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!editable) nk_widget_disable_begin(context);
-    const auto move = nk_button_label(context, "Move selected bookmark to cursor");
+    const auto move = wormedit::ui::chrome::button_label(context, "Move selected bookmark to cursor");
     if (!editable) nk_widget_disable_end(context);
     if (move && editable && raise_compose(action, WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION))
         action.compose_bookmark_id.value = selected->bookmark_id.value;
@@ -397,8 +397,8 @@ void render_section_edge_buttons(struct nk_context* context, const wormedit::ui:
     const auto editable = view.scene_available && !view.input_occluded;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     if (!editable) nk_widget_disable_begin(context);
-    const auto set_begin = nk_button_label(context, "Set start to cursor");
-    const auto set_end = nk_button_label(context, "Set end to cursor");
+    const auto set_begin = wormedit::ui::chrome::button_label(context, "Set start to cursor");
+    const auto set_end = wormedit::ui::chrome::button_label(context, "Set end to cursor");
     if (!editable) nk_widget_disable_end(context);
     if (!editable || (!set_begin && !set_end)) return;
     const auto kind = set_begin ? WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN
@@ -510,7 +510,7 @@ void render_audio_bookmarks(struct nk_context* context, const wormedit::ui::comp
     render_audio_form_fields(context, true);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!editable || !selected) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply label and time");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply label and time");
     if (!editable || !selected) nk_widget_disable_end(context);
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (clicks.add && editable) fill_audio_bookmark_action(action, false);
@@ -552,7 +552,7 @@ void render_audio_sections(struct nk_context* context, const wormedit::ui::compo
     render_audio_form_fields(context, false);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!editable || !selected) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply label and times");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply label and times");
     if (!editable || !selected) nk_widget_disable_end(context);
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (clicks.add && editable) fill_audio_section_action(action, false);
@@ -568,7 +568,7 @@ void render_song_preview_buttons(struct nk_context* context, const wormedit::ui:
     const auto& span = view.preview_span;
     const auto button = [&](const char* label, bool enabled) {
         if (!enabled) nk_widget_disable_begin(context);
-        const auto clicked = nk_button_label(context, label);
+        const auto clicked = wormedit::ui::chrome::button_label(context, label);
         if (!enabled) nk_widget_disable_end(context);
         return clicked && enabled;
     };

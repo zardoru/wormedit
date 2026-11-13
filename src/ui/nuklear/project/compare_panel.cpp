@@ -24,7 +24,7 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
         const char* label = diagnostic.label.data();
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (diagnostic.has_row) {
-            if (nk_button_label(context, label)) {
+            if (wormedit::ui::chrome::button_label(context, label)) {
                 action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
                 action.compare_diagnostic_row = diagnostic.row;
                 action.compare_diagnostic_measure.value = diagnostic.measure.value;

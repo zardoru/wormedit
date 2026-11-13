@@ -116,7 +116,7 @@ void audio_output_controls(nk_context* context, const wormedit::ui::options_view
             }
         wormedit::ui::chrome::safe_combo_end(context);
     }
-    if (nk_button_label(context, "Refresh devices") && action.kind == WORM_UI_OPTIONS_NONE)
+    if (wormedit::ui::chrome::button_label(context, "Refresh devices") && action.kind == WORM_UI_OPTIONS_NONE)
         action = {.kind = WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES, .revision = view.revision, .category = view.category};
     edit_integer(context, view, action, "Buffer (frames; 0 = automatic)", WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
         view.buffer_frames, 0, 8192);
@@ -373,10 +373,10 @@ void default_lane_bindings(nk_context* context, const wormedit::ui::options_view
         action = {.kind = WORM_UI_OPTIONS_SELECT_LANE_COUNT, .revision = view.revision,
             .category = WORM_UI_OPTIONS_INPUT, .lane_count = static_cast<std::uint32_t>(count)};
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, view.default_lane_count == 4 ? 2 : 1);
-    if (nk_button_label(context, "Number row") && action.kind == WORM_UI_OPTIONS_NONE)
+    if (wormedit::ui::chrome::button_label(context, "Number row") && action.kind == WORM_UI_OPTIONS_NONE)
         action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = WORM_UI_OPTIONS_INPUT,
             .field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW, .lane_count = view.default_lane_count};
-    if (view.default_lane_count == 4 && nk_button_label(context, "DFJK (4K)") && action.kind == WORM_UI_OPTIONS_NONE)
+    if (view.default_lane_count == 4 && wormedit::ui::chrome::button_label(context, "DFJK (4K)") && action.kind == WORM_UI_OPTIONS_NONE)
         action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = WORM_UI_OPTIONS_INPUT,
             .field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK, .lane_count = 4};
     for (std::size_t index = 0; index < view.default_lane_bindings.size(); ++index)
@@ -420,7 +420,7 @@ void render_page(nk_context* context, const wormedit::ui::options_view_t& view, 
     wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium);
     if (view.category == WORM_UI_OPTIONS_INPUT && lane_keys) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
-        if (nk_button_label(context, "Lane keys…"))
+        if (wormedit::ui::chrome::button_label(context, "Lane keys…"))
             lane_keys->kind = wormedit::ui::lane_keys_action_kind_t::open;
     }
     pages[view.category](context, &view, &action);

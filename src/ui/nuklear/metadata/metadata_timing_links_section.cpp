@@ -67,15 +67,15 @@ void render_link_buttons(const MetadataPanel& panel, const ui::timing_link_categ
     const bool can_link = state.timing_links.source_for(row.category) &&
         (row.is_local_override || state.timing_links.source_for(row.category) != row.source);
     if (!can_link) nk_widget_disable_begin(panel.context);
-    const bool link = nk_button_label(panel.context, "Link") && can_link;
+    const bool link = wormedit::ui::chrome::button_label(panel.context, "Link") && can_link;
     if (!can_link) nk_widget_disable_end(panel.context);
     if (link) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::link, *panel.action);
     if (!row.source) nk_widget_disable_begin(panel.context);
-    const bool detach = nk_button_label(panel.context, "Detach") && row.source;
+    const bool detach = wormedit::ui::chrome::button_label(panel.context, "Detach") && row.source;
     if (!row.source) nk_widget_disable_end(panel.context);
     if (detach) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::detach, *panel.action);
     if (!row.is_local_override) nk_widget_disable_begin(panel.context);
-    const bool relink = nk_button_label(panel.context, "Relink") && row.is_local_override;
+    const bool relink = wormedit::ui::chrome::button_label(panel.context, "Relink") && row.is_local_override;
     if (!row.is_local_override) nk_widget_disable_end(panel.context);
     if (relink) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::relink, *panel.action);
 }

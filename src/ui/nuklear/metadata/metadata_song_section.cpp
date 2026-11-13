@@ -168,7 +168,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
     const auto can_add = editable && state.search_tags.size() < wormedit::default_metadata_edit_limits.maximum_search_tags &&
                          state.new_search_tag[0] != '\0';
     if (!can_add) nk_widget_disable_begin(context);
-    const auto add = nk_button_label(context, "Add tag");
+    const auto add = wormedit::ui::chrome::button_label(context, "Add tag");
     if (!can_add) nk_widget_disable_end(context);
     if (add && can_add) {
         worm_ui_nuklear_cancel_metadata_tag_drag();

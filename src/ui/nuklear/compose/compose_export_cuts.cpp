@@ -143,15 +143,15 @@ void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto can_create = view.scene_available && view.preview_audio_range.available;
     if (!can_create) nk_widget_disable_begin(context);
-    const auto create = nk_button_label(context, "Create from selection");
+    const auto create = wormedit::ui::chrome::button_label(context, "Create from selection");
     if (!can_create) nk_widget_disable_end(context);
     if (create && can_create)
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION, editor);
     if (!editor.selected.value) nk_widget_disable_begin(context);
     render_cut_fields(context, editor);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
-    const auto apply = nk_button_label(context, "Apply cut");
-    const auto remove = nk_button_label(context, "Delete cut");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply cut");
+    const auto remove = wormedit::ui::chrome::button_label(context, "Delete cut");
     if (!editor.selected.value) nk_widget_disable_end(context);
     if (editor.selected.value && apply) (void)raise(action, view, WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT, editor);
     if (editor.selected.value && remove) (void)raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT, editor);

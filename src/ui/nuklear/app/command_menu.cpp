@@ -88,7 +88,7 @@ void render_match_navigation(nk_context* context, std::size_t first,
                              std::size_t page, std::size_t total) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 3);
     if (!first) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Previous")) state.selected = first - page;
+    if (wormedit::ui::chrome::button_label(context, "Previous")) state.selected = first - page;
     if (!first) nk_widget_disable_end(context);
     std::array<char, 80> count{};
     std::snprintf(count.data(), count.size(), "%zu–%zu of %zu", first + 1,
@@ -96,7 +96,7 @@ void render_match_navigation(nk_context* context, std::size_t first,
     nk_label(context, count.data(), NK_TEXT_CENTERED);
     const bool has_next = first + page < total;
     if (!has_next) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Next")) state.selected = first + page;
+    if (wormedit::ui::chrome::button_label(context, "Next")) state.selected = first + page;
     if (!has_next) nk_widget_disable_end(context);
 }
 void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view,

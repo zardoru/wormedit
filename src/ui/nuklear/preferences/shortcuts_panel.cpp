@@ -41,8 +41,8 @@ void render_row(nk_context* context, const wormedit::ui::options_view_t& view, w
     nk_label(context, row.label.data(), NK_TEXT_LEFT);
     render_row_chord(context, row, capturing);
     if (capturing) {
-        if (nk_button_label(context, "Cancel")) emit_row_action(action, view, WORM_UI_OPTIONS_SHORTCUT_CANCEL, index);
-    } else if (nk_button_label(context, "Change")) {
+        if (wormedit::ui::chrome::button_label(context, "Cancel")) emit_row_action(action, view, WORM_UI_OPTIONS_SHORTCUT_CANCEL, index);
+    } else if (wormedit::ui::chrome::button_label(context, "Change")) {
         emit_row_action(action, view, WORM_UI_OPTIONS_SHORTCUT_CAPTURE, index);
     }
 }

@@ -357,7 +357,7 @@ auto toolbar_button(nk_context* context, bool enabled, const Button& button) -> 
 auto sound_mode_button(nk_context* context, const char* label, bool active) -> bool {
     const auto styled = active && nk_style_push_style_item(context, &context->style.button.normal,
         nk_style_item_color(color(UiColor::selected)));
-    const auto clicked = nk_button_label(context, label) != 0;
+    const auto clicked = wormedit::ui::chrome::button_label(context, label) != 0;
     if (styled) nk_style_pop_style_item(context);
     return clicked;
 }
@@ -412,7 +412,7 @@ void render_section_add_buttons(const SoundsPanel& panel) {
     nk_layout_row_template_push_static(panel.context, 116);
     nk_layout_row_template_end(panel.context);
     nk_label(panel.context, "Stems", NK_TEXT_LEFT);
-    if (nk_button_label(panel.context, "Add stem…")) {
+    if (wormedit::ui::chrome::button_label(panel.context, "Add stem…")) {
         panel.action->sound_import_pick_requested = true;
         panel.action->sound_import_kind = wormedit::ui::sound_import_kind_t::stem;
     }
@@ -421,7 +421,7 @@ void render_section_add_buttons(const SoundsPanel& panel) {
     nk_layout_row_template_push_static(panel.context, 116);
     nk_layout_row_template_end(panel.context);
     nk_label(panel.context, "Keysounds", NK_TEXT_LEFT);
-    if (nk_button_label(panel.context, "Add keysound…")) {
+    if (wormedit::ui::chrome::button_label(panel.context, "Add keysound…")) {
         panel.action->sound_import_pick_requested = true;
         panel.action->sound_import_kind = wormedit::ui::sound_import_kind_t::keysound;
     }
@@ -571,7 +571,7 @@ void render_group_actions(const SoundsPanel& panel) {
     nk_layout_row_template_end(context);
     const auto plain_button = [&](bool enabled, const char* label) {
         if (!enabled) nk_widget_disable_begin(context);
-        const auto clicked = nk_button_label(context, label);
+        const auto clicked = wormedit::ui::chrome::button_label(context, label);
         if (!enabled) nk_widget_disable_end(context);
         return clicked && enabled;
     };
@@ -639,12 +639,12 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
     nk_layout_row_dynamic(context, 66, 1);
     nk_label_wrap(context, message);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
-    if (nk_button_label(context, "Replace")) {
+    if (wormedit::ui::chrome::button_label(context, "Replace")) {
         raise_sound_slot_assignment(panel, state.keysound_slots.keysound_slot_confirmation_number,
                                     state.keysound_slots.keysound_slot_confirmation_path, true);
         close_sound_slot_confirmation(panel);
     }
-    if (nk_button_label(context, "Cancel")) close_sound_slot_confirmation(panel);
+    if (wormedit::ui::chrome::button_label(context, "Cancel")) close_sound_slot_confirmation(panel);
     if (!state.keysound_slots.keysound_slot_confirmation_open) nk_popup_close(context);
     nk_popup_end(context);
 }
@@ -919,7 +919,7 @@ void clear_sound_filters(const SoundsPanel& panel) {
         filters.layer_filter_kind != WORM_UI_KEYSOUND_LAYER_FILTER_ANY ||
         panel.state->keysound_catalog.keysound_search[0] != '\0' || filters.use_filter != 0;
     if (!clear_enabled) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Clear filters") && clear_enabled) {
+    if (wormedit::ui::chrome::button_label(context, "Clear filters") && clear_enabled) {
         panel.state->keysound_catalog.keysound_search.fill(0);
         filters.search.fill(0);
         filters.use_filter = 0;
@@ -1019,9 +1019,9 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     nk_label_wrap(context, "Some notes using these sounds have different layers. Keep their "
                            "layers, or replace them with the sounds' layers?");
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    if (nk_button_label(context, "Keep existing layers")) confirm_sound_layer(panel, false);
-    if (nk_button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
-    if (nk_button_label(context, "Cancel")) state.keysound_slots.sound_layer_confirmation_open = false;
+    if (wormedit::ui::chrome::button_label(context, "Keep existing layers")) confirm_sound_layer(panel, false);
+    if (wormedit::ui::chrome::button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
+    if (wormedit::ui::chrome::button_label(context, "Cancel")) state.keysound_slots.sound_layer_confirmation_open = false;
     if (!state.keysound_slots.sound_layer_confirmation_open) nk_popup_close(context);
     nk_popup_end(context);
 }
@@ -1083,7 +1083,7 @@ void render_layer_section(const SoundsPanel& panel) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     const auto can_clear = !panel.state->keysound_catalog.keysound_selection.selected.empty();
     if (!can_clear) nk_widget_disable_begin(context);
-    const auto clear = nk_button_label(context, "Clear layers of selected sounds");
+    const auto clear = wormedit::ui::chrome::button_label(context, "Clear layers of selected sounds");
     if (!can_clear) nk_widget_disable_end(context);
     if (clear && can_clear)
         raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS);
@@ -1313,7 +1313,7 @@ void render_group_header(const SoundsPanel& panel,
     char label[192];
     std::snprintf(label, sizeof(label), "%s %s (%zu)", row.expanded ? "v" : ">",
                   row.group_name.c_str(), row.group_sound_count);
-    if (nk_button_label(context, label)) toggle_collapsed_group(panel, row.group_id.value);
+    if (wormedit::ui::chrome::button_label(context, label)) toggle_collapsed_group(panel, row.group_id.value);
 }
 
 void render_display_row(const SoundsPanel& panel,

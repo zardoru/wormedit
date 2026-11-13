@@ -65,7 +65,7 @@ void handle_keyboard(nk_context* context, const wormedit::ui::bookmark_chooser_v
 void render_page_controls(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                           bookmark_chooser_state_t& state) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 3);
-    if (nk_button_label(context, "Previous") && state.first_row > 0) {
+    if (wormedit::ui::chrome::button_label(context, "Previous") && state.first_row > 0) {
         state.first_row = state.first_row > page_size ? state.first_row - page_size : 0;
         state.selected_row = state.first_row;
     }
@@ -74,7 +74,7 @@ void render_page_controls(nk_context* context, const wormedit::ui::bookmark_choo
         view.total_count == 0 ? 0 : state.first_row + 1,
         std::min(view.total_count, state.first_row + view.rows.size()), view.total_count);
     nk_label(context, page, NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_MIDDLE);
-    if (nk_button_label(context, "Next") && state.first_row + page_size < view.total_count) {
+    if (wormedit::ui::chrome::button_label(context, "Next") && state.first_row + page_size < view.total_count) {
         state.first_row += page_size;
         state.selected_row = state.first_row;
     }
@@ -215,7 +215,7 @@ auto render_sort_controls(nk_context* context, const wormedit::ui::bookmark_choo
         nk_window_get_content_region_size(context).x < 420 ? 2 : 4);
     for (const auto& [sort, label] : sorts)
         if (nk_option_label(context, label, state.sort == sort)) state.sort = sort;
-    if (nk_button_label(context, state.descending ? "Descending" : "Ascending"))
+    if (wormedit::ui::chrome::button_label(context, state.descending ? "Descending" : "Ascending"))
         state.descending = !state.descending;
     if (state.sort != previous_sort || state.descending != previous_descending) {
         state.first_row = 0;

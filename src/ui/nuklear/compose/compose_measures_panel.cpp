@@ -81,7 +81,7 @@ struct measure_definition_row_t {
         (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             denominator.data(), static_cast<int>(denominator.size()), nk_filter_decimal);
         if (disabled) nk_widget_disable_begin(context);
-        const auto clicked = nk_button_label(context, button);
+        const auto clicked = wormedit::ui::chrome::button_label(context, button);
         if (disabled) nk_widget_disable_end(context);
         return clicked && !disabled;
     }
@@ -116,8 +116,8 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());
     wormedit::ui::chrome::panel_header(context, title);
     nk_layout_row_dynamic(context, 27, 2);
-    if (nk_button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
-    if (nk_button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
+    if (wormedit::ui::chrome::button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
+    if (wormedit::ui::chrome::button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
     meter_controls(context, *view, *action, *state);
     length_controls(context, *view, *action, *state);
     nk_layout_row_dynamic(context, 34, 1);

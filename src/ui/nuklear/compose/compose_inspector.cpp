@@ -324,9 +324,9 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto blocked = view->measure_removal_blocked;
     if (blocked) nk_widget_disable_begin(context);
-    const auto confirmed = nk_button_label(context, "Confirm removal");
+    const auto confirmed = wormedit::ui::chrome::button_label(context, "Confirm removal");
     if (blocked) nk_widget_disable_end(context);
-    if (nk_button_label(context, "Cancel")) confirmation.open = false;
+    if (wormedit::ui::chrome::button_label(context, "Cancel")) confirmation.open = false;
     if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     confirmation.open = false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
@@ -385,7 +385,7 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
     if (!enabled) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-        if (!nk_button_label(context, title) ||
+        if (!wormedit::ui::chrome::button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
         action->compose_action = kind;
@@ -669,7 +669,7 @@ void render_quantize_custom_popup(const ComposeInspectorContext& i) {
         nk_filter_decimal);
     quantize_grid_editing = (edit & NK_EDIT_ACTIVE) != 0;
     nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
-    const auto apply = nk_button_label(c, "Apply custom grid");
+    const auto apply = wormedit::ui::chrome::button_label(c, "Apply custom grid");
     if (apply || (edit & NK_EDIT_COMMITED) != 0) {
         const auto divisions = parse_quantize_grid(quantize_grid_text.data());
         quantize_grid_invalid = !divisions;
@@ -892,7 +892,7 @@ void render_quantize_action_row(const ComposeInspectorContext& inspector) {
     if (!enabled)
         nk_widget_disable_begin(context);
     const auto bounds = nk_widget_bounds(context);
-    const auto clicked = nk_button_label(context, view->quantize_q_bound ? "Quantize (Q)"
+    const auto clicked = wormedit::ui::chrome::button_label(context, view->quantize_q_bound ? "Quantize (Q)"
                                                                          : "Quantize");
     if (!enabled)
         nk_widget_disable_end(context);

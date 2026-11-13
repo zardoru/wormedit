@@ -35,11 +35,11 @@ void worm_ui_nuklear_render_external_players_page(nk_context* context,
             emit(*action, *view, WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED, static_cast<std::uint32_t>(index));
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
-    if (nk_button_label(context, "Add") && action->kind == WORM_UI_OPTIONS_NONE)
+    if (wormedit::ui::chrome::button_label(context, "Add") && action->kind == WORM_UI_OPTIONS_NONE)
         emit(*action, *view, WORM_UI_OPTIONS_FIELD_PLAYER_ADD, 0);
     const bool removable = view->players.size() > 1;
     if (!removable) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Remove") && removable && action->kind == WORM_UI_OPTIONS_NONE)
+    if (wormedit::ui::chrome::button_label(context, "Remove") && removable && action->kind == WORM_UI_OPTIONS_NONE)
         emit(*action, *view, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE, static_cast<std::uint32_t>(view->selected_player));
     if (!removable) nk_widget_disable_end(context);
     if (view->selected_player >= view->players.size()) return;

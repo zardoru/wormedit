@@ -57,23 +57,6 @@ int metadata_tree_push(nk_context* context, int tree_type, const char* title, in
         static_cast<int>(strlen(identity.hash)), identity.seed);
 }
 
-void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented) {
-    namespace chrome = wormedit::ui::chrome;
-    using wormedit::ui::theme::UiColor;
-    if (!enabled) {
-        // Disabled reads as flat and faded in every theme, and ignores hover.
-        style.normal = style.hover = style.active = nk_style_item_color(chrome::disabled_fill());
-        style.border_color = chrome::color(UiColor::separator);
-        style.border = 1.0f;
-        style.text_normal = style.text_hover = style.text_active = chrome::text_faint();
-        return;
-    }
-    if (!accented) style.normal = nk_style_item_color(chrome::color(UiColor::surface));
-    style.border_color = chrome::color(UiColor::border);
-    style.border = 1.0f;
-    style.text_normal = chrome::color(accented ? UiColor::selected_text : UiColor::text);
-}
-
 void muted_label(nk_context* context, const char* text) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     wormedit::ui::chrome::caption(context, text,
@@ -197,23 +180,21 @@ void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_
                            bool& revert, bool& apply) {
     // A little air above the buttons makes them a row of their own, still inside the section.
     wormedit::ui::chrome::group_gap(context);
-    auto revert_style = wormedit::ui::chrome::button_style(context, false);
-    style_metadata_footer_button(revert_style, revert_enabled, false);
-    auto apply_style = wormedit::ui::chrome::button_style(context, apply_enabled);
-    style_metadata_footer_button(apply_style, apply_enabled, true);
-    const auto width = [&](const char* label, const nk_style_button& style) {
+    const auto width = [&](const char* label) {
         const auto* font = context->style.font;
         const auto text = font->width(font->userdata, font->height, label, static_cast<int>(std::strlen(label)));
-        return std::max(96.0f, std::ceil(text + 2.0f * (style.padding.x + style.border + style.rounding)));
+        return std::max(96.0f, std::ceil(text + 2.0f * wormedit::ui::metrics::gap_large));
     };
-    nk_layout_row_template_begin(context, 23);
+    nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     nk_layout_row_template_push_dynamic(context);
-    nk_layout_row_template_push_static(context, width(revert_label, revert_style));
-    nk_layout_row_template_push_static(context, width(apply_label, apply_style));
+    nk_layout_row_template_push_static(context, width(revert_label));
+    nk_layout_row_template_push_static(context, width(apply_label));
     nk_layout_row_template_end(context);
     nk_spacing(context, 1);
-    revert = nk_button_label_styled(context, &revert_style, revert_label) && revert_enabled;
-    apply = nk_button_label_styled(context, &apply_style, apply_label) && apply_enabled;
+    revert = wormedit::ui::chrome::button_label(context, revert_label, wormedit::ui::chrome::ButtonKind::secondary,
+                                                revert_enabled);
+    apply = wormedit::ui::chrome::button_label(context, apply_label, wormedit::ui::chrome::ButtonKind::primary,
+                                               apply_enabled);
 }
 
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,

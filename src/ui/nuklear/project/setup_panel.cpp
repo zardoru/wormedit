@@ -605,7 +605,7 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
     text_cell(context, row.rating.data(), widths[2]);
     text_cell(context, row.mode.data(), widths[3]);
     nk_labelf(context, NK_TEXT_LEFT, "%u", row.key_count);
-    if (nk_button_label(context, row.output_groups.data()))
+    if (wormedit::ui::chrome::button_label(context, row.output_groups.data()))
         begin_chart_memberships(row.chart_id.value, view.document_revision);
     nk_labelf(context, NK_TEXT_LEFT, "%llu", static_cast<unsigned long long>(row.note_count));
     text_cell(context, row.length.data(), widths[7]);

@@ -215,6 +215,14 @@ struct Button {
     auto render(nk_context* context) const -> bool;
 };
 
+// Drop-in for nk_button_label: the same Button as everywhere else (secondary look, centered
+// label). Honors nk_widget_disable_begin like the stock widget. Every plain button goes through
+// this or Button; raw nk_button_* calls are held to a shrinking baseline by tooling.raw-buttons.
+inline auto button_label(nk_context* context, const char* label, ButtonKind kind = ButtonKind::secondary,
+                         bool enabled = true) -> bool {
+    return Button{label, kind, nullptr, enabled}.render(context);
+}
+
 enum class CheckState { off, on, mixed };
 constexpr auto toggled(CheckState state) -> CheckState {
     return state == CheckState::on ? CheckState::off : CheckState::on;

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/ui_metrics.h"
 
 namespace {
@@ -217,13 +218,13 @@ void render_preview_skin_buttons(struct nk_context* context,
                  {"Mania", wormedit::player_preview_skin_t::mania},
                  {"Arrows", wormedit::player_preview_skin_t::arrows}};
     for (const auto& skin : skins) {
-        if (nk_button_label(context, skin.label) && view->skin != skin.skin && action &&
+        if (wormedit::ui::chrome::button_label(context, skin.label) && view->skin != skin.skin && action &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN;
             action->player_preview_skin = skin.skin;
         }
     }
-    if (nk_button_label(context, "Hide") && action &&
+    if (wormedit::ui::chrome::button_label(context, "Hide") && action &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
 }

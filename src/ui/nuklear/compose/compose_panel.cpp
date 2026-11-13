@@ -960,7 +960,7 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
     const auto& timing = *panel.timing_view;
     worm_ui_nuklear_render_timing_anchoring(panel.context, timing, *panel.action);
     nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
-    const bool apply = nk_button_label(panel.context, "Apply timing edit") != 0;
+    const bool apply = wormedit::ui::chrome::button_label(panel.context, "Apply timing edit") != 0;
     if (committed || apply) {
         worm_ui_nuklear_inline_timing_update(state, timing, *panel.action, true, false);
         // Keep a rejected proposal editable here. Application acceptance removes the

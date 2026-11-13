@@ -146,7 +146,7 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
                                          state.chart_resolution_text.size(), nk_filter_decimal);
     if (!editable) nk_widget_disable_end(context);
     if (!redivide_enabled) nk_widget_disable_begin(context);
-    const auto redivide = nk_button_label(context, "Redivide") != 0 && redivide_enabled;
+    const auto redivide = wormedit::ui::chrome::button_label(context, "Redivide") != 0 && redivide_enabled;
     if (!redivide_enabled) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "Divisions per standard measure. Redivide moves every position exactly, or changes nothing.");
@@ -267,12 +267,12 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
     nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.5f);
     if (!editable) nk_widget_disable_begin(context);
-    const auto preview = nk_button_label(context, "Preview key count") != 0 && editable;
+    const auto preview = wormedit::ui::chrome::button_label(context, "Preview key count") != 0 && editable;
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.5f);
     const auto apply_enabled = editable && metadata.lane_profile_apply_enabled;
     if (!apply_enabled) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply key count") != 0 && apply_enabled;
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply key count") != 0 && apply_enabled;
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     render_lane_profile_preview_message(context, metadata);
@@ -301,12 +301,12 @@ static void render_channel_map_section(const MetadataPanel& panel) {
     nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.5f);
     if (!editable) nk_widget_disable_begin(context);
-    const auto preview = nk_button_label(context, "Preview") != 0 && editable;
+    const auto preview = wormedit::ui::chrome::button_label(context, "Preview") != 0 && editable;
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.5f);
     const auto apply_enabled = editable && metadata.channel_map_apply_enabled;
     if (!apply_enabled) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply") != 0 && apply_enabled;
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply") != 0 && apply_enabled;
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if (metadata.channel_map_preview_present) {
@@ -387,8 +387,8 @@ static void render_batch_section(const MetadataPanel& panel, bool editable) {
     const auto enabled = editable && !state.batch_selected_charts.empty();
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (!enabled) nk_widget_disable_begin(context);
-    const auto author = nk_button_label(context, "Apply Mapper") != 0 && enabled;
-    const auto rating = nk_button_label(context, "Apply Rating") != 0 && enabled;
+    const auto author = wormedit::ui::chrome::button_label(context, "Apply Mapper") != 0 && enabled;
+    const auto rating = wormedit::ui::chrome::button_label(context, "Apply Rating") != 0 && enabled;
     if (!enabled) nk_widget_disable_end(context);
     if (author) set_batch_chart_action(panel, false);
     if (rating) set_batch_chart_action(panel, true);
@@ -426,7 +426,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
     bool clear = false;
     if (has_rating) {
         if (!editable) nk_widget_disable_begin(context);
-        clear = nk_button_label(context, "Clear") != 0 && editable;
+        clear = wormedit::ui::chrome::button_label(context, "Clear") != 0 && editable;
         if (!editable) nk_widget_disable_end(context);
     }
     const auto rating = metadata_chart_rating_value(&metadata);

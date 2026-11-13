@@ -230,6 +230,7 @@ auto project_chart_command_t::from(const ui::project_chart_action_t& action,
         action.selected_chart_ids.size() > maximum_batch_chart_metadata_charts)
         return std::unexpected("Batch metadata selection or rating is invalid.");
     command.metadata.charts = action.selected_chart_ids;
+    if (action.edit_name) command.metadata.name = action.name;
     if (action.edit_author) command.metadata.author = action.author;
     command.metadata.edit_rating = action.edit_rating;
     if (action.edit_rating && !action.unset_rating) {

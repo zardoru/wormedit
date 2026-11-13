@@ -375,6 +375,27 @@ TEST_CASE("Chart metadata batch commits selected charts once and preserves names
     expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.author == "Batch author"));
 }
 
+TEST_CASE("Chart metadata rename changes one difficulty as one undo step and refuses several", "[unit][core][metadata-editor]") {
+    auto song = metadata_song();
+    song.charts.push_back({.id = chart_id_t{6}, .metadata = {.name = "Hard", .author = "Other"},
+        .measures = {{.id = measure_id_t{7}}},
+        .lane_layouts = {{.id = object_id_t{8}, .position = {measure_id_t{7}, 0},
+            .layout = {.profile_id = "metadata-test", .lanes = {{.id = lane_id_t{9}, .name = "Lane"}}}}}});
+    auto history = document_history_t::from(song);
+    batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{6}}, .name = "Same"};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
+    expect_metadata_batch(static_cast<bool>(history.undo.empty()));
+    action.charts = {chart_id_t{6}};
+    action.name = "Insane";
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, action)));
+    expect_metadata_batch(static_cast<bool>(history.undo.size() == 1));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.name == "Normal"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.name == "Insane"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.author == "Other"));
+    require_metadata_batch(static_cast<bool>(undo_document_command(history)));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.name == "Hard"));
+}
+
 TEST_CASE("Chart metadata batch rejects the whole selection on invalid target or value", "[unit][core][metadata-editor]") {
     auto history = document_history_t::from(metadata_song());
     batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{999}}, .author = "Changed"};

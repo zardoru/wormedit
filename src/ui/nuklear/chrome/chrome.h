@@ -510,8 +510,14 @@ inline auto form_popup_saved_surface() -> MenuSurface& {
 inline auto begin_form_popup(nk_context* context, retained_popup_t& state, const char* title, nk_flags flags,
                              struct nk_rect bounds, retained_popup_begin_failure_t failure)
     -> retained_popup_frame_t {
+    // nk_popup_begin adds NK_WINDOW_BORDER itself; the panel keeps the width it saw at begin, so a
+    // zero popup border here leaves menu_panel()'s rounded stroke as the only border.
+    auto& window = context->style.window;
+    const auto border = window.popup_border;
+    window.popup_border = 0.0f;
     auto frame = begin_retained_popup(context, state, title, flags & ~static_cast<nk_flags>(NK_WINDOW_BORDER),
                                       bounds, failure);
+    window.popup_border = border;
     if (frame.began) form_popup_saved_surface() = menu_surface_begin(context);
     return frame;
 }

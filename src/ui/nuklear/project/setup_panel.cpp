@@ -266,9 +266,20 @@ void open_project_metadata(nk_context* context, const wormedit::ui::setup_view_t
         std::snprintf(project_state.name, sizeof(project_state.name), "%s",
                       row == view.charts.end() ? "" : std::string{row->name}.c_str());
     }
+    // Fit the content: title, the controls, and the padding above and below them.
+    namespace metrics = wormedit::ui::metrics;
+    const auto& window = context->style.window;
+    const float rows = edit == metadata_edit_t::rating
+        ? 5 : 3; // title, [checkbox, labels,] fields, buttons
+    const float controls = edit == metadata_edit_t::rating
+        ? metrics::control_compact + metrics::row_text + 2 * metrics::control_default
+        : 2 * metrics::control_default;
+    // The validation message row only shows for a bad rating, so leave room for it there.
+    const float warning = edit == metadata_edit_t::rating ? metrics::control_primary + window.spacing.y : 0.0f;
+    const float height = 2.0f * window.popup_padding.y + wormedit::ui::chrome::title_row_height + controls +
+                         warning + rows * window.spacing.y + metrics::gap_medium;
     popup.bounds = wormedit::ui::chrome::clamped_popup_bounds(context,
-        nk_vec2(context->input.mouse.pos.x, context->input.mouse.pos.y + 20),
-        nk_vec2(380, edit == metadata_edit_t::rating ? 228 : 140));
+        nk_vec2(context->input.mouse.pos.x, context->input.mouse.pos.y + 20), nk_vec2(380, height));
 }
 
 void render_project_metadata_fields(nk_context* context, const wormedit::ui::setup_view_t& view,
@@ -278,9 +289,8 @@ void render_project_metadata_fields(nk_context* context, const wormedit::ui::set
     auto& popup = state.metadata_popup;
     const bool quiet = popup_input_is_quiet(context, PopupReleaseKeys::all);
     bool focus_pending = popup.focus_pending && quiet;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    nk_label(context, state.edit_name ? "Rename difficulty" : state.edit_author ? "Set author" : "Set rating",
-             NK_TEXT_LEFT);
+    wormedit::ui::chrome::popup_title(context,
+        state.edit_name ? "Rename difficulty" : state.edit_author ? "Set author" : "Set rating");
     bool commit_text{};
     if (state.edit_name || state.edit_author) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -327,11 +337,11 @@ void render_project_metadata_popup(nk_context* context, const wormedit::ui::setu
         (!project_state.edit_name && state.selection != project_state.selection.ids) ||
         popup_dismiss_requested(context, popup_screen_bounds(context, state.bounds), !state.focus_pending))
         state.cancel();
-    auto popup = begin_retained_popup(context, state, "Project chart metadata",
-        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, state.bounds, retained_popup_begin_failure_t::cancel);
+    auto popup = begin_form_popup(context, state, "Project chart metadata",
+        NK_WINDOW_NO_SCROLLBAR, state.bounds, retained_popup_begin_failure_t::cancel);
     if (popup.has_contents() && state.open) render_project_metadata_fields(context, view, action);
-    end_retained_popup(context, state, popup, retained_popup_edit_focus_t::unfocus_on_close,
-                       retained_popup_close_trigger_t::closed_or_pending);
+    end_form_popup(context, state, popup, retained_popup_edit_focus_t::unfocus_on_close,
+                   retained_popup_close_trigger_t::closed_or_pending);
 }
 
 void render_project_batch(nk_context* context, const wormedit::ui::setup_view_t& view,

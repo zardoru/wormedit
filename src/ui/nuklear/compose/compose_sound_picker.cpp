@@ -128,7 +128,7 @@ void render_compose_sound_picker(nk_context* context, const wormedit::ui::compos
     if (state.open && wormedit::ui::chrome::popup_dismiss_requested(context,
         wormedit::ui::chrome::popup_screen_bounds(context, bounds))) cancel_compose_sound_picker(state);
     const bool was_open = state.open;
-    auto popup = wormedit::ui::chrome::begin_retained_popup(context, state, "Go to sound",
+    auto popup = wormedit::ui::chrome::begin_form_popup(context, state, "Go to sound",
         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds,
         wormedit::ui::chrome::retained_popup_begin_failure_t::cancel);
     if (!popup.has_contents()) {
@@ -141,7 +141,7 @@ void render_compose_sound_picker(nk_context* context, const wormedit::ui::compos
         if (state.open && nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
             state.focus_pending = true;
     }
-    wormedit::ui::chrome::end_retained_popup(context, state, popup,
+    wormedit::ui::chrome::end_form_popup(context, state, popup,
         wormedit::ui::chrome::retained_popup_edit_focus_t::unfocus_on_close,
         wormedit::ui::chrome::retained_popup_close_trigger_t::closed);
 }

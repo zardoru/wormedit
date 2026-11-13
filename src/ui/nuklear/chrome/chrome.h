@@ -500,6 +500,28 @@ inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.fixed_background = saved.fixed_background;
 }
 
+// Form popups (rename, go to...) wrap begin_retained_popup/end_retained_popup in the same surface
+// as menus: rounded panel, soft shadow, transparent window fills, and no stock square border.
+// Popups never nest, so the saved fills live in one slot.
+inline auto form_popup_saved_surface() -> MenuSurface& {
+    static MenuSurface saved{};
+    return saved;
+}
+inline auto begin_form_popup(nk_context* context, retained_popup_t& state, const char* title, nk_flags flags,
+                             struct nk_rect bounds, retained_popup_begin_failure_t failure)
+    -> retained_popup_frame_t {
+    auto frame = begin_retained_popup(context, state, title, flags & ~static_cast<nk_flags>(NK_WINDOW_BORDER),
+                                      bounds, failure);
+    if (frame.began) form_popup_saved_surface() = menu_surface_begin(context);
+    return frame;
+}
+inline void end_form_popup(nk_context* context, retained_popup_t& state, retained_popup_frame_t& popup,
+                           retained_popup_edit_focus_t focus, retained_popup_close_trigger_t trigger) {
+    const bool began = popup.began;
+    end_retained_popup(context, state, popup, focus, trigger);
+    if (began) menu_surface_end(context, form_popup_saved_surface());
+}
+
 // The dropdown chevron, drawn as two strokes in the Lucide `chevron-down` shape. Header-only
 // on purpose: tests that only draw combos do not link the icon textures.
 inline constexpr float chevron_size = 14.0f;
@@ -907,6 +929,12 @@ inline void title_label(nk_context* context, const char* text) {
     if (face) nk_style_push_font(context, face);
     nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
     if (face) nk_style_pop_font(context);
+}
+
+// A popup's title row: the title face on its own line.
+inline void popup_title(nk_context* context, const char* text) {
+    nk_layout_row_dynamic(context, title_row_height, 1);
+    title_label(context, text);
 }
 
 // An empty row that separates groups inside one section. Rows already sit `window.spacing`

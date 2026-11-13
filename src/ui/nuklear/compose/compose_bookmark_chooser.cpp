@@ -305,12 +305,12 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const auto height = std::min(560.0f, std::max(260.0f, parent.h - 24.0f));
     const auto bounds = nk_rect((parent.w - width) * 0.5f - region.x,
                                 (parent.h - height) * 0.5f - region.y, width, height);
-    auto popup = wormedit::ui::chrome::begin_retained_popup(context, *state,
+    auto popup = wormedit::ui::chrome::begin_form_popup(context, *state,
         "Go to bookmark", NK_WINDOW_BORDER, bounds,
         wormedit::ui::chrome::retained_popup_begin_failure_t::retain);
     if (!popup.has_contents()) return popup.owns_input();
     if (!state->open) {
-        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+        wormedit::ui::chrome::end_form_popup(context, *state, popup,
             wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
             wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
@@ -327,7 +327,7 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const bool results_current = search_current && sort_current;
     if (results_current && !state->dragged_bookmark) handle_keyboard(context, view, *action, *state);
     if (!state->open || state->close_pending) {
-        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+        wormedit::ui::chrome::end_form_popup(context, *state, popup,
             wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
             wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
@@ -344,7 +344,7 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, "Searching…", NK_TEXT_LEFT);
     }
-    wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+    wormedit::ui::chrome::end_form_popup(context, *state, popup,
         wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
         wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
     return true;

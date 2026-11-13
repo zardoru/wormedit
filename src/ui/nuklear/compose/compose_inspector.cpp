@@ -793,7 +793,8 @@ void render_quantize_report_rows(nk_context* context, const char* title, int tre
                                  const wormedit::ui::compose_quantize_report_row_view_t* rows, std::size_t count,
                                  std::size_t total, bool truncated,
                                  nk_collapse_states initial = NK_MINIMIZED) {
-    if (!nk_tree_push_id(context, NK_TREE_TAB, title, initial, tree_id))
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_NODE, title, initial, title,
+                                            static_cast<int>(std::strlen(title)), tree_id))
         return;
     if (truncated) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
@@ -803,7 +804,7 @@ void render_quantize_report_rows(nk_context* context, const char* title, int tre
         count;
     for (std::size_t index = 0; rows && index < visible_count; ++index)
         render_quantize_report_row(context, rows[index]);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 
 } // namespace
@@ -912,7 +913,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     sync_quantize_grid_text(*view);
     const auto section_clip = nk_window_get_canvas(context)->clip;
-    if (!nk_tree_push(context, NK_TREE_TAB, "Quantize / Snap", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Quantize / Snap", NK_MAXIMIZED, true)) return;
     wormedit::ui::chrome::context_menu_retire(quantize_menu, context);
     if (!quantize_menu.open) {
         if (quantize_grid_editing || quantize_grid_invalid)
@@ -962,5 +963,5 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto section_bounds = nk_widget_bounds(context);
     quantize_section_visible_this_frame |= quantize_bounds_intersect(
         header_bounds, section_bounds, section_clip);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

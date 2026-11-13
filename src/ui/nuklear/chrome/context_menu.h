@@ -16,6 +16,9 @@ namespace wormedit::ui::chrome {
 struct ContextMenu : wormedit::ui::chrome::retained_popup_t {
     const char* title{};
     bool opened_this_frame{};
+    // The click that opened the menu is still held; its release may land on an item that the
+    // menu was placed under the pointer, and must not activate it.
+    bool click_guard{};
     PopupContextStamp stamp{};
     struct nk_vec2 anchor{};
     struct nk_rect bounds{}; // Parent content-region coordinates, as nk_popup_begin takes them.

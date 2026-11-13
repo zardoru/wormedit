@@ -245,6 +245,7 @@ auto context_menu_begin(ContextMenu& menu, nk_context* context, PopupContextStam
     if (!menu.open || !context || popup_panel(context)) return false;
     const auto opening = menu.opened_this_frame;
     menu.opened_this_frame = false;
+    if (opening) menu.click_guard = context->input.mouse.buttons[NK_BUTTON_LEFT].down != 0;
     if (menu.keyboard_dismiss || !popup_context_matches(menu.stamp, current)) {
         context_menu_close(menu, context);
         return false;
@@ -282,6 +283,8 @@ auto context_menu_button(nk_context* context, const char* label, const char* dis
             menu->keyboard_mode = false;
         }
     }
+    const bool click_guarded = menu && menu->click_guard;
+    if (click_guarded && !context->input.mouse.buttons[NK_BUTTON_LEFT].down) menu->click_guard = false;
     const bool selected = menu && menu->selected_row == row;
     const bool keyboard_clicked = selected && !disabled_reason &&
         (menu->activate_row == row || (submenu && menu->submenu_requested));
@@ -294,7 +297,7 @@ auto context_menu_button(nk_context* context, const char* label, const char* dis
         style.normal = style.hover;
         style.text_normal = style.text_hover;
     }
-    const auto clicked = nk_button_label_styled(context, &style, label) != 0;
+    const auto clicked = nk_button_label_styled(context, &style, label) != 0 && !click_guarded;
     if (!disabled_reason) return clicked || keyboard_clicked;
     nk_widget_disable_end(context);
     if (disabled_reason[0] != '\0' && nuklear::tooltip::hovered(context, bounds))

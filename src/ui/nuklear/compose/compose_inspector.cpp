@@ -58,7 +58,7 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     auto* context = inspector.context;
     auto* action = inspector.action;
     if (view->lane_profile_names.size() == 0) return;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED, true)) return;
     static std::vector<const char*> names;
     const auto selecting_initial = view->lane_profile_current < 0;
     const auto offset = selecting_initial ? std::size_t{1} : std::size_t{0};
@@ -87,7 +87,7 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane layout segment", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane layout segment", NK_MAXIMIZED, true)) return;
     if (!view->lane_layout_edit_available) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label_wrap(context, "Layout changes are unavailable at a virtual-only cursor measure.");
@@ -166,7 +166,7 @@ static auto render_card_wide_button(nk_context* context, const char* label) -> b
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_layout_editor(inspector);
     render_lane_profile_section(inspector);
-    if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED)) {
+    if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED, true)) {
         namespace chrome = wormedit::ui::chrome;
         const ComposeToolbarContext toolbar{inspector.context, inspector.view, inspector.action};
         // Cards sit directly under the Timing header and each other, so they ask for the tight gap.
@@ -209,7 +209,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED, true)) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.label_search.data(),
                                          state.note_label.label_search.size(), nk_filter_default);
@@ -358,7 +358,7 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Measure at cursor", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Measure at cursor", NK_MINIMIZED, true)) return;
     if (!view->scene_available) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, const char* command) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -380,7 +380,7 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Transform", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Transform", NK_MINIMIZED, true)) return;
     const auto enabled = view->scene_available && view->selected_note_count != 0;
     if (!enabled) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, WormUiComposeActionKind kind) {

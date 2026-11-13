@@ -2923,11 +2923,20 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
     const auto list_height = wormedit::ui::layout::remaining_content_height(g_context,
         {.minimum = 48.0f, .reserved = 12.0f, .maximum = height});
     nk_layout_row_dynamic(g_context, list_height, 1);
-    if (!nk_group_begin(g_context, "recent-projects-list", NK_WINDOW_BORDER)) return;
+    // Nuklear reserves the scrollbar's width inside a group whether or not it is needed; only
+    // leave it on when the rows overflow, so a short list uses the full width.
+    constexpr float row_height = 34.0f;
+    const auto& window_style = g_context->style.window;
+    const auto needed = static_cast<float>(count) * row_height +
+                        static_cast<float>(count - 1) * window_style.spacing.y +
+                        2.0f * (window_style.group_padding.y + window_style.group_border);
+    const nk_flags list_flags = needed <= list_height ? (NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+                                                       : static_cast<nk_flags>(NK_WINDOW_BORDER);
+    if (!nk_group_begin(g_context, "recent-projects-list", list_flags)) return;
     const bool blocked = project_dialog_active() || project_modal_active(view);
     for (std::size_t index = 0; index < count; ++index) {
         const auto& entry = view.recent_files[index];
-        nk_layout_row_dynamic(g_context, 34, 1);
+        nk_layout_row_dynamic(g_context, row_height, 1);
         const auto bounds = nk_widget_bounds(g_context);
         if (blocked) nk_widget_disable_begin(g_context);
         const bool chosen = wormedit::ui::chrome::button_label(g_context, entry.label.data());

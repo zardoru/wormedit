@@ -106,7 +106,7 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
     const auto& section = reader.section(root, "editor");
     auto& value = reader.result.preferences.editor;
     reader.check_keys(section, {"default_snap", "scroll_directions", "playhead_anchor_percent",
-        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha", "audition_on_click", "audition_on_playback", "move_collision_policy", "invert_scroll_wheel", "playhead_step_follows_snap"});
+        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha", "audition_on_click", "audition_on_playback", "move_collision_policy", "invert_scroll_wheel"});
     std::string policy{"reject"};
     reader.string(section, "move_collision_policy", policy);
     if (policy == "displace_to_bgm") value.move_collision_policy = move_collision_policy_t::displace_to_bgm;
@@ -119,7 +119,6 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
     reader.boolean(section, "audition_on_click", value.audition_on_click);
     reader.boolean(section, "audition_on_playback", value.audition_on_playback);
     reader.boolean(section, "invert_scroll_wheel", value.invert_scroll_wheel);
-    reader.boolean(section, "playhead_step_follows_snap", value.playhead_step_follows_snap);
     const auto& scroll = reader.section(section, "scroll_directions");
     reader.check_keys(scroll, {"beatmania", "popn", "dance", "pump", "keyboard", "other"});
     for (std::size_t index = 0; index < scroll_keys.size(); ++index)
@@ -140,8 +139,7 @@ auto editor_json(const editor_preferences_t& value) -> json_t {
         {"note_kind_palette_visible", value.note_kind_palette_visible},
         {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha},
         {"audition_on_click", value.audition_on_click}, {"audition_on_playback", value.audition_on_playback},
-        {"invert_scroll_wheel", value.invert_scroll_wheel},
-        {"playhead_step_follows_snap", value.playhead_step_follows_snap}};
+        {"invert_scroll_wheel", value.invert_scroll_wheel}};
 }
 auto read_lane_bindings(const json_t& value) -> std::optional<lane_key_bindings_t> {
     if (!value.is_array() || value.size() > maximum_lane_key_bindings) return {};

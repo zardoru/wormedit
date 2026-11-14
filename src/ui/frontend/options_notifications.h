@@ -50,8 +50,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_COUNT_IN, WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
     WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, WORM_UI_OPTIONS_FIELD_REDUCED_MOTION,
     WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY, WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW,
-    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK,
-    WORM_UI_OPTIONS_FIELD_PLAYHEAD_STEP_FOLLOWS_SNAP
+    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK
 } WormUiOptionsField;
 namespace wormedit::ui {
 struct options_diagnostic_view_t {
@@ -83,7 +82,7 @@ struct options_view_t {
     std::array<std::uint32_t, 6> scroll_directions{};
     std::uint32_t playhead_anchor_percent{}, area_band_alpha{};
     wormedit::move_collision_policy_t move_collision_policy{};
-    bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{}, playhead_step_follows_snap{};
+    bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{};
     bool confirm_unsaved_close{}, keep_pitch{}, frame_timing_overlay{}, snap_colored_grid{};
     bool reduced_motion{};
     std::uint32_t snap_grid_opacity_percent{}, field_waveform_opacity_percent{};

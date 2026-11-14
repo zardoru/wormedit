@@ -4,6 +4,7 @@
 #include "interaction_cursor.h"
 
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/row_step.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/interaction_queries.h>
@@ -43,20 +44,9 @@ auto cursor_make_view(const document_history_t& history, const editor_interactio
 
 static auto kept_cursor_row(const chart_document_t& chart, const measure_index_t& index,
     const editor_interaction_state_t& state, std::uint64_t row, std::uint64_t limit, bool forward) -> std::uint64_t {
-    if (!state.cut_axis || !state.cut_axis->contains_row(row) || !limit) return row;
-    auto candidate = std::optional{row};
-    while (candidate && state.cut_axis->contains_row(*candidate)) {
-        const auto edge = forward ? state.cut_axis->next_kept_row(*candidate)
-            : state.cut_axis->previous_kept_row(*candidate);
-        const auto boundary = std::nextafter(edge, forward ? -std::numeric_limits<long double>::infinity()
-            : std::numeric_limits<long double>::infinity());
-        candidate = adjacent_snap_canvas_row(chart, index, boundary, active_snap_grid(state), limit, forward);
-    }
-    if (!candidate && forward)
-        candidate = adjacent_snap_canvas_row(chart, index,
-            std::nextafter(state.cut_axis->previous_kept_row(row), std::numeric_limits<long double>::infinity()),
-            active_snap_grid(state), limit, false);
-    return candidate.value_or(row);
+    // The parked cursor resolves through the same stepper as the playing playhead.
+    return visible_step_row(chart, index, state.cut_axis.get(), {.grid = active_snap_grid(state)},
+                            limit, row, forward);
 }
 
 static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
@@ -112,9 +102,9 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
             return editor_interaction_result_t{.diagnostics = std::get<diagnostic_list_t>(canvas)};
         canvas_rows = value->total_rows;
     }
-    const auto next_row = adjacent_snap_canvas_row(context.edit.scope.chart, context.edit.scope.measures,
+    const auto next_row = adjacent_step_row(context.edit.scope.chart, context.edit.scope.measures,
         static_cast<long double>(context.absolute) + context.edit.state.cursor_subrow,
-        active_snap_grid(context.edit.state), canvas_rows,
+        {.grid = active_snap_grid(context.edit.state)}, canvas_rows,
         action.direction == interaction_direction_t::forward);
     if (!next_row)
         return editor_interaction_result_t{

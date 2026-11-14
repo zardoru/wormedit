@@ -1,5 +1,6 @@
 #include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/chrome/text_layout.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 #include <algorithm>
 #include <cmath>
@@ -137,8 +138,24 @@ auto place(nk_context* context, float outer_width, float content_height)
     };
 }
 
+namespace {
+// Window fills in force before a tooltip replaced a transparent pair, restored by end().
+struct saved_fill_t {
+    nk_color background;
+    struct nk_style_item fixed_background;
+    bool active{};
+} saved_fill;
+}
+
 auto begin(nk_context* context, const placement_t& placement) -> bool {
     if (!context) return false;
+    // Dialogs and floating tools keep their window fill transparent for the whole frame (they
+    // paint their own surface), and a tooltip opened inside one would inherit that and show no
+    // background. A tooltip always gets the theme's window fill.
+    auto& fill = context->style.window;
+    saved_fill = {fill.background, fill.fixed_background, true};
+    fill.background = chrome::color(chrome::UiColor::background);
+    fill.fixed_background = nk_style_item_color(chrome::color(chrome::UiColor::background));
     // Nuklear begins the tooltip as a popup, so its panel takes popup_padding, and then relabels
     // it a tooltip, so nk_panel_end fills the right edge with menu_padding. When the two differ,
     // that fill pokes out past the border. Both phases must see the same padding.
@@ -148,6 +165,11 @@ auto begin(nk_context* context, const placement_t& placement) -> bool {
     const auto opened = nk_tooltip_begin_offset(context, placement.outer_bounds.w, NK_TOP_LEFT,
                                                 placement.offset) != 0;
     window.popup_padding = popup_padding;
+    if (!opened) {
+        fill.background = saved_fill.background;
+        fill.fixed_background = saved_fill.fixed_background;
+        saved_fill.active = false;
+    }
     return opened;
 }
 
@@ -180,7 +202,12 @@ void draw_text(nk_context* context, const text_plan_t& plan) {
 }
 
 void end(nk_context* context) {
-    if (context) nk_tooltip_end(context);
+    if (!context) return;
+    nk_tooltip_end(context);
+    if (!saved_fill.active) return;
+    context->style.window.background = saved_fill.background;
+    context->style.window.fixed_background = saved_fill.fixed_background;
+    saved_fill.active = false;
 }
 
 auto open_popup(const nk_context* context) -> const struct nk_window* {

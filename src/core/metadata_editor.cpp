@@ -600,6 +600,7 @@ template<class Edit> auto apply_scoped_native_metadata(document_command_transact
 auto batch_metadata(const chart_metadata_t& original, const batch_chart_metadata_action_t& action)
     -> chart_metadata_t {
     auto result = original;
+    if (action.name) result.name = *action.name;
     if (action.author) result.author = *action.author;
     if (action.edit_rating) result.rating = action.rating;
     return result;
@@ -612,7 +613,10 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
     auto& result = transaction.outcome();
     if (action.charts.empty() || action.charts.size() > maximum_batch_chart_metadata_charts)
         return transaction.reject(diagnostic_code_t::invalid_id, "select between 1 and 256 charts");
-    if ((action.author && !is_valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
+    if (action.name && action.charts.size() != 1)
+        return transaction.reject(diagnostic_code_t::invalid_id, "rename applies to exactly one chart");
+    if ((action.name && !is_valid_bounded_text(*action.name, limits.maximum_chart_text_bytes)) ||
+        (action.author && !is_valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
         (action.edit_rating && action.rating && action.rating->denominator == 0))
         return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata has invalid author text or rating");
     auto& proposed = transaction.document();
@@ -624,8 +628,8 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
         const auto* chart = proposed.read_chart(id);
         if (!chart) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata refers to an unknown chart");
         auto metadata = batch_metadata(chart->metadata, action);
-        changed = changed || std::tie(metadata.author, metadata.rating) !=
-            std::tie(chart->metadata.author, chart->metadata.rating);
+        changed = changed || std::tie(metadata.name, metadata.author, metadata.rating) !=
+            std::tie(chart->metadata.name, chart->metadata.author, chart->metadata.rating);
         if (proposed.find_bms_program(id)) {
             const auto diagnostics = replace_scoped_metadata(proposed, id, metadata);
             if (!diagnostics.empty()) { transaction.outcome().diagnostics = diagnostics; return transaction.outcome(); }
@@ -634,7 +638,7 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
     if (!changed) return result;
     if (limits.maximum_total_metadata_bytes == 0 || !is_metadata_within_limits(proposed, limits))
         return transaction.reject(diagnostic_code_t::invalid_id, "document metadata exceeds its total byte cap");
-    return transaction.commit("Edit chart metadata batch");
+    return transaction.commit(action.name ? "Rename difficulty" : "Edit chart metadata batch");
 }
 
 auto apply_song_preview_edit(document_history_t& history, const song_preview_edit_t& edit)

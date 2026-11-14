@@ -337,7 +337,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     if (!editable) nk_widget_disable_begin(context);
     if (nk_window_get_bounds(context).w >= 900.0f)
         nk_label(context, "BGM columns:", NK_TEXT_RIGHT);
-    if (nk_button_label(context, "-") && editable && view->bgm_column_count > 1)
+    if (wormedit::ui::chrome::button_label(context, "-") && editable && view->bgm_column_count > 1)
         (void)request_bgm_column_count(toolbar, view->bgm_column_count - 1);
     const auto field_bounds = nk_widget_bounds(context);
     const bool field_clicked = nk_input_is_mouse_click_in_rect(
@@ -358,7 +358,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
             reset_bgm_column_count_draft(draft, *view, false);
         nk_edit_unfocus(context);
     }
-    if (nk_button_label(context, "+") && editable && view->bgm_column_count < 128)
+    if (wormedit::ui::chrome::button_label(context, "+") && editable && view->bgm_column_count < 128)
         (void)request_bgm_column_count(toolbar, view->bgm_column_count + 1);
     if (!editable) nk_widget_disable_end(context);
 }
@@ -460,7 +460,7 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto bounds = nk_widget_bounds(context);
     const bool locked = toolbar.view->audio_offset_locked;
-    if (nk_button_label(context, "")) {
+    if (wormedit::ui::chrome::button_label(context, "")) {
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
         toolbar.action->compose_input_chart_id.value = toolbar.view->chart_id.value;
         toolbar.action->compose_input_document_revision = toolbar.view->document_revision;

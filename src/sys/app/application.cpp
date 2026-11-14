@@ -12,6 +12,7 @@
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/app/macos_menu.h"
 #endif
+#include "sys/app/caret_blink.h"
 #include "sys/app/frame_demand.h"
 #include "sys/app/frame_pacing.h"
 #include "sys/app/frame_timing.h"
@@ -1832,6 +1833,7 @@ struct application_t::implementation_t {
     bool started_{}, shutdown_started_{};
     // Nuklear settles in the frames after an input event (popups open, hover resolves).
     int input_settle_frames_{};
+    wormedit::sys::caret_blink_t caret_blink_{};
 
     struct AudioOffsetDragContext {
         const wormedit::ui::workspace_action_t& action;
@@ -4586,8 +4588,23 @@ struct application_t::implementation_t {
             viewport.is_trackpad_active())
             return frame_demand_t::every_frame("viewport scroll");
         const auto now_ns = SDL_GetTicksNS();
-        return wormedit::sys::merge(notification_expiry_demand(now_ns),
-                                    background_job_demand(now_ns));
+        return wormedit::sys::merge_all({notification_expiry_demand(now_ns),
+                                         background_job_demand(now_ns),
+                                         caret_blink_demand(now_ns)});
+    }
+
+    // Keyboard or click input restarts the caret visible; then the frontend is styled for
+    // the phase the caret is in now. Runs after events and before the UI is composed.
+    void update_caret_phase() {
+        const auto now_ns = SDL_GetTicksNS();
+        if (platform.event_batch.has_caret_input()) caret_blink_.restart(now_ns);
+        worm_ui_frontend_set_caret_visible(caret_blink_.is_visible(now_ns));
+    }
+
+    // A focused text field needs one frame per caret phase change, and nothing otherwise.
+    auto caret_blink_demand(std::uint64_t now_ns) const -> wormedit::sys::frame_demand_t {
+        if (!worm_ui_frontend_text_caret_active()) return wormedit::sys::frame_demand_t::none();
+        return wormedit::sys::frame_demand_t::at(caret_blink_.next_change_ns(now_ns), "caret blink");
     }
 
     // The status line and warning toasts expire by themselves; wake when they do.
@@ -4653,6 +4670,7 @@ struct application_t::implementation_t {
                 SDL_GetKeyboardFocus() == window);
         }
         poll_frame_events();
+        update_caret_phase();
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);

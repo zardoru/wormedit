@@ -35,6 +35,8 @@ auto initialize(SDL_Renderer* renderer) -> bool;
 void shutdown();
 // Borrowed for the field renderer; valid until shutdown.
 auto texture(Glyph glyph) -> SDL_Texture*;
-void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint);
+// `size` is the displayed edge in logical pixels, centered in `button`.
+void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint,
+          float size = 18.0f);
 
 } // namespace wormedit::ui::lucide

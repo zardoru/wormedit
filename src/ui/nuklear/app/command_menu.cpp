@@ -79,16 +79,16 @@ void activate_command(const wormedit::ui::workspace_view_t& view, std::size_t in
 }
 void render_query(nk_context* context) {
     const auto previous = state.query;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD,
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);
     if (previous != state.query) state.selected = 0;
 }
 void render_match_navigation(nk_context* context, std::size_t first,
                              std::size_t page, std::size_t total) {
-    nk_layout_row_dynamic(context, 26, 3);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 3);
     if (!first) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Previous")) state.selected = first - page;
+    if (wormedit::ui::chrome::button_label(context, "Previous")) state.selected = first - page;
     if (!first) nk_widget_disable_end(context);
     std::array<char, 80> count{};
     std::snprintf(count.data(), count.size(), "%zu–%zu of %zu", first + 1,
@@ -96,7 +96,7 @@ void render_match_navigation(nk_context* context, std::size_t first,
     nk_label(context, count.data(), NK_TEXT_CENTERED);
     const bool has_next = first + page < total;
     if (!has_next) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Next")) state.selected = first + page;
+    if (wormedit::ui::chrome::button_label(context, "Next")) state.selected = first + page;
     if (!has_next) nk_widget_disable_end(context);
 }
 void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view,
@@ -107,7 +107,7 @@ void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view
     if (state.activate && !rows.empty()) activate_command(view, rows[state.selected], action);
     state.activate = false;
     if (rows.empty()) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, "No matching commands", NK_TEXT_LEFT);
         return;
     }
@@ -116,7 +116,7 @@ void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view
     const auto first = state.selected / page * page;
     for (auto i = first; i < std::min(rows.size(), first + page); ++i) {
         const auto& row = view.command_menu_rows[rows[i]];
-        nk_layout_row_dynamic(context, 26, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         const auto bounds = nk_widget_bounds(context);
         if (!row.enabled) nk_widget_disable_begin(context);
         nk_bool selected = state.selected == i;

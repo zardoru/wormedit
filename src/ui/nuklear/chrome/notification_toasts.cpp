@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/notification_toasts.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/render/theme.h"
 
@@ -39,7 +40,7 @@ void render_one_toast(nk_context* context, const wormedit::ui::notification_toas
     state.ids[index] = toast.id;
     if (nk_begin(context, names[index], nk_rect(bounds.x, bounds.y, bounds.width, bounds.height),
                  NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_NO_INPUT)) {
-        nk_layout_row_begin(context, NK_DYNAMIC, 18, 2);
+        nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::row_text, 2);
         nk_layout_row_push(context, 0.92f);
         if (toast.repeat_count > 1)
             nk_labelf_colored(context, NK_TEXT_LEFT, severity_color(toast.severity), "%s ×%u",

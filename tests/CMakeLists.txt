@@ -11,6 +11,12 @@ find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 add_test(NAME tooling.complexity
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_complexity_tests.py")
 set_tests_properties(tooling.complexity PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.raw-buttons
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_buttons.py")
+set_tests_properties(tooling.raw-buttons PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.raw-scroll-groups
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_scroll_groups.py")
+set_tests_properties(tooling.raw-scroll-groups PROPERTIES LABELS "unit;tooling")
 
 if(UNIX)
     add_executable(wormedit_crash_backtrace_tests
@@ -623,14 +629,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
+        ../src/ui/nuklear/chrome/components.cpp
     )
     target_include_directories(wormedit_player_preview_texture_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
     )
     target_link_libraries(wormedit_player_preview_texture_tests
         PRIVATE
             wormedit::core
             wormedit::ui_frontend wormedit_ui_player_preview
+            wormedit_ui_nuklear_tooltip wormedit_ui_arrow_glyph nlohmann_json::nlohmann_json
             SDL3::SDL3
             Catch2::Catch2WithMain
     )
@@ -1160,6 +1168,12 @@ add_executable(wormedit_frame_demand_tests sys/frame_demand_tests.cpp)
 target_include_directories(wormedit_frame_demand_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 add_test(NAME frame-demand COMMAND wormedit_frame_demand_tests)
 set_tests_properties(frame-demand PROPERTIES LABELS "unit;sys")
+
+# Text caret blink phase is header-only and SDL-free.
+add_executable(wormedit_caret_blink_tests sys/caret_blink_tests.cpp)
+target_include_directories(wormedit_caret_blink_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+add_test(NAME caret-blink COMMAND wormedit_caret_blink_tests)
+set_tests_properties(caret-blink PROPERTIES LABELS "unit;sys")
 
 if(APPLE AND WORMEDIT_BUILD_APP)
     add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/app/macos_menu.mm)

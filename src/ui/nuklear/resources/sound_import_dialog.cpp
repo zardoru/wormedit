@@ -1,6 +1,7 @@
 #include "ui/nuklear/resources/sound_import_dialog.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/dialog.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <array>
@@ -26,7 +27,7 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
                         const wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t>& catalog) {
     const auto* label = catalog.label(static_cast<wormedit::sound_kind_t>(item.kind), "Sound");
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(130, 120))) return;
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     // Keep the import dialog's Keysound, Stem, Sample order; unspecified is not offered.
     constexpr wormedit::sound_kind_t order[]{wormedit::sound_kind_t::keysound,
         wormedit::sound_kind_t::stem, wormedit::sound_kind_t::sample};
@@ -38,11 +39,11 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
 
 void render_import_items(nk_context* context, worm_ui_sound_import_state_t& state,
                          const wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t>& catalog) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Files", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 112, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Sound import files", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Sound import files", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.items.size(), 1)))) return;
     if (state.items.empty()) {
@@ -68,10 +69,10 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
                     ? wormedit::sound_kind_t::stem : wormedit::sound_kind_t::keysound), "Sound"),
                       NK_TEXT_LEFT);
         else render_kind_choice(context, item, catalog);
-        if (nk_button_label(context, "×"))
+        if (wormedit::ui::chrome::button_label(context, "×"))
             worm_ui_nuklear_sound_import_remove(state, static_cast<std::size_t>(index));
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_member_move(nk_context* context, worm_ui_sound_import_state_t& state,
@@ -79,7 +80,7 @@ void render_member_move(nk_context* context, worm_ui_sound_import_state_t& state
     const auto group = state.items[member].group_index;
     const auto label = group ? state.groups[*group].name : std::string{"Ungrouped"};
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label.c_str(), nk_vec2(200, 220))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Ungrouped", NK_TEXT_LEFT))
         worm_ui_nuklear_sound_import_move_member(state, member, std::nullopt);
     for (std::size_t index = 0; index < state.groups.size(); ++index) {
@@ -98,7 +99,7 @@ void render_group_proposals(nk_context* context,
                             worm_ui_keysound_group_review_t& state) {
     nk_layout_row_dynamic(context, 170, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Suggested existing sound groups", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Suggested existing sound groups", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.groups.size(), 1)))) return;
     for (int row = list.begin; row < std::min<int>(list.end, state.groups.size()); ++row) {
@@ -110,7 +111,7 @@ void render_group_proposals(nk_context* context,
         nk_layout_row_template_push_static(context, 80);
         nk_layout_row_template_end(context);
         int accepted = group.accepted ? 1 : 0;
-        nk_checkbox_label(context, "", &accepted);
+        wormedit::ui::chrome::checkbox_label(context, "", &accepted);
         worm_ui_keysound_group_review_set_accepted(state, index, accepted != 0);
         std::array<char, 65> name{};
         std::snprintf(name.data(), name.size(), "%s", group.name.c_str());
@@ -121,7 +122,7 @@ void render_group_proposals(nk_context* context,
         std::snprintf(count, sizeof(count), "%zu sounds", group.member_ids.size());
         nk_label(context, count, NK_TEXT_LEFT);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 auto candidate_group_index(const worm_ui_keysound_group_review_t& state,
@@ -142,7 +143,7 @@ void render_group_candidate(nk_context* context, worm_ui_keysound_group_review_t
     const auto current = candidate_group_index(state, candidate.id);
     const char* label = current ? state.groups[*current].name.c_str() : "Ungrouped";
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(200, 200))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Ungrouped", NK_TEXT_LEFT))
         worm_ui_keysound_group_review_move(state, candidate.id, std::nullopt);
     for (std::size_t index = 0; index < state.groups.size(); ++index)
@@ -156,18 +157,18 @@ void render_group_candidates(nk_context* context,
     nk_layout_row_dynamic(context, 146, 1);
     struct nk_list_view members{};
     const auto member_count = static_cast<int>(state.candidates.size());
-    if (!nk_list_view_begin(context, &members, "Suggested members", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &members, "Suggested members", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), std::max(member_count, 1))) return;
     for (int row = members.begin; row < std::min(members.end, member_count); ++row)
         render_group_candidate(context, state, state.candidates[static_cast<std::size_t>(row)]);
-    nk_list_view_end(&members);
+    wormedit::ui::chrome::scroll_list_view_end(&members);
 }
 
 void render_keysound_group_rows(nk_context* context,
                                 worm_ui_keysound_group_review_t& state) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto leave_bounds = nk_widget_bounds(context);
-    if (nk_button_label(context, "Leave all ungrouped"))
+    if (wormedit::ui::chrome::button_label(context, "Leave all ungrouped"))
         worm_ui_keysound_group_review_leave_all_ungrouped(state);
     if (wormedit::ui::nuklear::tooltip::hovered(context, leave_bounds))
         wormedit::ui::nuklear::tooltip::text(context,
@@ -185,7 +186,7 @@ void render_member_list(nk_context* context, worm_ui_sound_import_state_t& state
                                    }));
     nk_layout_row_dynamic(context, 104, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, title, NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, title, NK_WINDOW_BORDER,
                             static_cast<int>(row_height), static_cast<int>(count))) return;
     std::size_t member_row = 0;
     for (std::size_t index = 0; index < state.items.size(); ++index) {
@@ -201,19 +202,19 @@ void render_member_list(nk_context* context, worm_ui_sound_import_state_t& state
         }
         ++member_row;
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state) {
     if (state.groups.empty()) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Groups", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_button_label(context, "Leave all ungrouped"))
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+    if (wormedit::ui::chrome::button_label(context, "Leave all ungrouped"))
         worm_ui_nuklear_sound_import_leave_all_ungrouped(state);
     nk_layout_row_dynamic(context, 138, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Suggested sound groups", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Suggested sound groups", NK_WINDOW_BORDER,
                             static_cast<int>(row_height),
                             static_cast<int>(std::max<std::size_t>(state.groups.size(), 1)))) return;
     for (int visible = list.begin; visible < std::min<int>(list.end, state.groups.size()); ++visible) {
@@ -226,7 +227,7 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         nk_layout_row_template_push_static(context, 84);
         nk_layout_row_template_end(context);
         int accepted = group.accepted ? 1 : 0;
-        nk_checkbox_label(context, "", &accepted);
+        wormedit::ui::chrome::checkbox_label(context, "", &accepted);
         worm_ui_nuklear_sound_import_set_group_accepted(state, index, accepted != 0);
         std::array<char, 65> name{};
         std::snprintf(name.data(), name.size(), "%s", group.name.c_str());
@@ -236,10 +237,10 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         char count[40];
         std::snprintf(count, sizeof(count), "%zu files", member_count(state, index));
         nk_label(context, count, NK_TEXT_LEFT);
-        if (nk_button_label(context, group.expanded ? "Hide files" : "Show files"))
+        if (wormedit::ui::chrome::button_label(context, group.expanded ? "Hide files" : "Show files"))
             worm_ui_nuklear_sound_import_set_group_expanded(state, index, !group.expanded);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
     const auto expanded = std::ranges::find(state.groups, true,
                                              &worm_ui_sound_import_group_t::expanded);
     if (expanded != state.groups.end())
@@ -250,8 +251,8 @@ void render_group_rows(nk_context* context, worm_ui_sound_import_state_t& state)
         state.items, [](const auto& item) { return !item.group_index.has_value(); }));
     char ungrouped[80];
     std::snprintf(ungrouped, sizeof(ungrouped), "Ungrouped · %zu files", ungrouped_count);
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_button_label(context, state.ungrouped_expanded ? "Hide ungrouped files" : ungrouped))
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+    if (wormedit::ui::chrome::button_label(context, state.ungrouped_expanded ? "Hide ungrouped files" : ungrouped))
         worm_ui_nuklear_sound_import_set_ungrouped_expanded(state,
                                                             !state.ungrouped_expanded);
     if (state.ungrouped_expanded)
@@ -277,14 +278,15 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
                               .area = nk_vec2(static_cast<float>(window_width),
                                               static_cast<float>(window_height))})) {
         nk_layout_row_dynamic(context, body_height, 1);
-        if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
+        if (wormedit::ui::chrome::scroll_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
             render_import_items(context, state, catalog);
             render_group_rows(context, state);
-            nk_group_end(context);
+            wormedit::ui::chrome::scroll_group_end(context);
         }
         if (!state.message.empty())
             chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0F);
+        chrome::dialog_footer_begin(dialog, context, 2, false,
+            chrome::dialog_button_width_for(context, {"Cancel", "Confirm import"}));
         if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary))
             result = worm_ui_sound_import_dialog_action_t::cancel;
         if (chrome::dialog_button(dialog, context, "Confirm import", chrome::DialogButtonRole::primary))
@@ -321,7 +323,7 @@ void render_manual_group_contents(nk_context* context, const wormedit::ui::compo
         if (group != end) destination = group->name.c_str();
     }
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, destination, nk_vec2(280, 250))) return;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (nk_combo_item_label(context, "Create new group", NK_TEXT_LEFT)) state.target_group_id = 0;
     for (std::size_t index = 0; index < view.compose_sound_groups.size(); ++index)
         if (nk_combo_item_label(context, view.compose_sound_groups[index].name.c_str(), NK_TEXT_LEFT))
@@ -385,7 +387,7 @@ void render_group_review_footer(nk_context* context, const wormedit::ui::compose
     auto& dialog = group_review_dialog();
     int keep = state.keep_ids_together ? 1 : 0;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    nk_checkbox_label(context, "Keep IDs together", &keep);
+    wormedit::ui::chrome::checkbox_label(context, "Keep IDs together", &keep);
     state.keep_ids_together = keep != 0;
     if (!state.message.empty())
         chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));

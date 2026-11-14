@@ -33,7 +33,7 @@ auto hit_test(const nk_context* context, nk_widget_layout_states state, struct n
               bool enabled) -> hit_t {
     hit_t hit;
     if (state == NK_WIDGET_INVALID || !context->current || !context->current->layout) return hit;
-    if (context->active != context->current && !popup_panel(context)) return hit;
+    if (context->active != context->current && !inside_popup(context)) return hit;
     const auto& input = context->input;
     hit.hovered = nk_input_is_mouse_hovering_rect(&input, area) &&
                   nk_input_is_mouse_hovering_rect(&input, context->current->layout->clip) &&
@@ -200,34 +200,42 @@ auto Button::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
     if (cell == NK_WIDGET_INVALID) return false;
-    const auto hit = hit_test(context, cell, bounds, enabled);
-    paint_look(context, bounds, metrics::radius_control, button_look(kind, state_of(hit, enabled)));
-    draw_centered_text(context, bounds, label,
-                       button_look(kind, state_of(hit, enabled)).text);
+    // nk_widget_disable_begin marks the cell disabled; draw it like an explicitly disabled button.
+    const auto usable = enabled && cell != NK_WIDGET_DISABLED;
+    const auto hit = hit_test(context, cell, bounds, usable);
+    const auto look = button_look(kind, state_of(hit, usable));
+    paint_look(context, bounds, metrics::radius_control, look);
+    draw_centered_text(context, bounds, label, look.text);
     tooltip_if_hovered(context, hit, tooltip);
-    return enabled && hit.clicked;
+    return usable && hit.clicked;
 }
 
 auto Checkbox::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
     if (cell == NK_WIDGET_INVALID) return false;
-    const auto hit = hit_test(context, cell, bounds, enabled);
+    // nk_widget_disable_begin marks the cell disabled; draw it like an explicitly disabled box.
+    const auto usable = enabled && cell != NK_WIDGET_DISABLED;
+    const auto hit = hit_test(context, cell, bounds, usable);
     auto* canvas = nk_window_get_canvas(context);
-    const auto box = nk_rect(bounds.x + metrics::gap_small,
-                             bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f,
+    // Whole pixels, so every side of the border is the same thickness.
+    const auto box = nk_rect(std::floor(bounds.x),
+                             std::floor(bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f),
                              metrics::checkbox_box, metrics::checkbox_box);
-    const bool lit = hit.hovered && enabled;
-    if (!enabled) {
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f, color(UiColor::border));
-    } else if (state == CheckState::off) {
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f,
-                       lit ? color(UiColor::text_bright) : color(UiColor::border_hover));
-    } else {
-        nk_fill_rect(canvas, box, 3.0f, color(UiColor::selected));
-        nk_stroke_rect(canvas, box, 3.0f, 1.5f,
-                       lit ? color(UiColor::border_hover) : color(UiColor::selected));
-        const auto mark = color(UiColor::selected_text);
+    const bool lit = hit.hovered && usable;
+    // The border is a filled rounded rect with the interior inset, not a stroked path:
+    // Nuklear's rounded stroke is polygonal and drifts off the fill at small radii.
+    const auto border = !usable ? color(UiColor::border)
+                        : state == CheckState::off ? (lit ? color(UiColor::text_bright) : color(UiColor::border_hover))
+                        : (lit ? color(UiColor::border_hover) : color(UiColor::selected));
+    const auto inside = state == CheckState::off ? color(UiColor::surface)
+                        : usable ? color(UiColor::selected) : disabled_fill();
+    constexpr float edge = 1.0f;
+    nk_fill_rect(canvas, box, metrics::radius_control, border);
+    nk_fill_rect(canvas, nk_rect(box.x + edge, box.y + edge, box.w - 2 * edge, box.h - 2 * edge),
+                 metrics::radius_control - edge, inside);
+    if (state != CheckState::off) {
+        const auto mark = usable ? color(UiColor::selected_text) : chrome::text_faint();
         if (state == CheckState::on) {
             nk_stroke_line(canvas, box.x + 3.5f, box.y + 8.5f, box.x + 6.8f, box.y + 11.8f, 2.0f, mark);
             nk_stroke_line(canvas, box.x + 6.8f, box.y + 11.8f, box.x + 12.5f, box.y + 4.8f, 2.0f, mark);
@@ -235,17 +243,22 @@ auto Checkbox::render(nk_context* context) const -> bool {
             nk_stroke_line(canvas, box.x + 4.0f, box.y + 8.0f, box.x + 12.0f, box.y + 8.0f, 2.0f, mark);
         }
     }
-    const auto label_area = nk_rect(box.x + box.w + metrics::gap_medium, bounds.y,
-                                    std::max(0.0f, bounds.x + bounds.w - box.x - box.w - metrics::gap_medium),
-                                    bounds.h);
-    draw_centered_text(context, nk_rect(label_area.x - metrics::gap_medium, label_area.y,
-                                        label_area.w + metrics::gap_medium, label_area.h),
-                       label,
-                       !enabled ? chrome::text_faint()
-                                : lit ? color(UiColor::text_bright) : color(UiColor::text),
-                       NK_TEXT_LEFT);
+    // The label sits gap_medium to the right of the box, placed like a stock toggle's label so it
+    // lines up with stock text and buttons in the same row.
+    const auto label_x = box.x + box.w + metrics::gap_medium;
+    const auto label_area = nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h);
+    const auto* font = context->style.font;
+    const auto label_color = !usable ? chrome::text_faint()
+                             : lit ? color(UiColor::text_bright) : color(UiColor::text);
+    if (label && label[0] && font) {
+        // Centered like a Button's label, so both share a baseline and drawn text bounds in a row.
+        const auto text_area = nk_rect(label_area.x, label_area.y + (label_area.h - font->height) * 0.5f,
+                                       label_area.w, font->height);
+        nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
+                     nk_rgba(0, 0, 0, 0), label_color);
+    }
     tooltip_if_hovered(context, hit, tooltip);
-    return enabled && hit.clicked;
+    return usable && hit.clicked;
 }
 
 auto segment_at(struct nk_rect bounds, int count, float x) -> int {
@@ -331,7 +344,7 @@ namespace {
 
 auto is_number_field_hovered(const nk_context* context, struct nk_rect bounds) -> bool {
     if (!context->current || !context->current->layout) return false;
-    if (context->active != context->current && !popup_panel(context)) return false;
+    if (context->active != context->current && !inside_popup(context)) return false;
     return nk_input_is_mouse_hovering_rect(&context->input, bounds) &&
            nk_input_is_mouse_hovering_rect(&context->input, context->current->layout->clip);
 }
@@ -565,7 +578,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
         nk_vec2(context->style.tab.padding.x, context->style.tab.padding.y + metrics::gap_small));
     const bool indent_pushed = !level_one && nk_style_push_float(context, &context->style.tab.indent,
                                                                  metrics::card_indent);
+    // Level-one bars carry the title face; cards keep the body face.
+    const bool title_pushed = level_one && theme::title_font && nk_style_push_font(context, theme::title_font);
     const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (title_pushed) nk_style_pop_font(context);
     if (indent_pushed) nk_style_pop_float(context);
     if (padding_pushed) nk_style_pop_vec2(context);
     if (text_pushed) nk_style_pop_color(context);

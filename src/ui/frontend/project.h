@@ -255,6 +255,8 @@ struct project_chart_action_t {
     std::uint64_t document_revision{}, session_generation{};
     wormedit::chart_id_t chart_id;
     std::vector<wormedit::chart_id_t> selected_chart_ids;
+    bool edit_name{};
+    std::string name; // Rename: valid with exactly one selected chart.
     bool edit_author{};
     std::string author;
     bool edit_rating{}, unset_rating{};

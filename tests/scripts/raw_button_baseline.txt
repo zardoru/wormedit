@@ -1,0 +1,3 @@
+# file raw-nk_button_*-call-count; may only go down (see check_raw_buttons.py)
+src/ui/nuklear/app/frontend.cpp 1
+src/ui/nuklear/compose/compose_area_menu.cpp 1

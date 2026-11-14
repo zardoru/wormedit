@@ -58,7 +58,7 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     auto* context = inspector.context;
     auto* action = inspector.action;
     if (view->lane_profile_names.size() == 0) return;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED, true)) return;
     static std::vector<const char*> names;
     const auto selecting_initial = view->lane_profile_current < 0;
     const auto offset = selecting_initial ? std::size_t{1} : std::size_t{0};
@@ -87,15 +87,15 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane layout segment", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Lane layout segment", NK_MAXIMIZED, true)) return;
     if (!view->lane_layout_edit_available) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label_wrap(context, "Layout changes are unavailable at a virtual-only cursor measure.");
         wormedit::ui::chrome::section_pop(context);
         return;
     }
     if (view->lane_layout_profile_names.size() == 0) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label_wrap(context, "No built-in layout profiles are available for this chart family.");
         wormedit::ui::chrome::section_pop(context);
         return;
@@ -166,7 +166,7 @@ static auto render_card_wide_button(nk_context* context, const char* label) -> b
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_layout_editor(inspector);
     render_lane_profile_section(inspector);
-    if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED)) {
+    if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED, true)) {
         namespace chrome = wormedit::ui::chrome;
         const ComposeToolbarContext toolbar{inspector.context, inspector.view, inspector.action};
         // Cards sit directly under the Timing header and each other, so they ask for the tight gap.
@@ -200,7 +200,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     worm_ui_nuklear_render_compose_resources(inspector.context, inspector.view,
                                              inspector.action, &state);
     if (inspector.view->waveform_analysis_pending) {
-        nk_layout_row_dynamic(inspector.context, 18, 1);
+        nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::row_text, 1);
         nk_label(inspector.context, "Building waveform...", NK_TEXT_LEFT);
     }
 }
@@ -209,7 +209,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED, true)) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.label_search.data(),
                                          state.note_label.label_search.size(), nk_filter_default);
@@ -321,12 +321,12 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     nk_layout_row_dynamic(context, 38, 1);
     nk_label_wrap(context, "Remove this measure and its contents?");
     render_measure_removal_summary(inspector);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto blocked = view->measure_removal_blocked;
     if (blocked) nk_widget_disable_begin(context);
-    const auto confirmed = nk_button_label(context, "Confirm removal");
+    const auto confirmed = wormedit::ui::chrome::button_label(context, "Confirm removal");
     if (blocked) nk_widget_disable_end(context);
-    if (nk_button_label(context, "Cancel")) confirmation.open = false;
+    if (wormedit::ui::chrome::button_label(context, "Cancel")) confirmation.open = false;
     if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     confirmation.open = false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
@@ -358,7 +358,7 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Measure at cursor", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Measure at cursor", NK_MINIMIZED, true)) return;
     if (!view->scene_available) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, const char* command) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
@@ -380,12 +380,12 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Transform", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Transform", NK_MINIMIZED, true)) return;
     const auto enabled = view->scene_available && view->selected_note_count != 0;
     if (!enabled) nk_widget_disable_begin(context);
     const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
-        nk_layout_row_dynamic(context, 24, 1);
-        if (!nk_button_label(context, title) ||
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        if (!wormedit::ui::chrome::button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
         action->compose_action = kind;
@@ -495,7 +495,7 @@ void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
 }
 auto quantize_segments(nk_context* c, const char* const* labels, int count, int selected,
                        const char* const* tips, bool dim = false) -> int {
-    nk_layout_row_dynamic(c, 25, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     const auto bounds = nk_widget_bounds(c);
     const auto hover = wormedit::ui::chrome::segment_at(bounds, count, c->input.mouse.pos.x);
     const auto result = wormedit::ui::chrome::Segmented{labels, count, selected, nullptr,
@@ -540,7 +540,7 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
     for (int x = 0; x < 15; ++x)
         if (values[x] == v.quantize_divisions)
             selected = x;
-    nk_layout_row_dynamic(c, 18, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::row_text, 1);
     auto grid_bounds = nk_widget_bounds(c);
     nk_label(c, v.edit_snap_enabled ? "Grid" : "Grid · editing snap off", NK_TEXT_LEFT);
     // The chip rows start one row spacing below the label.
@@ -583,17 +583,17 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
         "Snap the head and leave the tail in place, changing the hold length.",
         "Snap both the hold head and its tail to the grid."};
     quantize_setting_spacing(c);
-    nk_layout_row_dynamic(c, 18, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::row_text, 1);
     nk_label(c, "Space", NK_TEXT_LEFT);
     const auto space = quantize_segments(c, spaces, 2, static_cast<uint8_t>(v.quantize_space), st);
     quantize_setting_spacing(c);
-    nk_layout_row_dynamic(c, 18, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::row_text, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Halfway objects · %zu in selection",
               v.quantize_preview_halfway_notes);
     const auto tie =
         quantize_segments(c, ties, 3, static_cast<uint8_t>(v.quantize_tie), tt, v.quantize_preview_halfway_notes == 0);
     quantize_setting_spacing(c);
-    nk_layout_row_dynamic(c, 18, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::row_text, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Hold tails · %zu %s in selection", v.quantize_preview_holds,
               v.quantize_preview_holds == 1 ? "hold" : "holds");
     const auto hold = quantize_segments(c, holds, 2, static_cast<uint8_t>(v.quantize_holds), ht);
@@ -624,7 +624,7 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
         labels[x] = !v.quantize_presets[x].name.empty() ? v.quantize_presets[x].name.data()
                                                                      : "(unnamed)";
     quantize_setting_spacing(c);
-    nk_layout_row_dynamic(c, 18, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::row_text, 1);
     const auto heading = nk_widget_bounds(c);
     nk_label(c, "Presets", NK_TEXT_LEFT);
     const auto spacing = c->style.window.spacing;
@@ -661,15 +661,15 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
 void render_quantize_custom_popup(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
-    nk_layout_row_dynamic(c, 24, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     nk_label(c, "Grid divisions", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(c, 25, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     const auto edit = wormedit::ui::chrome::worm_ui_nuklear_text_field(
         c, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER, quantize_grid_text.data(), quantize_grid_text.size(),
         nk_filter_decimal);
     quantize_grid_editing = (edit & NK_EDIT_ACTIVE) != 0;
-    nk_layout_row_dynamic(c, 25, 1);
-    const auto apply = nk_button_label(c, "Apply custom grid");
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
+    const auto apply = wormedit::ui::chrome::button_label(c, "Apply custom grid");
     if (apply || (edit & NK_EDIT_COMMITED) != 0) {
         const auto divisions = parse_quantize_grid(quantize_grid_text.data());
         quantize_grid_invalid = !divisions;
@@ -688,9 +688,9 @@ void render_quantize_custom_popup(const ComposeInspectorContext& i) {
 void render_quantize_name_popup(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
-    nk_layout_row_dynamic(c, 24, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     nk_label(c, quantize_rename ? "Rename preset" : "Preset name", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(c, 25, 1);
+    nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(c, NK_EDIT_FIELD, quantize_preset_name.data(),
                                                      quantize_preset_name.size(),
                                                      nk_filter_default);
@@ -719,7 +719,7 @@ void render_quantize_preset_actions(const ComposeInspectorContext& i) {
     else if (quantize_popup == QuantizePopup::name)
         render_quantize_name_popup(i);
     else {
-        nk_layout_row_dynamic(c, 25, 1);
+        nk_layout_row_dynamic(c, wormedit::ui::metrics::control_compact, 1);
         if (wormedit::ui::chrome::context_menu_button(c, "Rename")) {
             quantize_rename = true;
             quantize_popup = QuantizePopup::name;
@@ -793,17 +793,18 @@ void render_quantize_report_rows(nk_context* context, const char* title, int tre
                                  const wormedit::ui::compose_quantize_report_row_view_t* rows, std::size_t count,
                                  std::size_t total, bool truncated,
                                  nk_collapse_states initial = NK_MINIMIZED) {
-    if (!nk_tree_push_id(context, NK_TREE_TAB, title, initial, tree_id))
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_NODE, title, initial, title,
+                                            static_cast<int>(std::strlen(title)), tree_id))
         return;
     if (truncated) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "%zu rows shown of %zu", count, total);
     }
     const auto visible_count =
         count;
     for (std::size_t index = 0; rows && index < visible_count; ++index)
         render_quantize_report_row(context, rows[index]);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 
 } // namespace
@@ -868,7 +869,7 @@ void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     nk_bool preview = inspector.view->quantize_preview_enabled;
     if (compose_quantize_owns_input()) nk_widget_disable_begin(context);
-    const auto changed = nk_checkbox_label(context, "Preview", &preview);
+    const auto changed = wormedit::ui::chrome::checkbox_label(context, "Preview", &preview);
     if (compose_quantize_owns_input()) nk_widget_disable_end(context);
     if (changed && !compose_quantize_owns_input() &&
         inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -883,7 +884,7 @@ void render_quantize_action_row(const ComposeInspectorContext& inspector) {
     auto* action = inspector.action;
     const auto popup_owns_input = compose_quantize_owns_input();
     wormedit::ui::chrome::section_separator(context);
-    nk_layout_row_dynamic(context, 26, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     render_quantize_preview_toggle(inspector);
     const auto enabled = view->scene_available && (view->selected_note_count + view->selected_bgm_event_count) != 0 &&
                          view->quantize_preview_blocked == 0 && view->quantize_preview_moved != 0 &&
@@ -891,7 +892,7 @@ void render_quantize_action_row(const ComposeInspectorContext& inspector) {
     if (!enabled)
         nk_widget_disable_begin(context);
     const auto bounds = nk_widget_bounds(context);
-    const auto clicked = nk_button_label(context, view->quantize_q_bound ? "Quantize (Q)"
+    const auto clicked = wormedit::ui::chrome::button_label(context, view->quantize_q_bound ? "Quantize (Q)"
                                                                          : "Quantize");
     if (!enabled)
         nk_widget_disable_end(context);
@@ -912,7 +913,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     sync_quantize_grid_text(*view);
     const auto section_clip = nk_window_get_canvas(context)->clip;
-    if (!nk_tree_push(context, NK_TREE_TAB, "Quantize / Snap", NK_MAXIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Quantize / Snap", NK_MAXIMIZED, true)) return;
     wormedit::ui::chrome::context_menu_retire(quantize_menu, context);
     if (!quantize_menu.open) {
         if (quantize_grid_editing || quantize_grid_invalid)
@@ -921,20 +922,20 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         quantize_grid_invalid = false;
         sync_quantize_grid_text(*view);
     }
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     const auto header_bounds = nk_widget_bounds(context);
     nk_labelf(context, NK_TEXT_LEFT, "Quantize (%zu)", (view->selected_note_count + view->selected_bgm_event_count));
     if ((view->selected_note_count + view->selected_bgm_event_count) == 0) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, "Select notes or BGM first", NK_TEXT_LEFT);
     } else if (view->quantize_preview_blocked != 0) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Blocked: %zu issue(s), %zu colliding objects",
                   view->quantize_preview_blocked, view->quantize_preview_colliding_objects);
-        nk_layout_row_dynamic(context, 32, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label_wrap(context, view->quantize_preview_message.c_str());
     } else {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "%zu would move, %zu unchanged, %zu colliding",
                   view->quantize_preview_moved, view->quantize_preview_unchanged,
                   view->quantize_preview_colliding_objects);
@@ -962,5 +963,5 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto section_bounds = nk_widget_bounds(context);
     quantize_section_visible_this_frame |= quantize_bounds_intersect(
         header_bounds, section_bounds, section_clip);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

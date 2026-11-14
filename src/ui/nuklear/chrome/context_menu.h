@@ -16,6 +16,9 @@ namespace wormedit::ui::chrome {
 struct ContextMenu : wormedit::ui::chrome::retained_popup_t {
     const char* title{};
     bool opened_this_frame{};
+    // The click that opened the menu is still held; its release may land on an item that the
+    // menu was placed under the pointer, and must not activate it.
+    bool click_guard{};
     PopupContextStamp stamp{};
     struct nk_vec2 anchor{};
     struct nk_rect bounds{}; // Parent content-region coordinates, as nk_popup_begin takes them.
@@ -66,6 +69,12 @@ inline constexpr float context_menu_width = 220.0f;
 
 // Popup height for `rows` items plus `extra` px, with the menubar menus' padding.
 auto context_menu_height(float rows, float extra = 0.0f) -> float;
+
+// A hint at the foot of a menu: a rule, then small muted text. It is not an option, so it has no
+// row hover and no item look. Adds `context_menu_hint_extra` to the height of the rows around it
+// compared with one item row (the rule row plus its spacing, less the shorter text row).
+inline constexpr float context_menu_hint_extra = 9.0f;
+void context_menu_hint(nk_context* context, const char* text);
 
 // Open at a screen-space anchor (normally the pointer) for the given context.
 void context_menu_open(ContextMenu& menu, struct nk_vec2 anchor, PopupContextStamp stamp, bool keyboard = false);

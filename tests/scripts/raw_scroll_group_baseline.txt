@@ -1,0 +1,11 @@
+# file raw-scrolling-group-call-count; may only go down (see check_raw_scroll_groups.py)
+src/ui/nuklear/app/frontend.cpp 3
+src/ui/nuklear/app/menu_bar.cpp 1
+src/ui/nuklear/audio/audio_panel.cpp 1
+src/ui/nuklear/compose/compose_panel.cpp 1
+src/ui/nuklear/compose/compose_resources.cpp 1
+src/ui/nuklear/compose/compose_sounds_panel.cpp 1
+src/ui/nuklear/dock.cpp 1
+src/ui/nuklear/preferences/lane_keys_dialog.cpp 1
+src/ui/nuklear/preferences/options_window.cpp 2
+src/ui/nuklear/project/bms_branch_panel.cpp 1

@@ -79,6 +79,19 @@ The command menu (kbd:[Ctrl+Shift+P]) has *Insert Measure Before*, *Insert Measu
 *Remove Empty Measure* for the measure at the cursor, and the inspector's *Measure at cursor*
 section shows that measure's details.
 
+== Reading the Measures list
+
+Each row shows the measure number, its *Meter* and its *Length*. They are two separate values:
+
+* *Length* is the exact duration relative to a standard 4/4 measure: `1/1` is four quarter notes,
+  `3/4` is three, `5/4` is five. It decides where the next bar line falls.
+* *Meter* is the time signature the author wrote, kept as typed and never reduced. A measure of
+  length `3/4` can carry meter `3/4` or `6/8`; they last the same but group beats differently.
+  `--` means the measure has no explicit meter.
+
+A meter is only kept while it agrees with the length (`numerator / denominator` equals the
+ratio). Hover the column headers in the dock for the same summary.
+
 == Edit several measure lengths
 
 Open the *Measures* dock and select rows with Ctrl-click or Shift-click; *Select all* selects the

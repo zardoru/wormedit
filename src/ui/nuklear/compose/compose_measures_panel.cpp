@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose/compose_action_stamp.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -24,16 +25,28 @@ auto ids_of(const wormedit::ui::compose_view_t& view) -> std::span<const std::ui
     return view.measure_row_ids;
 }
 
-void format_row(const wormedit::ui::compose_measure_row_view_t& value, char* label, std::size_t size) {
-    if (value.has_meter)
-        std::snprintf(label, size, "%llu    %u/%u    %llu/%llu", static_cast<unsigned long long>(value.number),
-                      value.meter_numerator, value.meter_denominator,
-                      static_cast<unsigned long long>(value.length_numerator),
-                      static_cast<unsigned long long>(value.length_denominator));
-    else
-        std::snprintf(label, size, "%llu    --    %llu/%llu", static_cast<unsigned long long>(value.number),
-                      static_cast<unsigned long long>(value.length_numerator),
-                      static_cast<unsigned long long>(value.length_denominator));
+// Fixed columns: the number is right-aligned in a width that fits six digits, so the Meter and
+// Length columns stay put as the measure numbers roll over to more digits.
+constexpr float cell_inset = 6.0f;
+constexpr float meter_column = 64.0f;
+
+auto text_width(const nk_user_font* font, const char* text) -> float {
+    return font->width(font->userdata, font->height, text, static_cast<int>(std::strlen(text)));
+}
+
+auto number_column(const nk_user_font* font) -> float { return text_width(font, "000000") + cell_inset; }
+
+void draw_cells(struct nk_command_buffer* canvas, const nk_user_font* font, struct nk_rect bounds, float inset,
+                const char* number, const char* meter, const char* length, struct nk_color tint) {
+    const auto y = bounds.y + (bounds.h - font->height) * 0.5f;
+    const auto number_width = number_column(font);
+    const auto text = [&](float x, const char* value) {
+        nk_draw_text(canvas, nk_rect(x, y, std::max(0.0f, bounds.x + bounds.w - x), font->height), value,
+                     static_cast<int>(std::strlen(value)), font, nk_rgba(0, 0, 0, 0), tint);
+    };
+    text(bounds.x + inset + number_width - cell_inset - text_width(font, number), number);
+    text(bounds.x + inset + number_width + cell_inset, meter);
+    text(bounds.x + inset + number_width + cell_inset + meter_column, length);
 }
 
 void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
@@ -47,10 +60,13 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit
     const auto selected = worm_ui_keysound_is_selected(state.measures_dock.measure_selection, value.measure_index);
     auto* canvas = nk_window_get_canvas(context);
     if (selected || hovered) nk_fill_rect(canvas, bounds, 3, nk_rgb(44, 72, 109));
-    char label[96];
-    format_row(value, label, sizeof(label));
-    nk_draw_text(canvas, nk_rect(bounds.x + 6, bounds.y + 4, bounds.w - 8, 20), label,
-        static_cast<int>(std::strlen(label)), context->style.font, nk_rgba(0, 0, 0, 0), nk_rgb(222, 228, 238));
+    char number[24], meter[24], length[48];
+    std::snprintf(number, sizeof(number), "%llu", static_cast<unsigned long long>(value.number));
+    if (value.has_meter) std::snprintf(meter, sizeof(meter), "%u/%u", value.meter_numerator, value.meter_denominator);
+    else std::snprintf(meter, sizeof(meter), "--");
+    std::snprintf(length, sizeof(length), "%llu/%llu", static_cast<unsigned long long>(value.length_numerator),
+                  static_cast<unsigned long long>(value.length_denominator));
+    draw_cells(canvas, context->style.font, bounds, cell_inset, number, meter, length, nk_rgb(222, 228, 238));
     if (!clicked) return;
     const auto modifiers = SDL_GetModState();
     worm_ui_keysound_click(state.measures_dock.measure_selection, ids_of(view), index,
@@ -81,7 +97,7 @@ struct measure_definition_row_t {
         (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             denominator.data(), static_cast<int>(denominator.size()), nk_filter_decimal);
         if (disabled) nk_widget_disable_begin(context);
-        const auto clicked = nk_button_label(context, button);
+        const auto clicked = wormedit::ui::chrome::button_label(context, button);
         if (disabled) nk_widget_disable_end(context);
         return clicked && !disabled;
     }
@@ -116,25 +132,35 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());
     wormedit::ui::chrome::panel_header(context, title);
     nk_layout_row_dynamic(context, 27, 2);
-    if (nk_button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
-    if (nk_button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
+    if (wormedit::ui::chrome::button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
+    if (wormedit::ui::chrome::button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
     meter_controls(context, *view, *action, *state);
     length_controls(context, *view, *action, *state);
     nk_layout_row_dynamic(context, 34, 1);
     nk_label_wrap(context, "Length clears incompatible meters.");
     worm_ui_keysound_prune(state->measures_dock.measure_selection, ids_of(*view));
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "No.   Meter   Length", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+    struct nk_rect header{};
+    if (nk_widget(&header, context) != NK_WIDGET_INVALID) {
+        // Rows sit inside the list's border and padding; start the header cells at the same x.
+        const auto inset = cell_inset + context->style.window.group_padding.x + context->style.window.group_border;
+        draw_cells(nk_window_get_canvas(context), context->style.font, header, inset, "No.", "Meter", "Length",
+                   wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
+        if (nk_input_is_mouse_hovering_rect(&context->input, header))
+            wormedit::ui::nuklear::tooltip::text(context,
+                "Length: duration relative to a 4/4 measure (1/1 = four beats).\n"
+                "Meter: the time signature as authored, kept unreduced; -- means none.");
+    }
     const auto height = wormedit::ui::layout::remaining_content_height(context,
         {.minimum = 60.0f, .reserved = 5.0f});
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
-    if (nk_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,
                            static_cast<int>(row_height),
                            static_cast<int>(std::max<std::size_t>(view->measure_rows.size(), 1)))) {
         for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->measure_rows.size())); ++index)
             row(context, *view, *action, *state, static_cast<std::size_t>(index));
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
 
 }

@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 namespace chrome = wormedit::ui::chrome;
 namespace nuklear = wormedit::ui::nuklear;
@@ -55,7 +56,7 @@ void draw_batch_rows(nk_context* context, worm_ui_sound_slot_batch_t& state,
     nk_layout_row_dynamic(context, list_height, 1);
     struct nk_list_view list{};
     const auto total = static_cast<int>(std::max<std::size_t>(state.items.size(), 1));
-    if (!nk_list_view_begin(context, &list, "WAV slot batch rows", NK_WINDOW_BORDER, 36, total))
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "WAV slot batch rows", NK_WINDOW_BORDER, 36, total))
         return;
     for (int row = list.begin; row < std::min<int>(list.end, state.items.size()); ++row) {
         const auto index = static_cast<std::size_t>(row);
@@ -73,14 +74,14 @@ void draw_batch_rows(nk_context* context, worm_ui_sound_slot_batch_t& state,
         nk_layout_row_push(context, 0.20f);
         if (item.occupied_resource_id != 0 && !item.ambiguous) {
             auto replacing = static_cast<nk_bool>(item.replace);
-            (void)nk_checkbox_label(context, "Replace", &replacing);
+            (void)wormedit::ui::chrome::checkbox_label(context, "Replace", &replacing);
             item.replace = replacing != 0;
         }
         else
             nk_label(context, item.ambiguous ? "Resolve first" : "", NK_TEXT_LEFT);
         nk_layout_row_end(context);
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void close_with_reason(worm_ui_sound_slot_batch_t& state, const char* reason) {
@@ -172,7 +173,8 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
             chrome::dialog_text(dialog, context, "Check each occupied slot you intend to replace.",
                                 chrome::color(chrome::UiColor::text_muted));
         }
-        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, context, 2, false,
+            chrome::dialog_button_width_for(context, {"Cancel", "Assign files"}));
         if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary,
                                   !state.commit_pending))
             worm_ui_sound_slot_batch_cancel(state);

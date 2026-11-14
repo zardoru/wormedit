@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose/compose_input_queries.h"
 #include "ui/nuklear/compose/compose_gesture_registry.h"
 #include "ui/nuklear/chrome/content_layout.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
 #include "ui/nuklear/chrome/modal_input.h"
@@ -707,6 +708,12 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         static nk_user_font display_font = test_font;
         display_font.height = 28;
         wormedit::ui::theme::display_font = &display_font;
+        static nk_user_font small_font = test_font;
+        small_font.height = wormedit::ui::metrics::font_small;
+        wormedit::ui::theme::small_font = &small_font;
+        static nk_user_font title_font = test_font;
+        title_font.height = wormedit::ui::metrics::font_title;
+        wormedit::ui::theme::title_font = &title_font;
     }
     if (!headless) {
         const auto font_directory = SDL_GetBasePath()
@@ -714,6 +721,8 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
             : std::filesystem::path{"assets/fonts"};
         g_editor_font.initialize(context, font_directory);
         wormedit::ui::theme::display_font = g_editor_font.display_handle();
+        wormedit::ui::theme::small_font = g_editor_font.small_handle();
+        wormedit::ui::theme::title_font = g_editor_font.title_handle();
         const auto theme_directory = SDL_GetBasePath()
                                          ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
                                          : std::filesystem::path{"assets/themes"};
@@ -808,6 +817,8 @@ void worm_ui_frontend_shutdown(void) {
     wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
     wormedit::ui::theme::display_font = nullptr;
+    wormedit::ui::theme::small_font = nullptr;
+    wormedit::ui::theme::title_font = nullptr;
     g_editor_font.reset();
     g_window = NULL;
     g_renderer = NULL;
@@ -837,6 +848,14 @@ void worm_ui_frontend_begin_input(void) {
         g_shortcut_events_overflowed = false;
         g_double_click_count = 0;
     }
+}
+
+void worm_ui_frontend_set_caret_visible(bool visible) {
+    if (g_context) wormedit::ui::chrome::apply_caret_visibility(g_context, visible);
+}
+
+bool worm_ui_frontend_text_caret_active(void) {
+    return g_context && wormedit::ui::chrome::has_active_text_edit(g_context);
 }
 
 static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
@@ -1776,14 +1795,15 @@ static void render_close_confirmation(const wormedit::ui::close_confirmation_vie
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_close_dialog;
     if (chrome::dialog_begin(dialog, g_context, "Unsaved changes", "Unsaved changes",
-                             {.modal = true, .width = 440.0f,
+                             {.modal = true, .width = 560.0f,
                               .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
         chrome::dialog_text(dialog, g_context, view.application
             ? "Save your changes before quitting WormEdit?"
             : "Save your changes before closing this project?", chrome::color(chrome::UiColor::text));
         if (!view.status_text.empty())
             chrome::dialog_text(dialog, g_context, view.status_text.data(), chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, g_context, 3, true, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 3, true,
+            chrome::dialog_button_width_for(g_context, {"Discard changes", "Cancel", "Save"}));
         chrome::dialog_button(dialog, g_context, "Discard changes", chrome::DialogButtonRole::destructive);
         chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary);
         chrome::dialog_button(dialog, g_context, "Save", chrome::DialogButtonRole::primary);
@@ -1796,7 +1816,7 @@ static void render_workspace_error(wormedit::ui::workspace_action_t* action, int
     worm_ui_nuklear_compose_discard_frame_input();
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
-        nk_layout_row_dynamic(g_context, 30, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
         worm_ui_nuklear_retire_setup_popups(g_context);
         worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
@@ -1804,12 +1824,12 @@ static void render_workspace_error(wormedit::ui::workspace_action_t* action, int
         nk_label_wrap(g_context, diagnostic && diagnostic[0]
                                      ? diagnostic
                                      : "No diagnostic was provided for the workspace error.");
-        nk_layout_row_dynamic(g_context, 30, 2);
-        if (nk_button_label(g_context, "Project")) {
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 2);
+        if (wormedit::ui::chrome::button_label(g_context, "Project")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
             action->tab = WORM_UI_WORKSPACE_TAB_SETUP;
         }
-        if (nk_button_label(g_context, "Quit")) {
+        if (wormedit::ui::chrome::button_label(g_context, "Quit")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
         }
     }
@@ -2064,7 +2084,7 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
                                   wormedit::ui::workspace_action_t* action) {
     int visible_tabs = 0;
     for (const auto& item : view->tabs) visible_tabs += !item.label.empty();
-    nk_layout_row_dynamic(g_context, 32, visible_tabs);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, visible_tabs);
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         const auto& item = view->tabs[tab];
         if (item.label.empty()) continue;
@@ -2108,10 +2128,10 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         return;
     }
-    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
-    if (nk_button_label(g_context, label) &&
+    if (wormedit::ui::chrome::button_label(g_context, label) &&
         action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
         auto& input = action->compose_inputs.emplace_back();
         input = {};
@@ -2243,7 +2263,7 @@ static void render_notification_badge(const wormedit::ui::notification_view_t& v
     }
     const auto bounds = nk_widget_bounds(g_context);
     const auto hovered_visible_badge = nk_widget_is_hovered(g_context) != 0;
-    const auto clicked = nk_button_label(g_context, label) != 0;
+    const auto clicked = wormedit::ui::chrome::button_label(g_context, label) != 0;
     const auto click_matches_visible_badge =
         nk_input_is_mouse_hovering_rect(&g_context->input, bounds) != 0 &&
         hovered_visible_badge;
@@ -2258,7 +2278,7 @@ static void render_notification_landing_status(const wormedit::ui::workspace_vie
         ? view.status_text : view.notifications.current_text;
     nk_text_wrap(g_context, text.data(), static_cast<int>(text.size()));
     if (!notification_badge_visible(view.notifications)) return;
-    nk_layout_row_dynamic(g_context, 28, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
     render_notification_badge(view.notifications, action);
 }
 
@@ -2746,7 +2766,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
     } else if (view.compare.visible) {
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
-        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (view.summary_lines.size() == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
         for (size_t line = 0; line < view.summary_lines.size(); ++line) {
             if (!view.summary_lines[line].empty()) nk_label(g_context, view.summary_lines[line].c_str(), NK_TEXT_LEFT);
@@ -2907,19 +2927,25 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
                                        wormedit::ui::workspace_action_t& action, float height) {
     const auto count = view.recent_files.size();
     if (!count) return;
-    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     nk_label(g_context, "Recent projects and charts", NK_TEXT_LEFT);
     const auto list_height = wormedit::ui::layout::remaining_content_height(g_context,
         {.minimum = 48.0f, .reserved = 12.0f, .maximum = height});
     nk_layout_row_dynamic(g_context, list_height, 1);
-    if (!nk_group_begin(g_context, "recent-projects-list", NK_WINDOW_BORDER)) return;
+    constexpr float row_height = 34.0f;
+    // Rows are known up front, so the scrollbar is settled on the first frame.
+    const auto rows_height = static_cast<float>(count) * row_height +
+                             static_cast<float>(count - 1) * g_context->style.window.spacing.y;
+    if (!wormedit::ui::chrome::scroll_group_begin(g_context, "recent-projects-list", NK_WINDOW_BORDER,
+                                                  rows_height))
+        return;
     const bool blocked = project_dialog_active() || project_modal_active(view);
     for (std::size_t index = 0; index < count; ++index) {
         const auto& entry = view.recent_files[index];
-        nk_layout_row_dynamic(g_context, 34, 1);
+        nk_layout_row_dynamic(g_context, row_height, 1);
         const auto bounds = nk_widget_bounds(g_context);
         if (blocked) nk_widget_disable_begin(g_context);
-        const bool chosen = nk_button_label(g_context, entry.label.data());
+        const bool chosen = wormedit::ui::chrome::button_label(g_context, entry.label.data());
         if (blocked) nk_widget_disable_end(g_context);
         if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
@@ -2928,17 +2954,17 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
         if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
             wormedit::ui::nuklear::tooltip::text(g_context, entry.path.data());
     }
-    nk_group_end(g_context);
+    wormedit::ui::chrome::scroll_group_end(g_context);
 }
 
 static void render_startup_buttons(wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(g_context, 42, 1);
     const bool dialog_busy = project_dialog_active();
     if (dialog_busy) nk_widget_disable_begin(g_context);
-    if (nk_button_label(g_context, "New project") &&
+    if (wormedit::ui::chrome::button_label(g_context, "New project") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         request_manual_new_project();
-    if (nk_button_label(g_context, dialog_busy ? "Choosing file…" : "Open chart or project…") &&
+    if (wormedit::ui::chrome::button_label(g_context, dialog_busy ? "Choosing file…" : "Open chart or project…") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
     if (dialog_busy) nk_widget_disable_end(g_context);
@@ -2956,11 +2982,11 @@ static void render_empty_project_content(const wormedit::ui::workspace_view_t& v
     nk_spacing(g_context, 1);
     nk_layout_row_push(g_context, width);
     if (nk_group_begin(g_context, "startup-column", 0)) {
-        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
         nk_spacing(g_context, 1);
         nk_layout_row_dynamic(g_context, 48, 1);
         nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
-        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
         nk_label(g_context, "Create a project or open an existing chart to begin.", NK_TEXT_CENTERED);
         render_startup_buttons(action);
         nk_layout_row_dynamic(g_context, 36, 1);
@@ -3027,10 +3053,10 @@ static void render_about_body(const wormedit::ui::workspace_view_t& view) {
     chrome::dialog_text(g_about_dialog, g_context,
         "Public domain (The Unlicense). Dependencies retain their own licenses.", muted);
     nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
-    if (nk_button_label(g_context, "github.com/zardoru/wormedit"))
+    if (wormedit::ui::chrome::button_label(g_context, "github.com/zardoru/wormedit"))
         (void)SDL_OpenURL("https://github.com/zardoru/wormedit");
     nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
-    if (nk_button_label(g_context, "Open user manual")) open_user_manual();
+    if (wormedit::ui::chrome::button_label(g_context, "Open user manual")) open_user_manual();
 }
 
 static void render_shortcut_sheet(const wormedit::ui::workspace_view_t& view) {
@@ -3244,7 +3270,7 @@ static auto new_project_lane_color(new_project_lane_role_t role) -> nk_color {
 
 static void render_new_project_preview(const new_project_layout_entry_view_t& selected) {
     namespace chrome = wormedit::ui::chrome;
-    nk_layout_row_dynamic(g_context, 18.0f, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
     nk_label_colored(g_context, selected.label.data(), NK_TEXT_LEFT,
                      chrome::color(chrome::UiColor::text_bright));
     nk_layout_row_dynamic(g_context, 54.0f, 1);
@@ -3301,7 +3327,8 @@ static void render_new_project_wizard(const wormedit::ui::workspace_view_t& view
         if (audio_path_too_long)
             chrome::dialog_text(dialog, g_context, "Audio path is too long to import.",
                                 chrome::color(chrome::UiColor::conflict));
-        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 2, false,
+            chrome::dialog_button_width_for(g_context, {"Cancel", "Create project", "Open chart"}));
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_new_project_wizard(action);
         if (chrome::dialog_button(dialog, g_context, "Create project",
@@ -3384,7 +3411,8 @@ static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& vie
             chrome::dialog_text(dialog, g_context, "This chart contains non-ASCII text without a UTF-8 BOM.",
                                 chrome::color(chrome::UiColor::text));
         const auto encoding = render_bms_encoding_choice(view);
-        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        chrome::dialog_footer_begin(dialog, g_context, 2, false,
+            chrome::dialog_button_width_for(g_context, {"Cancel", "Create project", "Open chart"}));
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_bms_encoding_dialog(action);
         if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary,
@@ -3440,14 +3468,14 @@ struct GpuWorkSection {
 
 static void render_gpu_work_section(const wormedit::ui::frame_timing_view_t& timer,
                                     const GpuWorkSection& section) {
-    nk_layout_row_dynamic(g_context, 22, 1);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
     nk_label(g_context, section.heading, NK_TEXT_LEFT);
     const std::array latest{section.latest.vertices,
         section.latest.indices, section.latest.draw_calls, section.latest.clip_rect_changes,
         section.latest.texture_switches};
     for (std::size_t metric = 0; metric < timer.gpu_work.size(); ++metric) {
         const auto summary = section.stats[metric];
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (!section.available || summary.count == 0)
             nk_labelf(g_context, NK_TEXT_LEFT, "  %s: N/A", timer.gpu_work_names[metric].data());
         else
@@ -3511,14 +3539,14 @@ static void render_frame_timing_overlay(int width, int height) {
                  bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
         const auto frame = timer.frame;
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (frame.cpu_count == 0)
             nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
                       frame.count, frame.average_ms, frame.p99_ms);
         else nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
                        frame.count, frame.average_ms, frame.p99_ms, frame.cpu_p99_ms);
         render_frame_time_graph(timer);
-        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (timer.heap_allocations_available)
             nk_labelf(g_context, NK_TEXT_LEFT,
                 "Projection new: %llu / %llu bytes (avg %.1f, p99 %.0f)",
@@ -3530,7 +3558,7 @@ static void render_frame_timing_overlay(int width, int height) {
         render_gpu_work_summary(timer);
         for (std::size_t i = 0; i < timer.phases.size(); ++i) {
             const auto summary = timer.phases[i];
-            nk_layout_row_dynamic(g_context, 22, 1);
+            nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
             if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i].data());
             else if (summary.cpu_count == 0)
                 nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
@@ -3612,18 +3640,18 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
     if (!job.active) return;
     if (nk_begin(g_context, title, bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
-        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.data(), NK_TEXT_LEFT);
         auto completed = static_cast<nk_size>(job.completed);
         nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
-        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::row_text, 1);
         if (job.total)
             nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu", job.completed, job.total);
         else
             nk_label(g_context, "Preparing…", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
         if (job.cancelling) nk_widget_disable_begin(g_context);
-        if (nk_button_label(g_context, "Cancel")) cancel = true;
+        if (wormedit::ui::chrome::button_label(g_context, "Cancel")) cancel = true;
         if (job.cancelling) nk_widget_disable_end(g_context);
     }
     nk_end(g_context);

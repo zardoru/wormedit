@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 
 namespace {
 
@@ -208,7 +210,7 @@ struct PreviewCanvas {
 void render_preview_skin_buttons(struct nk_context* context,
                                  const wormedit::ui::player_preview_view_t* view,
                                  wormedit::ui::workspace_action_t* action) {
-    nk_layout_row_dynamic(context, 24, 4);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 4);
     const struct {
         const char* label;
         wormedit::player_preview_skin_t skin;
@@ -216,13 +218,13 @@ void render_preview_skin_buttons(struct nk_context* context,
                  {"Mania", wormedit::player_preview_skin_t::mania},
                  {"Arrows", wormedit::player_preview_skin_t::arrows}};
     for (const auto& skin : skins) {
-        if (nk_button_label(context, skin.label) && view->skin != skin.skin && action &&
+        if (wormedit::ui::chrome::button_label(context, skin.label) && view->skin != skin.skin && action &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN;
             action->player_preview_skin = skin.skin;
         }
     }
-    if (nk_button_label(context, "Hide") && action &&
+    if (wormedit::ui::chrome::button_label(context, "Hide") && action &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
 }
@@ -252,7 +254,7 @@ const char* preview_image_state(const wormedit::ui::player_preview_visual_layer_
 
 void render_preview_visual_layer(struct nk_context* context,
                                  const wormedit::ui::player_preview_visual_layer_view_t& layer) {
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     const auto* label = preview_visual_label(layer.kind);
     const auto* image_state = preview_image_state(layer);
     if (layer.video_clock_ready) {
@@ -265,7 +267,7 @@ void render_preview_visual_layer(struct nk_context* context,
                   static_cast<unsigned long long>(layer.resource_id.value), image_state);
     }
     if (layer.diagnostic != wormedit::ui::player_preview_visual_diagnostic_t::none) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Event %llu: %s",
                   static_cast<unsigned long long>(layer.object_id.value), layer.diagnostic_text.data());
     }
@@ -273,7 +275,7 @@ void render_preview_visual_layer(struct nk_context* context,
 
 void render_preview_status(struct nk_context* context,
                            const wormedit::ui::player_preview_view_t* view) {
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     if (!view->scene_available) {
         nk_label(context, !view->status_text.empty() ? view->status_text.c_str() : "Preview unavailable",
                  NK_TEXT_LEFT);

@@ -28,7 +28,7 @@ static void render_timing_lane_visibility(nk_context* context, const wormedit::u
             nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
             const auto disabled = !view->scene_available || (editing_lane && visible);
             if (disabled) nk_widget_disable_begin(context);
-            const auto clicked = nk_button_label(context, label);
+            const auto clicked = wormedit::ui::chrome::button_label(context, label);
             if (disabled) nk_widget_disable_end(context);
             if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_timing_lane = descriptor.id;
@@ -46,17 +46,17 @@ static void render_metronome_controls(nk_context* context, const wormedit::ui::w
     nk_layout_row_dynamic(context, row, 1);
     nk_bool enabled = view.transport_metronome_enabled;
     if (!view.transport_metronome_available) nk_widget_disable_begin(context);
-    if (nk_checkbox_label(context, "Metronome", &enabled)) {
+    if (wormedit::ui::chrome::checkbox_label(context, "Metronome", &enabled)) {
         action.timing_settings.change_enable = true;
         action.timing_settings.enabled = enabled;
     }
     nk_layout_row_dynamic(context, row, 3);
     nk_labelf(context, NK_TEXT_LEFT, "Volume: %u%%", view.metronome_volume);
-    if (nk_button_label(context, "Lower volume")) {
+    if (wormedit::ui::chrome::button_label(context, "Lower volume")) {
         action.timing_settings.change_volume = true;
         action.timing_settings.volume = view.metronome_volume > 5 ? view.metronome_volume - 5 : 0;
     }
-    if (nk_button_label(context, "Raise volume")) {
+    if (wormedit::ui::chrome::button_label(context, "Raise volume")) {
         action.timing_settings.change_volume = true;
         action.timing_settings.volume = view.metronome_volume < 95 ? view.metronome_volume + 5 : 100;
     }
@@ -66,11 +66,11 @@ static void render_metronome_controls(nk_context* context, const wormedit::ui::w
         wormedit::ui::nuklear::tooltip::text(context,
             "The count-in applies on the next start. Clicks before audio frame zero are omitted, "
             "so a chart with no preroll can have no count-in clicks.");
-    if (nk_button_label(context, "Less count-in")) {
+    if (wormedit::ui::chrome::button_label(context, "Less count-in")) {
         action.timing_settings.change_count_in = true;
         action.timing_settings.count_in = view.metronome_count_in ? view.metronome_count_in - 1 : 0;
     }
-    if (nk_button_label(context, "More count-in")) {
+    if (wormedit::ui::chrome::button_label(context, "More count-in")) {
         action.timing_settings.change_count_in = true;
         action.timing_settings.count_in = view.metronome_count_in < 4 ? view.metronome_count_in + 1 : 4;
     }

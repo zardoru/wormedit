@@ -31,6 +31,11 @@ void worm_ui_frontend_begin_project_session(void);
 void worm_ui_frontend_set_project_directory(const char* path);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
+// Sets the text caret phase (true = visible) for widgets built from now on. Call once a
+// frame before composing the UI; the phase is sys's caret_blink_t, never Nuklear's own.
+void worm_ui_frontend_set_caret_visible(bool visible);
+// True while a text field has keyboard focus, so the caret needs a frame per phase change.
+bool worm_ui_frontend_text_caret_active(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
 wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y);

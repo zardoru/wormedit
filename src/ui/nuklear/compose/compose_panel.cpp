@@ -959,8 +959,8 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
     bool committed, bool changed) {
     const auto& timing = *panel.timing_view;
     worm_ui_nuklear_render_timing_anchoring(panel.context, timing, *panel.action);
-    nk_layout_row_dynamic(panel.context, 26, 1);
-    const bool apply = nk_button_label(panel.context, "Apply timing edit") != 0;
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
+    const bool apply = wormedit::ui::chrome::button_label(panel.context, "Apply timing edit") != 0;
     if (committed || apply) {
         worm_ui_nuklear_inline_timing_update(state, timing, *panel.action, true, false);
         // Keep a rejected proposal editable here. Application acceptance removes the
@@ -1044,7 +1044,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         return;
     }
-    nk_layout_row_dynamic(panel.context, 25.0f, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     const auto before_text = state.inline_timing.inline_timing_text;
     const auto edit_flags = wormedit::ui::chrome::autofocus_text_field(
         panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER |
@@ -1154,7 +1154,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto double_click_count = panel.double_click_count;
     const auto shortcut_event_count = panel.shortcut_event_count;
 
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, compose_editor_status_hint(view, timing_view), NK_TEXT_LEFT);
 
     const auto group_bounds = nk_window_get_content_region(context);
@@ -1354,13 +1354,13 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
         nk_popup_end(context);
         return;
     }
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     if (view.bms_measure_labels)
         nk_label(context, "Measure #000-#999", NK_TEXT_LEFT);
     else
         nk_labelf(context, NK_TEXT_LEFT, "Measure M1-M%llu",
                   static_cast<unsigned long long>(view.compose_measure_count));
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     if (state.dialogs.go_to_measure_focus_pending) {
         nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
         state.dialogs.go_to_measure_focus_pending = false;
@@ -1370,7 +1370,7 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
         state.dialogs.go_to_measure_text.data(), static_cast<int>(state.dialogs.go_to_measure_text.size()),
         nk_filter_decimal);
     if ((flags & NK_EDIT_COMMITTED) != 0) confirm_go_to_measure(view, action, context);
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, state.dialogs.go_to_measure_error[0] ? state.dialogs.go_to_measure_error.data()
                                                 : "Enter to go · Esc to cancel", NK_TEXT_LEFT);
     nk_popup_end(context);
@@ -1490,7 +1490,7 @@ void render_dock_layers(const ComposePanelRenderContext& panel) {
 }
 void render_dock_markers(const ComposePanelRenderContext& panel) {
     if (state.bookmark_ui.bookmark_chooser.open) {
-        nk_layout_row_dynamic(panel.context, 22, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
         nk_label(panel.context, "Bookmark chooser is open.", NK_TEXT_LEFT);
         return;
     }

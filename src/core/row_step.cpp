@@ -58,7 +58,10 @@ auto step_visible_rows(const chart_document_t& chart, const measure_index_t& ind
         const auto next = adjacent_step_row(chart, index, current, step, canvas_rows, forward)
                               .value_or(forward ? last : 0);
         landed = visible_step_row(chart, index, cut_axis, step, canvas_rows, next, forward);
+        // Stopped on the canvas edge: further steps cannot move, so huge counts end here.
+        const auto stuck = static_cast<long double>(*landed) == current;
         current = static_cast<long double>(*landed);
+        if (stuck) break;
     }
     return landed ? landed : std::optional{static_cast<std::uint64_t>(current)};
 }

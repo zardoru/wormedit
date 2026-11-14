@@ -95,10 +95,14 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                          action == editor_navigation_action_t::double_page_forward;
     const auto measures = navigation_measure_count(action);
     const auto paged = measures != 0;
+    // Single playing steps resolve by beat; the skip takes snap too (same stepper as the parked
+    // cursor), but no setting selects it from the UI.
+    constexpr auto step_unit = playhead_skip_unit_t::beat;
     return skip_playing_playhead(history, application, *found, state.active_snap_denominator,
-                                 paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
+                                 paged ? playhead_skip_unit_t::page : step_unit,
                                  (forward ? 1.0 : -1.0) *
-                                     (paged ? static_cast<double>(measures) : 1.0));
+                                     (paged ? static_cast<double>(measures) : 1.0),
+                                 state.cut_axis.get());
 }
 
 } // namespace compose_navigation_input_detail

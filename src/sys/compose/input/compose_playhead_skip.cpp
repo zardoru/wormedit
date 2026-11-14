@@ -3,6 +3,7 @@
 #include "sys/audio/preview_cursor_frame.h"
 
 #include <wormedit/core/editor_axis.h>
+#include <wormedit/core/row_step.h>
 #include <wormedit/core/snap.h>
 
 #include <algorithm>
@@ -16,33 +17,6 @@ namespace {
 auto clamp_row(long double row, const measure_index_t& measures) -> std::uint64_t {
     const auto last = static_cast<long double>(measures.total_rows - 1);
     return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5L), 0.0L, last));
-}
-
-// Advance within one measure arithmetically, visiting each crossed head once.
-auto snap_target(const measure_index_t& measures, double playhead, double amount,
-                 long double step, std::uint64_t standard_rows) -> long double {
-    auto remaining = std::abs(std::round(static_cast<long double>(amount)));
-    auto row = std::clamp(static_cast<long double>(playhead), 0.0L,
-                          static_cast<long double>(measures.total_rows - 1));
-    const bool forward = amount > 0;
-    while (remaining > 0) {
-        const auto next = adjacent_measure_grid_row(measures, row, step, standard_rows,
-                                                    measures.total_rows, forward);
-        if (!next) return forward ? static_cast<long double>(measures.total_rows - 1) : 0.0L;
-        row = *next;
-        --remaining;
-        const auto after = std::ranges::upper_bound(measures.entries, row, {},
-                                                    &measure_index_entry_t::absolute_begin_row);
-        if (after == measures.entries.begin()) continue;
-        const auto& measure = *std::prev(after);
-        const auto boundary = static_cast<long double>(measure.absolute_begin_row) +
-                              (forward ? measure.row_capacity : 0);
-        const auto available = std::floor(std::abs(boundary - row) / step);
-        const auto count = std::min(remaining, available);
-        row += (forward ? step : -step) * count;
-        remaining -= count;
-    }
-    return row;
 }
 
 auto measure_target(const measure_index_t& measures, double playhead, double amount) -> double {
@@ -72,34 +46,27 @@ auto skip_origin_row(const application_command_state_t& application, chart_id_t 
     return *application.project.transport.preview_playhead_absolute_row;
 }
 
-} // namespace
-
-auto is_preview_playing(const application_command_state_t& application) -> bool {
-    return application.services.transport_preview_playing && application.services.transport_preview_playing();
-}
-
-auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
-                              playhead_skip_unit_t unit, double amount,
-                              std::uint64_t divisions_per_measure, std::uint64_t snap_denominator)
-    -> std::optional<std::uint64_t> {
+auto skip_target_row(const measure_index_t& measures, double playhead_row,
+                     playhead_skip_unit_t unit, double amount,
+                     std::uint64_t divisions_per_measure, std::uint64_t snap_denominator,
+                     const export_cut_axis_t* cut_axis) -> std::optional<std::uint64_t> {
     if (measures.total_rows == 0 || !std::isfinite(playhead_row) || !std::isfinite(amount))
         return std::nullopt;
     switch (unit) {
-    case playhead_skip_unit_t::snap: {
-        if (snap_denominator == 0 || divisions_per_measure % snap_denominator != 0)
-            return std::nullopt;
-        const auto step = static_cast<double>(divisions_per_measure / snap_denominator);
-        if (step <= 0.0) return std::nullopt;
-        return clamp_row(snap_target(measures, playhead_row, amount, step, divisions_per_measure), measures);
-    }
+    case playhead_skip_unit_t::snap:
     case playhead_skip_unit_t::beat: {
-        if (divisions_per_measure == 0) return std::nullopt;
-        auto target = snap_target(measures, playhead_row, amount,
-                                  static_cast<long double>(divisions_per_measure) / 4.0L,
-                                  divisions_per_measure);
-        if (amount >= 0.5) target = std::max(target, std::floor(static_cast<long double>(playhead_row)) + 1.0L);
-        if (amount <= -0.5) target = std::min(target, std::ceil(static_cast<long double>(playhead_row)) - 1.0L);
-        return clamp_row(target, measures);
+        // Both resolutions go through the shared stepper the parked cursor uses.
+        const auto chart_like = chart_document_t{.divisions_per_standard_measure = divisions_per_measure};
+        const auto resolution = unit == playhead_skip_unit_t::snap ? row_step_resolution_t::snap
+                                                                    : row_step_resolution_t::beat;
+        const auto count = static_cast<std::uint64_t>(std::llround(std::abs(amount)));
+        const auto start = std::clamp(static_cast<long double>(playhead_row), 0.0L,
+                                      static_cast<long double>(measures.total_rows - 1));
+        const auto stepped = step_visible_rows(chart_like, measures, cut_axis,
+            {.resolution = resolution, .grid = {snap_denominator, quantization_space_t::standard_measure}},
+            measures.total_rows, start, amount > 0, count);
+        if (stepped && count == 0) return clamp_row(playhead_row, measures);
+        return stepped;
     }
     case playhead_skip_unit_t::measure:
         return clamp_row(measure_target(measures, playhead_row, amount), measures);
@@ -117,9 +84,31 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
     return std::nullopt;
 }
 
+} // namespace
+
+auto is_preview_playing(const application_command_state_t& application) -> bool {
+    return application.services.transport_preview_playing && application.services.transport_preview_playing();
+}
+
+auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
+                              playhead_skip_unit_t unit, double amount,
+                              std::uint64_t divisions_per_measure, std::uint64_t snap_denominator,
+                              const export_cut_axis_t* cut_axis) -> std::optional<std::uint64_t> {
+    const auto target = skip_target_row(measures, playhead_row, unit, amount,
+                                        divisions_per_measure, snap_denominator, cut_axis);
+    if (!target || !cut_axis || cut_axis->is_empty() ||
+        unit == playhead_skip_unit_t::snap || unit == playhead_skip_unit_t::beat) return target;
+    // Measure, page and row skips land anywhere; pull the landing out of a cut.
+    const auto chart_like = chart_document_t{.divisions_per_standard_measure = divisions_per_measure};
+    return visible_step_row(chart_like, measures, cut_axis,
+        {.grid = {snap_denominator ? snap_denominator : 4, quantization_space_t::standard_measure}},
+        measures.total_rows, *target, amount > 0);
+}
+
 auto skip_playing_playhead(const document_history_t& history,
                            application_command_state_t& application, const chart_document_t& chart,
-                           std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount)
+                           std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount,
+                           const export_cut_axis_t* cut_axis)
     -> compose_action_outcome_t {
     if (!application.project.transport.preview_playhead_absolute_row)
         return compose_action_outcome_t::from("The playhead row is not available yet.",
@@ -135,7 +124,7 @@ auto skip_playing_playhead(const document_history_t& history,
     const auto row = playhead_skip_target_row(measures,
                                               skip_origin_row(application, chart.id, forward),
                                               unit, amount, chart.divisions_per_standard_measure,
-                                              snap_denominator);
+                                              snap_denominator, cut_axis);
     const auto position = row ? (measures).position_at(*row) : std::nullopt;
     if (!position) {
         application.project.transport.last_playhead_skip.reset();

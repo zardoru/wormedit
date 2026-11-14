@@ -3,6 +3,8 @@
 #include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose/views/compose_view.h"
 
+#include <wormedit/core/export_cut_axis.h>
+
 #include <cstdint>
 #include <optional>
 
@@ -16,10 +18,14 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
 // measure, clamped to that measure's length; rows moves by a rounded row count.
 // Page uses measure stepping with a two-beat minimum per measure requested. `amount` is
 // signed (negative goes back) and the result is clamped to the chart's rows.
+// With a cut axis the result never lands in a hidden row: beat and snap steps count only visible
+// steps, and any landing inside a cut moves to the nearest visible row in the travel direction,
+// like the parked edit cursor.
 [[nodiscard]] auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
                                             playhead_skip_unit_t unit, double amount,
                                             std::uint64_t divisions_per_measure,
-                                            std::uint64_t snap_denominator)
+                                            std::uint64_t snap_denominator,
+                                            const export_cut_axis_t* cut_axis = nullptr)
     -> std::optional<std::uint64_t>;
 
 // Moves the playing preview to the skip target with a single seek. Playback continues from the
@@ -28,7 +34,8 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
                            application_command_state_t& application,
                                          const chart_document_t& chart,
                                          std::uint64_t snap_denominator, playhead_skip_unit_t unit,
-                                         double amount) -> compose_action_outcome_t;
+                                         double amount, const export_cut_axis_t* cut_axis = nullptr)
+    -> compose_action_outcome_t;
 
 // Continuous viewport motion uses displayed pixels, retaining fractional rows through
 // the audio-frame conversion instead of taking one beat step per input frame.

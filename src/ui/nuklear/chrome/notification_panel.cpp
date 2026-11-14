@@ -24,19 +24,19 @@ void emit_notification_action(wormedit::ui::notification_action_t& action,
 
 void render_row_buttons(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
                         wormedit::ui::notification_action_t& action) {
-    nk_layout_row_dynamic(context, 26, 3);
-    if (nk_button_label(context, "Copy details"))
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 3);
+    if (wormedit::ui::chrome::button_label(context, "Copy details"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS, row.id);
     const bool positional = row.target == WORM_UI_NOTIFICATION_TARGET_POSITION;
     const bool missing = row.target == WORM_UI_NOTIFICATION_TARGET_MISSING;
     if (!positional && !missing) nk_widget_disable_begin(context);
     const char* label = row.target == WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL
         ? "Sin posición en el chart" : "Go to";
-    const bool go = nk_button_label(context, label) != 0;
+    const bool go = wormedit::ui::chrome::button_label(context, label) != 0;
     if (!positional && !missing) nk_widget_disable_end(context);
     if (go && (positional || missing))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_GO_TO, row.id);
-    if (nk_button_label(context, "Dismiss"))
+    if (wormedit::ui::chrome::button_label(context, "Dismiss"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS, row.id);
 }
 
@@ -64,8 +64,8 @@ void render_history_row(nk_context* context, const wormedit::ui::notification_hi
         static_cast<unsigned long long>(row.age_seconds), row.read ? "" : " · unread");
     nk_layout_row_dynamic(context, 70, 1);
     nk_text_wrap(context, row.message.data(), static_cast<int>(row.message.size()));
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_button_label(context, state.expanded_id == row.id ? "Collapse details" : "Expand details"))
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+    if (wormedit::ui::chrome::button_label(context, state.expanded_id == row.id ? "Collapse details" : "Expand details"))
         state.expanded_id = state.expanded_id == row.id ? 0 : row.id;
     if (state.expanded_id == row.id) render_expanded_detail(context, row, state);
     render_row_buttons(context, row, action);
@@ -75,13 +75,13 @@ void render_history_row(nk_context* context, const wormedit::ui::notification_hi
 
 void render_history_body(nk_context* context, const wormedit::ui::notification_history_view_t& view,
                          notification_panel_state_t& state, wormedit::ui::notification_action_t& action) {
-    nk_layout_row_dynamic(context, 28, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     state.severity_filter = chrome::safe_combo(context, filter_names, 6,
         std::clamp(state.severity_filter, 0, 5), 24, nk_vec2(190, 170));
-    if (nk_button_label(context, "Clear all"))
+    if (wormedit::ui::chrome::button_label(context, "Clear all"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL);
     if (view.rows.empty()) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, "No notifications", NK_TEXT_LEFT);
     }
     for (std::size_t index = 0; index < view.rows.size(); ++index) {

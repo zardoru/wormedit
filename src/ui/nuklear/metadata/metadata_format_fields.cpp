@@ -324,12 +324,12 @@ static void render_bms_field_buttons(const MetadataPanel& panel,
         (exists ? changed : buffer[0] != '\0' && room);
     nk_layout_row_push(context, 0.17f);
     if (!can_apply) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, exists ? "Apply" : "Add");
+    const auto apply = wormedit::ui::chrome::button_label(context, exists ? "Apply" : "Add");
     if (!can_apply) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.15f);
     const auto can_clear = exists && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
     if (!can_clear) nk_widget_disable_begin(context);
-    const auto clear = nk_button_label(context, "Clear");
+    const auto clear = wormedit::ui::chrome::button_label(context, "Clear");
     if (!can_clear) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if ((apply && can_apply) || (clear && can_clear))
@@ -344,7 +344,7 @@ static void render_bms_field_hint(nk_context* context, size_t typed, bool editab
     if (!editable) {
         muted_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.");
     } else if (!numeric_valid) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, "Enter an unsigned number before applying this field.",
                          NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
@@ -367,7 +367,7 @@ static void render_bms_field(const MetadataPanel& panel,
                                                       false, field_index) : nullptr;
     const auto editable = state.bms_field_valid[typed] && (!exists || source != nullptr);
     const auto numeric_valid = bms_field_numeric_valid(typed, buffer.data());
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 4);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 4);
     nk_layout_row_push(context, 0.17f);
     nk_label(context, bms_field_names[typed], NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.51f);
@@ -385,7 +385,7 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bms_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bms_format_family));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "BMS fields", NK_TEXT_LEFT);
     if (!target) {
         muted_label(context, "BMS fields are unavailable while metadata rows are truncated.");
@@ -406,7 +406,7 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
 static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, bool editable) {
     auto* context = panel.context;
     auto& buffer = state.bmson_fields[typed];
-    metadata_form_row(context, typed == 1 ? 58 : 26);
+    metadata_form_row(context, typed == 1 ? 58.0f : wormedit::ui::metrics::control_default);
     nk_label(context, bmson_field_labels[typed], NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,
@@ -436,11 +436,11 @@ static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
     nk_layout_row_push(context, 0.5f);
     if (!can_apply) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, exists ? "Apply" : "Add");
+    const auto apply = wormedit::ui::chrome::button_label(context, exists ? "Apply" : "Add");
     if (!can_apply) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.5f);
     if (!can_clear) nk_widget_disable_begin(context);
-    const auto clear = nk_button_label(context, "Clear");
+    const auto clear = wormedit::ui::chrome::button_label(context, "Clear");
     if (!can_clear) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if ((apply && can_apply) || (clear && can_clear)) {
@@ -459,7 +459,7 @@ static void render_bmson_field_hint(const MetadataPanel& panel, bool editable, b
                     "Retained JSON value cannot be shown in this editor; use the ordered field editor.");
         return;
     }
-    nk_layout_row_dynamic(panel.context, 18, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::row_text, 1);
     nk_label_colored(panel.context, "Enter a valid nonnegative number or text value.",
                      NK_TEXT_LEFT,
                      wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
@@ -488,7 +488,7 @@ static void render_bmson_fields(struct nk_context* context, const wormedit::ui::
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bmson_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bmson_format_family));
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "BMSON info", NK_TEXT_LEFT);
     if (!target) {
         muted_label(context, "BMSON fields are unavailable while metadata rows are truncated.");
@@ -604,12 +604,12 @@ static void render_typed_field_buttons(const MetadataPanel& panel, std::size_t s
         (exists ? changed : buffer[0] != '\0' && room);
     nk_layout_row_push(context, 0.17f);
     if (!can_apply) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, exists ? "Apply" : "Add");
+    const auto apply = wormedit::ui::chrome::button_label(context, exists ? "Apply" : "Add");
     if (!can_apply) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.15f);
     const auto can_clear = exists && idle;
     if (!can_clear) nk_widget_disable_begin(context);
-    const auto clear = nk_button_label(context, "Clear");
+    const auto clear = wormedit::ui::chrome::button_label(context, "Clear");
     if (!can_clear) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if ((apply && can_apply) || (clear && can_clear))
@@ -631,7 +631,7 @@ static void render_typed_field(const MetadataPanel& panel, std::size_t slot,
     const auto editable = state.typed_field_valid[slot];
     const auto error = wormedit::validate_format_field_value(schema, buffer.data());
     const auto empty_new = !exists && buffer[0] == '\0';
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 4);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 4);
     nk_layout_row_push(context, 0.17f);
     nk_label(context, std::string(schema.label).c_str(), NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.51f);
@@ -643,7 +643,7 @@ static void render_typed_field(const MetadataPanel& panel, std::size_t slot,
     if (!editable) {
         muted_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.");
     } else if (error && !empty_new) {
-        nk_layout_row_dynamic(context, 18, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, error->c_str(), NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
@@ -654,7 +654,7 @@ static void render_typed_fields(const MetadataPanel& panel) {
     if (!metadata.has_chart) return;
     const auto schemas = generic_typed_schemas(static_cast<std::uint8_t>(metadata.selected_chart_source_family));
     if (schemas.empty()) return;
-    nk_layout_row_dynamic(panel.context, 24, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     nk_label(panel.context, "Typed fields", NK_TEXT_LEFT);
     for (size_t slot = 0; slot < schemas.size(); ++slot)
         render_typed_field(panel, slot, *schemas[slot]);
@@ -673,7 +673,7 @@ void render_format_field_rows(const MetadataPanel& panel) {
         ++rows;
         char label[32];
         (void)snprintf(label, sizeof(label), "Edit %zu", index + 1);
-        nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+        nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
         nk_layout_row_push(context, 0.78f);
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
                   field->chart_scoped ? "Chart" : "Song", metadata->format_families.label(static_cast<wormedit::format_family_t>(static_cast<std::uint8_t>(field->family)), "Unknown"),
@@ -681,7 +681,7 @@ void render_format_field_rows(const MetadataPanel& panel) {
         nk_layout_row_push(context, 0.22f);
         const auto editable = static_cast<std::uint8_t>(field->family) <= 6 && (!field->chart_scoped || metadata->has_chart);
         if (!editable) nk_widget_disable_begin(context);
-        if (nk_button_label(context, label) && editable) {
+        if (wormedit::ui::chrome::button_label(context, label) && editable) {
             state.selected_format_field = index;
             state.format_target_valid = true;
             state.format_target_chart_scoped = field->chart_scoped;
@@ -706,11 +706,11 @@ auto selected_format_field(const wormedit::ui::metadata_view_t& metadata)
 void render_format_target_selector(const MetadataPanel& panel) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_compact, 3);
     nk_layout_row_push(context, 0.2f);
     if (wormedit::ui::chrome::safe_combo_begin_label(context, state.format_add_chart_scoped ? "Chart" : "Song",
                              nk_vec2(nk_widget_width(context), 70))) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (nk_combo_item_label(context, "Song", NK_TEXT_LEFT)) state.format_add_chart_scoped = false;
         if (metadata.has_chart && nk_combo_item_label(context, "Chart", NK_TEXT_LEFT))
             state.format_add_chart_scoped = true;
@@ -719,7 +719,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
     nk_layout_row_push(context, 0.5f);
     const auto family_label = metadata.format_families.label(static_cast<wormedit::format_family_t>(state.format_add_family), "Unknown");
     if (wormedit::ui::chrome::safe_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         for (std::size_t index = 0; index < metadata.format_families.entries.size(); ++index) {
             const auto& family = metadata.format_families.entries[index];
             if (nk_combo_item_label(context, family.label.data(), NK_TEXT_LEFT))
@@ -736,7 +736,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
     }
     const auto can_add = target && target->field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     if (!can_add) nk_widget_disable_begin(context);
-    const auto add = nk_button_label(context, "Add field");
+    const auto add = wormedit::ui::chrome::button_label(context, "Add field");
     if (!can_add) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if (add && can_add) initialize_format_target_buffers(&metadata, target);
@@ -744,7 +744,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
 
 void render_format_editor_title(nk_context* context, const wormedit::ui::metadata_view_t& metadata,
                                 const wormedit::ui::metadata_format_field_view_t* field) {
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (field && !state.format_insert_mode)
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s field #%zu",
                   field->chart_scoped ? "Chart" : "Song",
@@ -759,8 +759,8 @@ void render_format_editor_unavailable(const MetadataPanel& panel,
                                       const wormedit::ui::metadata_format_field_view_t* field) {
     muted_label(panel.context, "Field is read-only because it exceeds the text cap or group scope.");
     if (!field || !field->first_group_for_family) return;
-    nk_layout_row_dynamic(panel.context, 25, 1);
-    if (nk_button_label(panel.context, "Delete field") &&
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
+    if (wormedit::ui::chrome::button_label(panel.context, "Delete field") &&
         panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
         set_metadata_format_action(panel.action, panel.metadata,
                                    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
@@ -769,27 +769,27 @@ void render_format_editor_unavailable(const MetadataPanel& panel,
 void render_format_editor_actions(const MetadataPanel& panel,
                                   const wormedit::ui::metadata_format_field_view_t* field) {
     if (state.format_insert_mode) {
-        nk_layout_row_dynamic(panel.context, 25, 1);
-        if (nk_button_label(panel.context, "Add field") &&
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
+        if (wormedit::ui::chrome::button_label(panel.context, "Add field") &&
             state.format_target_field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group &&
             panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
             set_metadata_format_action(panel.action, panel.metadata,
                                        WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD);
         return;
     }
-    nk_layout_row_begin(panel.context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_begin(panel.context, NK_DYNAMIC, wormedit::ui::metrics::control_compact, 3);
     nk_layout_row_push(panel.context, 0.34f);
-    if (nk_button_label(panel.context, "Replace field") && field &&
+    if (wormedit::ui::chrome::button_label(panel.context, "Replace field") && field &&
         panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
         set_metadata_format_action(panel.action, panel.metadata,
                                    WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD);
     nk_layout_row_push(panel.context, 0.33f);
-    if (nk_button_label(panel.context, "Delete field") && field &&
+    if (wormedit::ui::chrome::button_label(panel.context, "Delete field") && field &&
         panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
         set_metadata_format_action(panel.action, panel.metadata,
                                    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
     nk_layout_row_push(panel.context, 0.33f);
-    if (nk_button_label(panel.context, "Prepare new field") && field &&
+    if (wormedit::ui::chrome::button_label(panel.context, "Prepare new field") && field &&
         panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
         state.format_target_index = field->group_field_count;
         initialize_format_buffers(field, 1);

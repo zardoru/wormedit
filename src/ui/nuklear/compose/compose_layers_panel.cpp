@@ -10,6 +10,7 @@
 #include "ui/nuklear/render/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -225,21 +226,21 @@ auto layer_editor_allowed(const LayersPanel& panel, const wormedit::ui::compose_
 void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Rename layer", NK_TEXT_LEFT);
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
         state.layer_editor.semantic_layer_name.data(), static_cast<int>(state.layer_editor.semantic_layer_name.size()),
         nk_filter_default, state.layer_editor.semantic_layer_name_focus_pending);
     if (!allowed) nk_widget_disable_end(context);
-    nk_layout_row_dynamic(context, 24, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto valid = state.layer_editor.semantic_layer_name[0] != '\0';
     if (!allowed || !valid) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply");
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!allowed || !valid) nk_widget_disable_end(context);
-    const auto cancel = nk_button_label(context, "Cancel");
+    const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && valid && raise_captured(panel, WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER)) {
         panel.action->compose_semantic_layer_name = state.layer_editor.semantic_layer_name.data();
         close_layer_editors(state);
@@ -250,17 +251,17 @@ void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::comp
 void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Layer color", NK_TEXT_LEFT);
     const auto allowed = layer_editor_allowed(panel, layer);
     if (!allowed) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 110, 1);
     const auto value = nk_color_picker(context, state.layer_editor.semantic_layer_color, NK_RGBA);
     state.layer_editor.semantic_layer_color = {value.r, value.g, value.b, value.a};
-    nk_layout_row_dynamic(context, 24, 2);
-    const auto apply = nk_button_label(context, "Apply");
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!allowed) nk_widget_disable_end(context);
-    const auto cancel = nk_button_label(context, "Cancel");
+    const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && raise_captured(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR)) {
         panel.action->compose_semantic_layer_red = wormedit::ui::chrome::unit_to_byte(value.r);
         panel.action->compose_semantic_layer_green = wormedit::ui::chrome::unit_to_byte(value.g);
@@ -285,7 +286,7 @@ void render_layer_editors(const LayersPanel& panel) {
 
 void render_header(const LayersPanel& panel) {
     auto* context = panel.context;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.84f);
     nk_labelf(context, NK_TEXT_LEFT, "Layers  %zu", panel.view->semantic_layer_total_count);
     nk_layout_row_push(context, 0.16f);
@@ -389,7 +390,7 @@ void render_list(const LayersPanel& panel, float height) {
     const auto total = static_cast<int>(panel.view->semantic_layer_total_count) + 1;
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "Compose layer list", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose layer list", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), total)) return;
     for (int index = list.begin; index < std::min(list.end, total); ++index)
         render_list_row(panel, index);
@@ -402,7 +403,7 @@ void render_list(const LayersPanel& panel, float height) {
         panel.action->compose_semantic_layer_first_row = first;
         panel.action->compose_semantic_layer_row_count = count;
     }
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 
 void reveal_added_layer(const LayersPanel& panel) {

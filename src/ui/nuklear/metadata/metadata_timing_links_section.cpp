@@ -34,7 +34,7 @@ void metadata_timing_link_draft_t::render_confirmation(nk_context* context,
     if (chrome::dialog_begin(dialog_, context, "Replace category timing", "Replace local timing?", {.enter_confirms = false})) {
         const auto row = std::ranges::find(view.timing_links, pending_.request.category, &ui::timing_link_category_view_t::category);
         if (row != view.timing_links.end()) {
-            nk_layout_row_dynamic(context, 24, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
             nk_label(context, row->label.c_str(), NK_TEXT_LEFT);
         }
         chrome::dialog_text(dialog_, context, "This replaces this category's local data with its source timing. You can Undo the change.", context->style.text.color);
@@ -56,7 +56,7 @@ void render_source_choice(const MetadataPanel& panel, timing_category_t category
     auto& selected = state.timing_links.source_for(category);
     const auto& view = *panel.metadata;
     if (!chrome::safe_combo_begin_label(panel.context, source_name(view, selected), nk_vec2(280, 240))) return;
-    nk_layout_row_dynamic(panel.context, 24, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     for (const auto& chart : view.chart_choices) {
         if (chart.chart_id == view.chart_id) continue;
         if (nk_combo_item_label(panel.context, chart.name.c_str(), NK_TEXT_LEFT)) selected = chart.chart_id;
@@ -67,15 +67,15 @@ void render_link_buttons(const MetadataPanel& panel, const ui::timing_link_categ
     const bool can_link = state.timing_links.source_for(row.category) &&
         (row.is_local_override || state.timing_links.source_for(row.category) != row.source);
     if (!can_link) nk_widget_disable_begin(panel.context);
-    const bool link = nk_button_label(panel.context, "Link") && can_link;
+    const bool link = wormedit::ui::chrome::button_label(panel.context, "Link") && can_link;
     if (!can_link) nk_widget_disable_end(panel.context);
     if (link) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::link, *panel.action);
     if (!row.source) nk_widget_disable_begin(panel.context);
-    const bool detach = nk_button_label(panel.context, "Detach") && row.source;
+    const bool detach = wormedit::ui::chrome::button_label(panel.context, "Detach") && row.source;
     if (!row.source) nk_widget_disable_end(panel.context);
     if (detach) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::detach, *panel.action);
     if (!row.is_local_override) nk_widget_disable_begin(panel.context);
-    const bool relink = nk_button_label(panel.context, "Relink") && row.is_local_override;
+    const bool relink = wormedit::ui::chrome::button_label(panel.context, "Relink") && row.is_local_override;
     if (!row.is_local_override) nk_widget_disable_end(panel.context);
     if (relink) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::relink, *panel.action);
 }

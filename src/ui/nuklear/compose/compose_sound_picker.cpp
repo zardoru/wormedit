@@ -27,10 +27,10 @@ void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_
     cancel_compose_sound_picker(picker);
 }
 void render_search(nk_context* context, sound_picker_state_t& state) {
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Go to sound", NK_TEXT_LEFT);
     const auto previous = state.query;
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::autofocus_text_field(context,
         static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER, state.query.data(),
         static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);
@@ -55,7 +55,7 @@ void render_results(nk_context* context, const wormedit::ui::compose_view_t& vie
                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
-    nk_layout_row_dynamic(context, 22, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (!results.ready || std::strcmp(results.query.c_str(), picker.query.data()) != 0) {
         nk_label(context, "Searching…", NK_TEXT_LEFT);
         return;
@@ -128,7 +128,7 @@ void render_compose_sound_picker(nk_context* context, const wormedit::ui::compos
     if (state.open && wormedit::ui::chrome::popup_dismiss_requested(context,
         wormedit::ui::chrome::popup_screen_bounds(context, bounds))) cancel_compose_sound_picker(state);
     const bool was_open = state.open;
-    auto popup = wormedit::ui::chrome::begin_retained_popup(context, state, "Go to sound",
+    auto popup = wormedit::ui::chrome::begin_form_popup(context, state, "Go to sound",
         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds,
         wormedit::ui::chrome::retained_popup_begin_failure_t::cancel);
     if (!popup.has_contents()) {
@@ -141,7 +141,7 @@ void render_compose_sound_picker(nk_context* context, const wormedit::ui::compos
         if (state.open && nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
             state.focus_pending = true;
     }
-    wormedit::ui::chrome::end_retained_popup(context, state, popup,
+    wormedit::ui::chrome::end_form_popup(context, state, popup,
         wormedit::ui::chrome::retained_popup_edit_focus_t::unfocus_on_close,
         wormedit::ui::chrome::retained_popup_close_trigger_t::closed);
 }

@@ -138,7 +138,7 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
     const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
     const auto redivide_enabled = editable && resolution &&
         *resolution != metadata.chart_divisions_per_standard_measure;
-    metadata_form_row(context, 26, {metadata_row_button_width});
+    metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
     nk_label(context, "Resolution", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
@@ -146,7 +146,7 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
                                          state.chart_resolution_text.size(), nk_filter_decimal);
     if (!editable) nk_widget_disable_end(context);
     if (!redivide_enabled) nk_widget_disable_begin(context);
-    const auto redivide = nk_button_label(context, "Redivide") != 0 && redivide_enabled;
+    const auto redivide = wormedit::ui::chrome::button_label(context, "Redivide") != 0 && redivide_enabled;
     if (!redivide_enabled) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "Divisions per standard measure. Redivide moves every position exactly, or changes nothing.");
@@ -179,7 +179,7 @@ static void sync_channel_map_buffers(const wormedit::ui::metadata_view_t& metada
 static void render_channel_map_lane_row(nk_context* context, const wormedit::ui::metadata_channel_map_lane_view_t& lane,
                                         std::size_t lane_index, bool editable) {
     static constexpr const char* channel_names[4] = {"Visible", "Invisible", "Long", "Mine"};
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 5);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 5);
     nk_layout_row_push(context, 0.2f);
     nk_label(context, lane.name.c_str(), NK_TEXT_LEFT);
     for (std::size_t channel = 0; channel < 4; ++channel) {
@@ -226,7 +226,7 @@ static void set_lane_profile_action(wormedit::ui::workspace_action_t* action, co
 static void render_lane_profile_preview_message(nk_context* context,
                                                 const wormedit::ui::metadata_view_t& metadata) {
     if (!metadata.lane_profile_preview_present) return;
-    nk_layout_row_dynamic(context, 19, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     const auto* message = metadata.lane_profile_preview_message.c_str() ? metadata.lane_profile_preview_message.c_str() : "";
     if (metadata.lane_profile_apply_enabled)
         nk_label(context, message, NK_TEXT_LEFT);
@@ -250,7 +250,7 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
         state.lane_profile_labels.push_back(metadata.lane_profile_choices[index].label.c_str());
     if (state.lane_profile_selected >= count) state.lane_profile_selected = metadata.lane_profile_current;
     if (!metadata_tree_push(context, NK_TREE_NODE, "Key count", NK_MINIMIZED, 3101)) return;
-    nk_layout_row_dynamic(context, 26, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto chosen = wormedit::ui::chrome::safe_combo(context, state.lane_profile_labels.data(),
                                                          static_cast<int>(count),
                                                          static_cast<int>(state.lane_profile_selected), 24,
@@ -260,19 +260,19 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
         state.lane_profile_selected = chosen_index;
     const auto& choice = metadata.lane_profile_choices[state.lane_profile_selected];
     if (!choice.enabled && choice.reason.c_str()) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         muted_label(context, choice.reason.c_str());
     }
     const auto editable = metadata.chart_fields_editable && choice.enabled;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.5f);
     if (!editable) nk_widget_disable_begin(context);
-    const auto preview = nk_button_label(context, "Preview key count") != 0 && editable;
+    const auto preview = wormedit::ui::chrome::button_label(context, "Preview key count") != 0 && editable;
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.5f);
     const auto apply_enabled = editable && metadata.lane_profile_apply_enabled;
     if (!apply_enabled) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply key count") != 0 && apply_enabled;
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply key count") != 0 && apply_enabled;
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     render_lane_profile_preview_message(context, metadata);
@@ -295,22 +295,22 @@ static void render_channel_map_section(const MetadataPanel& panel) {
     for (std::size_t lane = 0; lane < metadata.channel_map_lanes.size(); ++lane)
         render_channel_map_lane_row(context, metadata.channel_map_lanes[lane], lane, editable);
     if (!metadata.channel_map_editable) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         muted_label(context, "Too many lanes to edit here; Apply is disabled.");
     }
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
     nk_layout_row_push(context, 0.5f);
     if (!editable) nk_widget_disable_begin(context);
-    const auto preview = nk_button_label(context, "Preview") != 0 && editable;
+    const auto preview = wormedit::ui::chrome::button_label(context, "Preview") != 0 && editable;
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.5f);
     const auto apply_enabled = editable && metadata.channel_map_apply_enabled;
     if (!apply_enabled) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply") != 0 && apply_enabled;
+    const auto apply = wormedit::ui::chrome::button_label(context, "Apply") != 0 && apply_enabled;
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if (metadata.channel_map_preview_present) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         const auto* message = metadata.channel_map_preview_message.c_str() ? metadata.channel_map_preview_message.c_str() : "";
         if (metadata.channel_map_apply_enabled)
             nk_label(context, message, NK_TEXT_LEFT);
@@ -378,17 +378,17 @@ static void render_batch_section(const MetadataPanel& panel, bool editable) {
     for (std::size_t index = 0; index < metadata.chart_choices.size(); ++index) {
         const auto& choice = metadata.chart_choices[index];
         const auto selected = batch_chart_selected(choice.chart_id.value);
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         const wormedit::ui::chrome::Checkbox box{choice.name.c_str() ? choice.name.c_str() : "",
             selected ? wormedit::ui::chrome::CheckState::on : wormedit::ui::chrome::CheckState::off,
             nullptr, editable};
         if (box.render(context) && editable) set_batch_chart_selected(choice.chart_id.value, !selected);
     }
     const auto enabled = editable && !state.batch_selected_charts.empty();
-    nk_layout_row_dynamic(context, 26, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
     if (!enabled) nk_widget_disable_begin(context);
-    const auto author = nk_button_label(context, "Apply Mapper") != 0 && enabled;
-    const auto rating = nk_button_label(context, "Apply Rating") != 0 && enabled;
+    const auto author = wormedit::ui::chrome::button_label(context, "Apply Mapper") != 0 && enabled;
+    const auto rating = wormedit::ui::chrome::button_label(context, "Apply Rating") != 0 && enabled;
     if (!enabled) nk_widget_disable_end(context);
     if (author) set_batch_chart_action(panel, false);
     if (rating) set_batch_chart_action(panel, true);
@@ -414,8 +414,8 @@ void render_difficulty_section(const MetadataPanel& panel) {
     metadata_input_row(context, "Name", state.chart_name.data(), state.chart_name.size(), editable);
     metadata_input_row(context, "Mapper", state.chart_author.data(), state.chart_author.size(), editable);
     const auto has_rating = metadata.has_chart_rating;
-    if (has_rating) metadata_form_row(context, 26, {metadata_row_button_width});
-    else metadata_form_row(context, 26);
+    if (has_rating) metadata_form_row(context, wormedit::ui::metrics::control_default, {metadata_row_button_width});
+    else metadata_form_row(context, wormedit::ui::metrics::control_default);
     nk_label(context, "Rating", NK_TEXT_LEFT);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.chart_rating_text.data(),
@@ -426,12 +426,12 @@ void render_difficulty_section(const MetadataPanel& panel) {
     bool clear = false;
     if (has_rating) {
         if (!editable) nk_widget_disable_begin(context);
-        clear = nk_button_label(context, "Clear") != 0 && editable;
+        clear = wormedit::ui::chrome::button_label(context, "Clear") != 0 && editable;
         if (!editable) nk_widget_disable_end(context);
     }
     const auto rating = metadata_chart_rating_value(&metadata);
     if (!rating) {
-        nk_layout_row_dynamic(context, 19, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, "Enter a number or fraction, e.g. 12 or 25/2.", NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }

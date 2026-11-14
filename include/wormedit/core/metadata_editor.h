@@ -36,6 +36,7 @@ struct set_chart_metadata_overrides_action_t {
 
 struct batch_chart_metadata_action_t {
     std::vector<chart_id_t> charts;
+    std::optional<std::string> name; // Rename: only valid for exactly one chart.
     std::optional<std::string> author;
     bool edit_rating{};
     std::optional<signed_rational_t> rating; // nullopt explicitly clears when edit_rating is true.

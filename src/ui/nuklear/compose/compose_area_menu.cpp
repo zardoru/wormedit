@@ -6,6 +6,7 @@
 #include "ui/nuklear/chrome/context_menu.h"
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 
 namespace {
 namespace chrome = wormedit::ui::chrome;
@@ -113,7 +114,7 @@ void render_sound_layers(nk_context* context, const wormedit::ui::compose_view_t
                                              !view.note_menu_layers[offset].locked);
     chrome::context_menu_scroll_to_selected(menu, context, "Selected sound layers",
                                             chrome::context_menu_row_height, available);
-    if (!nk_list_view_begin(context, &list, "Selected sound layers", NK_WINDOW_BORDER,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Selected sound layers", NK_WINDOW_BORDER,
                             static_cast<int>(chrome::context_menu_row_height), static_cast<int>(total))) return;
     chrome::context_menu_set_row_cursor(menu, list.begin);
     for (int index = list.begin; index < list.end; ++index)
@@ -121,7 +122,7 @@ void render_sound_layers(nk_context* context, const wormedit::ui::compose_view_t
     const auto first = static_cast<std::size_t>(list.begin);
     const auto requested = std::min<std::size_t>(wormedit::ui::note_layer_window_limit,
                                                 static_cast<std::size_t>(list.end - list.begin));
-    nk_list_view_end(&list);
+    wormedit::ui::chrome::scroll_list_view_end(&list);
     if (menu.open && total &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size())) {
         raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);

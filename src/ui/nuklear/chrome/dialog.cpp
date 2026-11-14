@@ -121,8 +121,8 @@ void draw_title_row(Dialog& dialog, nk_context* context, const char* title, cons
         return;
     }
     if (!dialog.closable && !dialog.movable) {
-        nk_layout_row_dynamic(context, dialog_title_height, 1);
-        nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
+        nk_layout_row_dynamic(context, title_row_height, 1);
+        title_label(context, title);
         return;
     }
     nk_layout_row_template_begin(context, close_row_height);
@@ -147,7 +147,7 @@ void draw_title_row(Dialog& dialog, nk_context* context, const char* title, cons
                                         context->input.mouse.pos.y - dialog.bounds.y);
         }
     }
-    nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
+    title_label(context, title);
     if (dialog.closable && IconButton{lucide::Glyph::x, "Close"}.render(context))
         dialog.result = DialogResult::cancel;
 }

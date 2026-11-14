@@ -60,7 +60,8 @@ void render_difficulties(nk_context* context, const wormedit::ui::chart_import_v
     for (const auto& row : view.rows) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         nk_bool selected = row.selected ? nk_true : nk_false;
-        if (nk_checkbox_text(context, row.label.data(), static_cast<int>(row.label.size()), &selected))
+        const std::string label{row.label};
+        if (wormedit::ui::chrome::checkbox_label(context, label.c_str(), &selected))
             emit(action, WORM_UI_CHART_IMPORT_TOGGLE, row.chart_id);
     }
 }

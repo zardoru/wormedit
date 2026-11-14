@@ -758,7 +758,7 @@ void render_status(const ComposeInspectorContext& inspector) {
     const auto& editor = state.recipe_editor;
     const bool rejected = !view.recipe_form.status_text.empty();
     if (view.recipe_form.evaluation_busy || editor.recipe_edit_commit_pending) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, editor.recipe_edit_commit_pending ? "Applying…" : "Evaluating…", NK_TEXT_LEFT,
                          chrome::color(chrome::UiColor::text_muted));
     } else if (rejected && editor.recipe_edit_dirty) {
@@ -769,7 +769,7 @@ void render_status(const ComposeInspectorContext& inspector) {
         if (chrome::Button{.label = "Revert", .tooltip = "Go back to the stored values"}.render(context))
             revert(inspector);
     } else if (editor.recipe_edit_dirty) {
-        nk_layout_row_dynamic(context, 20, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label_colored(context, "Press Enter or leave the field to apply", NK_TEXT_LEFT,
                          chrome::color(chrome::UiColor::text_muted));
     }
@@ -777,12 +777,12 @@ void render_status(const ComposeInspectorContext& inspector) {
 
 void render_lua_preview(nk_context* context, const wormedit::ui::compose_view_t& view, bool lua) {
     if (!lua || view.recipe_form.sampled_points.empty()) return;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_labelf(context, NK_TEXT_LEFT, "%zu points; %zu after combining", view.recipe_form.sampled_points.size(),
               view.recipe_form.composed_point_count);
     if (nk_tree_push(context, NK_TREE_TAB, "Sampled points", NK_MINIMIZED)) {
         for (const auto& point : view.recipe_form.sampled_points) {
-            nk_layout_row_dynamic(context, 18, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
             nk_labelf(context, NK_TEXT_LEFT, "Row %llu: %.8g", static_cast<unsigned long long>(point.absolute_row),
                       point.value);
         }
@@ -794,11 +794,11 @@ void render_impulse_preview(nk_context* context, const wormedit::ui::compose_vie
     if (view.recipe_form.impulse_boxes.empty()) return;
     if (nk_tree_push(context, NK_TREE_TAB, "Compiled impulse boxes", NK_MINIMIZED)) {
         for (const auto& box : view.recipe_form.impulse_boxes) {
-            nk_layout_row_dynamic(context, 20, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
             nk_labelf(context, NK_TEXT_LEFT, "Rows %llu to %llu (%.6g ms)",
                 static_cast<unsigned long long>(box.entry_row), static_cast<unsigned long long>(box.exit_row),
                 box.width_milliseconds);
-            nk_layout_row_dynamic(context, 20, 1);
+            nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
             nk_labelf(context, NK_TEXT_LEFT, "Area %.8g; error %.3g", box.area, box.area_error);
         }
         nk_tree_pop(context);

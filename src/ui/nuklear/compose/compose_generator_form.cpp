@@ -206,7 +206,7 @@ void preview_summary(nk_context* context,const wormedit::ui::compose_generator_v
             const auto& line=view.rationalizations[i]; nk_text_wrap(context,line.c_str(),static_cast<int>(line.size()));
         }
         if (count<view.rationalizations.size()) {
-            nk_layout_row_dynamic(context,22,1); muted_label(context,"Copy the report to read all exact values.");
+            nk_layout_row_dynamic(context,wormedit::ui::metrics::control_compact,1); muted_label(context,"Copy the report to read all exact values.");
         }
         chrome::section_pop(context);
     }

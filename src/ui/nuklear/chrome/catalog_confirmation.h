@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
 #include <algorithm>
 #include <optional>
@@ -57,9 +58,9 @@ inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui:
         : "Renumber WAV IDs in natural name order? Choose the selected sounds or the whole list.");
     nk_layout_row_dynamic(context, 28, 2);
     std::optional<bool> choice;
-    if (!state.resources.empty() && nk_button_label(context, "Selected")) choice = false;
-    if (nk_button_label(context, bga ? "All BGA" : "All sounds")) choice = true;
-    if (nk_button_label(context, "Cancel")) close_catalog_confirmation(state);
+    if (!state.resources.empty() && wormedit::ui::chrome::button_label(context, "Selected")) choice = false;
+    if (wormedit::ui::chrome::button_label(context, bga ? "All BGA" : "All sounds")) choice = true;
+    if (wormedit::ui::chrome::button_label(context, "Cancel")) close_catalog_confirmation(state);
     if (!state.open || choice.has_value()) nk_popup_close(context);
     nk_popup_end(context);
     return choice;

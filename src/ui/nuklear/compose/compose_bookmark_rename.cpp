@@ -200,7 +200,7 @@ void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::com
     editor.popup_bounds[1] = bounds.y;
     editor.popup_bounds[2] = bounds.w;
     editor.popup_bounds[3] = bounds.h;
-    nk_layout_row_dynamic(context, 28.0f, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto flags = wormedit::ui::chrome::autofocus_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
         editor.label, static_cast<int>(sizeof(editor.label)), nk_filter_default,

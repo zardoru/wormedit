@@ -77,7 +77,7 @@ auto find_export_group(const wormedit::ui::compose_view_t& view,
 }
 
 void render_export_group_choices(const ResourcePanel& panel) {
-    nk_layout_row_dynamic(panel.context, 26, 1);
+    nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
     for (std::size_t index = 0; index < panel.view->output_groups.size(); ++index) {
         const auto& candidate = panel.view->output_groups[index];
         int selected = panel.state->dialogs.export_group_document_index == candidate.document_index;
@@ -144,7 +144,7 @@ void render_export_dialog(const ResourcePanel& panel) {
         return;
     }
     if (chrome::dialog_begin(dialog, panel.context, "Export output group", "Export", {.width = 560})) {
-        nk_layout_row_dynamic(panel.context, 20, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::row_text, 1);
         nk_label(panel.context, "Output group", NK_TEXT_LEFT);
         // A scrollable list keeps long catalogs from pushing the footer offscreen.
         if (view.output_groups.size() != 0) {
@@ -161,7 +161,7 @@ void render_export_dialog(const ResourcePanel& panel) {
         chrome::dialog_text(dialog, panel.context,
             selected ? selected->relative_output_path.c_str() : "No output group for this chart",
             chrome::color(chrome::UiColor::text_muted));
-        nk_layout_row_dynamic(panel.context, 24, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
         nk_labelf(panel.context, NK_TEXT_LEFT, "Saved policy: %s",
                   selected ? existing_files_label(selected->existing_files) : "Unavailable");
         chrome::dialog_footer_begin(dialog, panel.context, 4);
@@ -229,9 +229,9 @@ void render_layer_creation(const ResourcePanel& panel) {
     }
     auto& dialog = state.layer_editor.layer_creation_dialog;
     if (chrome::dialog_begin(dialog, panel.context, "Create layer", "Create layer", {.width = 420})) {
-        nk_layout_row_dynamic(panel.context, 20, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::row_text, 1);
         nk_label(panel.context, "Name", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(panel.context, 28, 1);
+        nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
         chrome::autofocus_text_field(panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
             state.layer_editor.layer_creation_name.data(), static_cast<int>(state.layer_editor.layer_creation_name.size()),
             nk_filter_default, state.layer_editor.layer_creation_focus_pending);

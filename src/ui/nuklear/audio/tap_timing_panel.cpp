@@ -60,7 +60,7 @@ void draw_readout(nk_context* context, const wormedit::ui::tap_timing_view_t& vi
          theme::ui(theme::UiColor::text_muted));
 }
 void draw_progress(nk_context* context, const wormedit::ui::tap_timing_view_t& view) {
-    nk_layout_row_dynamic(context, 18, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     struct nk_rect bounds{};
     (void)nk_widget(&bounds, context);
     auto* canvas = nk_window_get_canvas(context);

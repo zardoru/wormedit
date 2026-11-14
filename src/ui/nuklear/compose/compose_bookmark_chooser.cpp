@@ -64,8 +64,8 @@ void handle_keyboard(nk_context* context, const wormedit::ui::bookmark_chooser_v
 
 void render_page_controls(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                           bookmark_chooser_state_t& state) {
-    nk_layout_row_dynamic(context, 25, 3);
-    if (nk_button_label(context, "Previous") && state.first_row > 0) {
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 3);
+    if (wormedit::ui::chrome::button_label(context, "Previous") && state.first_row > 0) {
         state.first_row = state.first_row > page_size ? state.first_row - page_size : 0;
         state.selected_row = state.first_row;
     }
@@ -74,7 +74,7 @@ void render_page_controls(nk_context* context, const wormedit::ui::bookmark_choo
         view.total_count == 0 ? 0 : state.first_row + 1,
         std::min(view.total_count, state.first_row + view.rows.size()), view.total_count);
     nk_label(context, page, NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_MIDDLE);
-    if (nk_button_label(context, "Next") && state.first_row + page_size < view.total_count) {
+    if (wormedit::ui::chrome::button_label(context, "Next") && state.first_row + page_size < view.total_count) {
         state.first_row += page_size;
         state.selected_row = state.first_row;
     }
@@ -188,12 +188,12 @@ void render_rows(nk_context* context, const wormedit::ui::bookmark_chooser_view_
     if (state.drag_revision != view.document_revision || context->current->widgets_disabled)
         state.dragged_bookmark = {};
     if (view.total_count == 0) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, state.query[0] ? "No matching bookmarks." : "No bookmarks in this chart.", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
         return;
     }
     if (view.rows.empty() || view.first_row != state.first_row) {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, "Loading bookmarks…", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
         return;
     }
@@ -211,11 +211,11 @@ auto render_sort_controls(nk_context* context, const wormedit::ui::bookmark_choo
         std::pair{wormedit::bookmark_sort_t::name, "Name"}};
     const auto previous_sort = state.sort;
     const auto previous_descending = state.descending;
-    nk_layout_row_dynamic(context, 25,
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact,
         nk_window_get_content_region_size(context).x < 420 ? 2 : 4);
     for (const auto& [sort, label] : sorts)
         if (nk_option_label(context, label, state.sort == sort)) state.sort = sort;
-    if (nk_button_label(context, state.descending ? "Descending" : "Ascending"))
+    if (wormedit::ui::chrome::button_label(context, state.descending ? "Descending" : "Ascending"))
         state.descending = !state.descending;
     if (state.sort != previous_sort || state.descending != previous_descending) {
         state.first_row = 0;
@@ -227,7 +227,7 @@ auto render_sort_controls(nk_context* context, const wormedit::ui::bookmark_choo
 
 auto render_search(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                    bookmark_chooser_state_t& state) -> bool {
-    nk_layout_row_dynamic(context, 28, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const auto previous_query = state.query;
     (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD,
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default,
@@ -305,12 +305,12 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const auto height = std::min(560.0f, std::max(260.0f, parent.h - 24.0f));
     const auto bounds = nk_rect((parent.w - width) * 0.5f - region.x,
                                 (parent.h - height) * 0.5f - region.y, width, height);
-    auto popup = wormedit::ui::chrome::begin_retained_popup(context, *state,
+    auto popup = wormedit::ui::chrome::begin_form_popup(context, *state,
         "Go to bookmark", NK_WINDOW_BORDER, bounds,
         wormedit::ui::chrome::retained_popup_begin_failure_t::retain);
     if (!popup.has_contents()) return popup.owns_input();
     if (!state->open) {
-        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+        wormedit::ui::chrome::end_form_popup(context, *state, popup,
             wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
             wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
@@ -327,24 +327,24 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const bool results_current = search_current && sort_current;
     if (results_current && !state->dragged_bookmark) handle_keyboard(context, view, *action, *state);
     if (!state->open || state->close_pending) {
-        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+        wormedit::ui::chrome::end_form_popup(context, *state, popup,
             wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
             wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
     }
-    nk_layout_row_dynamic(context, 26, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label(context, "Select a bookmark by position and name · ↑/↓ choose · Enter jumps", NK_TEXT_ALIGN_LEFT |
              NK_TEXT_ALIGN_MIDDLE);
     if (state->status[0]) {
-        nk_layout_row_dynamic(context, 22, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, state->status.data(), NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
     }
     if (results_current) render_rows(context, view, *action, *state);
     else {
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
         nk_label(context, "Searching…", NK_TEXT_LEFT);
     }
-    wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+    wormedit::ui::chrome::end_form_popup(context, *state, popup,
         wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
         wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
     return true;
@@ -361,7 +361,7 @@ void worm_ui_nuklear_render_bookmark_list(nk_context* context,
     const bool sort_current = render_sort_controls(context, view, state);
     if (search_current && sort_current) render_rows(context, view, *action, state);
     else {
-        nk_layout_row_dynamic(context, 24, 1);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         nk_label(context, "Updating markers…", NK_TEXT_LEFT);
     }
 }

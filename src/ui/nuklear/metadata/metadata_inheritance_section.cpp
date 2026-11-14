@@ -9,12 +9,12 @@ void render_inheritance_row(const MetadataPanel& panel,
     auto* context = panel.context;
     auto& row = state.inheritance.row_for(field.field);
     const bool editable = panel.metadata->chart_fields_editable && row.can_override;
-    metadata_form_row(context, 26);
+    metadata_form_row(context, wormedit::ui::metrics::control_default);
     char label[64];
     std::snprintf(label, sizeof(label), "Inherit %s", field.label.c_str());
     if (!editable) nk_widget_disable_begin(context);
     nk_bool inherit = row.inherit;
-    (void)nk_checkbox_label(context, label, &inherit);
+    (void)wormedit::ui::chrome::checkbox_label(context, label, &inherit);
     if (!editable) nk_widget_disable_end(context);
     if (editable) row.inherit = inherit != 0;
     if (row.inherit) nk_label_colored(context, field.inherited.empty() ? "(empty)" : field.inherited.c_str(),

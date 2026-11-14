@@ -9,6 +9,7 @@
 #include "ui/nuklear/chrome/ui_metrics.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <span>
@@ -79,6 +80,15 @@ inline void dismiss_popup(nk_context* context, const char* title, struct nk_rect
 inline auto popup_panel(const nk_context* context) -> bool {
     return context && context->current && context->current->layout &&
            (static_cast<nk_flags>(context->current->layout->type) & NK_PANEL_SET_POPUP) != 0;
+}
+
+// True inside a popup or inside a group nested in one (a list view in a picker): the group's own
+// panel type is NK_PANEL_GROUP, so the popup is found by walking up the parent panels.
+inline auto inside_popup(const nk_context* context) -> bool {
+    if (!context || !context->current) return false;
+    for (const auto* panel = context->current->layout; panel; panel = panel->parent)
+        if ((static_cast<nk_flags>(panel->type) & NK_PANEL_SET_POPUP) != 0) return true;
+    return false;
 }
 
 // Equal label/control shares keep property rows usable in narrow side panels.
@@ -214,6 +224,14 @@ struct Button {
     auto render(nk_context* context) const -> bool;
 };
 
+// Drop-in for nk_button_label: the same Button as everywhere else (secondary look, centered
+// label). Honors nk_widget_disable_begin like the stock widget. Every plain button goes through
+// this or Button; raw nk_button_* calls are held to a shrinking baseline by tooling.raw-buttons.
+inline auto button_label(nk_context* context, const char* label, ButtonKind kind = ButtonKind::secondary,
+                         bool enabled = true) -> bool {
+    return Button{label, kind, nullptr, enabled}.render(context);
+}
+
 enum class CheckState { off, on, mixed };
 constexpr auto toggled(CheckState state) -> CheckState {
     return state == CheckState::on ? CheckState::off : CheckState::on;
@@ -228,6 +246,21 @@ struct Checkbox {
     // The whole cell is the hit area. True when toggled; the caller stores toggled(state).
     auto render(nk_context* context) const -> bool;
 };
+
+// Drop-in for nk_checkbox_label: the same rounded box as Checkbox, `active` updated in place,
+// true when the user toggled it. Honors nk_widget_disable_begin like the stock widget.
+inline auto checkbox_label(nk_context* context, const char* label, nk_bool* active) -> bool {
+    const Checkbox box{label, *active ? CheckState::on : CheckState::off};
+    if (!box.render(context)) return false;
+    *active = !*active;
+    return true;
+}
+
+// Drop-in for nk_check_label: returns the value after the user's click.
+inline auto checkbox_value(nk_context* context, const char* label, bool current) -> bool {
+    const Checkbox box{label, current ? CheckState::on : CheckState::off};
+    return box.render(context) ? !current : current;
+}
 
 // Which of `count` equal segments of `bounds` holds x; -1 outside.
 auto segment_at(struct nk_rect bounds, int count, float x) -> int;
@@ -476,6 +509,54 @@ inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.fixed_background = saved.fixed_background;
 }
 
+// Form popups (rename, go to...) wrap begin_retained_popup/end_retained_popup in the same surface
+// as menus: rounded panel, soft shadow, transparent window fills, and no stock square border.
+// Popups never nest, so the saved fills live in one slot.
+inline auto form_popup_saved_surface() -> MenuSurface& {
+    static MenuSurface saved{};
+    return saved;
+}
+inline auto begin_form_popup(nk_context* context, retained_popup_t& state, const char* title, nk_flags flags,
+                             struct nk_rect bounds, retained_popup_begin_failure_t failure)
+    -> retained_popup_frame_t {
+    // nk_popup_begin adds NK_WINDOW_BORDER itself; the panel keeps the width it saw at begin, so a
+    // zero popup border here leaves menu_panel()'s rounded stroke as the only border.
+    auto& window = context->style.window;
+    const auto border = window.popup_border;
+    window.popup_border = 0.0f;
+    auto frame = begin_retained_popup(context, state, title, flags & ~static_cast<nk_flags>(NK_WINDOW_BORDER),
+                                      bounds, failure);
+    window.popup_border = border;
+    if (frame.began) form_popup_saved_surface() = menu_surface_begin(context);
+    return frame;
+}
+inline void end_form_popup(nk_context* context, retained_popup_t& state, retained_popup_frame_t& popup,
+                           retained_popup_edit_focus_t focus, retained_popup_close_trigger_t trigger) {
+    const bool began = popup.began;
+    end_retained_popup(context, state, popup, focus, trigger);
+    if (began) menu_surface_end(context, form_popup_saved_surface());
+}
+
+// The dropdown chevron, drawn as two strokes in the Lucide `chevron-down` shape. Header-only
+// on purpose: tests that only draw combos do not link the icon textures.
+inline constexpr float chevron_size = 14.0f;
+inline void draw_combo_chevron(nk_context* context, struct nk_rect bounds) {
+    const auto hovered = nk_input_is_mouse_hovering_rect(&context->input, bounds);
+    const auto tint = color(hovered ? UiColor::text_bright : UiColor::text_muted);
+    const auto cx = std::floor(bounds.x + bounds.w - metrics::gap_small - metrics::control_compact * 0.5f);
+    const auto cy = std::floor(bounds.y + bounds.h * 0.5f);
+    const auto half = chevron_size * 0.3f; // 4.2 px: the Lucide proportions at 14 px
+    auto* canvas = nk_window_get_canvas(context);
+    nk_stroke_line(canvas, cx - half, cy - half * 0.5f, cx, cy + half * 0.5f, 1.5f, tint);
+    nk_stroke_line(canvas, cx, cy + half * 0.5f, cx + half, cy - half * 0.5f, 1.5f, tint);
+}
+// Bounds of the combo whose popup is open, so safe_combo_end() can draw its chevron once the
+// parent window is current again.
+inline struct nk_rect& open_combo_bounds() {
+    static struct nk_rect bounds{};
+    return bounds;
+}
+
 // Keep both the popup body and its end-of-panel padding transparent while the
 // shared rounded popup surface supplies the fill. Every successful begin pairs with end.
 inline auto safe_combo_begin_label(nk_context* context, const char* label,
@@ -492,12 +573,15 @@ inline auto safe_combo_begin_label(nk_context* context, const char* label,
         nk_style_pop_color(context);
         return nk_false;
     }
+    const auto bounds = nk_widget_bounds(context);
     if (nk_combo_begin_label(context, label, size)) {
+        open_combo_bounds() = bounds;
         menu_panel(context);
         return nk_true;
     }
     nk_style_pop_style_item(context);
     nk_style_pop_color(context);
+    draw_combo_chevron(context, bounds);
     return nk_false;
 }
 
@@ -505,6 +589,7 @@ inline void safe_combo_end(nk_context* context) {
     nk_combo_end(context);
     nk_style_pop_style_item(context);
     nk_style_pop_color(context);
+    draw_combo_chevron(context, open_combo_bounds());
 }
 
 template<class Row, class Label>
@@ -613,9 +698,12 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.combo.hover = hover;
     style.combo.active = active;
     style.combo.border_color = color(UiColor::border);
-    style.combo.label_normal = color(UiColor::text);
+    style.combo.label_normal = color(UiColor::text_bright);
     style.combo.label_hover = color(UiColor::text_bright);
     style.combo.label_active = color(UiColor::text_bright);
+    // The chevron is drawn by safe_combo_*; Nuklear's own symbol is a filled triangle sized to the
+    // whole button, which reads far heavier than the text.
+    style.combo.sym_normal = style.combo.sym_hover = style.combo.sym_active = NK_SYMBOL_NONE;
     style.combo.symbol_normal = color(UiColor::text_muted);
     style.combo.symbol_hover = color(UiColor::text_bright);
     style.combo.symbol_active = color(UiColor::text_bright);
@@ -680,7 +768,8 @@ inline void apply_field_theme(nk_context* context) {
     edit.cursor_hover = text_bright;
     edit.cursor_text_normal = color(UiColor::surface);
     edit.cursor_text_hover = color(UiColor::surface_hover);
-    edit.text_normal = text;
+    // What the user entered or chose is data: brighter than the labels around it.
+    edit.text_normal = text_bright;
     edit.text_hover = text_bright;
     edit.text_active = text_bright;
     edit.selected_normal = accent;
@@ -837,6 +926,31 @@ inline auto section_push(nk_context* context, nk_tree_type type, const char* tit
     return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0, tight);
 }
 void section_pop(nk_context* context);
+
+// One line of caption, hint or unit text: the small font in the given color. Falls back to
+// the body font where the small one does not exist yet.
+inline void caption(nk_context* context, const char* text, nk_color tint) {
+    const auto* small = theme::small_font;
+    if (small) nk_style_push_font(context, small);
+    nk_label_colored(context, text, NK_TEXT_LEFT, tint);
+    if (small) nk_style_pop_font(context);
+}
+
+// A dialog or page title: the title face in text_bright. Lay out a row of at least
+// `title_row_height` first.
+inline constexpr float title_row_height = 24.0f;
+inline void title_label(nk_context* context, const char* text) {
+    const auto* face = theme::title_font;
+    if (face) nk_style_push_font(context, face);
+    nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
+    if (face) nk_style_pop_font(context);
+}
+
+// A popup's title row: the title face on its own line.
+inline void popup_title(nk_context* context, const char* text) {
+    nk_layout_row_dynamic(context, title_row_height, 1);
+    title_label(context, text);
+}
 
 // An empty row that separates groups inside one section. Rows already sit `window.spacing`
 // apart, so the visible gap is the height plus that spacing on both sides.

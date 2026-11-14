@@ -13,6 +13,9 @@ namespace {
 constexpr float dock_button_height = 30.0f;
 // Includes the ~45 px tool strip that sits left of the field, so the drawn field is about 360 px.
 constexpr float minimum_field_width = 400.0f;
+// The icon rail is flush with the window's right edge and full height; panels keep an 8 px gap to it.
+constexpr float dock_strip_width = 40.0f;
+constexpr float dock_panel_gap = 8.0f;
 auto rect(const compose_rect_t& r) -> struct nk_rect {
     return nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
                    static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top));
@@ -38,7 +41,7 @@ void begin_capture(nk_context* context, dock_capture_t kind, const dock_geometry
     pointer.y = context->input.mouse.pos.y;
     if (!geometry.panes[0]) return;
     const auto& first = geometry.panes[0]->bounds;
-    pointer.width = static_cast<float>(geometry.strip.left - 4 - first.left);
+    pointer.width = static_cast<float>(geometry.strip.left - dock_panel_gap - first.left);
     if (geometry.panes[1]) {
         const auto extent = geometry.is_side_by_side() ? first.right - first.left : first.bottom - first.top;
         pointer.split = static_cast<float>(extent / geometry.split_extent());
@@ -129,6 +132,10 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
         return result;
     }();
     nk_layout_space_push(context, rect(geometry.strip));
+    // One pixel rule on the rail's inner edge separates it from the field.
+    const auto screen = nk_layout_space_rect_to_screen(context, rect(geometry.strip));
+    nk_stroke_line(nk_window_get_canvas(context), screen.x, screen.y, screen.x, screen.y + screen.h, 1.0f,
+                   chrome::color(chrome::UiColor::separator));
     nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(1, 1));
     const auto visible = nk_group_begin(context, "Compose dock strip", dock_strip_flags(context, geometry));
     nk_style_pop_vec2(context);
@@ -158,7 +165,7 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
 }
 auto dock_geometry_t::from(float width, float height, const ui_layout_preferences_t& layout,
                            const std::array<bool, dock_panel_count>& available, float reserved_left_width) -> dock_geometry_t {
-    dock_geometry_t result{.strip = {width - 40, 8, width - 8, height - 8}, .reserved_width = 44};
+    dock_geometry_t result{.strip = {width - dock_strip_width, 0, width, height}, .reserved_width = dock_strip_width};
     std::array<std::optional<dock_panel_t>, 2> visible;
     std::size_t count{};
     for (const auto panel : layout.order())
@@ -167,12 +174,12 @@ auto dock_geometry_t::from(float width, float height, const ui_layout_preference
     // The field keeps priority: panels shrink toward dock_minimum_width before they are dropped.
     const auto canvas_width = width < 700.0f ? (count != 1 ? std::max(250.0f, width * 0.55f) : 250.0f)
                                              : minimum_field_width;
-    const auto column_space = width - canvas_width - reserved_left_width - 50.0f;
+    const auto column_space = width - canvas_width - reserved_left_width - dock_strip_width - 14.0f;
     const auto columns = count == 2 && layout.is_side_by_side() && column_space >= 2 * dock_minimum_width + 6;
     const auto desired_width = columns ? 2 * layout.width() + 6 : layout.width();
     const auto panel_width = std::min(desired_width, column_space);
     if (!count || panel_width < dock_minimum_width || height < (count == 1 ? 96.0f : 140.0f)) return result;
-    const auto right = width - 44;
+    const auto right = width - dock_strip_width - dock_panel_gap;
     const auto left = right - panel_width;
     result.reserved_width = width - left + 6;
     result.width_handle = compose_rect_t{left - 6, 8, left - 1, height - 8};

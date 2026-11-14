@@ -73,11 +73,11 @@ auto texture(Glyph glyph) -> SDL_Texture* {
     return index < textures.size() ? textures[index] : nullptr;
 }
 
-void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint) {
+void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint, float size) {
     if (!context) return;
     const auto index = static_cast<std::size_t>(glyph);
     if (index >= textures.size() || !textures[index]) return;
-    constexpr float displayed_size = 18.0f;
+    const float displayed_size = size;
     const auto bounds = nk_rect(button.x + (button.w - displayed_size) * 0.5f,
                                 button.y + (button.h - displayed_size) * 0.5f,
                                 displayed_size, displayed_size);

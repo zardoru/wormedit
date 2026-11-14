@@ -12,6 +12,7 @@
 #include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/render/vector_icons.h"
 #include "wormedit/core/document.h"
+#include "ui/nuklear/chrome/scroll_group.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
@@ -113,7 +114,7 @@ void reveal_empty_base_lane(wormedit::ui::workspace_action_t& action, const worm
 void bga_lane_picker(nk_context* context, const wormedit::ui::compose_view_t& view,
                      wormedit::ui::workspace_action_t& action, bool blocked) {
     if (blocked) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Show BGA lanes", NK_TEXT_LEFT);
     constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor (miss)"};
     constexpr std::array kinds{wormedit::visual_event_kind_t::background, wormedit::visual_event_kind_t::layer,
@@ -123,7 +124,7 @@ void bga_lane_picker(nk_context* context, const wormedit::ui::compose_view_t& vi
         "Show the first overlay lane",
         "Show the second overlay lane (BMS channel 0A)",
         "Show the miss/Poor image lane; normal preview keeps its miss-only policy"};
-    nk_layout_row_dynamic(context, 25, 2);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     for (size_t index = 0; index < labels.size(); ++index) {
         const auto kind = static_cast<std::uint8_t>(kinds[index]);
         const auto count = std::min<std::size_t>(view.bga_lane_count, 4);
@@ -332,7 +333,7 @@ void render_bga_usage_rows(nk_context* context, const wormedit::ui::compose_view
                            wormedit::ui::workspace_action_t& action,
                            const worm_ui_nuklear_compose_state_t& state) {
     const auto& uses = view.bga_usage;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     if (uses.song != view.project_id || uses.revision != view.document_revision ||
         uses.resource.value != state.bga_catalog.bga_selection.primary) {
         nk_label(context, "Refreshing BGA uses…", NK_TEXT_LEFT);
@@ -345,19 +346,19 @@ void render_bga_usage_rows(nk_context* context, const wormedit::ui::compose_view
     nk_label(context, summary.c_str(), NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 120, 1);
     struct nk_list_view list{};
-    if (!nk_list_view_begin(context, &list, "BGA resource uses", NK_WINDOW_BORDER, 26,
+    if (!wormedit::ui::chrome::scroll_list_view_begin(context, &list, "BGA resource uses", NK_WINDOW_BORDER, 26,
                             static_cast<int>(std::max<std::size_t>(1, uses.rows.size())))) return;
     for (auto index = list.begin; index < std::min(list.end, static_cast<int>(uses.rows.size())); ++index) {
         const auto& row = uses.rows[static_cast<std::size_t>(index)];
-        nk_layout_row_dynamic(context, 24, 1);
-        if (nk_button_label(context, row.label.c_str()) && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        if (wormedit::ui::chrome::button_label(context, row.label.c_str()) && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE;
             action.bga_usage = {uses.song, uses.revision, uses.resource, uses.asset, row.target};
         }
         if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, row.label.c_str());
     }
-    if (uses.rows.empty()) { nk_layout_row_dynamic(context, 24, 1); nk_label(context, "No BGA uses.", NK_TEXT_LEFT); }
-    nk_list_view_end(&list);
+    if (uses.rows.empty()) { nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1); nk_label(context, "No BGA uses.", NK_TEXT_LEFT); }
+    wormedit::ui::chrome::scroll_list_view_end(&list);
 }
 void render_bga_usage(nk_context* context, const wormedit::ui::compose_view_t& view,
                       wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state,
@@ -365,8 +366,8 @@ void render_bga_usage(nk_context* context, const wormedit::ui::compose_view_t& v
     const auto available = (state.bga_catalog.bga_selection.primary != 0 || state.bga_catalog.find_uses_open) &&
                            !blocked && !view.input_occluded;
     if (!available) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 26, 1);
-    if (nk_button_label(context, state.bga_catalog.find_uses_open ? "Hide uses" : "Find uses") && available)
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    if (wormedit::ui::chrome::button_label(context, state.bga_catalog.find_uses_open ? "Hide uses" : "Find uses") && available)
         state.bga_catalog.find_uses_open = !state.bga_catalog.find_uses_open;
     if (state.bga_catalog.find_uses_open) render_bga_usage_rows(context, view, action, state);
     if (!available) nk_widget_disable_end(context);
@@ -383,14 +384,14 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     state->bga_catalog.bga_list_x = bounds.x; state->bga_catalog.bga_list_y = bounds.y;
     state->bga_catalog.bga_list_width = bounds.w; state->bga_catalog.bga_list_height = bounds.h;
     state->bga_catalog.bga_shown = view->bga_matching_ids;
-    nk_layout_row_dynamic(context, 20, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "BGA", NK_TEXT_LEFT);
     import_picked(*action, *view, *state);
     sync_advance_ids(*view, *state);
     toolbar(context, *view, *state, *action);
     bga_lane_picker(context, *view, *action, state->bga_catalog.bga_renumber_confirmation_open ||
                     state->bga_catalog.bga_renumber_release_pending);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->bga_catalog.bga_search.data(),
         static_cast<int>(state->bga_catalog.bga_search.size()), nk_filter_default);
     bga_use_filter(context, *state, view->input_occluded || state->bga_catalog.bga_renumber_confirmation_open ||
@@ -407,7 +408,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     reveal_armed_bga(context, *view, *state);
     struct nk_list_view list{};
     const auto matching = std::strcmp(view->bga_search.c_str(), state->bga_catalog.bga_search.data()) == 0;
-    if (nk_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
                           static_cast<int>(std::max<std::size_t>(view->bga_total_matching, 1)))) {
         state->bga_catalog.bga_first_row = static_cast<std::size_t>(list.begin);
         state->bga_catalog.bga_row_limit = static_cast<std::size_t>(std::max(1, list.end - list.begin + 1));
@@ -416,7 +417,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
                 row(context, *view, *state, *action, static_cast<std::size_t>(index));
             if (!view->bga_total_matching) { nk_layout_row_dynamic(context, 36, 1); nk_label(context, "No BGA matches. Add or drop images here.", NK_TEXT_LEFT); }
         }
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
     if (block_list_pointer) nk_widget_disable_end(context);
     render_bga_usage(context, *view, *action, *state, block_list_pointer);
@@ -454,7 +455,7 @@ static bool draw_bga_stack_row(nk_context* context, const wormedit::ui::compose_
         kind,
         !event.bmp_id.empty() ? event.bmp_id.data() : "No BMP ID",
         event.name.data() ? event.name.data() : "Missing resource");
-    const auto clicked = nk_button_label(context, label);
+    const auto clicked = wormedit::ui::chrome::button_label(context, label);
     if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return false;
     if (action.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
@@ -496,7 +497,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         return;
     }
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Choose the event to select or edit", NK_TEXT_LEFT);
     struct nk_list_view list{};
     const auto count = static_cast<int>(std::ranges::count_if(
@@ -507,7 +508,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         }));
     nk_layout_row_dynamic(context, 300, 1);
     bool selected_event = false;
-    if (nk_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
+    if (wormedit::ui::chrome::scroll_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
                            std::max(1, count))) {
         const auto events = std::span(view->bga_events);
         int row_index = 0;
@@ -516,20 +517,20 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) !=
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_interaction.bga_stack_kind))) continue;
             if (row_index >= list.begin && row_index < list.end) {
-                nk_layout_row_dynamic(context, 28, 1);
+                nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
                 selected_event = draw_bga_stack_row(context, event, view->chart_id.value,
                     view->document_revision, *action, *state) || selected_event;
             }
             ++row_index;
         }
-        nk_list_view_end(&list);
+        wormedit::ui::chrome::scroll_list_view_end(&list);
     }
     if (selected_event) {
         nk_popup_close(context);
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
-    nk_layout_row_dynamic(context, 28, 1);
-    if (nk_button_label(context, "Close")) {
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    if (wormedit::ui::chrome::button_label(context, "Close")) {
         state->bga_interaction.bga_stack_open = false;
         nk_popup_close(context);
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);

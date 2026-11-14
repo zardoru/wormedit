@@ -1169,6 +1169,12 @@ target_include_directories(wormedit_frame_demand_tests PRIVATE "${CMAKE_SOURCE_D
 add_test(NAME frame-demand COMMAND wormedit_frame_demand_tests)
 set_tests_properties(frame-demand PROPERTIES LABELS "unit;sys")
 
+# Text caret blink phase is header-only and SDL-free.
+add_executable(wormedit_caret_blink_tests sys/caret_blink_tests.cpp)
+target_include_directories(wormedit_caret_blink_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+add_test(NAME caret-blink COMMAND wormedit_caret_blink_tests)
+set_tests_properties(caret-blink PROPERTIES LABELS "unit;sys")
+
 if(APPLE AND WORMEDIT_BUILD_APP)
     add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/app/macos_menu.mm)
     set_target_properties(wormedit_macos_menu_tests PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)

@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose/compose_bookmark_label.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
+#include "ui/nuklear/chrome/text_prompt.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,9 @@
 #include <vector>
 
 namespace {
+
+// Every label editor opens and closes the same popup, so close_pending_popup can find it.
+constexpr const char* label_popup_name = "Label editor";
 
 struct bookmark_candidate_t {
     std::uint64_t id{};
@@ -63,14 +67,14 @@ auto editor_popup_bounds(nk_context* context, const wormedit::ui::compose_view_t
         ? viewport.x + static_cast<float>(view.playable_field_right_pixels) *
               viewport.w / static_cast<float>(view.viewport_width_pixels)
         : viewport.x + viewport.w;
-    const auto x = std::clamp(field_right - 300.0f - content.x,
-                              0.0f, std::max(0.0f, content.w - 300.0f));
+    const auto width = wormedit::ui::chrome::text_prompt_width_for(content);
+    const auto height = wormedit::ui::chrome::text_prompt_height;
+    const auto x = std::clamp(field_right - width - content.x, 0.0f, std::max(0.0f, content.w - width));
     const auto scale = view.viewport_height_pixels > 0.0
         ? viewport.h / static_cast<float>(view.viewport_height_pixels) : 1.0f;
-    const auto line_y = viewport.y + static_cast<float>(target.y) * scale - 32.0f;
-    const auto y = std::clamp(line_y - content.y, 0.0f,
-                              std::max(0.0f, content.h - 58.0f));
-    return nk_rect(x, y, std::min(300.0f, content.w), 58.0f);
+    const auto line_y = viewport.y + static_cast<float>(target.y) * scale - height;
+    const auto y = std::clamp(line_y - content.y, 0.0f, std::max(0.0f, content.h - height));
+    return nk_rect(x, y, width, height);
 }
 
 void request_editor_close(inline_label_editor_t& editor) {
@@ -93,12 +97,30 @@ void close_pending_popup(nk_context* context, inline_label_editor_t& editor) {
     }
     const auto bounds = nk_rect(editor.popup_bounds[0], editor.popup_bounds[1],
                                 editor.popup_bounds[2], editor.popup_bounds[3]);
-    if (nk_popup_begin(context, NK_POPUP_STATIC, "Rename bookmark", NK_WINDOW_NO_SCROLLBAR,
+    if (nk_popup_begin(context, NK_POPUP_STATIC, label_popup_name, NK_WINDOW_NO_SCROLLBAR,
                        bounds)) {
         nk_popup_close(context);
         nk_popup_end(context);
     }
     clear_editor_after_close(editor);
+}
+
+struct prompt_text_t {
+    const char* title;
+    const char* placeholder;
+    const char* hint;
+};
+
+auto prompt_text(inline_label_kind_t kind) -> prompt_text_t {
+    switch (kind) {
+    case inline_label_kind_t::note_label:
+        return {"Note label", "Label…", "Enter to apply · Esc to cancel · empty clears"};
+    case inline_label_kind_t::section_label:
+        return {"Section label", "Section name…", "Enter to apply · Esc to cancel · empty clears"};
+    case inline_label_kind_t::bookmark:
+        break;
+    }
+    return {"Rename bookmark", "Bookmark name…", "Enter to apply · Esc to cancel"};
 }
 
 void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
@@ -189,8 +211,8 @@ void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::com
     if (editor.focus_pending && !wormedit::ui::chrome::popup_input_is_quiet(
             context, wormedit::ui::chrome::PopupReleaseKeys::text)) return;
     const auto bounds = editor_popup_bounds(context, view, editor, viewport);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Rename bookmark", NK_WINDOW_NO_SCROLLBAR,
-                        bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::text_prompt_begin(context, label_popup_name, bounds, surface)) {
         request_editor_close(editor);
         close_pending_popup(context, editor);
         return;
@@ -200,31 +222,22 @@ void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::com
     editor.popup_bounds[1] = bounds.y;
     editor.popup_bounds[2] = bounds.w;
     editor.popup_bounds[3] = bounds.h;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    const auto flags = wormedit::ui::chrome::autofocus_text_field(
-        context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
-        editor.label, static_cast<int>(sizeof(editor.label)), nk_filter_default,
+    const auto text = prompt_text(editor.kind);
+    const auto flags = wormedit::ui::chrome::text_prompt_body(
+        context,
+        {.title = text.title, .placeholder = text.placeholder, .hint = text.hint,
+         .buffer = editor.label, .capacity = static_cast<int>(sizeof(editor.label))},
         editor.focus_pending);
-    editor.focus_pending = false;
-    if (nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE)) {
-        nk_popup_close(context);
-        nk_popup_end(context);
-        request_editor_close(editor);
-        clear_editor_after_close(editor);
-        return;
-    } else if ((flags & NK_EDIT_COMMITTED) != 0) {
-        stage_rename(action, view, editor);
-        nk_popup_close(context);
-        nk_popup_end(context);
-        request_editor_close(editor);
-        clear_editor_after_close(editor);
-        return;
-    } else if ((flags & NK_EDIT_DEACTIVATED) != 0) {
-        nk_popup_close(context);
-        nk_popup_end(context);
-        request_editor_close(editor);
-        clear_editor_after_close(editor);
-        return;
-    }
+    const bool cancelled = nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE) ||
+                           ((flags & NK_EDIT_COMMITTED) == 0 && (flags & NK_EDIT_DEACTIVATED) != 0);
+    const bool committed = !cancelled && (flags & NK_EDIT_COMMITTED) != 0;
+    if (committed) stage_rename(action, view, editor);
+    const bool finished = cancelled || committed;
+    if (finished) nk_popup_close(context);
     nk_popup_end(context);
+    wormedit::ui::chrome::text_prompt_end(context, surface);
+    if (finished) {
+        request_editor_close(editor);
+        clear_editor_after_close(editor);
+    }
 }

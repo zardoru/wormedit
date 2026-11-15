@@ -25,6 +25,7 @@
 #include "ui/nuklear/compose/compose_sounds_panel.h"
 #include "ui/nuklear/compose/compose_bga_panel.h"
 #include "ui/nuklear/compose/compose_measures_panel.h"
+#include "ui/nuklear/chrome/text_prompt.h"
 #include "ui/nuklear/compose/compose_layers_panel.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/compose/compose_recipe_form.h"
@@ -1339,12 +1340,12 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
     }
     const auto region = nk_window_get_content_region(context);
     const auto parent = nk_window_get_bounds(context);
-    const auto width = std::min(320.0f, std::max(160.0f, parent.w - 24.0f));
+    const auto width = wormedit::ui::chrome::text_prompt_width_for(region);
+    const auto height = wormedit::ui::chrome::text_prompt_height;
     const auto bounds = nk_rect(parent.x + (parent.w - width) * 0.5f - region.x,
-                                parent.y + (parent.h - 120.0f) * 0.5f - region.y,
-                                width, 120.0f);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Go to measure",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+                                parent.y + (parent.h - height) * 0.5f - region.y, width, height);
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::text_prompt_begin(context, "Go to measure", bounds, surface)) {
         state.dialogs.go_to_measure_open = false;
         state.dialogs.go_to_measure_focus_pending = false;
         return;
@@ -1352,28 +1353,26 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
     if (state.dialogs.go_to_measure_cancel_pending) {
         close_go_to_measure(context);
         nk_popup_end(context);
+        wormedit::ui::chrome::text_prompt_end(context, surface);
         return;
     }
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+    char range[40];
     if (view.bms_measure_labels)
-        nk_label(context, "Measure #000-#999", NK_TEXT_LEFT);
+        std::snprintf(range, sizeof(range), "#000-#999");
     else
-        nk_labelf(context, NK_TEXT_LEFT, "Measure M1-M%llu",
-                  static_cast<unsigned long long>(view.compose_measure_count));
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    if (state.dialogs.go_to_measure_focus_pending) {
-        nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
-        state.dialogs.go_to_measure_focus_pending = false;
-    }
-    const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
-        context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
-        state.dialogs.go_to_measure_text.data(), static_cast<int>(state.dialogs.go_to_measure_text.size()),
-        nk_filter_decimal);
+        std::snprintf(range, sizeof(range), "M1-M%llu",
+                      static_cast<unsigned long long>(view.compose_measure_count));
+    const auto flags = wormedit::ui::chrome::text_prompt_body(
+        context,
+        {.title = "Go to measure", .placeholder = range,
+         .hint = "Enter to go · Esc to cancel", .error = state.dialogs.go_to_measure_error.data(),
+         .buffer = state.dialogs.go_to_measure_text.data(),
+         .capacity = static_cast<int>(state.dialogs.go_to_measure_text.size()),
+         .filter = nk_filter_decimal, .flags = static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER},
+        state.dialogs.go_to_measure_focus_pending);
     if ((flags & NK_EDIT_COMMITTED) != 0) confirm_go_to_measure(view, action, context);
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
-    nk_label(context, state.dialogs.go_to_measure_error[0] ? state.dialogs.go_to_measure_error.data()
-                                                : "Enter to go · Esc to cancel", NK_TEXT_LEFT);
     nk_popup_end(context);
+    wormedit::ui::chrome::text_prompt_end(context, surface);
 }
 
 static void begin_layer_menu_input_frame() {

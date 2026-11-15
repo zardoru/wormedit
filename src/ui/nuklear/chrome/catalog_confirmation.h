@@ -39,7 +39,8 @@ inline void close_catalog_confirmation(CatalogConfirmation state) {
 inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui::compose_view_t& view,
                                        CatalogConfirmation state, bool bga) -> std::optional<bool> {
     if (!state.open) return std::nullopt;
-    const auto bounds = nk_rect(0, 60, std::min(360.0f, nk_window_get_content_region(context).w), 204);
+    const auto bounds = nk_rect(0, 60, std::min(360.0f, nk_window_get_content_region(context).w),
+                                204 + 2 * chrome::menu_padding);
     const auto* title = bga ? "Renumber BMP IDs" : "Renumber WAV IDs";
     const bool available = bga ? view.bga_ids_available : view.keysound_ids_available;
     if (!available || !chrome::popup_context_matches(
@@ -48,7 +49,8 @@ inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui:
         chrome::dismiss_popup(context, title, bounds);
         return std::nullopt;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, title, NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+    MenuSurface surface{};
+    if (!chrome::surface_popup_begin(context, title, bounds, surface)) {
         close_catalog_confirmation(state);
         return std::nullopt;
     }
@@ -63,6 +65,7 @@ inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui:
     if (wormedit::ui::chrome::button_label(context, "Cancel")) close_catalog_confirmation(state);
     if (!state.open || choice.has_value()) nk_popup_close(context);
     nk_popup_end(context);
+    chrome::surface_popup_end(context, surface);
     return choice;
 }
 inline auto slot_review_active(const worm_ui_nuklear_compose_state_t& state) -> bool {

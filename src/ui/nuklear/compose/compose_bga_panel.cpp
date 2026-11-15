@@ -476,7 +476,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
     if (wormedit::ui::chrome::popup_update_release_pending(
             context, state->bga_interaction.bga_stack_release_pending)) return;
     if (!state->bga_interaction.bga_stack_open) return;
-    const auto local_bounds = nk_rect(24, 48, 300, 360);
+    const auto local_bounds = nk_rect(24, 48, 300, 360 + 2 * wormedit::ui::chrome::menu_padding);
     const auto screen_bounds = wormedit::ui::chrome::popup_screen_bounds(context, local_bounds);
     if (!bga_stack_is_valid(*view, *state)) {
         state->bga_interaction.bga_stack_open = false;
@@ -490,9 +490,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "BGA events at measure",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-                        local_bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(context, "BGA events at measure", local_bounds,
+                                                   surface)) {
         state->bga_interaction.bga_stack_open = false;
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         return;
@@ -536,4 +536,5 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
     nk_popup_end(context);
+    wormedit::ui::chrome::surface_popup_end(context, surface);
 }

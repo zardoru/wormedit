@@ -986,7 +986,7 @@ static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_re
     -> struct nk_rect {
     const bool audio_timing = is_inline_audio_timing(state.inline_timing.inline_timing_lane);
     const float popup_width = audio_timing ? 310.0f : 196.0f;
-    const float popup_height = audio_timing ? 224.0f : 75.0f;
+    const float popup_height = (audio_timing ? 224.0f : 75.0f) + 2.0f * wormedit::ui::chrome::menu_padding;
     const auto popup_x = std::clamp(state.inline_timing.inline_timing_anchor_screen_x,
                                     viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
     const auto popup_y = std::clamp(state.inline_timing.inline_timing_anchor_screen_y - 24.0f,
@@ -1039,9 +1039,10 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         worm_ui_nuklear_inline_timing_initial_text(
             timing, state.inline_timing.inline_timing_text.data(), state.inline_timing.inline_timing_text.size());
 
-    if (!nk_popup_begin(panel.context, NK_POPUP_STATIC, "Compose timing value",
-                        NK_WINDOW_NO_SCROLLBAR,
-                        compose_inline_timing_popup_bounds(panel.context, viewport))) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(
+            panel.context, "Compose timing value",
+            compose_inline_timing_popup_bounds(panel.context, viewport), surface)) {
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         return;
     }
@@ -1064,6 +1065,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     nk_layout_row_dynamic(panel.context, is_inline_audio_timing(timing.stage_lane) ? 36.0f : 17.0f, 1);
     nk_label_wrap(panel.context, inline_audio_timing_status(timing));
     nk_popup_end(panel.context);
+    wormedit::ui::chrome::surface_popup_end(panel.context, surface);
 }
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {

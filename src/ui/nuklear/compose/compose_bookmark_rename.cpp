@@ -97,11 +97,7 @@ void close_pending_popup(nk_context* context, inline_label_editor_t& editor) {
     }
     const auto bounds = nk_rect(editor.popup_bounds[0], editor.popup_bounds[1],
                                 editor.popup_bounds[2], editor.popup_bounds[3]);
-    if (nk_popup_begin(context, NK_POPUP_STATIC, label_popup_name, NK_WINDOW_NO_SCROLLBAR,
-                       bounds)) {
-        nk_popup_close(context);
-        nk_popup_end(context);
-    }
+    wormedit::ui::chrome::dismiss_popup(context, label_popup_name, bounds);
     clear_editor_after_close(editor);
 }
 

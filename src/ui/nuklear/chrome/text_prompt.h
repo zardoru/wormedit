@@ -47,20 +47,11 @@ struct TextPromptContent {
 // after nk_popup_end().
 inline auto text_prompt_begin(nk_context* context, const char* name, struct nk_rect bounds,
                               MenuSurface& saved) -> bool {
-    auto& window = context->style.window;
-    const auto padding = window.popup_padding;
-    const auto border = window.popup_border;
-    window.popup_padding = nk_vec2(text_prompt_padding, text_prompt_padding);
-    window.popup_border = 0.0f;
-    const auto began = nk_popup_begin(context, NK_POPUP_STATIC, name, NK_WINDOW_NO_SCROLLBAR, bounds) != 0;
-    window.popup_padding = padding;
-    window.popup_border = border;
-    if (began) saved = menu_surface_begin(context);
-    return began;
+    return surface_popup_begin(context, name, bounds, saved);
 }
 
 inline void text_prompt_end(nk_context* context, const MenuSurface& saved) {
-    menu_surface_end(context, saved);
+    surface_popup_end(context, saved);
 }
 
 // Width and placement shared by every caller: centered on `anchor_x`, clamped to the region.

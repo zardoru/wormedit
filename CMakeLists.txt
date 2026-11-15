@@ -152,6 +152,7 @@ add_library(wormedit_core
     src/core/player_preview.cpp
     src/core/quantize.cpp
     src/core/snap.cpp
+    src/core/row_step.cpp
     src/core/dead_span_rules.cpp
     src/core/span_manipulation.cpp
     src/core/rational.cpp

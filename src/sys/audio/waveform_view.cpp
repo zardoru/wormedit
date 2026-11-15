@@ -346,12 +346,15 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
         if (std::isfinite(fraction) && fraction >= range.begin && fraction <= range.end)
             (void)out.push_back({fraction, label, audio});
     };
-    const auto frames_to_fraction = [&](long double seconds) {
+    // A bookmark inside a cut, its begin included and its end excluded, is hidden here and in
+    // Compose; one on the cut's end stays and sits on the seam. Beat bookmarks decide by chart
+    // row, which is exact; audio bookmarks by song frame.
+    const auto frames_to_fraction = [&](long double seconds, bool hide_inside_cut) -> std::optional<double> {
         if (!view.waveform_cut_frames) return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
-        const auto frame = std::clamp(std::round(seconds * waveform.sample_rate), 0.0L, static_cast<long double>(waveform.total_frames));
-        if (view.waveform_cut_frames->contains(static_cast<std::uint64_t>(frame)))
-            return std::numeric_limits<double>::quiet_NaN();
-        return view.waveform_cut_frames->collapsed_fraction(static_cast<std::uint64_t>(frame), waveform.total_frames).value_or(0.0);
+        const auto frame = static_cast<std::uint64_t>(std::clamp(std::round(seconds * waveform.sample_rate), 0.0L,
+                                                                  static_cast<long double>(waveform.total_frames)));
+        if (hide_inside_cut && view.waveform_cut_frames->contains(frame)) return std::nullopt;
+        return view.waveform_cut_frames->collapsed_fraction(frame, waveform.total_frames).value_or(0.0);
     };
     if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
@@ -359,14 +362,15 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
             const auto time = cache.timing.marker_timing_index->query_seconds(bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
             if (!time || time->value.denominator == 0) continue;
-            add(frames_to_fraction(wormedit::to_long_double(time->value)),
-                bookmark.label, false);
+            if (view.cut_axis && view.cut_axis->contains_row(bookmark.chart_row)) continue;
+            if (const auto fraction = frames_to_fraction(wormedit::to_long_double(time->value), false))
+                add(*fraction, bookmark.label, false);
         }
     }
     for (std::size_t index = 0; index < view.audio_bookmarks.size(); ++index) {
         const auto& bookmark = view.audio_bookmarks[index];
-        add(frames_to_fraction(static_cast<long double>(bookmark.audio_milliseconds) / 1000.0L),
-            bookmark.label, true);
+        if (const auto fraction = frames_to_fraction(static_cast<long double>(bookmark.audio_milliseconds) / 1000.0L, true))
+            add(*fraction, bookmark.label, true);
     }
 }
 // Publishes the BGM bar rows and measure marks for the requested song window.

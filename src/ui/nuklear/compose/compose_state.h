@@ -175,8 +175,20 @@ struct worm_ui_nuklear_compose_wheel_event_t {
 
 // SDL wheel x/y are fractional wheel units, not native pixel coordinates.
 // Preserve their magnitude and normalize the flipped-device convention once.
+// Where `fractional_is_smooth` is set (macOS: trackpads and Magic Mice send precise fractional
+// units), an event with a fractional component is smooth pixel motion; whole-unit events are
+// notches everywhere, and other platforms treat every event as a notch.
+#if defined(__APPLE__)
+inline constexpr bool worm_ui_nuklear_wheel_fractional_is_smooth = true;
+#else
+inline constexpr bool worm_ui_nuklear_wheel_fractional_is_smooth = false;
+#endif
+// SDL's macOS precise-scroll units are a tenth of a pixel; a smooth event scrolls the content by
+// the finger's own distance.
+inline constexpr double worm_ui_nuklear_smooth_wheel_pixels_per_unit = 10.0;
 auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
-    double mouse_y, std::uint16_t modifiers, bool flipped)
+    double mouse_y, std::uint16_t modifiers, bool flipped,
+    bool fractional_is_smooth = worm_ui_nuklear_wheel_fractional_is_smooth)
     -> std::optional<worm_ui_nuklear_compose_wheel_event_t>;
 
 inline auto worm_ui_nuklear_compose_wheel_speed(double delta, bool tab_modifier) noexcept

@@ -964,7 +964,7 @@ TEST_CASE("SDL Compose wheel units preserve fractions at whole magnitude boundar
         for (const double magnitude : {0.01,0.99,1.0,1.01,2.5}) {
             const auto device_sign=flipped?1.0:-1.0;
             const auto wheel=worm_ui_nuklear_normalize_compose_wheel(
-                magnitude*device_sign,magnitude*device_sign,12.25,34.5,7,flipped);
+                magnitude*device_sign,magnitude*device_sign,12.25,34.5,7,flipped,false);
             expect_inline(wheel.has_value());
             if (!wheel) continue;
             expect_inline(wheel->delta_x==magnitude);
@@ -974,6 +974,19 @@ TEST_CASE("SDL Compose wheel units preserve fractions at whole magnitude boundar
             expect_inline(wheel->mouse_y==34.5);
             expect_inline(wheel->modifiers==7);
         }
+    }
+}
+TEST_CASE("fractional wheel units are smooth only where the platform asks for it",
+          "[compose][wheel-units]") {
+    for (const double magnitude : {0.01, 0.99, 1.5, 2.5}) {
+        const auto smooth=worm_ui_nuklear_normalize_compose_wheel(0,magnitude,1,2,0,true,true);
+        expect_inline(smooth.has_value() && !smooth->coarse_steps);
+        const auto notch=worm_ui_nuklear_normalize_compose_wheel(0,magnitude,1,2,0,true,false);
+        expect_inline(notch.has_value() && notch->coarse_steps);
+    }
+    for (const double whole : {1.0, 2.0, 3.0, 0.0}) {
+        const auto wheel=worm_ui_nuklear_normalize_compose_wheel(0,whole,1,2,0,true,true);
+        expect_inline(wheel.has_value() && wheel->coarse_steps);
     }
 }
 TEST_CASE("SDL Compose wheel unit normalization rejects nonfinite input",

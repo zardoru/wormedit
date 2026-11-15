@@ -112,8 +112,12 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
     return wormedit::ui::theme::compose_key_color(hold.key_color, hold.lane_id).hold_body;
 }
 
+static auto wheel_has_fraction(double value) -> bool {
+    return std::abs(value - std::round(value)) > 1e-6;
+}
+
 auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
-    double mouse_y, std::uint16_t modifiers, bool flipped)
+    double mouse_y, std::uint16_t modifiers, bool flipped, bool fractional_is_smooth)
     -> std::optional<worm_ui_nuklear_compose_wheel_event_t> {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(mouse_x) ||
         !std::isfinite(mouse_y)) return std::nullopt;
@@ -121,7 +125,7 @@ auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
     return worm_ui_nuklear_compose_wheel_event_t{
         .delta_x = x * sign, .delta_y = y * sign,
         .mouse_x = mouse_x, .mouse_y = mouse_y, .modifiers = modifiers,
-        .coarse_steps = true};
+        .coarse_steps = !(fractional_is_smooth && (wheel_has_fraction(x) || wheel_has_fraction(y)))};
 }
 
 auto worm_ui_nuklear_compose_canvas_input_available(const wormedit::ui::compose_view_t* view,

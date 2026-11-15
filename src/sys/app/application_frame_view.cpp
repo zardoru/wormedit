@@ -10,9 +10,11 @@
 #include "sys/audio/waveform_view.h"
 
 #include <wormedit/audio/playback_rate.h>
+#include <wormedit/core/row_step.h>
 #include <wormedit/window.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace wormedit::sys {
@@ -47,8 +49,18 @@ void build_transport_position_view(frontend_workspace_view_t& flattened,
     auto whole_row = row->numerator / static_cast<std::int64_t>(row->denominator);
     if (row->numerator < 0 && row->numerator % static_cast<std::int64_t>(row->denominator) != 0)
         --whole_row;
-    view.transport_position = ui::transport_position_view_t{
-        .row = whole_row, .measure = measure, .beat = beat};
+    std::optional<std::int64_t> compose_row;
+    const auto* axis = state ? state->cut_axis.get() : nullptr;
+    if (axis && !axis->is_empty() && whole_row >= 0)
+        compose_row = static_cast<std::int64_t>(std::floor(axis->collapsed_row(whole_row)));
+    std::optional<std::uint64_t> compose_measure;
+    if (compose_row) {
+        const auto hidden = hidden_measures_before(measures, axis, measure - 1);
+        // A measure inside a cut maps onto the seam: the first visible measure after it.
+        if (measure > hidden) compose_measure = measure - hidden;
+    }
+    view.transport_position = ui::transport_position_view_t{.source_row = whole_row, .source_measure = measure,
+        .beat = beat, .compose_row = compose_row, .compose_measure = compose_measure};
 }
 
 void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,
@@ -141,6 +153,22 @@ auto make_workspace_frame_transport(const application_frame_projection_context_t
         if (const auto stopped = stopped_playhead(context)) {
             transport.frame = stopped->frame;
             transport.end_frame = std::max(transport.end_frame, stopped->end_frame);
+        }
+    }
+    // Source and compose time. Playing or paused with the cut clock, `frame` is on the compose
+    // clock; every other state reports source time. Timing focus plays the source clock without cuts.
+    transport.time_is_source = preview.timing_focus;
+    transport.source_clock_frame = transport.compose_clock_frame = transport.frame;
+    const auto* axis = context.compose_interaction_state ? context.compose_interaction_state->cut_axis.get()
+                                                          : nullptr;
+    if (axis && !axis->is_empty()) {
+        const auto frames = export_cut_frame_timeline_t::from(axis->timeline(), audio::output_sample_rate);
+        if (frames.value.intervals().size() != 0) {
+            const auto source = transport.source_frame();
+            const auto collapsed = frames.value.collapsed_frame(source);
+            transport.source_clock_frame = source;
+            transport.compose_clock_frame = collapsed;
+            transport.clocks_differ = source != collapsed;
         }
     }
     return transport;

@@ -47,6 +47,10 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
     flattened.view.transport_frame = args.transport.frame;
     flattened.view.transport_end_frame = args.transport.end_frame;
     flattened.view.transport_sample_rate = args.transport.sample_rate;
+    flattened.view.transport_source_clock_frame = args.transport.source_clock_frame;
+    flattened.view.transport_compose_clock_frame = args.transport.compose_clock_frame;
+    flattened.view.transport_clocks_differ = args.transport.clocks_differ;
+    flattened.view.transport_time_is_source = args.transport.time_is_source;
 
     args.player_preview_presenter.populate(
         flattened.view.player_preview, args.history, args.selected_chart,

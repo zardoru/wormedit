@@ -173,6 +173,14 @@ struct application_command_state_t {
         std::chrono::steady_clock::time_point at;
     };
 
+    // Where the last pixel scroll moved the playing playhead. A seek takes a moment to reach the
+    // audio clock, so a scroll within the repeat window continues from here, not the lagging clock.
+    struct playhead_scroll_record_t {
+        wormedit::chart_id_t chart{};
+        double row{};
+        std::chrono::steady_clock::time_point at;
+    };
+
     application_command_services_t services;
     bookmark_navigation_t bookmarks;
     metronome_t* metronome{};
@@ -309,6 +317,7 @@ struct application_command_state_t {
             std::optional<double> preview_playhead_absolute_row;
             std::optional<minimap_start_frame_t> minimap_start_frame;
             std::optional<playhead_skip_record_t> last_playhead_skip;
+            std::optional<playhead_scroll_record_t> last_playhead_scroll;
         } transport;
     } project;
 
@@ -320,6 +329,7 @@ struct application_command_state_t {
     void invalidate_playing_seek_records() {
         bookmarks.clear_seek_record();
         project.transport.last_playhead_skip.reset();
+        project.transport.last_playhead_scroll.reset();
     }
 };
 

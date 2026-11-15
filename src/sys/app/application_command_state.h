@@ -280,6 +280,8 @@ struct application_command_state_t {
 
         struct compose_view_state_t {
             double compose_editor_right_pixels{};
+            // Width the user gave the timing rows' region by dragging its edge; 0 = automatic.
+            double compose_timing_region_width_pixels{};
             std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
             std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
             std::uint16_t compose_timing_lane_visibility_mask{wormedit::default_timing_lane_mask};

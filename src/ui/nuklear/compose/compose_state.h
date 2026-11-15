@@ -643,6 +643,19 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t stem_lane_resize_hover_lane{};
     } stem_lanes;
 
+    // Drag of the timing region's right-edge handle (see compose_edge_handle.h). The width
+    // itself lives in the application state; this only carries the gesture.
+    struct timing_region_t {
+        bool drag_active{};
+        bool moved{};
+        // An interrupted drag puts the width it started from back on the next frame.
+        bool restore_pending{};
+        // Edge hovered or being dragged this frame; drives the edge highlight and cursor.
+        bool hovered{};
+        compose_drag_capture_t capture{};
+        double anchor_width{};
+    } timing_region;
+
     struct snap_grid_t {
         wormedit::ui::chrome::ContextMenu snap_grid_menu{.title = "Editing grid"};
         int snap_grid_choice{};

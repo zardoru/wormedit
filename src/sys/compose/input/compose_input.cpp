@@ -2565,7 +2565,8 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             ? std::popcount(
                   editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask))
             : 0,
-        effective_compose_timing_lane_mask(application_state));
+        effective_compose_timing_lane_mask(application_state),
+        application_state.project.compose_view.compose_timing_region_width_pixels);
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
@@ -2610,9 +2611,21 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
                : std::string{};
 }
 
+// A timing-region drag or reset from the handle on its right edge. 0 keeps the automatic width.
+static void apply_compose_timing_region_width(const wormedit::ui::workspace_action_t& action,
+                                       application_command_state_t& application) {
+    auto& stored = application.project.compose_view.compose_timing_region_width_pixels;
+    if (action.compose_timing_region_width_reset) stored = 0.0;
+    else if (action.compose_timing_region_width_pixels > 0.0)
+        stored = wormedit::ui::compose_timing_region_clamp(
+            action.compose_timing_region_width_pixels, effective_compose_timing_lane_mask(application));
+}
+
 void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application) {
+    if (workspace.active_tab == wormedit::workspace_tab_t::compose)
+        apply_compose_timing_region_width(action, application);
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id.value ||
         history.document.revision != action.compose_input_document_revision ||

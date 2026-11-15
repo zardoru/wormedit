@@ -1,6 +1,7 @@
 #include "ui/nuklear/render/font_atlas.h"
 #include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/app/sdl_backend.h"
+#include "ui/frontend/runtime.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <fstream>
@@ -218,6 +219,8 @@ auto editor_font_t::glyph(nk_rune rune) const -> const nk_font_glyph* {
 
 auto editor_font_t::width(nk_handle self, float height, const char* text, int length) -> float {
     auto& font = *static_cast<editor_font_t*>(self.ptr);
+    const auto started = worm_ui_text_measure_begin();
+    std::uint64_t glyph_count{};
     float result{};
     while (length > 0) {
         nk_rune rune{};
@@ -230,7 +233,9 @@ auto editor_font_t::width(nk_handle self, float height, const char* text, int le
             : glyph->xadvance * height / (font.handle_.height * font.raster_scale_);
         text += consumed;
         length -= consumed;
+        ++glyph_count;
     }
+    worm_ui_text_measure_end(started, glyph_count);
     return result;
 }
 

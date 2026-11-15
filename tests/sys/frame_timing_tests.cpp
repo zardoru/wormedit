@@ -1857,6 +1857,45 @@ TEST_CASE("Render convert submit and present child phases retain inclusive paren
     expect_gpu_work(frame_phase_parent(frame_phase_t::render_convert) == frame_phase_t::render);
 }
 
+TEST_CASE("Nuklear sub-phases keep inclusive parent timing and attribute text measures", "[sys][frame-timing]") {
+    auto& timer = frame_timing();
+    timer.begin_frame();
+    {
+        frame_phase_scope_t nuklear(frame_phase_t::nuklear);
+        frame_phase_scope_t chrome(frame_phase_t::nuklear_chrome);
+        worm_ui_text_measure_end(worm_ui_text_measure_begin(), 5);
+        const auto previous = worm_ui_frame_ui_phase_begin(WORM_UI_FRAME_UI_CANVAS_NOTES);
+        worm_ui_text_measure_end(worm_ui_text_measure_begin(), 7);
+        worm_ui_text_measure_end(worm_ui_text_measure_begin(), 3);
+        worm_ui_frame_ui_phase_end(previous);
+    }
+    timer.end_frame();
+    const auto& sample = timer.sample(timer.size() - 1);
+    const auto at = [](frame_phase_t phase) { return static_cast<std::size_t>(phase); };
+    CHECK(frame_phase_parent(frame_phase_t::nuklear_chrome) == frame_phase_t::nuklear);
+    CHECK(frame_phase_parent(frame_phase_t::nuklear_canvas_other) == frame_phase_t::nuklear);
+    CHECK(frame_phase_parent(frame_phase_t::nuklear) == frame_phase_t::count);
+    CHECK(sample.measured[at(frame_phase_t::nuklear_canvas_notes)]);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear_chrome)].calls == 1);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear_chrome)].glyphs == 5);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear_canvas_notes)].calls == 2);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear_canvas_notes)].glyphs == 10);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear)].calls == 3);
+    CHECK(sample.phase_text[at(frame_phase_t::nuklear)].glyphs == 15);
+    CHECK(sample.frame_text.calls == 3);
+    const auto children = sample.phase_ms[at(frame_phase_t::nuklear_chrome)] +
+        sample.phase_ms[at(frame_phase_t::nuklear_canvas_notes)];
+    CHECK(sample.phase_ms[at(frame_phase_t::nuklear)] + 0.001 >= children);
+    const auto summary = timer.text_summary(frame_phase_t::nuklear);
+    CHECK(summary.count >= 1);
+}
+
+TEST_CASE("Every frame phase appears once in the display order", "[sys][frame-timing]") {
+    std::array<int, frame_phase_count> seen{};
+    for (const auto phase : frame_phase_display_order) ++seen[static_cast<std::size_t>(phase)];
+    for (std::size_t i = 0; i < frame_phase_count; ++i) CHECK(seen[i] == 1);
+}
+
 TEST_CASE("Hidden GPU workload collection and summaries allocate no C++ storage", "[sys][frame-timing][gpu-work]") {
     frame_timing_t timer;
     timer.begin_frame();

@@ -33,6 +33,14 @@ enum class frame_phase_t : std::size_t {
     events_input,
     events_drops,
     events_jobs,
+    nuklear_commands,
+    nuklear_chrome,
+    nuklear_canvas_waveform,
+    nuklear_canvas_grid,
+    nuklear_canvas_timing,
+    nuklear_canvas_notes,
+    nuklear_canvas_overlays,
+    nuklear_canvas_other,
     count
 };
 inline constexpr std::size_t frame_timing_capacity = 240;
@@ -64,7 +72,15 @@ inline constexpr std::array<const char*, frame_phase_count> frame_phase_names{
     "  Present (VSync wait)",
     "  Input",
     "  Dropped files",
-    "  Jobs and autosave"};
+    "  Jobs and autosave",
+    "  Commands and menus",
+    "  Chrome, panels, dialogs",
+    "  Canvas waveform",
+    "  Canvas grid and lanes",
+    "  Canvas timing layer",
+    "  Canvas notes and BGM",
+    "  Canvas overlays",
+    "  Canvas setup and finish"};
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t;
 inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_display_order{
     frame_phase_t::events,
@@ -90,6 +106,14 @@ inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_displa
     frame_phase_t::workspace_bmson,
     frame_phase_t::scene,
     frame_phase_t::nuklear,
+    frame_phase_t::nuklear_commands,
+    frame_phase_t::nuklear_chrome,
+    frame_phase_t::nuklear_canvas_waveform,
+    frame_phase_t::nuklear_canvas_grid,
+    frame_phase_t::nuklear_canvas_timing,
+    frame_phase_t::nuklear_canvas_notes,
+    frame_phase_t::nuklear_canvas_overlays,
+    frame_phase_t::nuklear_canvas_other,
     frame_phase_t::render,
     frame_phase_t::render_convert,
     frame_phase_t::render_submit,
@@ -112,7 +136,28 @@ struct frame_heap_allocation_t {
 // singleton initialization occurs in the hook. Counters are thread-local.
 void record_frame_heap_allocation(std::size_t bytes) noexcept;
 auto frame_heap_allocation_snapshot() noexcept -> frame_heap_allocation_t;
+// Text measurement requests made through the UI font width callback on this thread.
+// `ticks` is non-zero only when WORMEDIT_TEXT_MEASURE_TIMING=1 (two timer reads per call
+// perturb the very cost being measured, so timing is opt-in; counts are always collected).
+struct frame_text_measure_t {
+    std::uint64_t calls{};
+    std::uint64_t glyphs{};
+    std::uint64_t ticks{};
+};
+auto frame_text_measure_timing_enabled() noexcept -> bool;
+void record_frame_text_measure(std::uint64_t glyphs, std::uint64_t ticks) noexcept;
+auto frame_text_measure_snapshot() noexcept -> frame_text_measure_t;
+struct frame_text_measure_summary_t {
+    std::size_t count{};
+    double calls_average{};
+    double glyphs_average{};
+    double milliseconds_average{};
+};
 struct frame_timing_sample_t {
+    frame_text_measure_t frame_text{};
+    double frame_text_ms{};
+    std::array<frame_text_measure_t, frame_phase_count> phase_text{};
+    std::array<double, frame_phase_count> phase_text_ms{};
     frame_gpu_work_t gpu_work{};
     frame_gpu_work_t diagnostic_gpu_work{};
     frame_heap_allocation_t frame_heap{};
@@ -189,6 +234,9 @@ class frame_timing_t {
         return size_;
     }
     auto summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
+    // Average text measurement per frame inside a phase (count = frames with that phase measured);
+    // frame_phase_t::count selects the whole frame.
+    auto text_summary(frame_phase_t phase = frame_phase_t::count) const -> frame_text_measure_summary_t;
     // The same statistics over thread CPU time; count is 0 where the platform cannot measure it.
     auto cpu_summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
     // Recent measured work through presentation, excluding the explicit frame-pacing wait.
@@ -205,6 +253,8 @@ class frame_timing_t {
     std::size_t size_{};
     frame_heap_allocation_t heap_begin_{};
     frame_heap_allocation_t heap_last_{};
+    frame_text_measure_t text_begin_{};
+    frame_text_measure_t text_last_{};
     std::uint64_t begin_{};
     std::uint64_t last_{};
     double cpu_begin_ms_{-1.0};

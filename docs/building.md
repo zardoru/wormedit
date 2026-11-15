@@ -464,3 +464,16 @@ Measure exact redundant Linux compile commands with
 output are normalized; feature definitions and include order remain significant.
 See [the T-779 measurements](audits/build-target-reuse-2026-10-29.md) for the
 baseline, bounded source-edit fanout and verification limits.
+
+## Frame timing diagnostics
+
+View → "Frame timing" shows per-phase averages and p99. The "Nuklear build" phase is split into
+child phases whose times are exclusive and add up to the parent: commands and menus (sys),
+chrome/panels/dialogs, and the Compose canvas in six parts (waveform, grid and lanes, timing layer
+with markers and bookmarks, notes and BGM, overlays, setup/finish). The frame-timing panel itself is
+drawn inside "Chrome, panels, dialogs"; close it when measuring that phase.
+
+Every phase also reports how many text measurements (`font->width` calls) and glyphs were
+processed per frame. `WORMEDIT_TEXT_MEASURE_TIMING=1` additionally times each call (two timer
+reads per call, so it inflates the measured cost; use it for the share of time, not for absolute
+numbers). `WORMEDIT_FRAME_TIMING_REPORT=<file>` appends the same numbers to a file.

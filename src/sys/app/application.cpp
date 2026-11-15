@@ -4508,17 +4508,23 @@ struct application_t::implementation_t {
     void compose_frame_ui(frontend_workspace_view_t& flattened, double viewport_delta_seconds) {
         const auto frame_nuklear_previous =
             wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
-        for (const auto& diagnostic : refresh_command_states())
-            platform.notification_sink.post(to_notification_severity(diagnostic.severity),
-                notification_source_t::input, diagnostic.message);
-        wormedit::sys::build_menu_commands_view(command_registry, flattened.view, command_menu_shortcuts);
-        build_command_menu_view(command_registry, command_menu_shortcuts, flattened.view);
+        {
+            wormedit::sys::frame_phase_scope_t commands(wormedit::sys::frame_phase_t::nuklear_commands);
+            for (const auto& diagnostic : refresh_command_states())
+                platform.notification_sink.post(to_notification_severity(diagnostic.severity),
+                    notification_source_t::input, diagnostic.message);
+            wormedit::sys::build_menu_commands_view(command_registry, flattened.view, command_menu_shortcuts);
+            build_command_menu_view(command_registry, command_menu_shortcuts, flattened.view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)
-        wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
+            wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif
+        }
         const auto project_directory = session.project_identity.asset_base.generic_string();
         worm_ui_frontend_set_project_directory(project_directory.c_str());
-        auto action = worm_ui_frontend_compose(&flattened.view);
+        auto action = [&] {
+            wormedit::sys::frame_phase_scope_t chrome(wormedit::sys::frame_phase_t::nuklear_chrome);
+            return worm_ui_frontend_compose(&flattened.view);
+        }();
         refresh_sound_selection_context(action, commands);
         dispatch_menu_command(action);
         retain_compose_hover_timing(views.project.compose_scene_cache, flattened.view, action);

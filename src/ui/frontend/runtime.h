@@ -73,6 +73,13 @@ struct frame_timing_stats_view_t {
     double cpu_p99_ms{};
     auto operator==(const frame_timing_stats_view_t&) const -> bool = default;
 };
+struct frame_text_measure_stats_view_t {
+    double calls_average{};
+    double glyphs_average{};
+    // Non-zero only when WORMEDIT_TEXT_MEASURE_TIMING=1.
+    double ms_average{};
+    auto operator==(const frame_text_measure_stats_view_t&) const -> bool = default;
+};
 struct frame_gpu_work_stats_view_t {
     size_t count{};
     double average{};
@@ -92,6 +99,9 @@ struct frame_timing_view_t {
     frame_timing_stats_view_t frame;
     std::vector<std::string_view> phase_names;
     std::vector<frame_timing_stats_view_t> phases;
+    // Per-frame text measurement requests inside each phase, parallel to `phases`.
+    std::vector<frame_text_measure_stats_view_t> phase_text;
+    bool text_timing_enabled{};
     bool heap_allocations_available{};
     uint64_t projection_heap_allocations_latest{};
     uint64_t projection_heap_bytes_latest{};
@@ -121,6 +131,29 @@ typedef enum WormUiFrameRenderPhase {
 // The returned token is opaque to the frontend and restores the prior phase.
 uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
+// Sub-phases of the "Nuklear build" phase. Time is attributed exclusively to the innermost one.
+typedef enum WormUiFrameUiPhase {
+    WORM_UI_FRAME_UI_CANVAS_WAVEFORM,
+    WORM_UI_FRAME_UI_CANVAS_GRID,
+    WORM_UI_FRAME_UI_CANVAS_TIMING,
+    WORM_UI_FRAME_UI_CANVAS_NOTES,
+    WORM_UI_FRAME_UI_CANVAS_OVERLAYS,
+    WORM_UI_FRAME_UI_CANVAS_OTHER
+} WormUiFrameUiPhase;
+uint32_t worm_ui_frame_ui_phase_begin(WormUiFrameUiPhase phase);
+void worm_ui_frame_ui_phase_end(uint32_t previous);
+// Brackets one font width measurement. begin returns 0 unless text timing is enabled.
+uint64_t worm_ui_text_measure_begin(void);
+void worm_ui_text_measure_end(uint64_t started, uint64_t glyphs);
+class UiSubphaseScope {
+  public:
+    explicit UiSubphaseScope(WormUiFrameUiPhase phase) : previous_(worm_ui_frame_ui_phase_begin(phase)) {}
+    ~UiSubphaseScope() { worm_ui_frame_ui_phase_end(previous_); }
+    UiSubphaseScope(const UiSubphaseScope&) = delete;
+    auto operator=(const UiSubphaseScope&) -> UiSubphaseScope& = delete;
+  private:
+    uint32_t previous_;
+};
 
 void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request);
 void worm_ui_frontend_sound_usage_request(wormedit::ui::sound_usage_request_t* request);

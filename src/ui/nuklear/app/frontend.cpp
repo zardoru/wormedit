@@ -3565,6 +3565,15 @@ static void render_frame_timing_overlay(int width, int height) {
                           timer.phase_names[i].data(), summary.average_ms, summary.p99_ms);
             else nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
                            timer.phase_names[i].data(), summary.average_ms, summary.p99_ms, summary.cpu_p99_ms);
+            if (summary.count == 0 || i >= timer.phase_text.size()) continue;
+            const auto text = timer.phase_text[i];
+            if (text.calls_average <= 0.0) continue;
+            nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
+            if (timer.text_timing_enabled)
+                nk_labelf(g_context, NK_TEXT_LEFT, "      text: %.0f calls, %.0f glyphs, %.3f ms",
+                          text.calls_average, text.glyphs_average, text.ms_average);
+            else nk_labelf(g_context, NK_TEXT_LEFT, "      text: %.0f calls, %.0f glyphs",
+                           text.calls_average, text.glyphs_average);
         }
     }
     nk_end(g_context);

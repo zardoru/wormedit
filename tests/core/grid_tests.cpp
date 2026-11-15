@@ -315,3 +315,29 @@ TEST_CASE("authored snap space draws each measure's own subdivisions",
     expect_grid((snap_rows(quantization_space_t::authored_measure) ==
                  std::vector<std::uint64_t>{300, 600, 900}));
 }
+
+TEST_CASE("authored snap space hides standard pulses inside unmetered short measures",
+          "[unit][core][grid][authored-snap]") {
+    auto chart = make_chart(960, {
+        {.id = measure_id_t{1}},
+        {.id = measure_id_t{2}, .definition = {{5, 16}, std::nullopt}},
+    });
+    const auto grid = [&](quantization_space_t space) {
+        const auto result = editor_grid_t::from(chart, {
+            .visible_begin_row = 960, .visible_end_row = 1260,
+            .active_snap = snap_grid_t{.denominator = 4, .space = space},
+            .density = {0.0, 0.0, 0.0}});
+        expect_grid(result.ok());
+        return result;
+    };
+    const auto standard = grid(quantization_space_t::standard_measure);
+    const auto* pulse = line_at(standard, 1200);
+    expect_grid(pulse && pulse->kind == editor_grid_line_kind_t::beat);
+    const auto authored = grid(quantization_space_t::authored_measure);
+    expect_grid(!line_at(authored, 1200));
+    for (const auto& line : authored.value.lines)
+        expect_grid(line.kind != editor_grid_line_kind_t::beat &&
+                    line.kind != editor_grid_line_kind_t::group);
+    const auto* snap = line_at(authored, 1035);
+    expect_grid(snap && snap->kind == editor_grid_line_kind_t::active_snap);
+}

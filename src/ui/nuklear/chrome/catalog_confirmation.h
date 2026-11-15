@@ -49,7 +49,7 @@ inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui:
         chrome::dismiss_popup(context, title, bounds);
         return std::nullopt;
     }
-    MenuSurface surface{};
+    chrome::MenuSurface surface{};
     if (!chrome::surface_popup_begin(context, title, bounds, surface)) {
         close_catalog_confirmation(state);
         return std::nullopt;

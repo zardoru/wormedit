@@ -1,3 +1,4 @@
+#include <wormedit/core/bgm_columns.h>
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose/views/compose_view.h"
@@ -2432,10 +2433,8 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
     populate_draw_stem_sources(flattened, cache, history.document, chart);
     populate_draw_source_label(flattened, cache, history.document);
     populate_bgm_draw_hint(view, chart);
-    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
-    view.bgm_column_count_editable =
-        chart.source_family == wormedit::format_family_t::bms ||
-        chart.source_family == wormedit::format_family_t::osu_mania;
+    view.bgm_column_count = static_cast<std::uint32_t>(wormedit::ordinal_bgm_column_count(chart));
+    view.bgm_column_count_editable = true;
     const auto downscroll = compose_field_downscroll(chart, application_state.preferences.editor_preferences);
     view.downscroll = downscroll;
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,

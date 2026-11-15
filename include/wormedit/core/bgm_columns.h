@@ -10,6 +10,9 @@ namespace wormedit {
 inline constexpr std::size_t minimum_bgm_column_count = 1;
 inline constexpr std::size_t maximum_bgm_column_count = 128;
 
+// Columns the count control owns: every BGM source lane except bmson stems.
+[[nodiscard]] auto ordinal_bgm_column_count(const chart_document_t& chart) -> std::size_t;
+
 // Append missing columns without publishing; callers own the transaction or proposal.
 [[nodiscard]] auto grow_bgm_columns(chart_document_t& chart, std::size_t count)
     -> result_t<void, std::string>;

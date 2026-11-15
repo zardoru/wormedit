@@ -122,12 +122,13 @@ they produced. Re-importing the converted chart gives keysounds, not stems.
 * Anything else the target cannot store is reported as a loss in *Preview*, and the target's
 loss policy decides whether the export is refused.
 
-== Using BMSON as a compatibility export
+== Legacy players
 
-A BMSON chart can also serve as a master, with the sliced exports as copies for players that
-cannot read BMSON. Keep the `.wormedit` project as the source and re-export after each
-edit. Because StepMania has no sound limit, it is the easiest copy to keep complete. BMS needs
-the file count to stay under 1295, so check *Preview* after adding slices.
+BMSON is the format to author in. Players that cannot read it are legacy targets, and the
+sliced exports exist to serve them. Keep the `.wormedit` project as the source and re-export
+after each edit instead of editing the converted files. Because StepMania has no sound limit,
+it is the easiest legacy copy to keep complete. BMS needs the sound count to stay under 1295,
+so run *Preview* after adding slices.
 
 == Check the result
 

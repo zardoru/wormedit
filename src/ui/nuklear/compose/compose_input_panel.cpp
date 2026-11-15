@@ -109,6 +109,7 @@ static void reset_draw_capture() {
 
 static void reset_measure_capture() { cancel_compose_measure_resize(); }
 static void reset_stem_capture() { worm_ui_nuklear_cancel_stem_lane_resize(state); }
+static void reset_timing_region_capture() { cancel_timing_region_resize(); }
 static void reset_tool_chip_capture() {
     state.pointer_capture.tool_chip_pointer_canceled |= state.pointer_capture.tool_chip_pointer_active;
 }
@@ -165,6 +166,7 @@ static auto compose_gesture_registry() -> const auto& {
         {&state.waveform_drag.waveform_overview_drag_active, reset_overview_capture},
         {&state.measure_resize.measure_resize_active, reset_measure_capture},
         {&state.stem_lanes.stem_lane_resize_cursor_requested, reset_stem_capture},
+        {&state.timing_region.drag_active, reset_timing_region_capture},
         {&state.pointer_capture.tool_chip_pointer_active, reset_tool_chip_capture, false},
         {&state.stem_lanes.bgm_mix_pointer_active},
     });

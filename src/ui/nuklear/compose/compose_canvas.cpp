@@ -3415,6 +3415,16 @@ static void draw_compose_stem_resize_edge(const ComposePaintContext& paint) {
     }
 }
 
+// Highlights the right edge of the timing region while its resize handle is hovered or dragged.
+static void draw_compose_timing_resize_edge(const ComposePaintContext& paint) {
+    if (!worm_ui_nuklear_compose_state().timing_region.hovered ||
+        paint.view->timing_lane_visibility_mask == 0) return;
+    const auto scale = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
+    const auto x = paint.viewport.x + static_cast<float>(wormedit::ui::compose_timing_right(*paint.view)) * scale;
+    field_line(paint, x, paint.viewport.y, x, paint.viewport.y + paint.viewport.h, 2.0f,
+               wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::accent), 4);
+}
+
 static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& paint,
                                                    bool draw_events=true) {
     ComposeHoveredBgm hovered{};
@@ -3434,6 +3444,7 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     draw_compose_bmson_marker_drafts(paint);
     draw_compose_bmson_move_preview(paint);
     draw_compose_stem_resize_edge(paint);
+    draw_compose_timing_resize_edge(paint);
     if (const auto filename = draw_compose_bgm_lane_labels(paint); !filename.empty()) {
         hovered = {};
         wormedit::ui::nuklear::tooltip::text(paint.context, filename);

@@ -520,6 +520,8 @@ struct compose_horizontal_layout_t {
     double bgm_pane_left_pixels{};
     double bgm_pane_width_pixels{};
     double bga_pane_width_pixels{};
+    // The requested timing lanes that fit left of the BGA pane; the rest are hidden for now.
+    std::uint16_t timing_lane_mask{};
 };
 
 auto compose_surface_height(int window_height, const wormedit::ui::workspace_view_t& view) -> double;
@@ -533,7 +535,8 @@ auto compose_project_y(long double row, double pixels_per_row, double scroll,
 auto compose_editor_layout_width(double viewport_width, double editor_right) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::uint16_t timing_lane_mask)
+                               std::uint16_t timing_lane_mask,
+                               double timing_region_width_pixels = 0.0)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t;

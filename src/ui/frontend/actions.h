@@ -635,6 +635,9 @@ struct workspace_action_t {
     double compose_input_viewport_width_pixels;
     // Uncovered editor right edge in the same source coordinates as the viewport.
     double compose_input_editor_right_pixels;
+    // Drag of the timing region's edge handle: the width asked for (0 = none) or a reset to automatic.
+    double compose_timing_region_width_pixels;
+    bool compose_timing_region_width_reset;
     wormedit::object_id_t compose_sound_hover_object_id;
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;

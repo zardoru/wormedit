@@ -1281,6 +1281,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto resize_consumed = process_stem_lane_resize(pointer_event, double_clicks,
                                                           double_click_count, compose_pointer_captured);
     compose_pointer_captured |= resize_consumed;
+    const auto timing_resize_consumed = process_timing_region_resize(
+        pointer_event, double_clicks, double_click_count, compose_pointer_captured);
+    compose_pointer_captured |= timing_resize_consumed;
     action->compose_has_pointer_hover = !state.input_queue.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
@@ -1296,7 +1299,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     update_compose_sound_hover(pointer_event);
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed = compose_input_queries_t{state}.is_paint_blocked() ||
-        beat_fit_pointer_consumed || resize_consumed || mix_consumed || compose_action_has_cancel(action);
+        beat_fit_pointer_consumed || resize_consumed || timing_resize_consumed || mix_consumed || compose_action_has_cancel(action);
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);

@@ -373,7 +373,8 @@ void render_mode_row(const SoundsPanel& panel) {
         state.keysound_catalog.keysound_selected_slot_explicit = false;
         if (state.keysound_slots.keysound_slot_confirmation_open) {
             const auto bounds = nk_rect(0, 60,
-                std::min(360.0f, nk_window_get_content_region(context).w), 180);
+                std::min(360.0f, nk_window_get_content_region(context).w),
+        180 + 2 * wormedit::ui::chrome::menu_padding);
             wormedit::ui::chrome::dismiss_popup(context, "Replace BMS WAV slot", bounds);
         }
         state.keysound_slots.keysound_slot_confirmation_open = false;
@@ -628,8 +629,8 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
         close_sound_slot_confirmation(panel);
         return;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Replace BMS WAV slot",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(context, "Replace BMS WAV slot", bounds, surface)) {
         close_sound_slot_confirmation(panel);
         return;
     }
@@ -647,7 +648,7 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
     }
     if (wormedit::ui::chrome::button_label(context, "Cancel")) close_sound_slot_confirmation(panel);
     if (!state.keysound_slots.keysound_slot_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
+    wormedit::ui::chrome::surface_popup_end(context, surface);
 }
 
 void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
@@ -1003,7 +1004,7 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     const auto& view = *panel.view;
     auto* context = panel.context;
     const auto region = nk_window_get_content_region(context);
-    const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204);
+    const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204 + 2 * wormedit::ui::chrome::menu_padding);
     if (state.keysound_slots.sound_layer_confirmation_project != view.project_id.value ||
         state.keysound_slots.sound_layer_confirmation_chart != view.chart_id.value ||
         state.keysound_slots.sound_layer_confirmation_revision != view.document_revision) {
@@ -1011,8 +1012,8 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
         wormedit::ui::chrome::dismiss_popup(context, "Sound note layers", bounds);
         return;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Sound note layers",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(context, "Sound note layers", bounds, surface)) {
         state.keysound_slots.sound_layer_confirmation_open = false;
         return;
     }
@@ -1024,7 +1025,7 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     if (wormedit::ui::chrome::button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
     if (wormedit::ui::chrome::button_label(context, "Cancel")) state.keysound_slots.sound_layer_confirmation_open = false;
     if (!state.keysound_slots.sound_layer_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
+    wormedit::ui::chrome::surface_popup_end(context, surface);
 }
 
 void render_layer_row(const SoundsPanel& panel, std::size_t index) {

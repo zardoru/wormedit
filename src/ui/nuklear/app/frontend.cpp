@@ -2119,12 +2119,14 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         const auto content = nk_window_get_content_region(g_context);
         popup_bounds = nk_rect(
             std::clamp(bounds.x - content.x, 0.0f, std::max(0.0f, content.w - 340.0f)),
-            std::max(0.0f, bounds.y - content.y - 70.0f), 340, 60);
+            std::max(0.0f, bounds.y - content.y - 70.0f), 340,
+            60 + 2 * wormedit::ui::chrome::menu_padding);
         open = true;
     }
     if (!open) return;
-    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "Minimap preferences",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, popup_bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(g_context, "Minimap preferences", popup_bounds,
+                                                   surface)) {
         open = false;
         return;
     }
@@ -2140,7 +2142,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         nk_popup_close(g_context);
     }
-    nk_popup_end(g_context);
+    wormedit::ui::chrome::surface_popup_end(g_context, surface);
 }
 
 static void render_status_minimap(const wormedit::ui::workspace_view_t& view,

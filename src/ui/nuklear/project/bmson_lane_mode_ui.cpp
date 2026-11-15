@@ -45,7 +45,7 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
     (void)wormedit::ui::chrome::popup_update_release_pending(context, confirmation.release_pending);
     if (!confirmation.open) return;
     const auto region = nk_window_get_content_region(context);
-    const auto bounds = nk_rect(0, 60, std::min(440.0f, region.w), 210);
+    const auto bounds = nk_rect(0, 60, std::min(440.0f, region.w), 210 + 2 * wormedit::ui::chrome::menu_padding);
     if (wormedit::ui::chrome::popup_dismiss_requested(context,
             wormedit::ui::chrome::popup_screen_bounds(context, bounds), confirmation.visible) ||
         !focused || sounds_tab != confirmation.sounds_tab ||
@@ -55,8 +55,8 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
         wormedit::ui::chrome::dismiss_popup(context, "Pack BMSON channel", bounds);
         return;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Pack BMSON channel",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) return;
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(context, "Pack BMSON channel", bounds, surface)) return;
     confirmation.visible = true;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_label(context, "continuation points need a stem lane", NK_TEXT_LEFT);
@@ -74,5 +74,5 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
         confirmation.release_pending = true;
         nk_popup_close(context);
     }
-    nk_popup_end(context);
+    wormedit::ui::chrome::surface_popup_end(context, surface);
 }

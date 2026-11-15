@@ -1,12 +1,13 @@
 #include "ui/nuklear/compose/compose_note_label_inline.h"
 
+#include "ui/nuklear/chrome/text_prompt.h"
+
 #include <algorithm>
 #include <cstring>
 
 namespace {
-constexpr float popup_width = 300.0f;
-constexpr float popup_height = 58.0f;
-constexpr float gap_above_note = 40.0f;
+// The prompt sits just above the double-click, so the note it names stays visible.
+constexpr float gap_above_note = wormedit::ui::metrics::gap_large;
 } // namespace
 
 auto begin_compose_note_label_inline(inline_label_editor_t& editor,
@@ -31,10 +32,11 @@ auto begin_compose_note_label_inline(inline_label_editor_t& editor,
 
 auto note_label_inline_bounds(const inline_label_editor_t& editor, struct nk_rect content)
     -> struct nk_rect {
-    const auto width = std::min(popup_width, content.w);
+    const auto width = wormedit::ui::chrome::text_prompt_width_for(content);
+    const auto popup_height = wormedit::ui::chrome::text_prompt_height;
     const auto x = std::clamp(editor.anchor_x - content.x - width * 0.5f, 0.0f,
                               std::max(0.0f, content.w - width));
-    const auto y = std::clamp(editor.anchor_y - content.y - gap_above_note, 0.0f,
+    const auto y = std::clamp(editor.anchor_y - content.y - popup_height - gap_above_note, 0.0f,
                               std::max(0.0f, content.h - popup_height));
     return nk_rect(x, y, width, popup_height);
 }

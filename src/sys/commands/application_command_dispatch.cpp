@@ -1004,7 +1004,7 @@ auto run_targeted_ui_command(command_context_t& context, worm_ui_targeted_action
                              notification_source_t source, bool pending) -> command_result_t {
     const auto& run = context.environment.editor.commands.services.run_targeted_ui_action;
     const auto rejected = [&](std::string_view message) {
-        return compose_action_outcome_t::from(message, notification_severity_t::warning, source,
+        return compose_action_outcome_t::from(std::string{message}, notification_severity_t::warning, source,
                                               diagnostic_code_t::unsupported_feature);
     };
     if (!chart || !run) return rejected(missing_message);

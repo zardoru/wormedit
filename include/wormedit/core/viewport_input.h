@@ -18,6 +18,9 @@ struct viewport_scroll_action_t {
     viewport_pane_t pane{viewport_pane_t::chart};
     double delta_x_pixels{};
     double delta_y_pixels{};
+    // Smooth pixel motion (touchpad, inertia, autoscroll) as opposed to a wheel notch. While
+    // playing, continuous scrolls move the playhead by pixels and notches step by beat.
+    bool continuous{};
 };
 
 struct viewport_zoom_action_t {

@@ -280,3 +280,24 @@ TEST_CASE("invalid middle click and pointer positions cannot poison autoscroll",
     controller.update_autoscroll_pointer(nan, std::numeric_limits<double>::infinity());
     CHECK(controller.advance(0.1).is_empty());
 }
+
+TEST_CASE("smooth motion is marked continuous and notches are not", "[unit][core][viewport-input]") {
+    viewport_input_controller_t controller;
+    const auto notch = controller.handle_wheel({.pane = viewport_pane_t::chart,
+        .kind = viewport_wheel_kind_t::coarse_steps, .delta_y = 1.0});
+    REQUIRE(notch.count == 1);
+    CHECK_FALSE(scroll_at(notch).continuous);
+    const auto smooth = controller.handle_wheel({.pane = viewport_pane_t::chart,
+        .kind = viewport_wheel_kind_t::smooth_pixels, .delta_y = 3.0});
+    REQUIRE(smooth.count == 1);
+    CHECK(scroll_at(smooth).continuous);
+    controller.begin_trackpad(viewport_pane_t::chart);
+    const auto pad = controller.handle_trackpad(0.0, 5.0);
+    REQUIRE(pad.count == 1);
+    CHECK(scroll_at(pad).continuous);
+    controller.end_trackpad();
+    controller.begin_momentum(viewport_pane_t::chart, 0.0, 400.0);
+    const auto inertia = controller.advance(0.016);
+    REQUIRE(inertia.count == 1);
+    CHECK(scroll_at(inertia).continuous);
+}

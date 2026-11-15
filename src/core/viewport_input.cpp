@@ -27,6 +27,12 @@ constexpr double momentum_stop_speed = 0.5;
     return std::clamp(value, -maximum, maximum);
 }
 
+void mark_continuous(viewport_action_batch_t& batch) noexcept {
+    for (std::size_t index = 0; index < batch.count; ++index)
+        if (auto* scroll = std::get_if<viewport_scroll_action_t>(&batch.actions[index]))
+            scroll->continuous = true;
+}
+
 [[nodiscard]] auto direction_sign(bool natural_direction) noexcept -> double {
     return natural_direction ? 1.0 : -1.0;
 }
@@ -94,6 +100,7 @@ auto viewport_input_controller_t::handle_wheel(const viewport_wheel_input_t& inp
     }
 
     add_pane_scroll(batch, pane, delta_x, delta_y);
+    if (input.kind == viewport_wheel_kind_t::smooth_pixels) mark_continuous(batch);
     return batch;
 }
 
@@ -119,6 +126,7 @@ auto viewport_input_controller_t::handle_trackpad(double delta_x_pixels,
         clamp_magnitude(finite_delta(delta_y_pixels) * settings_.smooth_sensitivity * sign,
                         settings_.maximum_scroll_delta_pixels);
     add_pane_scroll(batch, routed_pane_, delta_x, delta_y);
+    mark_continuous(batch);
     return batch;
 }
 
@@ -195,6 +203,7 @@ auto viewport_input_controller_t::advance(double delta_seconds) noexcept
         const auto velocity_x = auto_velocity(autoscroll_pointer_x_, autoscroll_anchor_x_);
         const auto velocity_y = auto_velocity(autoscroll_pointer_y_, autoscroll_anchor_y_);
         add_pane_scroll(batch, routed_pane_, velocity_x * dt, velocity_y * dt);
+        mark_continuous(batch);
         return batch;
     }
 
@@ -209,6 +218,7 @@ auto viewport_input_controller_t::advance(double delta_seconds) noexcept
     momentum_velocity_x_ *= decay;
     momentum_velocity_y_ *= decay;
     add_pane_scroll(batch, routed_pane_, delta_x, delta_y);
+    mark_continuous(batch);
 
     if (std::abs(momentum_velocity_x_) < momentum_stop_speed &&
         std::abs(momentum_velocity_y_) < momentum_stop_speed)

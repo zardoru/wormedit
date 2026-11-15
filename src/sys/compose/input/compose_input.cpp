@@ -2339,7 +2339,9 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
     // Convert displacement to chart direction before routing it to the viewport or playhead.
     const auto chart_delta = compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll);
     if (is_preview_playing(context.environment.commands)) {
-        if (context.environment.controls.viewport.is_autoscroll_active()) {
+        // Pixel motion (autoscroll, touchpad, inertia) moves the playhead continuously; wheel
+        // notches step by beat below.
+        if (scroll.continuous || context.environment.controls.viewport.is_autoscroll_active()) {
             const auto outcome = scroll_playing_playhead(context.environment.document.history,
                 context.environment.commands, *context.input_chart, context.state, chart_delta);
             status = outcome.message;

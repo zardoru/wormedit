@@ -172,6 +172,8 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
             if (append_beat_fit_snap_wheel(input, wheel)) continue;
             if (append_alt_wheel_step(input, wheel)) continue;
             const auto zoom_modifier = compose_wheel_zooms(wheel.modifiers);
+            // Smooth events are in SDL units of a tenth of a pixel; the controller reads pixels.
+            const auto unit_pixels = wheel.coarse_steps ? 1.0 : worm_ui_nuklear_smooth_wheel_pixels_per_unit;
             if (input.action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit)
                 break;
             const auto visual_y = (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels /
@@ -180,8 +182,8 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
                 .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
                                            : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
                 .zoom_modifier = zoom_modifier,
-                .delta_x = worm_ui_nuklear_compose_wheel_speed(wheel.delta_x, wheel.tab_speed_modifier && !zoom_modifier),
-                .delta_y = worm_ui_nuklear_compose_wheel_speed(wheel.delta_y, wheel.tab_speed_modifier && !zoom_modifier),
+                .delta_x = worm_ui_nuklear_compose_wheel_speed(wheel.delta_x, wheel.tab_speed_modifier && !zoom_modifier) * unit_pixels,
+                .delta_y = worm_ui_nuklear_compose_wheel_speed(wheel.delta_y, wheel.tab_speed_modifier && !zoom_modifier) * unit_pixels,
                 .cursor_x_pixels =
                     (wheel.mouse_x - input.viewport.x) * view.viewport_width_pixels / input.viewport.w,
                 .cursor_y_pixels = zoom_modifier

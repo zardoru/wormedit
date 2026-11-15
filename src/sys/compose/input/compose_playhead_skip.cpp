@@ -146,7 +146,12 @@ auto skip_playing_playhead(const document_history_t& history,
 auto scroll_playing_playhead(const document_history_t& history,
     application_command_state_t& application, const chart_document_t& chart,
     const editor_interaction_state_t& state, double delta_pixels) -> compose_action_outcome_t {
-    const auto playhead = application.project.transport.preview_playhead_absolute_row;
+    auto playhead = application.project.transport.preview_playhead_absolute_row;
+    // Continue a gesture from its last target while a seek is still reaching the audio clock.
+    const auto& scrolled = application.project.transport.last_playhead_scroll;
+    if (scrolled && scrolled->chart == chart.id &&
+        application.bookmarks.now() - scrolled->at <= playing_seek_repeat_window)
+        playhead = scrolled->row;
     if (!playhead || !std::isfinite(*playhead) || !std::isfinite(delta_pixels) ||
         !std::isfinite(state.pixels_per_standard_measure) ||
         state.pixels_per_standard_measure <= 0.0 || chart.divisions_per_standard_measure == 0)
@@ -178,8 +183,12 @@ auto scroll_playing_playhead(const document_history_t& history,
     auto outcome = seek_compose_navigation_position(history, chart, application,
         {.position = *position, .preview_frame = std::get<std::uint64_t>(frame)},
         &*indices->measures);
-    if (outcome.accepted)
+    if (outcome.accepted) {
         application.project.transport.preview_playhead_absolute_row = static_cast<double>(target);
+        // After the seek, which clears the seek records.
+        application.project.transport.last_playhead_scroll = {chart.id, static_cast<double>(target),
+                                                             application.bookmarks.now()};
+    }
     return outcome;
 }
 

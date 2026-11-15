@@ -265,9 +265,7 @@ struct worm_ui_nuklear_compose_state_t {
         stem_lane_key_t key;
         double anchor_x{}, anchor_width{36};
     };
-    struct layer_creation_request_t {
-        std::uint64_t project{}, chart{}, revision{};
-    };
+    using layer_creation_request_t = worm_ui_compose_target_t;
 
     struct input_queue_t {
 

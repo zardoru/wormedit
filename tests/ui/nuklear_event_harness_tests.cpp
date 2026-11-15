@@ -6348,10 +6348,10 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     } else if (tab == WORM_UI_WORKSPACE_TAB_COMPOSE) {
         require_project_access(harness.drawn_text().find("Export…") == std::string::npos);
     }
-    require_project_access(!worm_ui_frontend_open_project_export(view.project_id.value + 1,
-        view.selected_chart_id.value, view.document_revision));
-    require_project_access(worm_ui_frontend_open_project_export(view.project_id.value,
-        view.selected_chart_id.value, view.document_revision));
+    require_project_access(!worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::project_export,
+        {view.project_id.value + 1, view.selected_chart_id.value, view.document_revision}));
+    require_project_access(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::project_export,
+        {view.project_id.value, view.selected_chart_id.value, view.document_revision}));
     (void)harness.frame();
     (void)harness.frame();
     INFO(harness.drawn_text());
@@ -6391,8 +6391,8 @@ TEST_CASE("Ask conflict confirmation dispatches replace or cancel without changi
     (void)harness.frame();
     (void)harness.frame();
     require_project_access(harness.drawn_text_center("Replace existing files?").has_value());
-    require_project_access(!worm_ui_frontend_open_project_export(view.project_id.value,
-        view.selected_chart_id.value, view.document_revision));
+    require_project_access(!worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::project_export,
+        {view.project_id.value, view.selected_chart_id.value, view.document_revision}));
     const auto button = harness.drawn_text_center(choice.first);
     require_project_access(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);
@@ -9090,8 +9090,8 @@ TEST_CASE("Search popup release guards retire while Compose is hidden",
     view.compose.bookmark_chooser.chart_id.value = view.compose.chart_id.value;
     view.compose.bookmark_chooser.document_revision = view.compose.document_revision;
     (void)harness.frame();
-    if (sound) expect_t422(worm_ui_frontend_open_sound_picker(1, 1, 1));
-    else expect_t422(worm_ui_frontend_open_bookmark_chooser(1, 1, 1));
+    if (sound) expect_t422(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::sound_picker, {1, 1, 1}));
+    else expect_t422(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::bookmark_chooser, {1, 1, 1}));
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     auto& pending = sound ? state.sound_picker_ui.sound_picker.release_pending : state.bookmark_ui.bookmark_chooser.release_pending;

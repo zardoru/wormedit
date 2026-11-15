@@ -996,47 +996,44 @@ auto navigation_commands(command_context_t& context) -> command_result_t {
         notification_severity_t::hint, notification_source_t::input);
 }
 
+// Shared by every command that opens a targeted UI action: it builds the target from the active
+// document, rejects while a gesture is pending, and turns a refusal into one message.
+auto run_targeted_ui_command(command_context_t& context, worm_ui_targeted_action_t action,
+                             std::uint64_t chart, std::string_view unavailable_message,
+                             std::string_view missing_message, std::string_view pending_message,
+                             notification_source_t source, bool pending) -> command_result_t {
+    const auto& run = context.environment.editor.commands.services.run_targeted_ui_action;
+    const auto rejected = [&](std::string_view message) {
+        return compose_action_outcome_t::from(message, notification_severity_t::warning, source,
+                                              diagnostic_code_t::unsupported_feature);
+    };
+    if (!chart || !run) return rejected(missing_message);
+    if (pending || context.environment.editor.commands.project.clipboard.paste_session)
+        return rejected(pending_message);
+    if (!run(action, {context.environment.document.history.document.id.value, chart,
+                      context.environment.document.history.document.revision}))
+        return rejected(unavailable_message);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+}
+
 auto open_bookmark_chooser_command(command_context_t& context) -> command_result_t {
     auto* interaction = context.compose();
-    if (!interaction || !context.environment.editor.commands.bookmarks.has_chooser_backend())
-        return compose_action_outcome_t::from(
-            "Bookmark chooser requires the active Compose chart.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (interaction->is_pending())
-        return compose_action_outcome_t::from(
-            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    const bool opened = context.environment.editor.commands.bookmarks.open_chooser(
-        context.environment.document.history.document.id.value, interaction->chart.value,
-        context.environment.document.history.document.revision);
-    if (!opened)
-        return compose_action_outcome_t::from(
-            "Bookmark chooser is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input,
-            diagnostic_code_t::unsupported_feature);
-    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+    return run_targeted_ui_command(
+        context, worm_ui_targeted_action_t::bookmark_chooser, interaction ? interaction->chart.value : 0,
+        "Bookmark chooser is unavailable while another editor owns input.",
+        "Bookmark chooser requires the active Compose chart.",
+        "Finish or cancel the active Compose gesture first.", notification_source_t::input,
+        interaction && interaction->is_pending());
 }
 
 auto open_sound_picker_command(command_context_t& context) -> command_result_t {
     auto* interaction = context.compose();
-    if (!interaction || !context.environment.editor.commands.services.open_sound_picker)
-        return compose_action_outcome_t::from(
-            "Sound picker requires the active Compose chart.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (interaction->is_pending() ||
-        context.environment.editor.commands.project.clipboard.paste_session)
-        return compose_action_outcome_t::from(
-            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    const bool opened = context.environment.editor.commands.services.open_sound_picker(
-        context.environment.document.history.document.id.value, interaction->chart.value,
-        context.environment.document.history.document.revision);
-    if (!opened)
-        return compose_action_outcome_t::from(
-            "Sound picker is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input,
-            diagnostic_code_t::unsupported_feature);
-    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+    return run_targeted_ui_command(
+        context, worm_ui_targeted_action_t::sound_picker, interaction ? interaction->chart.value : 0,
+        "Sound picker is unavailable while another editor owns input.",
+        "Sound picker requires the active Compose chart.",
+        "Finish or cancel the active Compose gesture first.", notification_source_t::input,
+        interaction && interaction->is_pending());
 }
 
 auto next_free_slot_command(command_context_t& context) -> command_result_t {
@@ -1063,7 +1060,8 @@ auto next_free_slot_command(command_context_t& context) -> command_result_t {
             notification_severity_t::warning, notification_source_t::input,
             compose_message_lifetime_t::owned);
     }
-    if (!services.reveal_free_slot(document.id.value, interaction->chart.value, document.revision, bmp, *slot))
+    if (!services.reveal_free_slot(
+            {document.id.value, interaction->chart.value, document.revision}, bmp, *slot))
         return compose_action_outcome_t::from(
             "Free slot lookup is unavailable while another editor owns input.",
             notification_severity_t::warning, notification_source_t::input,
@@ -1108,64 +1106,37 @@ auto compose_quantize_command(command_context_t& context) -> command_result_t {
 auto project_export_command(command_context_t& context) -> command_result_t {
     const auto* chart = selected_chart(context.environment.document.history,
                                        context.environment.document.workspace);
-    if (!chart || !context.environment.editor.commands.services.open_project_export)
-        return compose_action_outcome_t::from(
-            "Export requires a selected project difficulty.", notification_severity_t::warning,
-            notification_source_t::export_, diagnostic_code_t::unsupported_feature);
-    if ((context.environment.editor.retained &&
-         context.environment.editor.retained->is_pending()) ||
-        context.environment.editor.commands.project.clipboard.paste_session)
-        return compose_action_outcome_t::from(
-            "Finish or cancel the active editor gesture before exporting.",
-            notification_severity_t::warning, notification_source_t::export_,
-            diagnostic_code_t::unsupported_feature);
-    const bool opened = context.environment.editor.commands.services.open_project_export(
-        context.environment.document.history.document.id.value, chart->id.value,
-        context.environment.document.history.document.revision);
-    if (!opened)
-        return compose_action_outcome_t::from(
-            "Export is unavailable while another window owns input.",
-            notification_severity_t::warning, notification_source_t::export_,
-            diagnostic_code_t::unsupported_feature);
-    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+    return run_targeted_ui_command(
+        context, worm_ui_targeted_action_t::project_export, chart ? chart->id.value : 0,
+        "Export is unavailable while another window owns input.",
+        "Export requires a selected project difficulty.",
+        "Finish or cancel the active editor gesture before exporting.", notification_source_t::export_,
+        context.environment.editor.retained && context.environment.editor.retained->is_pending());
 }
 
 auto compose_auxiliary_command(command_context_t& context) -> command_result_t {
-    WormUiComposeDockCommand dock;
+    worm_ui_targeted_action_t dock;
     switch (context.command.kind) {
     case command_kind_t::view_open_layers:
-        dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS;
+        dock = worm_ui_targeted_action_t::dock_open_layers;
         break;
     case command_kind_t::semantic_layer_create:
-        dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER;
+        dock = worm_ui_targeted_action_t::dock_create_layer;
         break;
     case command_kind_t::view_toggle_sounds:
-        dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS;
+        dock = worm_ui_targeted_action_t::dock_toggle_sounds;
         break;
     default:
         std::unreachable();
     }
     auto* interaction = context.compose();
-    if (!interaction ||
-        context.environment.editor.commands.project.compose_view.compose_timing_focus ||
-        !context.environment.editor.commands.services.compose_dock_command)
-        return compose_action_outcome_t::from(
-            "Dock command requires the active Compose chart.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (interaction->is_pending() ||
-        context.environment.editor.commands.project.clipboard.paste_session)
-        return compose_action_outcome_t::from(
-            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
-            notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    const bool accepted = context.environment.editor.commands.services.compose_dock_command(
-        dock, context.environment.document.history.document.id.value, interaction->chart.value,
-        context.environment.document.history.document.revision);
-    if (!accepted)
-        return compose_action_outcome_t::from(
-            "Dock command is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input,
-            diagnostic_code_t::unsupported_feature);
-    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+    const bool timing_focus = context.environment.editor.commands.project.compose_view.compose_timing_focus;
+    return run_targeted_ui_command(
+        context, dock, interaction && !timing_focus ? interaction->chart.value : 0,
+        "Dock command is unavailable while another editor owns input.",
+        "Dock command requires the active Compose chart.",
+        "Finish or cancel the active Compose gesture first.", notification_source_t::input,
+        interaction && interaction->is_pending());
 }
 
 auto run_bookmark_command(application_command_context_t& context, editor_interaction_state_t& state,

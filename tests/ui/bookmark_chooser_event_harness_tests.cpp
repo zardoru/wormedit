@@ -53,7 +53,7 @@ void prepare_view(nuklear_event_harness_t& harness,
 }
 
 void open_chooser(nuklear_event_harness_t& harness) {
-    REQUIRE(worm_ui_frontend_open_bookmark_chooser(3, 7, 11));
+    REQUIRE(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::bookmark_chooser, {3, 7, 11}));
     static_cast<void>(harness.frame());
 }
 

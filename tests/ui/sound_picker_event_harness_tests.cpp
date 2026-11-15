@@ -25,7 +25,7 @@ void prepare(nuklear_event_harness_t& harness) {
     view.sound_picker.rows[1] = {wormedit::resource_id_t{42}, "02 · Snare  (#42)", false};
     view.sound_picker.rows.resize(2); view.sound_picker.total_count = 2;
     static_cast<void>(harness.frame());
-    require_picker(worm_ui_frontend_open_sound_picker(1, 1, 1));
+    require_picker(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::sound_picker, {1, 1, 1}));
     static_cast<void>(harness.frame());
 }
 auto press(nuklear_event_harness_t& harness, SDL_Keycode code, SDL_Scancode scan)

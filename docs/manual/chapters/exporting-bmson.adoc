@@ -1,0 +1,137 @@
+[#exporting-bmson]
+= Exporting a BMSON chart to other formats
+
+BMSON is the one chart format that stores _stems_: long audio files that a chart cuts into
+pieces with slice points. osu!mania, StepMania and BMS have no such thing. Their charts name
+whole sound files and play them from a note. Wormedit bridges the two by cutting the stems for
+you when you export.
+
+This chapter covers the main use, converting a BMSON chart to another format, and a secondary
+one: handing a BMSON chart to a player that cannot read BMSON. For the export screen itself,
+see <<walkthrough-bms>> and <<walkthrough-osu-stepmania>>; this chapter only adds what is
+specific to BMSON.
+
+== The workflow
+
+. Open the `.bmson` file, or drop it on the window (<<opening>>). Its audio files must be next
+to it and decodable; sounds that are missing are reported as unresolved resources.
+. Press kbd:[Ctrl+S] and save the `.wormedit` project. Exporting needs a saved project.
+. On *Project* (kbd:[F1]), under *Exports*, add or edit a target: osu!mania, StepMania or BMS.
+If the project has no target, choose a suggestion in the empty *Exports* section. Include the
+BMSON chart in the target.
+. Open the target's *⋯* menu and choose *Preview*. It lists the files that would be written,
+including the generated sound files, and every warning, without writing anything.
+. Click *Export*. Wormedit publishes the chart and its generated sounds together. If anything
+fails, nothing is written.
+
+Exporting to a native `.wormedit` project or back to BMSON keeps everything described below
+as it is. Stems, slice points and channels survive, and nothing is cut.
+
+== What a BMSON file becomes in Wormedit
+
+Wormedit sorts each BMSON sound channel into one of two kinds when it imports the chart:
+
+Stem::
+A channel with at least one continuation note (`c: true`). Its notes are slice points in one
+long audio file. A stem gets its own BGM lane in Compose, named after the file.
+Keysound::
+A channel with only restart notes. Every note plays its file from the start. The BGM events of
+all keysound channels are packed into the fewest BGM columns that avoid overlaps, named
+*BGM 1*, *BGM 2* and so on.
+
+Playable notes keep their sound and their link to the channel event they came from. If a
+playable note and a BGM note play the same slice at the same pulse, the BMSON specification says
+to drop the BGM note, and the importer does. Moving a linked playable note to BGM
+(kbd:[`]) puts it back on its stem, with its timing and slice point.
+
+== What changes in other formats
+
+osu!mania, StepMania and BMS cannot play part of a file. For these targets, Wormedit:
+
+. finds every distinct slice of every stem, from the slice's source file and its first and last
+frame;
+. renders one WAV file for each distinct slice, named `<source name>_001.wav`, `_002` and so on,
+and avoids names already used in the project. Slices that repeat share one file;
+. binds each playable note and each BGM event to the file for its slice.
+
+The generated files are stereo, 44.1{nbsp}kHz, 32-bit float WAV, so the converted chart plays the
+same samples as the original. They are written next to the chart by the same all-or-nothing
+publication as the chart itself. A continuation that starts at or after the end of its file has
+no audio; the note stays in the chart without a sound.
+
+Keysound channels are not cut. Each one becomes one sound used by every note that plays it.
+
+[cols="1,2,2,2",options="header"]
+|===
+| |osu!mania |StepMania |BMS
+
+|Playable notes
+|Hit sample on the note.
+|Keysound index on the note. The files are listed in `#KEYSOUNDS`, which has no size limit.
+|`#WAV` slot on the note.
+
+|BGM events
+|Storyboard `Sample` events. A hold tail on a BGM event is dropped, with a warning.
+|Autokeysound cells in a free column at that row. If none is free, the event is dropped and a
+warning counts them.
+|BGM channels, one per packed column or stem lane. A hold tail is dropped, with a warning.
+
+|Scratch lanes
+|Ordinary key columns.
+|Ordinary columns.
+|Kept as BMS scratch, if the layout has a compatible BMS channel profile.
+
+|Sound limit
+|None.
+|None.
+|1295 sounds.
+|===
+
+=== BMS and the sound limit
+
+BMS names sounds with two-character base-36 numbers, so a file can hold 1295 sounds. A BMSON
+chart converts to BMS only if the sounds fit: each distinct slice, each other sound the chart
+still uses, and one shared silent sample for notes that have no audio. If they do not fit,
+the export is refused before anything is written, with a message such as "needs 1400 sounds,
+BMS holds 1295". Run *Preview* to find out before you export. Sounds that nothing references
+do not count. A BMSON layout also needs a compatible BMS channel profile.
+
+=== osu!mania timing precision
+
+osu!mania stable files store autoplay sample times in whole milliseconds. Wormedit rounds them
+and warns with the largest error it introduced, which is never more than half a millisecond.
+The lazer profile (*lazer-v128*) keeps fractional times and gives no warning.
+
+== Timing
+
+BMSON counts in pulses and has no measures or time signatures. On import, Wormedit maps pulses
+to exact divisions of a measure, and the `lines` field defines where the measures start and so
+how long they are. A file with no `lines` gets 4/4 measures. Timing then goes through each
+target's own rules:
+
+* *BMS* and *StepMania* keep BPM changes and stops.
+* *osu!mania* accepts time signatures with a denominator of 4 and a numerator from 1 to 32. It
+cannot store pauses, warps, speed curves or sections, so a chart that uses them is refused
+instead of exported with the timing changed.
+
+== What does not carry over
+
+* Stems become separate files. The slice points no longer exist in the output, only the files
+they produced. Re-importing the converted chart gives keysounds, not stems.
+* Hold tails on BGM events are dropped in osu!mania and BMS.
+* Anything else the target cannot store is reported as a loss in *Preview*, and the target's
+loss policy decides whether the export is refused.
+
+== Using BMSON as a compatibility export
+
+A BMSON chart can also serve as a master, with the sliced exports as copies for players that
+cannot read BMSON. Keep the `.wormedit` project as the source and re-export after each
+edit. Because StepMania has no sound limit, it is the easiest copy to keep complete. BMS needs
+the file count to stay under 1295, so check *Preview* after adding slices.
+
+== Check the result
+
+. Read every warning in *Preview*; losses are listed there.
+. Open the exported chart in Wormedit and use <<comparing,Compare / Validate>> to compare it with
+the original difficulty.
+. Play both in Compose. The sliced WAVs should sound the same as the stems.

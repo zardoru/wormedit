@@ -309,6 +309,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/compose-input-contracts.md
     docs/chart-editor-plan/tasks/frontend-boundary-guard.md
     docs/chart-editor-plan/tasks/navigation-review-followups.md
+    docs/chart-editor-plan/tasks/layers-panel-followups.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

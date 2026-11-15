@@ -62,6 +62,8 @@ enum class application_command_kind_t {
     navigation_next_bookmark,
     navigation_go_to_bookmark,
     navigation_go_to_sound,
+    navigation_next_free_wav_slot,
+    navigation_next_free_bmp_slot,
     view_open_layers,
     semantic_layer_create,
     document_export_output_group,

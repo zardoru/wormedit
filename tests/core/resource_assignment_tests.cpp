@@ -359,6 +359,35 @@ TEST_CASE("BMS identifier runs skip undersized holes and capacity counts free ra
     CHECK(capacity.largest_free_run > 5);
 }
 
+TEST_CASE("next free BMS slot searches forward, wraps past ZZ and reports a full namespace",
+          "[unit][core][resources][bms-identifiers]") {
+    auto song = assignment_song();
+    song.resources.front().target_identities = {{format_family_t::bms, "01", "WAV"},
+                                                {format_family_t::bms, "02", "WAV"},
+                                                {format_family_t::bms, "04", "WAV"},
+                                                {format_family_t::bms, "ZZ", "WAV"},
+                                                {format_family_t::bms, "03", "BMP"}};
+    CHECK(find_next_free_bms_slot(song, "WAV", 0) == std::optional<std::size_t>{3});
+    CHECK(find_next_free_bms_slot(song, "WAV", 1) == std::optional<std::size_t>{3});
+    CHECK(find_next_free_bms_slot(song, "WAV", 3) == std::optional<std::size_t>{5});
+    // Wraps from the last slot (and from the occupied ZZ) back to the first gap.
+    CHECK(find_next_free_bms_slot(song, "WAV", 1'295) == std::optional<std::size_t>{3});
+    CHECK(find_next_free_bms_slot(song, "WAV", 1'294) == std::optional<std::size_t>{3});
+    // Out-of-range starts behave like "before 01".
+    CHECK(find_next_free_bms_slot(song, "WAV", 99'999) == std::optional<std::size_t>{3});
+    // The namespaces are independent.
+    CHECK(find_next_free_bms_slot(song, "BMP", 0) == std::optional<std::size_t>{1});
+    CHECK(find_next_free_bms_slot(song, "BMP", 2) == std::optional<std::size_t>{4});
+    CHECK(!find_next_free_bms_slot(song, "OTHER", 0));
+    // Only 00 is never offered; a fully used namespace has nothing to find.
+    for (std::size_t value = 1; value <= 1'295; ++value) {
+        const auto digits = std::string_view{"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"};
+        song.resources.front().target_identities.push_back(
+            {format_family_t::bms, std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+    CHECK(!find_next_free_bms_slot(song, "WAV", 7));
+}
+
 TEST_CASE("lowercase BMS base-36 aliases occupy their uppercase namespace ID",
           "[unit][core][resources][bms-identifiers]") {
     auto song = assignment_song();

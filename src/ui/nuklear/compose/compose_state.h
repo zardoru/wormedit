@@ -787,6 +787,8 @@ struct worm_ui_nuklear_compose_state_t {
         float bga_list_x{}, bga_list_y{}, bga_list_width{}, bga_list_height{};
         // The BGA rows shown last frame, kept so Ctrl+A over the list can select them.
         std::vector<std::uint64_t> bga_shown;
+        // Last slot the "Next free BMP slot" command reported; the next search starts after it.
+        std::size_t free_slot_cursor{};
     } bga_catalog;
 
     struct sounds_dock_t {

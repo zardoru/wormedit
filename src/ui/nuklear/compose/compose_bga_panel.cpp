@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/catalog_chrome.h"
+#include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/nuklear/chrome/content_layout.h"
 #include "ui/nuklear/compose/compose_bga_panel.h"
 #include "ui/nuklear/chrome/catalog_confirmation.h"
@@ -421,6 +422,11 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     }
     if (block_list_pointer) nk_widget_disable_end(context);
     render_bga_usage(context, *view, *action, *state, block_list_pointer);
+    if (view->bga_ids_available) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        if (wormedit::ui::chrome::button_label(context, "Next free BMP slot") != 0)
+            emit_compose_menu_command(*action, *view, "navigation.next_free_bmp_slot");
+    }
     if (view->bga_ids_available)
         wormedit::ui::nuklear::render_catalog_capacity(context,
             {.used = view->bga_ids_used, .total = view->bga_ids_total,

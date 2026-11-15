@@ -3630,6 +3630,8 @@ struct application_t::implementation_t {
         session.recovery_scan_configured = startup.recovery_scan_configured;
         commands.bookmarks.chooser_backend = {.open = open_bookmark_chooser_backend};
         commands.services.open_sound_picker = worm_ui_frontend_open_sound_picker;
+        commands.services.free_slot_search_start = worm_ui_frontend_free_slot_search_start;
+        commands.services.reveal_free_slot = worm_ui_frontend_reveal_free_slot;
         commands.services.compose_dock_command = worm_ui_frontend_compose_dock_command;
         commands.services.open_project_export = worm_ui_frontend_open_project_export;
         commands.services.system_clipboard_text = read_system_clipboard_text;

@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/catalog_chrome.h"
+#include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/compose_draw_source_labels.h"
 #include "ui/nuklear/chrome/content_layout.h"
 #include "core/text_util.h"
@@ -390,6 +391,11 @@ void render_mode_row(const SoundsPanel& panel) {
         state.keysound_catalog.keysound_selected_slot = 1;
         state.keysound_catalog.keysound_selected_slot_explicit = false;
         state.keysound_catalog.keysound_selected_slot_resource = 0;
+    }
+    if (state.keysound_filters.keysound_slots_mode) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        if (wormedit::ui::chrome::button_label(context, "Next free slot") != 0)
+            emit_compose_menu_command(*panel.action, *panel.view, "navigation.next_free_wav_slot");
     }
 }
 

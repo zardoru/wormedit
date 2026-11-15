@@ -91,6 +91,15 @@ void report_phase_heap_allocations(std::FILE* output, const frame_timing_t& time
             bytes.average, bytes.p99);
     }
 }
+void report_text_measure(std::FILE* output, const frame_timing_t& timer, frame_phase_t phase) {
+    const auto text = timer.text_summary(phase);
+    if (text.calls_average <= 0.0) return;
+    std::fprintf(output, "  text measures per frame: %.1f calls, %.1f glyphs", text.calls_average,
+                 text.glyphs_average);
+    if (frame_text_measure_timing_enabled())
+        std::fprintf(output, ", %.6f ms inside the width callback", text.milliseconds_average);
+    std::fprintf(output, "\n");
+}
 void report_heap_allocations(std::FILE* output, const frame_timing_t& timer) {
     const auto count = timer.heap_summary(frame_phase_t::workspace);
     const auto bytes = timer.heap_summary(frame_phase_t::workspace, true);
@@ -123,6 +132,15 @@ void report_gpu_work(std::FILE* output, const frame_timing_t& timer,
 }
 auto milliseconds(std::uint64_t ticks) -> double {
     return static_cast<double>(ticks) * 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
+}
+// Text measured while a phase was current; ticks convert to milliseconds only for reports.
+void add_text_measure(frame_timing_sample_t& sample, std::size_t index,
+                      const frame_text_measure_t& delta) {
+    auto& total = sample.phase_text[index];
+    total.calls += delta.calls;
+    total.glyphs += delta.glyphs;
+    total.ticks += delta.ticks;
+    sample.phase_text_ms[index] += milliseconds(delta.ticks);
 }
 // CPU time consumed by the calling thread, or a negative value where it is unavailable.
 auto thread_cpu_ms() -> double {
@@ -221,6 +239,7 @@ void report_if_requested(const frame_timing_t& timer) {
         if (cpu.count != 0)
             std::fprintf(output, "; cpu average %.6f ms, p99 %.6f ms", cpu.average_ms, cpu.p99_ms);
         std::fprintf(output, "\n");
+        report_text_measure(output, timer, phase);
     }
     report_heap_allocations(output, timer);
     report_gpu_work(output, timer, frame_gpu_work_source_t::application,
@@ -246,7 +265,27 @@ auto frame_heap_allocation_snapshot() noexcept -> frame_heap_allocation_t {
     return {};
 #endif
 }
+namespace {
+thread_local frame_text_measure_t text_measure{};
+}
+auto frame_text_measure_timing_enabled() noexcept -> bool {
+    static const bool enabled = [] {
+        const auto* value = std::getenv("WORMEDIT_TEXT_MEASURE_TIMING");
+        return value && *value && *value != '0';
+    }();
+    return enabled;
+}
+void record_frame_text_measure(std::uint64_t glyphs, std::uint64_t ticks) noexcept {
+    ++text_measure.calls;
+    text_measure.glyphs += glyphs;
+    text_measure.ticks += ticks;
+}
+auto frame_text_measure_snapshot() noexcept -> frame_text_measure_t {
+    return text_measure;
+}
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t {
+    if (phase >= frame_phase_t::nuklear_commands && phase <= frame_phase_t::nuklear_canvas_other)
+        return frame_phase_t::nuklear;
     if (phase == frame_phase_t::audio_service || phase == frame_phase_t::audio_pump)
         return frame_phase_t::audio;
     if (phase >= frame_phase_t::workspace_flatten && phase <= frame_phase_t::workspace_bmson)
@@ -267,6 +306,7 @@ void frame_timing_t::begin_frame() {
     current_.heap_measured = heap_hook_seen;
 #endif
     heap_begin_ = heap_last_ = frame_heap_allocation_snapshot();
+    text_begin_ = text_last_ = frame_text_measure_snapshot();
     phase_ = frame_phase_t::count;
     begin_ = last_ = SDL_GetPerformanceCounter();
     cpu_begin_ms_ = cpu_last_ms_ = thread_cpu_ms();
@@ -287,8 +327,13 @@ void frame_timing_t::checkpoint() {
     const auto heap = frame_heap_allocation_snapshot();
     const frame_heap_allocation_t delta{heap.count - heap_last_.count,
                                       heap.bytes - heap_last_.bytes};
+    const auto text = frame_text_measure_snapshot();
+    const frame_text_measure_t text_delta{text.calls - text_last_.calls,
+                                          text.glyphs - text_last_.glyphs,
+                                          text.ticks - text_last_.ticks};
     if (phase_ != frame_phase_t::count) {
         const auto index = static_cast<std::size_t>(phase_);
+        add_text_measure(current_, index, text_delta);
         current_.phase_ms[index] += milliseconds(now - last_);
         current_.phase_cpu_ms[index] += cpu_delta;
         current_.measured[index] = true;
@@ -297,6 +342,7 @@ void frame_timing_t::checkpoint() {
         const auto parent = frame_phase_parent(phase_);
         if (parent != frame_phase_t::count) {
             const auto parent_index = static_cast<std::size_t>(parent);
+            add_text_measure(current_, parent_index, text_delta);
             current_.phase_ms[parent_index] += milliseconds(now - last_);
             current_.phase_cpu_ms[parent_index] += cpu_delta;
             current_.measured[parent_index] = true;
@@ -312,6 +358,7 @@ void frame_timing_t::checkpoint() {
         }
     }
     heap_last_ = heap;
+    text_last_ = text;
     last_ = now;
     if (cpu_now >= 0.0) cpu_last_ms_ = cpu_now;
 }
@@ -344,6 +391,10 @@ void frame_timing_t::end_frame() {
 #endif
     current_.frame_heap = {heap_last_.count - heap_begin_.count,
                            heap_last_.bytes - heap_begin_.bytes};
+    current_.frame_text = {text_last_.calls - text_begin_.calls,
+                           text_last_.glyphs - text_begin_.glyphs,
+                           text_last_.ticks - text_begin_.ticks};
+    current_.frame_text_ms = milliseconds(current_.frame_text.ticks);
     record(current_);
     log_spike_if_requested(current_);
     active_ = false;
@@ -424,6 +475,27 @@ auto frame_timing_t::heap_summary(frame_phase_t phase, bool bytes) const
     result.p99 = sorted[(result.count * 99 + 99) / 100 - 1];
     return result;
 }
+auto frame_timing_t::text_summary(frame_phase_t phase) const -> frame_text_measure_summary_t {
+    frame_text_measure_summary_t result;
+    const auto index = static_cast<std::size_t>(phase);
+    if (index > frame_phase_count) return result;
+    for (std::size_t frame = 0; frame < size_; ++frame) {
+        const auto& entry = sample(frame);
+        if (phase != frame_phase_t::count && !entry.measured[index]) continue;
+        const auto text = phase == frame_phase_t::count ? entry.frame_text : entry.phase_text[index];
+        const auto ms = phase == frame_phase_t::count ? entry.frame_text_ms : entry.phase_text_ms[index];
+        ++result.count;
+        result.calls_average += static_cast<double>(text.calls);
+        result.glyphs_average += static_cast<double>(text.glyphs);
+        result.milliseconds_average += ms;
+    }
+    if (result.count == 0) return result;
+    const auto count = static_cast<double>(result.count);
+    result.calls_average /= count;
+    result.glyphs_average /= count;
+    result.milliseconds_average /= count;
+    return result;
+}
 auto frame_timing_t::sample(std::size_t index) const -> const frame_timing_sample_t& {
     assert(index < size_);
     return samples_[(next_ + frame_timing_capacity - size_ + index) % frame_timing_capacity];
@@ -494,6 +566,7 @@ void worm_ui_frame_timing_view(wormedit::ui::frame_timing_view_t& result) {
     result.frame_ms.resize(timer.size());
     result.phase_names.resize(frame_phase_count);
     result.phases.resize(frame_phase_count);
+    result.phase_text.resize(frame_phase_count);
     result.gpu_work_names.resize(frame_gpu_work_count);
     for (std::size_t i = 0; i < timer.size(); ++i)
         result.frame_ms[i] = timer.sample(i).frame_ms;
@@ -507,7 +580,10 @@ void worm_ui_frame_timing_view(wormedit::ui::frame_timing_view_t& result) {
         const auto cpu = timer.cpu_summary(phase);
         result.phase_names[i] = frame_phase_names[index];
         result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms, cpu.count, cpu.p99_ms};
+        const auto text = timer.text_summary(phase);
+        result.phase_text[i] = {text.calls_average, text.glyphs_average, text.milliseconds_average};
     }
+    result.text_timing_enabled = frame_text_measure_timing_enabled();
     result.heap_allocations_available = false;
     result.projection_heap_allocations_latest = 0;
     result.projection_heap_bytes_latest = 0;
@@ -553,4 +629,29 @@ void worm_ui_frame_render_phase_end(uint32_t previous) {
     using namespace wormedit::sys;
     if (previous <= frame_phase_count)
         frame_timing().restore(static_cast<frame_phase_t>(previous));
+}
+
+uint32_t worm_ui_frame_ui_phase_begin(WormUiFrameUiPhase phase) {
+    using namespace wormedit::sys;
+    constexpr std::array phases{
+        frame_phase_t::nuklear_canvas_waveform,
+        frame_phase_t::nuklear_canvas_grid, frame_phase_t::nuklear_canvas_timing,
+        frame_phase_t::nuklear_canvas_notes, frame_phase_t::nuklear_canvas_overlays,
+        frame_phase_t::nuklear_canvas_other};
+    const auto index = static_cast<std::size_t>(phase);
+    if (index >= phases.size()) return static_cast<uint32_t>(frame_phase_count);
+    return static_cast<uint32_t>(frame_timing().enter(phases[index]));
+}
+void worm_ui_frame_ui_phase_end(uint32_t previous) {
+    using namespace wormedit::sys;
+    if (previous <= frame_phase_count)
+        frame_timing().restore(static_cast<frame_phase_t>(previous));
+}
+
+uint64_t worm_ui_text_measure_begin(void) {
+    return wormedit::sys::frame_text_measure_timing_enabled() ? SDL_GetPerformanceCounter() : 0;
+}
+void worm_ui_text_measure_end(uint64_t started, uint64_t glyphs) {
+    wormedit::sys::record_frame_text_measure(
+        glyphs, started != 0 ? SDL_GetPerformanceCounter() - started : 0);
 }

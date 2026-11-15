@@ -23,6 +23,7 @@
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/app/sdl_backend.h"
+#include "ui/frontend/runtime.h"
 
 #include "wormedit/nuklear_config.h"
 #include <wormedit/core/vocabulary.h>
@@ -3829,6 +3830,8 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
         if (owner) static_cast<canvas_cache_state_t&>(*owner).static_work = {};
         return;
     }
+    // Canvas time is attributed exclusively to the innermost scope; setup and finish remain "other".
+    const UiSubphaseScope canvas_other(WORM_UI_FRAME_UI_CANVAS_OTHER);
     begin_compose_scene_field(context,*view,viewport);
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
@@ -3848,45 +3851,64 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
             viewport.x + static_cast<float>(view->playable_field_left_pixels) * viewport.w /
                              static_cast<float>(view->viewport_width_pixels);
         const ComposePaintContext paint{context, view, canvas, viewport, rail};
+        ComposeHoveredBgm hovered_bgm{};
         ComposeTimingLaneLayout timing_layout{};
         timing_layout.field_left = view->bga_lane_visible
             ? viewport.x + static_cast<float>(view->bga_lane_bounds.left) * viewport.w /
                                static_cast<float>(view->viewport_width_pixels)
             : field_left;
-        draw_compose_scene_background(paint, timing_layout);
-        draw_compose_waveform_layer(paint, timing_layout);
-        draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
-            !wormedit::ui::nuklear::can_retain_compose_grid(context) ||
-            view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
-        draw_compose_lane_layout_segments(paint);
-        draw_compose_measure_lane(paint);
-        draw_compose_dead_spans(paint);
-        draw_compose_export_cuts(paint);
-        draw_compose_area_band(paint);
-        draw_compose_timing_layer(paint, timing_layout);
-        const bool active_notes=compose_notes_require_direct(*view);
-        const bool active_bgm=std::ranges::any_of(std::span(view->bgm_events),
-            [](const auto& event) { return event.selected || event.proposal_ghost; });
-        const auto hold_holes=compose_hover_holes(paint,7);
-        const auto note_holes=compose_note_holes(paint);
-        const bool grouped=!active_notes && !active_bgm && hold_holes.has_value();
-        draw_compose_cached_pass(paint,7,true,!grouped,[&](const ComposePaintContext& cached) {
-            draw_compose_hold_bodies(cached);
-            if (grouped) {
-                ComposeHoveredBgm ignored{};
-                draw_compose_bgm_events(cached,ignored);
-            }
-        },hold_holes ? std::span<const SDL_FRect>(*hold_holes) : std::span<const SDL_FRect>{});
-        const auto hovered_bgm = draw_compose_audio_markers(paint,!grouped);
-        draw_compose_cached_pass(paint,9,true,active_notes || !note_holes ||
-            !wormedit::ui::nuklear::can_retain_compose_glyphs(context),
-            [&](const ComposePaintContext& cached) { draw_compose_notes(cached); },
-            note_holes ? std::span<const SDL_FRect>(*note_holes) : std::span<const SDL_FRect>{});
-        if (wormedit::ui::compose_notes_dimmed(compose_mode_of(*paint.view)))
-            draw_compose_notes_veil(paint);
-        draw_compose_paint_ghost(paint);
-        draw_compose_foreground_markers(paint);
-        draw_compose_editor_overlays(paint, hovered_bgm);
+        {
+            const UiSubphaseScope grid_scope(WORM_UI_FRAME_UI_CANVAS_GRID);
+            draw_compose_scene_background(paint, timing_layout);
+        }
+        {
+            const UiSubphaseScope waveform_scope(WORM_UI_FRAME_UI_CANVAS_WAVEFORM);
+            draw_compose_waveform_layer(paint, timing_layout);
+        }
+        {
+            const UiSubphaseScope grid_scope(WORM_UI_FRAME_UI_CANVAS_GRID);
+            draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
+                !wormedit::ui::nuklear::can_retain_compose_grid(context) ||
+                view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
+            draw_compose_lane_layout_segments(paint);
+            draw_compose_measure_lane(paint);
+            draw_compose_dead_spans(paint);
+            draw_compose_export_cuts(paint);
+            draw_compose_area_band(paint);
+        }
+        {
+            const UiSubphaseScope timing_scope(WORM_UI_FRAME_UI_CANVAS_TIMING);
+            draw_compose_timing_layer(paint, timing_layout);
+        }
+        {
+            const UiSubphaseScope notes_scope(WORM_UI_FRAME_UI_CANVAS_NOTES);
+            const bool active_notes=compose_notes_require_direct(*view);
+            const bool active_bgm=std::ranges::any_of(std::span(view->bgm_events),
+                [](const auto& event) { return event.selected || event.proposal_ghost; });
+            const auto hold_holes=compose_hover_holes(paint,7);
+            const auto note_holes=compose_note_holes(paint);
+            const bool grouped=!active_notes && !active_bgm && hold_holes.has_value();
+            draw_compose_cached_pass(paint,7,true,!grouped,[&](const ComposePaintContext& cached) {
+                draw_compose_hold_bodies(cached);
+                if (grouped) {
+                    ComposeHoveredBgm ignored{};
+                    draw_compose_bgm_events(cached,ignored);
+                }
+            },hold_holes ? std::span<const SDL_FRect>(*hold_holes) : std::span<const SDL_FRect>{});
+            hovered_bgm = draw_compose_audio_markers(paint,!grouped);
+            draw_compose_cached_pass(paint,9,true,active_notes || !note_holes ||
+                !wormedit::ui::nuklear::can_retain_compose_glyphs(context),
+                [&](const ComposePaintContext& cached) { draw_compose_notes(cached); },
+                note_holes ? std::span<const SDL_FRect>(*note_holes) : std::span<const SDL_FRect>{});
+            if (wormedit::ui::compose_notes_dimmed(compose_mode_of(*paint.view)))
+                draw_compose_notes_veil(paint);
+            draw_compose_paint_ghost(paint);
+        }
+        {
+            const UiSubphaseScope overlays_scope(WORM_UI_FRAME_UI_CANVAS_OVERLAYS);
+            draw_compose_foreground_markers(paint);
+            draw_compose_editor_overlays(paint, hovered_bgm);
+        }
     }
     finish_static_work(context);
     wormedit::ui::nuklear::insert_compose_field(context, canvas, viewport);

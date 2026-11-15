@@ -65,6 +65,8 @@ class scrub_tracker_t {
     [[nodiscard]] auto update(const scrub_input_t& input) -> scrub_output_t;
     void cancel() noexcept;
     [[nodiscard]] auto phase() const noexcept -> scrub_phase_t { return phase_; }
+    // A finished gesture is still waiting out the delay before playback resumes.
+    [[nodiscard]] auto is_resume_pending() const noexcept -> bool { return resume_pending_; }
     [[nodiscard]] auto settings() const noexcept -> const scrub_settings_t& { return settings_; }
 
   private:

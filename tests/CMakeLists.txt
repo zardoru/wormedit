@@ -383,6 +383,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/sdl_preview_output_tests.cpp
             sys/audio_options_runtime_tests.cpp
             ../src/sys/audio/audio_options_runtime.cpp
+            ../src/sys/audio/sdl_scrub_output.cpp
             ../src/sys/audio/chart_preview_state.cpp
             ../src/sys/audio/export_cut_preview.cpp
             ../src/sys/app/frame_timing.cpp

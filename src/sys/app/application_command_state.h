@@ -318,6 +318,8 @@ struct application_command_state_t {
             std::optional<minimap_start_frame_t> minimap_start_frame;
             std::optional<playhead_skip_record_t> last_playhead_skip;
             std::optional<playhead_scroll_record_t> last_playhead_scroll;
+            // A continuous (touchpad) scroll moved the field this frame; scrub audio consumes it.
+            bool scrub_scrolled{};
         } transport;
     } project;
 

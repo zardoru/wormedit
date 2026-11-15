@@ -8,6 +8,7 @@
 #include "sys/app/event_loop_wake.h"
 #include "sys/app/frame_demand.h"
 #include "sys/app/frame_pacing.h"
+#include "sys/app/touchpad_fingers.h"
 
 #include "ui/frontend.h"
 #include "wormedit/window.h"
@@ -108,6 +109,7 @@ auto poll_frontend_events(WormWindow& window, frontend_event_batch_t& batch, con
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
         if (event.type == SDL_EVENT_CLIPBOARD_UPDATE) environment.system_clipboard_changed = true;
+        touchpad_fingers().handle_event(event);
         const bool sound_drop = collect_dropped_resources(event, window.handle, workspace,
                                                       history, sound_drop_transaction, pending_resource_batches);
         const bool project_chart_drop = !sound_drop && offer_dropped_chart_project(

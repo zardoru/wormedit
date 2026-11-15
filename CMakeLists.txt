@@ -854,6 +854,8 @@ if(WORMEDIT_BUILD_APP)
             src/sys/audio/waveform_analysis_runtime.cpp
             src/sys/audio/sdl_audition_output.cpp
             src/sys/audio/sdl_preview_output.cpp
+            src/sys/audio/sdl_scrub_output.cpp
+            src/sys/audio/scrub_controller.cpp
             src/sys/audio/audio_options_runtime.cpp
         )
         target_link_libraries(wormedit PRIVATE wormedit::audio_decoder)

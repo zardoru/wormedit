@@ -81,6 +81,8 @@
 |Next Bookmark |`+Ctrl+Down+`
 |Go To Bookmark |`+Ctrl+Shift+G+`
 |Go to sound |`+Ctrl+K+`
+|Next Free WAV Slot |`+Ctrl+Shift+F+`
+|Next Free BMP Slot |`+Ctrl+Alt+F+`
 |Previous Snap |`+Left+`
 |Next Snap |`+Right+`
 |===

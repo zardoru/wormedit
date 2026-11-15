@@ -133,6 +133,11 @@ void worm_ui_frontend_keysound_dock_request(wormedit::ui::keysound_dock_request_
 void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_request_t* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);
+// Free-slot search for the WAV slot list and the BMP lane: where the next search starts (0 = before
+// slot 01) and the reveal of the slot found.
+size_t worm_ui_frontend_free_slot_search_start(bool bmp);
+bool worm_ui_frontend_reveal_free_slot(uint64_t project_id, uint64_t chart_id, uint64_t revision,
+                                       bool bmp, size_t slot);
 bool worm_ui_frontend_open_project_export(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 typedef enum WormUiComposeDockCommand {
     WORM_UI_COMPOSE_DOCK_OPEN_LAYERS,

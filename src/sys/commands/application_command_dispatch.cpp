@@ -28,6 +28,8 @@
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/marker_navigation.h>
+#include <wormedit/core/resource_assignment.h>
+#include <format>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
@@ -393,6 +395,8 @@ auto refresh_application_command_states(
     updates.set({"navigation.previous_marker"}, marker_navigation_available);
     updates.set({"navigation.next_marker"}, marker_navigation_available);
     updates.set({"navigation.go_to_sound"}, sound_picker_command_available(compose_ready, pending));
+    updates.set({"navigation.next_free_wav_slot"}, sound_picker_command_available(compose_ready, pending));
+    updates.set({"navigation.next_free_bmp_slot"}, sound_picker_command_available(compose_ready, pending));
     refresh_compose_dock_commands(updates, compose_ready, pending, application_state);
     updates.set({"document.export_output_group"}, project_export_available(chart, compose_state, application_state));
     refresh_quantize_commands(updates, compose_ready, pending, compose_state, history, application_state);
@@ -1035,6 +1039,43 @@ auto open_sound_picker_command(command_context_t& context) -> command_result_t {
     return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
+auto next_free_slot_command(command_context_t& context) -> command_result_t {
+    constexpr std::string_view slot_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const auto bmp = context.command.kind == command_kind_t::navigation_next_free_bmp_slot;
+    const char* const name_space = bmp ? "BMP" : "WAV";
+    auto* interaction = context.compose();
+    const auto& services = context.environment.editor.commands.services;
+    const auto& document = context.environment.document.history.document;
+    if (!interaction || !services.free_slot_search_start || !services.reveal_free_slot)
+        return compose_action_outcome_t::from(
+            "Finding a free slot requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
+    if (interaction->is_pending() ||
+        context.environment.editor.commands.project.clipboard.paste_session)
+        return compose_action_outcome_t::from(
+            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
+    const auto slot = find_next_free_bms_slot(document, name_space, services.free_slot_search_start(bmp));
+    if (!slot) {
+        const auto capacity = bms_identifier_capacity(document, name_space);
+        return compose_action_outcome_t::from(
+            std::format("No free {} slots left ({} / {} used).", name_space, capacity.used, capacity.total),
+            notification_severity_t::warning, notification_source_t::input,
+            compose_message_lifetime_t::owned);
+    }
+    if (!services.reveal_free_slot(document.id.value, interaction->chart.value, document.revision, bmp, *slot))
+        return compose_action_outcome_t::from(
+            "Free slot lookup is unavailable while another editor owns input.",
+            notification_severity_t::warning, notification_source_t::input,
+            diagnostic_code_t::unsupported_feature);
+    if (bmp)
+        return compose_action_outcome_t::from(
+            std::format("Next free BMP slot: {}{}", slot_digits[*slot / 36], slot_digits[*slot % 36]),
+            notification_severity_t::info, notification_source_t::input,
+            compose_message_lifetime_t::owned);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
+}
+
 auto compose_quantize_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
     auto* state = context.compose();
@@ -1602,6 +1643,9 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
         return {.operation = compose_quantize_command, .uses_producer_rebind_policy = true};
     case command_kind_t::navigation_go_to_sound:
         return {.operation = open_sound_picker_command};
+    case command_kind_t::navigation_next_free_wav_slot:
+    case command_kind_t::navigation_next_free_bmp_slot:
+        return {.operation = next_free_slot_command};
     case command_kind_t::view_open_layers:
     case command_kind_t::semantic_layer_create:
     case command_kind_t::view_toggle_sounds:

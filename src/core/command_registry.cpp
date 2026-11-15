@@ -863,6 +863,12 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     add_builtin(registry, invoker, "navigation.go_to_sound", "Go to sound",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::k, primary())}, false, compose);
+    add_builtin(registry, invoker, "navigation.next_free_wav_slot", "Next Free WAV Slot",
+                command_category_t::navigation, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::f, modified(shortcut_modifier_t::shift))}, false, compose);
+    add_builtin(registry, invoker, "navigation.next_free_bmp_slot", "Next Free BMP Slot",
+                command_category_t::navigation, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::f, modified(shortcut_modifier_t::alt))}, false, compose);
     add_builtin(registry, invoker, "edit.toggle_quantize_preview", "Toggle Quantize Preview",
                 command_category_t::edit, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::q, modified(shortcut_modifier_t::alt))}, true, compose);

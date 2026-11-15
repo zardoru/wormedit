@@ -20,9 +20,11 @@ default on).
 
 ## Behavior
 
+- The needle is only down while the chart plays: scrolling while stopped never scrubs, and a
+  scrub ends if playback stops. Scrolling with Tab held (the fast wheel) never scrubs either.
 - Continuous scroll actions set `transport.scrub_scrolled`. Each frame, `application.cpp`
   (`service_scrub_audio`) resolves where the scroll has dragged the audio: the playhead scroll
-  target while playing, the edit cursor while parked.
+  target.
 - Playing: the song is muted from the first scrub until `resume_delay_seconds` (0.15 s) after the
   gesture ends. The existing playhead seeks keep running underneath, so playback simply unmutes at
   the new position. Notches keep stepping by beat.
@@ -35,4 +37,3 @@ default on).
 
 - The SDL stream, refill worker latency (MP3 reverse seeks on album-length sources), and the
   finger count on a real trackpad need a run on macOS.
-- That parked scrolling moves the edit cursor (the position source) as expected.

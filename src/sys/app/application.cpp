@@ -3797,10 +3797,8 @@ struct application_t::implementation_t {
     }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    // Where continuous scrolling has dragged the audio, as a playback timeline frame: the
-    // playhead's scroll target while playing, the edit cursor while parked.
-    auto scrub_timeline_frame(const wormedit::chart_document_t& chart,
-                              const wormedit::editor_interaction_state_t* cursor)
+    // Where continuous scrolling has dragged the playing playhead, as a playback timeline frame.
+    auto scrub_timeline_frame(const wormedit::chart_document_t& chart)
         -> std::optional<std::uint64_t> {
         auto& state = audio_runtime.preview_state;
         const auto& compiled = state.compiled.value();
@@ -3812,12 +3810,6 @@ struct application_t::implementation_t {
                                  ? std::optional{scrolled->row}
                                  : commands.project.transport.preview_playhead_absolute_row;
             if (row) source = wormedit::sys::scrub_source_frame_at_row(*compiled.timing, *row);
-        } else if (cursor && !cursor->virtual_bms_cursor_row) {
-            const auto* indices = session.history.indices(chart.id);
-            const auto frame = wormedit::sys::preview_cursor_frame(
-                chart, *compiled.timing, cursor->cursor, cursor->cursor_subrow,
-                indices ? &indices->measures : nullptr);
-            if (const auto* value = std::get_if<std::uint64_t>(&frame)) source = *value;
         }
         return source ? std::optional{state.collapsed_frame(*source)} : std::nullopt;
     }
@@ -3826,7 +3818,11 @@ struct application_t::implementation_t {
     void service_scrub_audio() {
         auto& state = audio_runtime.preview_state;
         const bool scrolled = std::exchange(commands.project.transport.scrub_scrolled, false);
-        const bool enabled = preferences.program_preferences.preferences.editor.scrub_audio_on_scroll;
+        // The needle is only down while the chart plays, and Tab-modified scrolling (the fast
+        // wheel) is navigation, not scrubbing.
+        const bool playing = audio_runtime.preview_output.playing();
+        const bool tab_held = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB];
+        const bool enabled = preferences.program_preferences.preferences.editor.scrub_audio_on_scroll && playing;
         const auto* chart = selected_chart(session.history, session.workspace);
         const auto* cursor =
             session.workspace.active_tab == wormedit::workspace_tab_t::compose && chart &&
@@ -3849,9 +3845,9 @@ struct application_t::implementation_t {
         audio_runtime.scrub.update({
             .now_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(),
             .enabled = enabled && ready,
-            .scrolled = scrolled,
-            .playing = audio_runtime.preview_output.playing(),
-            .timeline_frame = ready ? scrub_timeline_frame(*chart, cursor) : std::nullopt,
+            .scrolled = scrolled && !tab_held,
+            .playing = playing,
+            .timeline_frame = ready ? scrub_timeline_frame(*chart) : std::nullopt,
             .fingers = fingers.is_reported() ? std::optional{fingers.count()} : std::nullopt,
             .segments = audio_runtime.scrub_segments,
         });

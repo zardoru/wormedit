@@ -484,6 +484,28 @@ auto decoded_source_registry_t::decode_source_block(transport_t& transport, sess
     return transport.decode_source_block(lease.decoder(), token, std::move(key));
 }
 
+auto decoded_source_registry_t::decode_block_into(decoded_block_cache_t& block_cache,
+                                                  audio_block_key_t key) -> bool {
+    if (!is_valid_source(key.source)) return false;
+    std::shared_ptr<entry_t> entry;
+    {
+        const std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find(entries_, key.source, &entry_t::source);
+        if (found == entries_.end()) return false;
+        entry = *found;
+    }
+    const auto lease = acquire_lease(entry);
+    if (!lease) return false;
+    // A private session: nothing is published to any transport.
+    decode_session_t session;
+    const auto token = session.start();
+    if (!token) return false;
+    const auto result = decode_and_cache_block(lease.decoder(), block_cache, session, *token, std::move(key));
+    static_cast<void>(session.take_ready(*token));
+    return result.status == block_decode_phase_t::decoded ||
+           result.status == block_decode_phase_t::cache_hit;
+}
+
 auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
                                              std::uint64_t frames, std::stop_token stop)
     -> std::size_t {

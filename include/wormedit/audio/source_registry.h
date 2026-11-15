@@ -113,6 +113,10 @@ class decoded_source_registry_t {
     // if needed. Returns the number of blocks that are cached afterwards.
     [[nodiscard]] auto preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
                                     std::uint64_t frames, std::stop_token stop = {}) -> std::size_t;
+    // Decodes one block into `block_cache` without a transport session (for scrubbing, which
+    // keeps its own small cache). True when the block is cached afterwards.
+    [[nodiscard]] auto decode_block_into(decoded_block_cache_t& block_cache, audio_block_key_t key)
+        -> bool;
     // Decodes the whole source into `store` (see resident_sample_store_t::load).
     // Probes the source first if needed; an unknown asset reports decode_failed.
     [[nodiscard]] auto load_resident(asset_id_t asset, resident_sample_store_t& store,

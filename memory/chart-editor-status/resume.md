@@ -2,9 +2,9 @@
 
 ## Layers panel follow-ups (Zar, 2026-11-15)
 
-[T-787–T-790](../../docs/chart-editor-plan/tasks/layers-panel-followups.md) record four requested Layers panel features,
-all `ready` and not started: multi-select merge, name filter, unlink layers below N elements, and a
-standalone toolbar button. Each card lists its open questions for Zar; none implemented.
+[T-787–T-791](../../docs/chart-editor-plan/tasks/layers-panel-followups.md) record five requested Layers panel features,
+all `ready` and not started: multi-select merge, name filter, unlink layers below N elements, a
+dock top-bar button and a delete-notes-in-layer popup action. Each card lists its open questions for Zar; none implemented.
 
 ## Independent review follow-ups (owner, 2026-10-30)
 

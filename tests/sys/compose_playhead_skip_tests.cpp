@@ -9,6 +9,7 @@
 
 #include <array>
 #include <chrono>
+#include <functional>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -221,4 +222,18 @@ TEST_CASE("the playing stepper and the parked cursor share one resolver", "[sys]
     // An unusable grid is rejected instead of stepping.
     CHECK_FALSE(step_visible_rows(chart, measures, nullptr, {.grid = {7, quantization_space_t::standard_measure}},
               1920, 100, true));
+}
+
+TEST_CASE("steps skip rows the caller cannot stand on, in the travel direction", "[sys][playhead-skip][cut]") {
+    const auto chart = skip_chart();
+    const auto measures = two_measures();
+    // Row 720 stands for a kept row whose time is inside a cut: a seek there reads back past it.
+    const std::function<bool(std::uint64_t)> unusable = [](std::uint64_t row) { return row == 720; };
+    const row_step_t beat{.resolution = row_step_resolution_t::beat, .unusable = &unusable};
+    CHECK(step_visible_rows(chart, measures, nullptr, beat, 1920, 960, false) == 480);
+    CHECK(step_visible_rows(chart, measures, nullptr, beat, 1920, 480, true) == 960);
+    // Without the predicate the same steps land on it.
+    const row_step_t plain{.resolution = row_step_resolution_t::beat};
+    CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 960, false) == 720);
+    CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 480, true) == 720);
 }

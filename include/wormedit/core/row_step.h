@@ -4,6 +4,7 @@
 #include <wormedit/core/snap.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 namespace wormedit {
@@ -18,6 +19,10 @@ enum class row_step_resolution_t { snap, beat };
 struct row_step_t {
     row_step_resolution_t resolution{row_step_resolution_t::snap};
     snap_grid_t grid{}; // Used by the snap resolution only.
+    // Rows the cut axis keeps but a caller cannot stand on (a playing playhead whose seek frame
+    // falls inside an export cut collapses onto the seam and reads back past the cut). Steps skip
+    // them in the travel direction. Not owned; null when every kept row is usable.
+    const std::function<bool(std::uint64_t)>* unusable{};
 };
 
 // Strict next/previous grid row of `row`; nullopt past the canvas or for an unusable grid.

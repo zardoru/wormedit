@@ -27,17 +27,26 @@ auto visible_step_row(const chart_document_t& chart, const measure_index_t& inde
                       const export_cut_axis_t* cut_axis, row_step_t step,
                       std::uint64_t canvas_rows, std::uint64_t row, bool forward)
     -> std::uint64_t {
-    if (!cut_axis || !canvas_rows || !cut_axis->contains_row(row)) return row;
+    const auto unusable = [&](std::uint64_t value) { return step.unusable && (*step.unusable)(value); };
+    if (!canvas_rows || ((!cut_axis || !cut_axis->contains_row(row)) && !unusable(row))) return row;
     const auto inf = std::numeric_limits<long double>::infinity();
     auto candidate = std::optional{row};
-    while (candidate && cut_axis->contains_row(*candidate)) {
-        const auto edge = forward ? cut_axis->next_kept_row(*candidate)
-                                  : cut_axis->previous_kept_row(*candidate);
-        // Step from just short of the visible edge so a grid row on the edge is kept.
-        candidate = adjacent_step_row(chart, index, std::nextafter(edge, forward ? -inf : inf),
-                                      step, canvas_rows, forward);
+    // Unusable rows are few and isolated; the bound only guards against a predicate that never clears.
+    for (int guard = 0; candidate && guard < 64; ++guard) {
+        if (cut_axis && cut_axis->contains_row(*candidate)) {
+            const auto edge = forward ? cut_axis->next_kept_row(*candidate)
+                                      : cut_axis->previous_kept_row(*candidate);
+            // Step from just short of the visible edge so a grid row on the edge is kept.
+            candidate = adjacent_step_row(chart, index, std::nextafter(edge, forward ? -inf : inf),
+                                          step, canvas_rows, forward);
+        } else if (unusable(*candidate)) {
+            candidate = adjacent_step_row(chart, index, static_cast<long double>(*candidate), step,
+                                          canvas_rows, forward);
+        } else {
+            break;
+        }
     }
-    if (!candidate && forward)
+    if (!candidate && forward && cut_axis)
         candidate = adjacent_step_row(chart, index,
             std::nextafter(cut_axis->previous_kept_row(row), inf), step, canvas_rows, false);
     return candidate.value_or(row);

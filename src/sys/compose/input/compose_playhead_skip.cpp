@@ -46,10 +46,22 @@ auto skip_origin_row(const application_command_state_t& application, chart_id_t 
     return *application.project.transport.preview_playhead_absolute_row;
 }
 
+// A kept row whose own time lies inside an export cut cannot hold the playhead: seeking to it
+// collapses onto the cut seam, which reads back as the end of the cut.
+auto cut_unusable(const timing_index_t* timing, const export_cut_axis_t* cut_axis)
+    -> std::function<bool(std::uint64_t)> {
+    if (!timing || !cut_axis || cut_axis->is_empty()) return {};
+    return [timing, cut_axis](std::uint64_t row) {
+        const auto at = timing->query_seconds(exact_chart_row_t{row, {0, 1}});
+        return at && cut_axis->timeline().contains_seconds(at->value);
+    };
+}
+
 auto skip_target_row(const measure_index_t& measures, double playhead_row,
                      playhead_skip_unit_t unit, double amount,
                      std::uint64_t divisions_per_measure, std::uint64_t snap_denominator,
-                     const export_cut_axis_t* cut_axis) -> std::optional<std::uint64_t> {
+                     const export_cut_axis_t* cut_axis, const timing_index_t* timing)
+    -> std::optional<std::uint64_t> {
     if (measures.total_rows == 0 || !std::isfinite(playhead_row) || !std::isfinite(amount))
         return std::nullopt;
     switch (unit) {
@@ -62,8 +74,10 @@ auto skip_target_row(const measure_index_t& measures, double playhead_row,
         const auto count = static_cast<std::uint64_t>(std::llround(std::abs(amount)));
         const auto start = std::clamp(static_cast<long double>(playhead_row), 0.0L,
                                       static_cast<long double>(measures.total_rows - 1));
+        const auto unusable = cut_unusable(timing, cut_axis);
         const auto stepped = step_visible_rows(chart_like, measures, cut_axis,
-            {.resolution = resolution, .grid = {snap_denominator, quantization_space_t::standard_measure}},
+            {.resolution = resolution, .grid = {snap_denominator, quantization_space_t::standard_measure},
+             .unusable = unusable ? &unusable : nullptr},
             measures.total_rows, start, amount > 0, count);
         if (stepped && count == 0) return clamp_row(playhead_row, measures);
         return stepped;
@@ -93,22 +107,25 @@ auto is_preview_playing(const application_command_state_t& application) -> bool 
 auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
                               playhead_skip_unit_t unit, double amount,
                               std::uint64_t divisions_per_measure, std::uint64_t snap_denominator,
-                              const export_cut_axis_t* cut_axis) -> std::optional<std::uint64_t> {
+                              const export_cut_axis_t* cut_axis, const timing_index_t* timing)
+    -> std::optional<std::uint64_t> {
     const auto target = skip_target_row(measures, playhead_row, unit, amount,
-                                        divisions_per_measure, snap_denominator, cut_axis);
+                                        divisions_per_measure, snap_denominator, cut_axis, timing);
     if (!target || !cut_axis || cut_axis->is_empty() ||
         unit == playhead_skip_unit_t::snap || unit == playhead_skip_unit_t::beat) return target;
     // Measure, page and row skips land anywhere; pull the landing out of a cut.
     const auto chart_like = chart_document_t{.divisions_per_standard_measure = divisions_per_measure};
+    const auto unusable = cut_unusable(timing, cut_axis);
     return visible_step_row(chart_like, measures, cut_axis,
-        {.grid = {snap_denominator ? snap_denominator : 4, quantization_space_t::standard_measure}},
+        {.grid = {snap_denominator ? snap_denominator : 4, quantization_space_t::standard_measure},
+         .unusable = unusable ? &unusable : nullptr},
         measures.total_rows, *target, amount > 0);
 }
 
 auto skip_playing_playhead(const document_history_t& history,
                            application_command_state_t& application, const chart_document_t& chart,
                            std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount,
-                           const export_cut_axis_t* cut_axis)
+                           const export_cut_axis_t* cut_axis, const timing_index_t* timing)
     -> compose_action_outcome_t {
     if (!application.project.transport.preview_playhead_absolute_row)
         return compose_action_outcome_t::from("The playhead row is not available yet.",
@@ -121,10 +138,11 @@ auto skip_playing_playhead(const document_history_t& history,
                                               notification_source_t::input, false, false);
     const auto& measures = *indices->measures;
     const auto forward = amount > 0.0;
+    if (!timing && indices->timing.value) timing = &*indices->timing.value;
     const auto row = playhead_skip_target_row(measures,
                                               skip_origin_row(application, chart.id, forward),
                                               unit, amount, chart.divisions_per_standard_measure,
-                                              snap_denominator, cut_axis);
+                                              snap_denominator, cut_axis, timing);
     const auto position = row ? (measures).position_at(*row) : std::nullopt;
     if (!position) {
         application.project.transport.last_playhead_skip.reset();
@@ -169,8 +187,15 @@ auto scroll_playing_playhead(const document_history_t& history,
         return compose_action_outcome_t::blocked("The playhead has no playable timing position.",
                                                  notification_source_t::input);
     const auto axis = editor_axis_projection_t::from(state, chart.divisions_per_standard_measure);
-    const auto target = std::clamp(axis.row_at_y(axis.y_for_row(*playhead) + delta_pixels),
+    auto target = std::clamp(axis.row_at_y(axis.y_for_row(*playhead) + delta_pixels),
         0.0L, static_cast<long double>(indices->measures->total_rows - 1));
+    // A kept row inside the cut in time would collapse onto the seam: hop past it.
+    if (const auto unusable = cut_unusable(timing, state.cut_axis.get())) {
+        const auto forward = delta_pixels > 0.0;
+        for (int guard = 0; guard < 8 && unusable(static_cast<std::uint64_t>(std::floor(target))); ++guard)
+            target = std::clamp(forward ? std::floor(target) + 1.0L : std::floor(target) - 1.0L,
+                                0.0L, static_cast<long double>(indices->measures->total_rows - 1));
+    }
     const auto row = static_cast<std::uint64_t>(std::floor(target));
     const auto position = indices->measures->position_at(row);
     if (!position)

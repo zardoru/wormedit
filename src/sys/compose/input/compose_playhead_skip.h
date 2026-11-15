@@ -20,12 +20,15 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
 // signed (negative goes back) and the result is clamped to the chart's rows.
 // With a cut axis the result never lands in a hidden row: beat and snap steps count only visible
 // steps, and any landing inside a cut moves to the nearest visible row in the travel direction,
-// like the parked edit cursor.
+// like the parked edit cursor. With `timing`, a kept row whose own time falls inside the cut is
+// skipped too: a playing seek there collapses onto the seam and reads back past the cut, so the
+// playhead would never get back before it.
 [[nodiscard]] auto playhead_skip_target_row(const measure_index_t& measures, double playhead_row,
                                             playhead_skip_unit_t unit, double amount,
                                             std::uint64_t divisions_per_measure,
                                             std::uint64_t snap_denominator,
-                                            const export_cut_axis_t* cut_axis = nullptr)
+                                            const export_cut_axis_t* cut_axis = nullptr,
+                                            const timing_index_t* timing = nullptr)
     -> std::optional<std::uint64_t>;
 
 // Moves the playing preview to the skip target with a single seek. Playback continues from the
@@ -34,7 +37,8 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
                            application_command_state_t& application,
                                          const chart_document_t& chart,
                                          std::uint64_t snap_denominator, playhead_skip_unit_t unit,
-                                         double amount, const export_cut_axis_t* cut_axis = nullptr)
+                                         double amount, const export_cut_axis_t* cut_axis = nullptr,
+                                         const timing_index_t* timing = nullptr)
     -> compose_action_outcome_t;
 
 // Continuous viewport motion uses displayed pixels, retaining fractional rows through

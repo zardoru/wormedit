@@ -15,6 +15,8 @@ struct transport_position_view_t {
     std::int64_t beat{};
     // The row on the post-cut axis, set only when export cuts collapse part of the chart.
     std::optional<std::int64_t> alternate_row;
+    // The measure number with measures the cuts hide entirely left out; beat is unchanged.
+    std::optional<std::uint64_t> alternate_measure;
     auto operator==(const transport_position_view_t&) const -> bool = default;
 };
 
@@ -73,6 +75,9 @@ class transport_status_text_t {
         }
         alternate_row_ = input.position && input.position->alternate_row
             ? std::to_string(*input.position->alternate_row) : std::string{};
+        alternate_musical_position_ = input.position && input.position->alternate_measure
+            ? std::to_string(*input.position->alternate_measure) + ":" + std::to_string(input.position->beat)
+            : std::string{};
         row_ = input.position ? std::to_string(input.position->row) : "—";
         musical_position_ = input.position ? std::to_string(input.position->measure) + ":" +
             std::to_string(input.position->beat) : "—";
@@ -84,6 +89,9 @@ class transport_status_text_t {
     [[nodiscard]] auto elapsed() const noexcept -> const std::string& { return elapsed_; }
     [[nodiscard]] auto alternate_elapsed() const noexcept -> const std::string& { return alternate_elapsed_; }
     [[nodiscard]] auto alternate_row() const noexcept -> const std::string& { return alternate_row_; }
+    [[nodiscard]] auto alternate_musical_position() const noexcept -> const std::string& {
+        return alternate_musical_position_;
+    }
     [[nodiscard]] auto row() const noexcept -> const std::string& { return row_; }
     [[nodiscard]] auto musical_position() const noexcept -> const std::string& { return musical_position_; }
     [[nodiscard]] auto refreshes() const noexcept -> std::uint64_t { return refreshes_; }
@@ -91,7 +99,8 @@ class transport_status_text_t {
   private:
     static constexpr std::uint64_t interval_ns = 1'000'000'000 / 12;
     std::string source_status_, source_artist_, source_difficulty_;
-    std::string status_, details_, elapsed_, row_, musical_position_, alternate_elapsed_, alternate_row_;
+    std::string status_, details_, elapsed_, row_, musical_position_, alternate_elapsed_, alternate_row_,
+        alternate_musical_position_;
     std::size_t selected_{};
     std::uint64_t seconds_{}, refreshed_ns_{}, refreshes_{};
     bool initialized_{}, playing_{};

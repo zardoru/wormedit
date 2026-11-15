@@ -10,6 +10,7 @@
 #include "sys/audio/waveform_view.h"
 
 #include <wormedit/audio/playback_rate.h>
+#include <wormedit/core/row_step.h>
 #include <wormedit/window.h>
 
 #include <algorithm>
@@ -52,8 +53,14 @@ void build_transport_position_view(frontend_workspace_view_t& flattened,
     const auto* axis = state ? state->cut_axis.get() : nullptr;
     if (axis && !axis->is_empty() && whole_row >= 0)
         alternate_row = static_cast<std::int64_t>(std::floor(axis->collapsed_row(whole_row)));
-    view.transport_position = ui::transport_position_view_t{
-        .row = whole_row, .measure = measure, .beat = beat, .alternate_row = alternate_row};
+    std::optional<std::uint64_t> alternate_measure;
+    if (alternate_row) {
+        const auto hidden = hidden_measures_before(measures, axis, measure - 1);
+        // A measure inside a cut maps onto the seam: the first visible measure after it.
+        if (measure > hidden) alternate_measure = measure - hidden;
+    }
+    view.transport_position = ui::transport_position_view_t{.row = whole_row, .measure = measure, .beat = beat,
+        .alternate_row = alternate_row, .alternate_measure = alternate_measure};
 }
 
 void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,

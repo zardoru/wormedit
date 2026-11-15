@@ -266,4 +266,8 @@ TEST_CASE("measure and page steps skip measures the cut hides entirely", "[sys][
     }
     // Without a cut the step is the neighbouring measure.
     CHECK(playhead_skip_target_row(measures, measure_25, playhead_skip_unit_t::measure, -1, 960, 4) == 23ull * 960);
+    // The post-cut measure number drops the hidden measures: M25 reads as 17.
+    CHECK(hidden_measures_before(measures, &hidden, 24) == 8);
+    CHECK(hidden_measures_before(measures, &hidden, 16) == 0);
+    CHECK(hidden_measures_before(measures, nullptr, 24) == 0);
 }

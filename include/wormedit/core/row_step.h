@@ -44,4 +44,14 @@ struct row_step_t {
                                      std::uint64_t canvas_rows, long double row, bool forward,
                                      std::uint64_t count = 1) -> std::optional<std::uint64_t>;
 
+// A measure the cut hides entirely: no row of it exists on the collapsed axis.
+[[nodiscard]] auto is_measure_hidden(const measure_index_entry_t& entry,
+                                     const export_cut_axis_t* cut_axis) noexcept -> bool;
+
+// How many of the first `measure_count` measures are hidden entirely; the number a one-based
+// measure loses on the post-cut axis.
+[[nodiscard]] auto hidden_measures_before(const measure_index_t& index,
+                                          const export_cut_axis_t* cut_axis,
+                                          std::uint64_t measure_count) noexcept -> std::uint64_t;
+
 } // namespace wormedit

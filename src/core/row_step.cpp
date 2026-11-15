@@ -75,4 +75,18 @@ auto step_visible_rows(const chart_document_t& chart, const measure_index_t& ind
     return landed ? landed : std::optional{static_cast<std::uint64_t>(current)};
 }
 
+auto is_measure_hidden(const measure_index_entry_t& entry, const export_cut_axis_t* cut_axis) noexcept -> bool {
+    return cut_axis && entry.row_capacity != 0 && cut_axis->contains_row(entry.absolute_begin_row) &&
+           cut_axis->contains_row(entry.absolute_begin_row + entry.row_capacity - 1);
+}
+
+auto hidden_measures_before(const measure_index_t& index, const export_cut_axis_t* cut_axis,
+                            std::uint64_t measure_count) noexcept -> std::uint64_t {
+    if (!cut_axis || cut_axis->is_empty()) return 0;
+    const auto count = std::min<std::uint64_t>(measure_count, index.entries.size());
+    return static_cast<std::uint64_t>(std::count_if(index.entries.begin(),
+        index.entries.begin() + static_cast<std::ptrdiff_t>(count),
+        [&](const auto& entry) { return is_measure_hidden(entry, cut_axis); }));
+}
+
 } // namespace wormedit

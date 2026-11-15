@@ -2417,8 +2417,10 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (layout.show_row) render_transport_readout(status.row(), "Current absolute chart row (zero-based, source)",
         wormedit::ui::vector_icons::grid,
         status.alternate_row().empty() ? std::string{} : "Export cuts removed: " + status.alternate_row());
-    if (layout.show_musical) render_transport_readout(status.musical_position(), "Measure:beat (one-based, using the chart meter)",
-                             wormedit::ui::vector_icons::measure_lane);
+    if (layout.show_musical) render_transport_readout(status.musical_position(), "Measure:beat (one-based, using the chart meter, source)",
+                             wormedit::ui::vector_icons::measure_lane,
+        status.alternate_musical_position().empty() ? std::string{}
+            : "Export cuts removed: " + status.alternate_musical_position());
     if (layout.show_details) render_elided_status_label(status.details(), NK_TEXT_RIGHT, g_context->style.text.color);
 }
 

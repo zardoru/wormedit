@@ -19,12 +19,6 @@ auto clamp_row(long double row, const measure_index_t& measures) -> std::uint64_
     return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5L), 0.0L, last));
 }
 
-// A measure the export cut hides entirely is not a place to go: measure steps skip it.
-auto measure_hidden(const measure_index_entry_t& entry, const export_cut_axis_t* cut_axis) -> bool {
-    return cut_axis && entry.row_capacity != 0 && cut_axis->contains_row(entry.absolute_begin_row) &&
-           cut_axis->contains_row(entry.absolute_begin_row + entry.row_capacity - 1);
-}
-
 auto measure_target(const measure_index_t& measures, double playhead, double amount,
                     const export_cut_axis_t* cut_axis = nullptr) -> double {
     const auto count = std::llround(amount);
@@ -41,7 +35,7 @@ auto measure_target(const measure_index_t& measures, double playhead, double amo
         const auto direction = count >= 0 ? 1LL : -1LL;
         for (auto remaining = std::llabs(count); remaining > 0; --remaining) {
             auto next = destination + direction;
-            while (next >= 0 && next <= last && measure_hidden(measures.entries[static_cast<std::size_t>(next)], cut_axis))
+            while (next >= 0 && next <= last && is_measure_hidden(measures.entries[static_cast<std::size_t>(next)], cut_axis))
                 next += direction;
             if (next < 0 || next > last) break;
             destination = next;

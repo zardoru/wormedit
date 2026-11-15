@@ -345,7 +345,9 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
     for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
         auto& bookmark = flattened.view.compose.beat_bookmarks[index];
         const auto y = visible_beat_y(bookmark.chart_row);
-        bookmark.projection_visible = y.has_value();
+        // Inside a cut (end excluded) a bookmark has no place; the one on the cut's end stays.
+        const auto hidden = view.cut_axis && view.cut_axis->contains_row(bookmark.chart_row);
+        bookmark.projection_visible = y.has_value() && !hidden;
         bookmark.projected_y_pixels = y.value_or(0.0);
     }
     for (std::size_t index = 0; index < view.beat_sections.size(); ++index) {

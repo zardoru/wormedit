@@ -506,7 +506,10 @@ void build_compose_audio_bookmarks_view(const compose_projection_context_t<>& in
         auto& bookmark = input.frame.flattened.view.compose.audio_bookmarks[index];
         const auto y =
             build_compose_audio_marker_y_view(input, timing_index, bookmark.audio_milliseconds);
-        if (y && compose_audio_marker_y_visible(*y, input.frame.view())) {
+        const auto& cut_axis = input.frame.view().cut_axis;
+        const auto hidden = cut_axis && cut_axis->timeline().contains_seconds(
+            wormedit::signed_rational_t{static_cast<std::int64_t>(bookmark.audio_milliseconds), 1000});
+        if (y && !hidden && compose_audio_marker_y_visible(*y, input.frame.view())) {
             bookmark.projection_visible = true;
             bookmark.projected_y_pixels = *y;
         }

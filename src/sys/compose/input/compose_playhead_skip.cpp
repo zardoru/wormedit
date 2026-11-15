@@ -19,6 +19,31 @@ auto clamp_row(long double row, const measure_index_t& measures) -> std::uint64_
     return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5L), 0.0L, last));
 }
 
+// The nearest measure from `from` in `direction` that the cut leaves any row of, or -1 past the
+// chart. A hidden measure sends the search to the cut's far edge instead of one measure at a time.
+auto next_visible_measure(const measure_index_t& measures, const export_cut_axis_t& cut_axis,
+                          long long from, long long direction) -> long long {
+    const auto count = static_cast<long long>(measures.entries.size());
+    const auto containing = [&](long double row) {
+        const auto at = std::ranges::upper_bound(measures.entries,
+            static_cast<std::uint64_t>(std::max(0.0L, std::floor(row))), {},
+            &measure_index_entry_t::absolute_begin_row);
+        return static_cast<long long>(std::distance(measures.entries.begin(), at)) - 1;
+    };
+    auto next = from + direction;
+    while (next >= 0 && next < count) {
+        const auto& entry = measures.entries[static_cast<std::size_t>(next)];
+        if (!is_measure_hidden(entry, &cut_axis)) return next;
+        // The far edge of the cut; stepping at least one measure keeps the search moving.
+        const auto edge = direction > 0
+            ? containing(cut_axis.next_kept_row(static_cast<long double>(entry.absolute_begin_row)))
+            : containing(cut_axis.previous_kept_row(
+                  static_cast<long double>(entry.absolute_begin_row + entry.row_capacity - 1)));
+        next = direction > 0 ? std::max(next + 1, edge) : std::min(next - 1, edge);
+    }
+    return -1;
+}
+
 auto measure_target(const measure_index_t& measures, double playhead, double amount,
                     const export_cut_axis_t* cut_axis = nullptr) -> double {
     const auto count = std::llround(amount);
@@ -34,10 +59,8 @@ auto measure_target(const measure_index_t& measures, double playhead, double amo
         destination = current;
         const auto direction = count >= 0 ? 1LL : -1LL;
         for (auto remaining = std::llabs(count); remaining > 0; --remaining) {
-            auto next = destination + direction;
-            while (next >= 0 && next <= last && is_measure_hidden(measures.entries[static_cast<std::size_t>(next)], cut_axis))
-                next += direction;
-            if (next < 0 || next > last) break;
+            const auto next = next_visible_measure(measures, *cut_axis, destination, direction);
+            if (next < 0) break;
             destination = next;
         }
     }

@@ -49,18 +49,18 @@ void build_transport_position_view(frontend_workspace_view_t& flattened,
     auto whole_row = row->numerator / static_cast<std::int64_t>(row->denominator);
     if (row->numerator < 0 && row->numerator % static_cast<std::int64_t>(row->denominator) != 0)
         --whole_row;
-    std::optional<std::int64_t> alternate_row;
+    std::optional<std::int64_t> compose_row;
     const auto* axis = state ? state->cut_axis.get() : nullptr;
     if (axis && !axis->is_empty() && whole_row >= 0)
-        alternate_row = static_cast<std::int64_t>(std::floor(axis->collapsed_row(whole_row)));
-    std::optional<std::uint64_t> alternate_measure;
-    if (alternate_row) {
+        compose_row = static_cast<std::int64_t>(std::floor(axis->collapsed_row(whole_row)));
+    std::optional<std::uint64_t> compose_measure;
+    if (compose_row) {
         const auto hidden = hidden_measures_before(measures, axis, measure - 1);
         // A measure inside a cut maps onto the seam: the first visible measure after it.
-        if (measure > hidden) alternate_measure = measure - hidden;
+        if (measure > hidden) compose_measure = measure - hidden;
     }
-    view.transport_position = ui::transport_position_view_t{.row = whole_row, .measure = measure, .beat = beat,
-        .alternate_row = alternate_row, .alternate_measure = alternate_measure};
+    view.transport_position = ui::transport_position_view_t{.source_row = whole_row, .source_measure = measure,
+        .beat = beat, .compose_row = compose_row, .compose_measure = compose_measure};
 }
 
 void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,
@@ -155,10 +155,10 @@ auto make_workspace_frame_transport(const application_frame_projection_context_t
             transport.end_frame = std::max(transport.end_frame, stopped->end_frame);
         }
     }
-    // Source and post-cut time. Playing or paused with the cut clock, `frame` is post-cut; every
-    // other state reports source time. Timing focus plays the source clock without cuts.
+    // Source and compose time. Playing or paused with the cut clock, `frame` is on the compose
+    // clock; every other state reports source time. Timing focus plays the source clock without cuts.
     transport.time_is_source = preview.timing_focus;
-    transport.display_frame = transport.frame;
+    transport.source_clock_frame = transport.compose_clock_frame = transport.frame;
     const auto* axis = context.compose_interaction_state ? context.compose_interaction_state->cut_axis.get()
                                                           : nullptr;
     if (axis && !axis->is_empty()) {
@@ -166,9 +166,9 @@ auto make_workspace_frame_transport(const application_frame_projection_context_t
         if (frames.value.intervals().size() != 0) {
             const auto source = transport.source_frame();
             const auto collapsed = frames.value.collapsed_frame(source);
-            transport.display_frame = preview.timing_focus ? source : collapsed;
-            transport.alternate_frame = preview.timing_focus ? collapsed : source;
-            transport.alternate_available = transport.alternate_frame != transport.display_frame;
+            transport.source_clock_frame = source;
+            transport.compose_clock_frame = collapsed;
+            transport.clocks_differ = source != collapsed;
         }
     }
     return transport;

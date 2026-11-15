@@ -2187,13 +2187,14 @@ static auto workspace_status_text(const wormedit::ui::workspace_view_t& view, st
         std::ranges::any_of(g_context->input.keyboard.keys,
         [](const auto& key) { return key.clicked != 0; });
     const auto rate = view.transport_sample_rate == 0 ? 1U : view.transport_sample_rate;
+    const auto clock_at = [rate](std::uint64_t frame) {
+        return wormedit::ui::transport_clock_t{.seconds = frame / rate,
+            .milliseconds = static_cast<std::uint32_t>((frame % rate) * 1000 / rate)};
+    };
     text.refresh({.status = line, .artist = view.artist, .difficulty = view.selected_difficulty,
-        .selected = selected, .seconds = view.transport_display_frame / rate,
-        .playing = view.transport_playing, .immediate = input,
-        .milliseconds = static_cast<std::uint32_t>((view.transport_display_frame % rate) * 1000 / rate),
-        .alternate_available = view.transport_alternate_available,
-        .alternate_seconds = view.transport_alternate_frame / rate,
-        .alternate_milliseconds = static_cast<std::uint32_t>((view.transport_alternate_frame % rate) * 1000 / rate),
+        .selected = selected, .playing = view.transport_playing, .immediate = input,
+        .source_clock = clock_at(view.transport_source_clock_frame), .compose_clock = clock_at(view.transport_compose_clock_frame),
+        .clocks_differ = view.transport_clocks_differ, .time_is_source = view.transport_time_is_source,
         .position = view.transport_position}, SDL_GetTicksNS());
     return text;
 }
@@ -2407,20 +2408,20 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (notification_visible)
         render_notification_badge(view->notifications, *action);
     else nk_spacing(g_context, 1);
-    const auto& other_time = status.alternate_elapsed();
+    const auto& other_time = status.other_elapsed();
     render_transport_readout(status.elapsed(), view->transport_time_is_source
             ? "Playhead time, source (minutes:seconds.milliseconds)"
             : "Playhead time, export cuts removed (minutes:seconds.milliseconds)",
         wormedit::ui::vector_icons::timer,
         other_time.empty() ? std::string{}
             : (view->transport_time_is_source ? "Export cuts removed: " : "Source: ") + other_time);
-    if (layout.show_row) render_transport_readout(status.row(), "Current absolute chart row (zero-based, source)",
+    if (layout.show_row) render_transport_readout(status.source_row(), "Current absolute chart row (zero-based, source)",
         wormedit::ui::vector_icons::grid,
-        status.alternate_row().empty() ? std::string{} : "Export cuts removed: " + status.alternate_row());
-    if (layout.show_musical) render_transport_readout(status.musical_position(), "Measure:beat (one-based, using the chart meter, source)",
+        status.compose_row().empty() ? std::string{} : "Export cuts removed: " + status.compose_row());
+    if (layout.show_musical) render_transport_readout(status.source_musical_position(), "Measure:beat (one-based, using the chart meter, source)",
                              wormedit::ui::vector_icons::measure_lane,
-        status.alternate_musical_position().empty() ? std::string{}
-            : "Export cuts removed: " + status.alternate_musical_position());
+        status.compose_musical_position().empty() ? std::string{}
+            : "Export cuts removed: " + status.compose_musical_position());
     if (layout.show_details) render_elided_status_label(status.details(), NK_TEXT_RIGHT, g_context->style.text.color);
 }
 

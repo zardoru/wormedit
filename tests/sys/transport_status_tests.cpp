@@ -26,7 +26,7 @@ TEST_CASE("Playback status text refreshes at 12Hz while display frames stay at 1
     transport_status_text_t text;
     transport_status_input_t input{.status = "Ready", .artist = "Artist", .difficulty = "Chart", .playing = true};
     for (std::uint64_t frame = 0; frame < 144; ++frame) {
-        input.seconds = frame / 144;
+        input.compose_clock.seconds = frame / 144;
         text.refresh(input, frame * 1'000'000'000 / 144);
     }
     CHECK(text.refreshes() == 12);
@@ -51,52 +51,60 @@ TEST_CASE("Playback status authored values and user actions invalidate immediate
 TEST_CASE("Playback status seeks and stopped frames keep immediate formatting", "[transport-status]") {
     transport_status_text_t text;
     transport_status_input_t input{.status = "Ready", .artist = "Artist", .difficulty = "Chart",
-        .seconds = 80, .playing = true};
+        .playing = true, .compose_clock = {.seconds = 80}};
     REQUIRE(text.refresh(input, 100));
     CHECK(text.elapsed() == "1:20.000");
-    input.seconds = 10;
+    input.compose_clock.seconds = 10;
     CHECK(text.refresh(input, 101));
     CHECK(text.elapsed() == "0:10.000");
-    input.seconds = 30;
+    input.compose_clock.seconds = 30;
     CHECK(text.refresh(input, 102));
     check_stopped_status_frames(text, input);
 }
 
 TEST_CASE("Transport readouts retain milliseconds and distinguish chart coordinates", "[transport-status]") {
     transport_status_text_t text;
-    transport_status_input_t input{.seconds = 61, .milliseconds = 7,
-        .position = transport_position_view_t{.row = 192, .measure = 2, .beat = 1}};
+    transport_status_input_t input{.compose_clock = {.seconds = 61, .milliseconds = 7},
+        .position = transport_position_view_t{.source_row = 192, .source_measure = 2, .beat = 1}};
     REQUIRE(text.refresh(input, 0));
     CHECK(text.elapsed() == "1:01.007");
-    CHECK(text.row() == "192");
-    CHECK(text.musical_position() == "2:1");
+    CHECK(text.source_row() == "192");
+    CHECK(text.source_musical_position() == "2:1");
 }
 
 TEST_CASE("Transport readouts mark unavailable chart coordinates", "[transport-status]") {
     transport_status_text_t text;
-    REQUIRE(text.refresh({.seconds = 61, .milliseconds = 999}, 0));
+    REQUIRE(text.refresh({.compose_clock = {.seconds = 61, .milliseconds = 999}}, 0));
     CHECK(text.elapsed() == "1:01.999");
-    CHECK(text.row() == "—");
-    CHECK(text.musical_position() == "—");
+    CHECK(text.source_row() == "—");
+    CHECK(text.source_musical_position() == "—");
 }
 
-TEST_CASE("Status text carries the other clock and the post-cut row for tooltips", "[transport-status]") {
+TEST_CASE("Status text carries both clocks and the compose coordinates for tooltips", "[transport-status]") {
     transport_status_text_t text;
-    transport_status_input_t input{.status = "Ready", .seconds = 72, .milliseconds = 236,
-        .alternate_available = true, .alternate_seconds = 50, .alternate_milliseconds = 10,
-        .position = transport_position_view_t{.row = 960, .measure = 5, .beat = 1, .alternate_row = 400,
-        .alternate_measure = 3}};
+    transport_status_input_t input{.status = "Ready",
+        .source_clock = {.seconds = 72, .milliseconds = 236}, .compose_clock = {.seconds = 50, .milliseconds = 10},
+        .clocks_differ = true,
+        .position = transport_position_view_t{.source_row = 960, .source_measure = 5, .beat = 1,
+            .compose_row = 400, .compose_measure = 3}};
     text.refresh(input, 1);
-    CHECK(text.elapsed() == "1:12.236");
-    CHECK(text.alternate_elapsed() == "0:50.010");
-    CHECK(text.alternate_row() == "400");
-    CHECK(text.alternate_musical_position() == "3:1");
-    input.alternate_available = false;
-    input.position->alternate_row.reset();
-    input.position->alternate_measure.reset();
+    CHECK(text.elapsed() == "0:50.010");
+    CHECK(text.other_elapsed() == "1:12.236");
+    CHECK(text.compose_row() == "400");
+    CHECK(text.compose_musical_position() == "3:1");
+    CHECK(text.source_musical_position() == "5:1");
+    // Timing focus shows the source clock and offers the compose one.
+    input.time_is_source = true;
     input.immediate = true;
     text.refresh(input, 2);
-    CHECK(text.alternate_elapsed().empty());
-    CHECK(text.alternate_row().empty());
-    CHECK(text.alternate_musical_position().empty());
+    CHECK(text.elapsed() == "1:12.236");
+    CHECK(text.other_elapsed() == "0:50.010");
+    // Without a cut between the clocks and the coordinates, the tooltips have nothing to add.
+    input.clocks_differ = false;
+    input.position->compose_row.reset();
+    input.position->compose_measure.reset();
+    text.refresh(input, 3);
+    CHECK(text.other_elapsed().empty());
+    CHECK(text.compose_row().empty());
+    CHECK(text.compose_musical_position().empty());
 }

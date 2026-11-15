@@ -488,6 +488,16 @@ auto append_measure_snap_candidates(editor_grid_build_context_t& context,
     return true;
 }
 
+// In authored snap space an unmetered measure whose length is not a standard measure has no
+// standard pulses to show: its own snap lines already divide it, so only those remain.
+auto follows_authored_space_only(const editor_grid_build_context_t& context,
+                                 const measure_chunk_t& measure,
+                                 const measure_index_entry_t& entry) -> bool {
+    return context.request.active_snap &&
+           context.request.active_snap->space == quantization_space_t::authored_measure &&
+           !measure.definition.meter && entry.row_capacity != context.divisions;
+}
+
 auto append_authored_measure_candidates(editor_grid_build_context_t& context) -> bool {
     for (const auto& measure : context.chart.measures) {
         const auto entry = std::ranges::find(context.measure_index.entries, measure.id,
@@ -496,6 +506,11 @@ auto append_authored_measure_candidates(editor_grid_build_context_t& context) ->
             entry->absolute_begin_row >= context.candidate_end ||
             entry->absolute_begin_row + entry->row_capacity <= context.candidate_begin)
             continue;
+        if (follows_authored_space_only(context, measure, *entry)) {
+            if (!append_measure_snap_candidates(context, *entry))
+                return false;
+            continue;
+        }
         const auto denominator = measure.definition.meter
             ? measure.definition.meter->denominator
             : 4U;

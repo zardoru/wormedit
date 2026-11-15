@@ -652,7 +652,8 @@ struct worm_ui_nuklear_compose_state_t {
         bool restore_pending{};
         // Edge hovered or being dragged this frame; drives the edge highlight and cursor.
         bool hovered{};
-        double anchor_pointer{}, anchor_width{};
+        compose_drag_capture_t capture{};
+        double anchor_width{};
     } timing_region;
 
     struct snap_grid_t {

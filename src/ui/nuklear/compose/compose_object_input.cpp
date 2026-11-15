@@ -157,26 +157,33 @@ static auto is_timing_region_resize_edge(const ComposePointerEventContext& input
 void cancel_timing_region_resize() {
     auto& region = state.timing_region;
     region.restore_pending |= region.drag_active && region.moved;
+    region.capture.cancel();
     region.drag_active = region.moved = region.hovered = false;
 }
 static auto update_timing_region_resize(const ComposePointerEventContext& input) -> bool {
     auto& region = state.timing_region;
     if (!region.drag_active) return false;
-    if (!input.window_focused || input.view->input_occluded || compose_action_has_cancel(input.action) ||
-        (!input.left_down && !input.left_released)) {
+    // The shared capture owner decides focus, identity and lost-button cancellation.
+    const auto step = region.capture.advance(
+        {input.left_down, input.left_released, input.pointer_x, input.pointer_y},
+        input.window_focused && !compose_action_has_cancel(input.action) && region.capture.matches(*input.view),
+        compose_drag_release_policy_t::latched_planar, region.moved);
+    if (step.phase == compose_drag_phase_t::cancel) {
         cancel_timing_region_resize();
         return true;
     }
     region.hovered = true;
     wormedit::ui::nuklear::request_resize_cursor(wormedit::ui::nuklear::resize_cursor_t::horizontal);
-    const auto width = wormedit::ui::compose_edge_handle_dragged_value(
-        region.anchor_width, region.anchor_pointer, input.pointer_x);
     // A press without movement leaves the automatic width alone.
-    region.moved |= std::abs(width - region.anchor_width) >= 1.0;
+    region.moved = step.moved;
     if (region.moved)
-        input.action->compose_timing_region_width_pixels =
-            std::max(width, wormedit::ui::compose_timing_lane_minimum_width);
-    if (input.left_released) region.drag_active = region.moved = false;
+        input.action->compose_timing_region_width_pixels = std::max(
+            wormedit::ui::compose_edge_handle_dragged_value(region.anchor_width, region.capture.anchor_x, input.pointer_x),
+            wormedit::ui::compose_timing_lane_minimum_width);
+    if (input.left_released) {
+        region.capture.cancel();
+        region.drag_active = region.moved = false;
+    }
     return true;
 }
 static auto timing_region_double_clicked(const ComposePointerEventContext& input,
@@ -215,9 +222,9 @@ auto process_timing_region_resize(const ComposePointerEventContext& input,
     }
     if (!input.pointer_started_in_view || !input.left_down ||
         !is_timing_region_resize_edge(input, input.pointer_started_x, input.pointer_started_y)) return false;
+    if (!region.capture.begin(view, input.pointer_started_x, input.pointer_started_y, false)) return false;
     region.drag_active = true;
     region.moved = false;
-    region.anchor_pointer = input.pointer_started_x;
     region.anchor_width = wormedit::ui::compose_timing_right(view) - compose_measure_rail_width;
     return update_timing_region_resize(input);
 }

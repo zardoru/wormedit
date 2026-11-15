@@ -2328,6 +2328,9 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
     }
     if (scroll.delta_y_pixels == 0.0)
         return;
+    // Touchpad motion scrubs audio; middle-click autoscroll is a different gesture and stays silent.
+    if (scroll.continuous && !context.environment.controls.viewport.is_autoscroll_active())
+        context.environment.commands.project.transport.scrub_scrolled = true;
     if (!context.input_chart) {
         status = "The selected difficulty is no longer available.";
         notification_sink_t::from(context.notifications)

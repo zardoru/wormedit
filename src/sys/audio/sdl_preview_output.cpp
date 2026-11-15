@@ -753,6 +753,9 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
         if (!playing()) return;
         if (rendered_frames == 0) break;
         fade_block(rendered_frames);
+        // Scrub plays instead of the song; the clock and session keep running underneath.
+        if (muted_.load(std::memory_order_acquire))
+            std::fill_n(scratch_.data(), rendered_frames * audio::output_channel_count, 0.0F);
         have_output_ = true;
         const auto rendered_bytes = rendered_frames * bytes_per_frame;
         if (rendered_bytes > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||

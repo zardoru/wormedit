@@ -83,6 +83,9 @@
 #include "sys/compose/actions/compose_audition_requests.h"
 #include "sys/app/crash_backtrace.h"
 #include "sys/audio/inline_preview_cursor.h"
+#include "sys/app/touchpad_fingers.h"
+#include "sys/audio/scrub_controller.h"
+#include "sys/audio/scrub_position.h"
 #include "sys/audio/audio_source_registration.h"
 #include "sys/audio/project_audio_sources.h"
 #include "sys/compose/views/compose_waveform_overlays.h"
@@ -1770,6 +1773,10 @@ struct application_t::implementation_t {
                                                  preview_bridge};
         audio::resident_sample_store_t resident_samples{};
         sdl_preview_output_t preview_output{preview_session};
+        sdl_scrub_output_t scrub_output{project_sources.registry()};
+        scrub_controller_t scrub{scrub_output, preview_output};
+        std::vector<audio::scrub_segment_t> scrub_segments{};
+        std::optional<runtime::chart_preview_t::source_key_t> scrub_segments_key{};
         runtime::chart_preview_t preview_state{};
         task_scheduler_t audition_probe_scheduler{2, 4, background_scheduler_options()};
         resident_sample_loader_t resident_loader{resident_samples, audition_probe_scheduler};
@@ -3702,6 +3709,8 @@ struct application_t::implementation_t {
         jobs.metadata_asset_runtime.cleanup(session.project_identity.asset_base);
         jobs.export_runtime.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        // Before SDL shuts down: the destructors run after it and cannot touch the device.
+        audio_runtime.scrub_output.close();
         audio_runtime.preview_output.close();
         audio_runtime.audition_output.close();
 #endif
@@ -3783,10 +3792,69 @@ struct application_t::implementation_t {
         const auto message = audio_runtime.options.service(
             preferences.program_preferences.preferences.audio, preferences.options_runtime,
             audio_runtime.audition_output, audio_runtime.preview_output, audio_runtime.metronome,
-            audio_runtime.preview_state, audio_runtime.audition_session.is_active());
+            audio_runtime.preview_state, audio_runtime.audition_session.is_active(),
+            &audio_runtime.scrub_output);
         if (!message.empty())
             platform.notification_sink.post(notification_severity_t::warning, notification_source_t::audio, message);
     }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    // Where continuous scrolling has dragged the playing playhead, as a playback timeline frame.
+    auto scrub_timeline_frame(const wormedit::chart_document_t& chart)
+        -> std::optional<std::uint64_t> {
+        auto& state = audio_runtime.preview_state;
+        const auto& compiled = state.compiled.value();
+        if (!compiled.timing) return std::nullopt;
+        std::optional<std::uint64_t> source;
+        if (audio_runtime.preview_output.playing()) {
+            const auto& scrolled = commands.project.transport.last_playhead_scroll;
+            const auto row = scrolled && scrolled->chart == chart.id
+                                 ? std::optional{scrolled->row}
+                                 : commands.project.transport.preview_playhead_absolute_row;
+            if (row) source = wormedit::sys::scrub_source_frame_at_row(*compiled.timing, *row);
+        }
+        return source ? std::optional{state.collapsed_frame(*source)} : std::nullopt;
+    }
+
+    // Scrub audio: smooth scrolling plays the song like a needle on a record.
+    void service_scrub_audio() {
+        auto& state = audio_runtime.preview_state;
+        const bool scrolled = std::exchange(commands.project.transport.scrub_scrolled, false);
+        // The needle is only down while the chart plays, and Tab-modified scrolling (the fast
+        // wheel) is navigation, not scrubbing.
+        const bool playing = audio_runtime.preview_output.playing();
+        const bool tab_held = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB];
+        const bool enabled = preferences.program_preferences.preferences.editor.scrub_audio_on_scroll && playing;
+        const auto* chart = selected_chart(session.history, session.workspace);
+        const auto* cursor =
+            session.workspace.active_tab == wormedit::workspace_tab_t::compose && chart &&
+                    views.project.compose_interaction_state &&
+                    views.project.compose_interaction_state->chart == chart->id
+                ? &*views.project.compose_interaction_state
+                : nullptr;
+        // The first scroll of a chart prepares what playback would: the song's place on the timeline.
+        if (scrolled && enabled && chart && cursor &&
+            !state.matches_selection(session.history.document, session.workspace))
+            static_cast<void>(state.compile_if_needed(*chart, session.history.document,
+                                                      audio_runtime.project_sources));
+        const bool ready = chart && cursor && state.compiled.has_value() &&
+                           state.matches_selection(session.history.document, session.workspace);
+        if (ready && audio_runtime.scrub_segments_key != state.compiled.key()) {
+            audio_runtime.scrub_segments = wormedit::sys::scrub_segments_of(state.compiled.value());
+            audio_runtime.scrub_segments_key = state.compiled.key();
+        }
+        const auto& fingers = wormedit::sys::touchpad_fingers();
+        audio_runtime.scrub.update({
+            .now_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+            .enabled = enabled && ready,
+            .scrolled = scrolled && !tab_held,
+            .playing = playing,
+            .timeline_frame = ready ? scrub_timeline_frame(*chart) : std::nullopt,
+            .fingers = fingers.is_reported() ? std::optional{fingers.count()} : std::nullopt,
+            .segments = audio_runtime.scrub_segments,
+        });
+    }
+#endif
 
     auto on_transport_play_pause() -> std::string {
         commands.invalidate_playing_seek_records();
@@ -4208,6 +4276,7 @@ struct application_t::implementation_t {
             audio_runtime.preview_session, audio_runtime.audition_output,
             audio_runtime.preview_output, commands.project.transport.preview_playhead_absolute_row,
             platform.notification_sink, expected_presentation_ns);
+        service_scrub_audio();
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         audio_runtime.waveform_runtime.service(
             session.history.document, session.workspace, views.project.compose_scene_cache,
@@ -4582,6 +4651,8 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         if (audio_runtime.preview_output.playing() || audio_runtime.audition_session.is_active())
             return frame_demand_t::every_frame("audio playback");
+        // The scrub sound only stops, and playback only resumes, from per-frame updates.
+        if (audio_runtime.scrub.busy()) return frame_demand_t::every_frame("scrub audio");
 #endif
         const auto& viewport = views.compose_viewport_input;
         if (viewport.is_autoscroll_active() || viewport.is_momentum_active() ||

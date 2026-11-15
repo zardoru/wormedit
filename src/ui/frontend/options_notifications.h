@@ -41,7 +41,8 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
     WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME,
     WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY,
-    WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY,
+    WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_SCRUB_AUDIO_ON_SCROLL,
+    WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY,
     WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION,
     WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME,
     WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY,
@@ -82,7 +83,7 @@ struct options_view_t {
     std::array<std::uint32_t, 6> scroll_directions{};
     std::uint32_t playhead_anchor_percent{}, area_band_alpha{};
     wormedit::move_collision_policy_t move_collision_policy{};
-    bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{};
+    bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{}, scrub_audio_on_scroll{};
     bool confirm_unsaved_close{}, keep_pitch{}, frame_timing_overlay{}, snap_colored_grid{};
     bool reduced_motion{};
     std::uint32_t snap_grid_opacity_percent{}, field_waveform_opacity_percent{};

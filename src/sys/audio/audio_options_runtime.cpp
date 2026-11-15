@@ -1,6 +1,7 @@
 #include "sys/audio/audio_options_runtime.h"
 #include "sys/preferences/options_runtime.h"
 #include "sys/audio/chart_preview_state.h"
+#include "sys/audio/sdl_scrub_output.h"
 #include <SDL3/SDL_audio.h>
 #include <algorithm>
 
@@ -22,11 +23,12 @@ auto selected_audio_device(std::string_view wanted, std::string& message) -> SDL
 }
 
 auto reopen_audio_outputs(const audio_preferences_t& preferences, sdl_audition_output_t& audition,
-                         sdl_preview_output_t& preview) -> std::string {
+                         sdl_preview_output_t& preview, sdl_scrub_output_t* scrub) -> std::string {
     std::string warning;
     const auto device = selected_audio_device(preferences.output_device, warning);
     audition.close();
     preview.close();
+    if (scrub) scrub->close();
     std::string error;
     const auto audition_open = audition.open(&error, device, preferences.buffer_frames);
     if (!error.empty()) warning += (warning.empty() ? "" : " ") + error;
@@ -34,6 +36,11 @@ auto reopen_audio_outputs(const audio_preferences_t& preferences, sdl_audition_o
     const auto preview_open = preview.open(&error, device, preferences.buffer_frames);
     if (!error.empty()) warning += (warning.empty() ? "" : " ") + error;
     if (!audition_open || !preview_open) warning += " Audio output is unavailable.";
+    // Scrub is a nicety: its failure to open never blocks the other outputs or adds a warning.
+    if (scrub) {
+        error.clear();
+        static_cast<void>(scrub->open(&error, device, preferences.buffer_frames));
+    }
     return warning;
 }
 }
@@ -51,7 +58,8 @@ void audio_options_runtime_t::refresh_devices(options_runtime_t& options) {
 
 auto audio_options_runtime_t::service(const audio_preferences_t& preferences, options_runtime_t& options,
     sdl_audition_output_t& audition, sdl_preview_output_t& preview, metronome_t& metronome,
-    runtime::chart_preview_t& chart_preview, bool audition_active) -> std::string {
+    runtime::chart_preview_t& chart_preview, bool audition_active,
+    sdl_scrub_output_t* scrub) -> std::string {
     if (!preferences.is_valid()) return "Invalid audio preferences; previous output retained.";
     if (!last_preferences_ || last_preferences_->metronome_volume != preferences.metronome_volume)
         static_cast<void>(metronome.set_volume(static_cast<std::uint8_t>(preferences.metronome_volume)));
@@ -66,7 +74,7 @@ auto audio_options_runtime_t::service(const audio_preferences_t& preferences, op
     options.audio_output_pending = !configured_output_ || configured_output_->first != preferences.output_device ||
         configured_output_->second != preferences.buffer_frames;
     if (!options.audio_output_pending || preview.playing() || chart_preview.paused || audition_active) return {};
-    auto message = reopen_audio_outputs(preferences, audition, preview);
+    auto message = reopen_audio_outputs(preferences, audition, preview, scrub);
     configured_output_.emplace(preferences.output_device, preferences.buffer_frames);
     options.audio_output_pending = false;
     metronome.settings.available = preview.available() && !metronome.source_bindings.empty();

@@ -212,6 +212,7 @@ add_executable(wormedit_core_tests
     core/timing_anchor_editor_tests.cpp
     core/timing_lane_controller_tests.cpp
     core/viewport_input_tests.cpp
+    core/scrub_tracker_tests.cpp
     core/virtual_canvas_tests.cpp
     core/video_preview_tests.cpp
     core/visual_layout_tests.cpp
@@ -312,6 +313,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_resident_samples_tests.cpp
         core/audio_playback_rate_tests.cpp
         core/audio_time_stretch_tests.cpp
+        core/audio_scrub_reader_tests.cpp
         core/audio_preview_repro_tests.cpp
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp
@@ -381,6 +383,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/sdl_preview_output_tests.cpp
             sys/audio_options_runtime_tests.cpp
             ../src/sys/audio/audio_options_runtime.cpp
+            ../src/sys/audio/sdl_scrub_output.cpp
             ../src/sys/audio/chart_preview_state.cpp
             ../src/sys/audio/export_cut_preview.cpp
             ../src/sys/app/frame_timing.cpp

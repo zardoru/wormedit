@@ -61,6 +61,10 @@ class sdl_preview_output_t {
     [[nodiscard]] auto set_keep_pitch(bool enabled) noexcept -> bool;
     [[nodiscard]] auto keep_pitch() const noexcept -> bool;
     [[nodiscard]] auto playing() const noexcept -> bool;
+    // Silences the output while the session and its clock keep running (scrub audio plays
+    // instead). Takes effect at the next callback.
+    void set_muted(bool muted) noexcept { muted_.store(muted, std::memory_order_release); }
+    [[nodiscard]] auto muted() const noexcept -> bool { return muted_.load(std::memory_order_acquire); }
     // Callback-resolution audible clock; reading never queries or locks SDL.
     [[nodiscard]] auto timeline_frame() const noexcept -> std::uint64_t;
     [[nodiscard]] auto playhead() const noexcept -> audio::playhead_state_t {
@@ -137,6 +141,7 @@ class sdl_preview_output_t {
     std::atomic<bool> requested_keep_pitch_{};
     std::atomic<bool> active_keep_pitch_{};
     std::atomic<bool> output_playing_{};
+    std::atomic<bool> muted_{};
     std::atomic<std::uint64_t> rendered_source_frame_{};
     std::atomic<std::uint64_t> buffered_source_frames_{};
     std::atomic<std::uint64_t> published_latency_frames_{};

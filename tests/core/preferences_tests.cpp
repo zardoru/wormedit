@@ -381,9 +381,11 @@ TEST_CASE("Snap grid opacity defaults mild and rejects invalid saved values", "[
 TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defaults", "[preferences][feedback]") {
     const auto defaults = preferences_parse_effect_t::from("{}").preferences;
     expect_preference(!defaults.editor.invert_scroll_wheel);
+    expect_preference(defaults.editor.scrub_audio_on_scroll);
     expect_preference(defaults.display.field_waveform_opacity_percent == 75);
     auto values = defaults;
     values.editor.invert_scroll_wheel = true;
+    values.editor.scrub_audio_on_scroll = false;
     values.editor.scroll_directions[0] = 2;
     values.display.field_waveform_opacity_percent = 0;
     const auto bytes = serialize_program_preferences(values);
@@ -394,6 +396,9 @@ TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defa
     const auto invalid = preferences_parse_effect_t::from(R"({"display":{"field_waveform_opacity_percent":101},"editor":{"invert_scroll_wheel":123}})");
     expect_preference(invalid.preferences.display.field_waveform_opacity_percent == 75);
     expect_preference(!invalid.preferences.editor.invert_scroll_wheel);
+    const auto scrub_invalid = preferences_parse_effect_t::from(R"({"editor":{"scrub_audio_on_scroll":"no"}})");
+    expect_preference(scrub_invalid.preferences.editor.scrub_audio_on_scroll);
+    expect_preference(!scrub_invalid.warnings.empty());
     expect_preference(!invalid.warnings.empty());
     values.display.field_waveform_opacity_percent = 101;
     expect_preference(!serialize_program_preferences(values));

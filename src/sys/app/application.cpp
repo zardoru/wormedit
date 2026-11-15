@@ -1775,8 +1775,8 @@ struct application_t::implementation_t {
         sdl_preview_output_t preview_output{preview_session};
         sdl_scrub_output_t scrub_output{project_sources.registry()};
         scrub_controller_t scrub{scrub_output, preview_output};
-        std::vector<audio::scrub_segment_t> scrub_segments;
-        std::optional<runtime::chart_preview_t::source_key_t> scrub_segments_key;
+        std::vector<audio::scrub_segment_t> scrub_segments{};
+        std::optional<runtime::chart_preview_t::source_key_t> scrub_segments_key{};
         runtime::chart_preview_t preview_state{};
         task_scheduler_t audition_probe_scheduler{2, 4, background_scheduler_options()};
         resident_sample_loader_t resident_loader{resident_samples, audition_probe_scheduler};

@@ -600,26 +600,26 @@ TEST_CASE("Headless frontend isolates scripted Ctrl wheel zoom and release",
 
 TEST_CASE("Action snapshots own metadata payloads across copies moves and destruction",
           "[unit][frontend-state][frontend][event-harness]") {
-    using text_member_t = std::optional<std::string> wormedit::ui::workspace_action_t::*;
+    using text_member_t = std::optional<std::string> wormedit::ui::metadata_edit_request_t::*;
     constexpr std::array<text_member_t, 11> fields{
-        &wormedit::ui::workspace_action_t::metadata_chart_rating_numerator_text,
-        &wormedit::ui::workspace_action_t::metadata_chart_rating_denominator_text,
-        &wormedit::ui::workspace_action_t::metadata_audio_offset_numerator_text,
-        &wormedit::ui::workspace_action_t::metadata_audio_offset_denominator_text,
-        &wormedit::ui::workspace_action_t::metadata_title,
-        &wormedit::ui::workspace_action_t::metadata_artist,
-        &wormedit::ui::workspace_action_t::metadata_chart_name,
-        &wormedit::ui::workspace_action_t::metadata_chart_author,
-        &wormedit::ui::workspace_action_t::metadata_format_name,
-        &wormedit::ui::workspace_action_t::metadata_format_value,
-        &wormedit::ui::workspace_action_t::metadata_output_path,
+        &wormedit::ui::metadata_edit_request_t::chart_rating_numerator_text,
+        &wormedit::ui::metadata_edit_request_t::chart_rating_denominator_text,
+        &wormedit::ui::metadata_edit_request_t::audio_offset_numerator_text,
+        &wormedit::ui::metadata_edit_request_t::audio_offset_denominator_text,
+        &wormedit::ui::metadata_edit_request_t::title,
+        &wormedit::ui::metadata_edit_request_t::artist,
+        &wormedit::ui::metadata_edit_request_t::chart_name,
+        &wormedit::ui::metadata_edit_request_t::chart_author,
+        &wormedit::ui::metadata_edit_request_t::format_name,
+        &wormedit::ui::metadata_edit_request_t::format_value,
+        &wormedit::ui::metadata_edit_request_t::output_path,
     };
     const auto make_snapshot = [&] {
         wormedit::ui::workspace_action_t action{};
         std::array<std::string, 11> strings;
         for (std::size_t i = 0; i < fields.size(); ++i) {
             strings[i] = std::to_string(i) + std::string(100, 'x');
-            action.*fields[i] = strings[i].c_str();
+            action.metadata.*fields[i] = strings[i].c_str();
         }
         std::string tag = "original tag";
         action.metadata.search_tags = {tag, std::string{}, std::nullopt};
@@ -644,7 +644,7 @@ TEST_CASE("Action snapshots own metadata payloads across copies moves and destru
     for (int i = 0; i < 32; ++i) history.push_back(workspace_action_snapshot_t{{}});
     const auto& action = history.front().get();
     for (std::size_t i = 0; i < fields.size(); ++i)
-        CHECK(std::string{*(action.*fields[i])} == std::to_string(i) + std::string(100, 'x'));
+        CHECK(std::string{*(action.metadata.*fields[i])} == std::to_string(i) + std::string(100, 'x'));
     check_snapshot_tags(action);
     CHECK(action.compose_viewport_inputs[0].zoom_modifier);
     CHECK(!history.back().get().metadata.title);

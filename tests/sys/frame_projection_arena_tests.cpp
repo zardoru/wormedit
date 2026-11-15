@@ -384,7 +384,7 @@ struct metadata_text_fixture_t {
         action.compose_input_chart_id.value = 1;
         action.compose_input_document_revision = history.document.revision;
         action.compose_resource_asset_id.value = 8;
-        action.metadata_inspect_import = true;
+        action.metadata.inspect_import = true;
         action.compose_import_path = "/tmp/arena-copy-preview-source.wav";
         const auto status = runtime.start_copy_preview(action, history, workspace, base);
         INFO(status);

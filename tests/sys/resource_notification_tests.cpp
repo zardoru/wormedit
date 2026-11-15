@@ -64,7 +64,7 @@ struct resource_notification_fixture_t {
         action.compose_input_chart_id.value = 1;
         action.compose_input_document_revision = history.document.revision;
         action.compose_resource_asset_id.value = 1;
-        action.metadata_inspect_import = true;
+        action.metadata.inspect_import = true;
         action.compose_import_path = source.c_str();
         return action;
     }
@@ -254,7 +254,7 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
     std::filesystem::copy_file(std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" / "audio" / "keysound-c4.ogg",
                                fixture.source);
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
+    action.metadata.import_copy_project = true;
     (void)fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
@@ -276,7 +276,7 @@ TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
           "[unit][sys][resource-notification][metadata-copy-stamp]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
+    action.metadata.import_copy_project = true;
     ++action.compose_input_document_revision;
     const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
@@ -291,7 +291,7 @@ TEST_CASE("metadata import decode failure posts once and never links invalid aud
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
+    action.metadata.import_copy_project = true;
     const auto revision = fixture.history.document.revision;
     const auto started = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);

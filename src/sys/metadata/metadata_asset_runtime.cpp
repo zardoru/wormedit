@@ -422,8 +422,8 @@ auto metadata_asset_t::start_copy_preview(
     const std::filesystem::path& asset_base) -> std::string {
     using namespace wormedit;
     auto& runtime = impl_->copy_preview;
-    const auto source = action.metadata_inspect_export ? notification_source_t::export_
-                       : action.metadata_inspect_import ? notification_source_t::import_
+    const auto source = action.metadata.inspect_export ? notification_source_t::export_
+                       : action.metadata.inspect_import ? notification_source_t::import_
                                                         : notification_source_t::document;
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
@@ -442,14 +442,14 @@ auto metadata_asset_t::start_copy_preview(
     if (runtime.job.is_busy())
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
-    const bool import_copy = action.metadata_inspect_import;
+    const bool import_copy = action.metadata.inspect_import;
     const asset_id_t asset{action.compose_resource_asset_id.value};
     std::filesystem::path source_path;
     if (auto error = resolve_copy_preview_source(action, history, asset, import_copy,
                                                  source_path))
         return finish(*error, notification_severity_t::warning);
     std::filesystem::path output_path;
-    if (action.metadata_inspect_export) {
+    if (action.metadata.inspect_export) {
         if (auto error = resolve_export_copy_path(action, history, workspace, output_path)) {
             return finish(*error, notification_severity_t::warning);
         }
@@ -462,7 +462,7 @@ auto metadata_asset_t::start_copy_preview(
             return metadata_copy_inspection_request_t{.copy = request,
                                                       .output_path = output_path,
                                                       .export_copy =
-                                                          action.metadata_inspect_export};
+                                                          action.metadata.inspect_export};
         },
         source, inspect_copy);
     if (!started)
@@ -475,7 +475,7 @@ auto metadata_asset_t::start_copy_preview(
                                     .source_path = source_path,
                                     .output_path = output_path,
                                     .output_group_index = action.compose_output_group_index,
-                                    .export_copy = action.metadata_inspect_export,
+                                    .export_copy = action.metadata.inspect_export,
                                     .import_copy = import_copy};
     runtime.message = "Inspecting destination bytes in the background...";
     return finish("Copy destination inspection started.", notification_severity_t::info);
@@ -487,7 +487,7 @@ auto metadata_asset_t::start_import_copy(
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& scheduler,
     bool file_jobs_busy) -> std::string {
     using namespace wormedit;
-    const auto source = action.metadata_import_copy_export ? notification_source_t::export_
+    const auto source = action.metadata.import_copy_export ? notification_source_t::export_
                                                            : notification_source_t::import_;
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
@@ -513,8 +513,8 @@ auto metadata_asset_t::start_import_copy(
     if (asset_base.empty())
         return finish("Open a saved native project before importing an asset copy.",
                       notification_severity_t::warning);
-    const bool export_copy = action.metadata_import_copy_export;
-    if (export_copy == action.metadata_import_copy_project)
+    const bool export_copy = action.metadata.import_copy_export;
+    if (export_copy == action.metadata.import_copy_project)
         return finish("Choose exactly one project or export import-copy destination.",
                       notification_severity_t::warning);
     if (file_jobs_busy || pending_import)

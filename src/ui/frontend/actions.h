@@ -4,6 +4,7 @@
 #include "bms_program.h"
 #include <wormedit/core/metadata_inheritance_types.h>
 #include "timing_links.h"
+#include "metadata_edit.h"
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
 #include <wormedit/core/preview_mix.h>
@@ -17,18 +18,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-namespace wormedit::ui {
-struct metadata_channel_map_lane_t {
-    lane_id_t lane;
-    std::optional<std::string> visible;
-    std::optional<std::string> invisible;
-    std::optional<std::string> long_note;
-    std::optional<std::string> mine;
-
-    auto operator==(const metadata_channel_map_lane_t&) const -> bool = default;
-};
-} // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct sound_import_item_t {
@@ -451,28 +440,6 @@ struct compose_viewport_input_t {
 };
 } // namespace wormedit::ui
 
-typedef enum WormUiMetadataEditKind {
-    WORM_UI_METADATA_EDIT_NONE = 0,
-    WORM_UI_METADATA_EDIT_SONG,
-    WORM_UI_METADATA_EDIT_CHART,
-    WORM_UI_METADATA_EDIT_INHERITANCE,
-    WORM_UI_METADATA_EDIT_AUDIO_OFFSET,
-    WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD,
-    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD,
-    WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD,
-    WORM_UI_METADATA_EDIT_OUTPUT_PATH,
-    WORM_UI_METADATA_EDIT_REDIVIDE_CHART,
-    WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP,
-    WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP,
-    // Author and/or rating written to metadata_batch_chart_ids in one command. The author is
-    // metadata_chart_author; the rating is metadata_has_chart_rating plus the numerator/denominator
-    // texts (no rating clears it).
-    WORM_UI_METADATA_EDIT_BATCH_CHART,
-    // Key-count preview and apply: the index names a choice in the chart's family list.
-    WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
-    WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
-} WormUiMetadataEditKind;
-
 typedef enum WormUiClipboardAction {
     WORM_UI_CLIPBOARD_NONE = 0,
     WORM_UI_CLIPBOARD_COPY,
@@ -574,41 +541,7 @@ struct workspace_action_t {
     size_t recovery_candidate_index;
     std::string recovery_save_as_destination;
     // Metadata payloads own their text and lists across frontend calls.
-    WormUiMetadataEditKind metadata_edit;
-    uint64_t metadata_document_revision;
-    chart_id_t metadata_chart_id;
-    bool metadata_has_chart_rating;
-    std::optional<std::string> metadata_chart_rating_numerator_text;
-    std::optional<std::string> metadata_chart_rating_denominator_text;
-    std::optional<std::string> metadata_audio_offset_numerator_text;
-    std::optional<std::string> metadata_audio_offset_denominator_text;
-    std::optional<std::string> metadata_title;
-    std::optional<std::string> metadata_artist;
-    std::optional<std::string> metadata_chart_name;
-    std::optional<std::string> metadata_chart_author;
-    metadata_overrides_t metadata_overrides;
-    std::vector<std::optional<std::string>> metadata_search_tags;
-    bool metadata_inspect_copy;
-    bool metadata_inspect_export;
-    bool metadata_inspect_import;
-    bool metadata_import_copy_project;
-    bool metadata_import_copy_export;
-    bool metadata_format_chart_scoped;
-    format_family_t metadata_format_family;
-    size_t metadata_format_index;
-    std::optional<std::string> metadata_format_name;
-    std::optional<std::string> metadata_format_value;
-    size_t metadata_output_group_index;
-    std::optional<std::string> metadata_output_path;
-    // REDIVIDE_CHART: target divisions per standard measure (exact, 0 when unset).
-    uint64_t metadata_redivision_resolution;
-    // Channel-map preview owns one record per lane; empty channel text means unset.
-    object_id_t metadata_channel_map_layout_segment_id;
-    std::vector<metadata_channel_map_lane_t> metadata_channel_map_lanes;
-    std::vector<chart_id_t> metadata_batch_chart_ids;
-    bool metadata_batch_edit_author;
-    bool metadata_batch_edit_rating;
-    size_t metadata_lane_profile_index;
+    metadata_edit_request_t metadata;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;

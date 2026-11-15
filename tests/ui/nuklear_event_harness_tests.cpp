@@ -481,10 +481,10 @@ void check_modifier_fixture_isolation() {
 }
 
 void check_snapshot_tags(const wormedit::ui::workspace_action_t& action) {
-    REQUIRE(action.metadata_search_tags.size() == 3);
-    CHECK(std::string{*action.metadata_search_tags[0]} == "original tag");
-    CHECK(std::string{*action.metadata_search_tags[1]}.empty());
-    CHECK(!action.metadata_search_tags[2]);
+    REQUIRE(action.metadata.search_tags.size() == 3);
+    CHECK(std::string{*action.metadata.search_tags[0]} == "original tag");
+    CHECK(std::string{*action.metadata.search_tags[1]}.empty());
+    CHECK(!action.metadata.search_tags[2]);
 }
 
 } // namespace
@@ -622,7 +622,7 @@ TEST_CASE("Action snapshots own metadata payloads across copies moves and destru
             action.*fields[i] = strings[i].c_str();
         }
         std::string tag = "original tag";
-        action.metadata_search_tags = {tag, std::string{}, std::nullopt};
+        action.metadata.search_tags = {tag, std::string{}, std::nullopt};
         action.compose_viewport_inputs.resize(1);
         action.compose_viewport_inputs[0].zoom_modifier = true;
         auto snapshot = workspace_action_snapshot_t{action};
@@ -647,8 +647,8 @@ TEST_CASE("Action snapshots own metadata payloads across copies moves and destru
         CHECK(std::string{*(action.*fields[i])} == std::to_string(i) + std::string(100, 'x'));
     check_snapshot_tags(action);
     CHECK(action.compose_viewport_inputs[0].zoom_modifier);
-    CHECK(!history.back().get().metadata_title);
-    CHECK(history.back().get().metadata_search_tags.empty());
+    CHECK(!history.back().get().metadata.title);
+    CHECK(history.back().get().metadata.search_tags.empty());
 }
 
 namespace {
@@ -671,7 +671,7 @@ auto edit_metadata_title(nuklear_event_harness_t& harness, const char* value)
     const auto apply = harness.drawn_text_center("Apply");
     REQUIRE(apply);
     auto actions = click_at(harness, apply->first, apply->second);
-    REQUIRE(actions[0].get().metadata_edit == WORM_UI_METADATA_EDIT_SONG);
+    REQUIRE(actions[0].get().metadata.kind == WORM_UI_METADATA_EDIT_SONG);
     return actions;
 }
 
@@ -694,21 +694,21 @@ TEST_CASE("Headless metadata text history survives later compose and frontend sh
 
         static_cast<void>(harness.frame());
         history = edit_metadata_title(harness, "First");
-        REQUIRE(std::string{*history[0].get().metadata_title} == "First");
+        REQUIRE(std::string{*history[0].get().metadata.title} == "First");
         // Simulate the next projected view, then edit the same frontend buffer.
         view.metadata.title = "First";
 
         ++view.metadata.document_revision;
         static_cast<void>(harness.frame());
         const auto later = edit_metadata_title(harness, "Second");
-        CHECK(std::string{*later[0].get().metadata_title} == "FirstSecond");
-        CHECK(std::string{*history[0].get().metadata_title} == "First");
+        CHECK(std::string{*later[0].get().metadata.title} == "FirstSecond");
+        CHECK(std::string{*history[0].get().metadata.title} == "First");
     }
     auto copied = history;
     history.clear();
     auto moved = std::move(copied);
-    CHECK(std::string{*moved[0].get().metadata_title} == "First");
-    CHECK(std::string{*moved[0].get().metadata_artist} == "Artist");
+    CHECK(std::string{*moved[0].get().metadata.title} == "First");
+    CHECK(std::string{*moved[0].get().metadata.artist} == "Artist");
 }
 
 namespace {
@@ -6442,7 +6442,7 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     const auto frame = harness.frame(events);
     check_layer_menu(audio.waveform_viewport.frames_per_pixel == before);
     check_layer_menu(frame.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
-    check_layer_menu(frame.get().metadata_edit == WORM_UI_METADATA_EDIT_NONE);
+    check_layer_menu(frame.get().metadata.kind == WORM_UI_METADATA_EDIT_NONE);
     (void)harness.frame();
     check_layer_menu(harness.drawn_text().find("Audio and export") != std::string::npos);
 }
@@ -8977,8 +8977,8 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     press.type = SDL_EVENT_MOUSE_BUTTON_UP;
     press.button.down = false;
     const auto up = harness.frame(std::array{motion, press});
-    const auto& action = down.get().metadata_edit != WORM_UI_METADATA_EDIT_NONE ? down.get() : up.get();
-    expect_t422(action.metadata_edit == WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE);
+    const auto& action = down.get().metadata.kind != WORM_UI_METADATA_EDIT_NONE ? down.get() : up.get();
+    expect_t422(action.metadata.kind == WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE);
     expect_t422(dispatch_metadata_action(action, history, *binding.value, false,
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(drop.lane_profile_preview.has_value());
@@ -8990,7 +8990,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     expect_t422(apply_button.has_value());
     const auto apply_frames = click_at(harness, apply_button->first, apply_button->second);
     const auto apply = std::ranges::find_if(apply_frames, [](const auto& frame) {
-        return frame.get().metadata_edit == WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+        return frame.get().metadata.kind == WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
     });
     expect_t422(apply != apply_frames.end());
     expect_t422(dispatch_metadata_action(apply->get(), history, *binding.value, false,

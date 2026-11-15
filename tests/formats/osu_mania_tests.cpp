@@ -547,6 +547,52 @@ TEST_CASE("osu!mania keeps zero source origin after a BPM edit with retained pro
     check_zero_origin_output(*written.value);
 }
 
+auto red_timing_lines(const std::string& osu) -> std::vector<std::string> {
+    std::vector<std::string> lines;
+    const auto begin = osu.find("[TimingPoints]");
+    const auto end = osu.find("[HitObjects]");
+    REQUIRE(begin != std::string::npos);
+    REQUIRE(end != std::string::npos);
+    std::size_t cursor = osu.find('\n', begin) + 1;
+    while (cursor < end) {
+        const auto next = osu.find('\n', cursor);
+        const auto line = osu.substr(cursor, next - cursor);
+        const auto uninherited_at = [&] {
+            std::size_t position = 0;
+            for (int skipped = 0; skipped < 6; ++skipped) {
+                position = line.find(',', position);
+                if (position == std::string::npos) return false;
+                ++position;
+            }
+            return line.compare(position, 2, "1,") == 0;
+        }();
+        if (uninherited_at) lines.push_back(line);
+        cursor = next + 1;
+    }
+    return lines;
+}
+
+TEST_CASE("osu!mania writer emits red lines only where BPM or meter changes",
+          "[unit][format][osu-mania][timing][writer]") {
+    const auto hits = std::string("64,192,0,1,0,0:0:0:0:\n64,192,9000,1,0,0:0:0:0:\n");
+    SECTION("constant BPM and meter yields a single red line") {
+        const auto parsed = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n", hits));
+        REQUIRE(parsed.value);
+        REQUIRE(parsed.value->charts.front().measures.size() > 3);
+        const auto written = write_inline(*parsed.value);
+        REQUIRE(written.value);
+        CHECK(red_timing_lines(*written.value).size() == 1);
+    }
+    SECTION("a meter change keeps its red line") {
+        const auto parsed = parse_inline(
+            timing_fixture("0,500,4,0,0,100,1,0\n4000,500,3,0,0,100,1,0\n", hits));
+        REQUIRE(parsed.value);
+        const auto written = write_inline(*parsed.value);
+        REQUIRE(written.value);
+        CHECK(red_timing_lines(*written.value).size() == 2);
+    }
+}
+
 TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline measure",
           "[unit][format][osu-mania][timing][quantization]") {
     const auto parsed = parse_inline(timing_fixture(
@@ -2146,9 +2192,9 @@ TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an 
              {"0,500,4,1,0,60,1,0", "1000,-50,4,3,4,80,0,9", "2500,-100,4,2,3,70,0,1",
               "4000,500,4,2,3,65,1,0", "5000,-80,4,1,0,50,0,8", "8000,400,3,2,1,90,1,0"})
             CHECK(has_line(lines, wanted));
-        // Measure starts without a source red line reuse the active point's mix.
-        CHECK(has_line(lines, "2000,500,4,3,4,80,1,1"));
-        CHECK(has_line(lines, "6000,500,4,1,0,50,1,0"));
+        // Measure starts without a BPM or meter change get no redundant red line.
+        CHECK_FALSE(has_line(lines, "2000,500,4,3,4,80,1,1"));
+        CHECK_FALSE(has_line(lines, "6000,500,4,1,0,50,1,0"));
     }
 
     SECTION("hit samples and the edited note") {

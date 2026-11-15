@@ -3709,6 +3709,8 @@ struct application_t::implementation_t {
         jobs.metadata_asset_runtime.cleanup(session.project_identity.asset_base);
         jobs.export_runtime.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        // Before SDL shuts down: the destructors run after it and cannot touch the device.
+        audio_runtime.scrub_output.close();
         audio_runtime.preview_output.close();
         audio_runtime.audition_output.close();
 #endif

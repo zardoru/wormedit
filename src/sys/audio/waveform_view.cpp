@@ -349,8 +349,7 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
     const auto frames_to_fraction = [&](long double seconds) {
         if (!view.waveform_cut_frames) return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
         const auto frame = std::clamp(std::round(seconds * waveform.sample_rate), 0.0L, static_cast<long double>(waveform.total_frames));
-        if (view.waveform_cut_frames->contains(static_cast<std::uint64_t>(frame)))
-            return std::numeric_limits<double>::quiet_NaN();
+        // A bookmark inside an export cut sits on the cut's seam, where Compose draws it too.
         return view.waveform_cut_frames->collapsed_fraction(static_cast<std::uint64_t>(frame), waveform.total_frames).value_or(0.0);
     };
     if (cache.timing.marker_timing_index) {

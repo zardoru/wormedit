@@ -125,7 +125,9 @@ loss policy decides whether the export is refused.
 == Legacy players
 
 BMSON is the format to author in. Players that cannot read it are legacy targets, and the
-sliced exports exist to serve them. Keep the `.wormedit` project as the source and re-export
+sliced exports exist to serve them. osu!mania and Quaver are the exception: they are games with
+their own audience and charting conventions, not legacy players, so converting to them is a
+use case of its own and not a compatibility copy. Keep the `.wormedit` project as the source and re-export
 after each edit instead of editing the converted files. Because StepMania has no sound limit,
 it is the easiest legacy copy to keep complete. BMS needs the sound count to stay under 1295,
 so run *Preview* after adding slices.

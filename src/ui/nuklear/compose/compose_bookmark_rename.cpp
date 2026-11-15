@@ -230,7 +230,6 @@ void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::com
     if (committed) stage_rename(action, view, editor);
     const bool finished = cancelled || committed;
     if (finished) nk_popup_close(context);
-    nk_popup_end(context);
     wormedit::ui::chrome::text_prompt_end(context, surface);
     if (finished) {
         request_editor_close(editor);

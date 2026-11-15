@@ -540,7 +540,8 @@ inline void end_form_popup(nk_context* context, retained_popup_t& state, retaine
 // A plain popup (confirmations, small pickers, prompts) in the same surface as menus and form
 // popups: `menu_padding` all around, rounded panel, soft shadow, transparent window fills and no
 // stock square border. Returns false when Nuklear refuses it; then nothing needs ending. On
-// success call surface_popup_end(context, saved) after nk_popup_end(). Row heights inside are
+// success finish with surface_popup_end(context, saved), which is nk_popup_end() plus restoring
+// the window fills (call nk_popup_close() before it to close). Row heights inside are
 // the caller's; the bounds must include the 2 * menu_padding the surface takes.
 inline auto surface_popup_begin(nk_context* context, const char* name, struct nk_rect bounds,
                                 MenuSurface& saved,
@@ -558,6 +559,7 @@ inline auto surface_popup_begin(nk_context* context, const char* name, struct nk
     return began;
 }
 inline void surface_popup_end(nk_context* context, const MenuSurface& saved) {
+    nk_popup_end(context);
     menu_surface_end(context, saved);
 }
 

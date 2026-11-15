@@ -2142,7 +2142,6 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         nk_popup_close(g_context);
     }
-    nk_popup_end(g_context);
     wormedit::ui::chrome::surface_popup_end(g_context, surface);
 }
 

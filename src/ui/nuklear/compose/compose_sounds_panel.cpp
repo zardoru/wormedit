@@ -648,7 +648,6 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
     }
     if (wormedit::ui::chrome::button_label(context, "Cancel")) close_sound_slot_confirmation(panel);
     if (!state.keysound_slots.keysound_slot_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
     wormedit::ui::chrome::surface_popup_end(context, surface);
 }
 
@@ -1026,7 +1025,6 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     if (wormedit::ui::chrome::button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
     if (wormedit::ui::chrome::button_label(context, "Cancel")) state.keysound_slots.sound_layer_confirmation_open = false;
     if (!state.keysound_slots.sound_layer_confirmation_open) nk_popup_close(context);
-    nk_popup_end(context);
     wormedit::ui::chrome::surface_popup_end(context, surface);
 }
 

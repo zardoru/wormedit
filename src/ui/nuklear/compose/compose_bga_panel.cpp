@@ -535,6 +535,5 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         nk_popup_close(context);
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
-    nk_popup_end(context);
     wormedit::ui::chrome::surface_popup_end(context, surface);
 }

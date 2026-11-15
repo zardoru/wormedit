@@ -15,8 +15,7 @@ namespace wormedit::ui::chrome {
 //   if (text_prompt_begin(context, "Go to measure", bounds, saved)) {
 //       const auto flags = text_prompt_body(context, {...}, focus_pending);
 //       ...                                        // Enter: NK_EDIT_COMMITTED
-//       nk_popup_end(context);                     // after nk_popup_close when finishing
-//       text_prompt_end(context, saved);
+//       text_prompt_end(context, saved);           // nk_popup_end; nk_popup_close first to finish
 //   }
 //
 // The popup is a form popup surface (see begin_form_popup): rounded panel, soft shadow, no stock
@@ -44,7 +43,7 @@ struct TextPromptContent {
 
 // Starts the popup in the current window's content-region coordinates. Returns false when
 // Nuklear refuses it; then nothing needs ending. On success pass `saved` to text_prompt_end()
-// after nk_popup_end().
+// to finish (it ends the popup too).
 inline auto text_prompt_begin(nk_context* context, const char* name, struct nk_rect bounds,
                               MenuSurface& saved) -> bool {
     return surface_popup_begin(context, name, bounds, saved);

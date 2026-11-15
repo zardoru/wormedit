@@ -64,7 +64,6 @@ inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui:
     if (wormedit::ui::chrome::button_label(context, bga ? "All BGA" : "All sounds")) choice = true;
     if (wormedit::ui::chrome::button_label(context, "Cancel")) close_catalog_confirmation(state);
     if (!state.open || choice.has_value()) nk_popup_close(context);
-    nk_popup_end(context);
     chrome::surface_popup_end(context, surface);
     return choice;
 }

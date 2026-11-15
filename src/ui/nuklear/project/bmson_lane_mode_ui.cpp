@@ -74,6 +74,5 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
         confirmation.release_pending = true;
         nk_popup_close(context);
     }
-    nk_popup_end(context);
     wormedit::ui::chrome::surface_popup_end(context, surface);
 }

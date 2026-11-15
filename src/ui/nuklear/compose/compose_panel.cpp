@@ -1064,7 +1064,6 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     }
     nk_layout_row_dynamic(panel.context, is_inline_audio_timing(timing.stage_lane) ? 36.0f : 17.0f, 1);
     nk_label_wrap(panel.context, inline_audio_timing_status(timing));
-    nk_popup_end(panel.context);
     wormedit::ui::chrome::surface_popup_end(panel.context, surface);
 }
 
@@ -1354,7 +1353,6 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
     }
     if (state.dialogs.go_to_measure_cancel_pending) {
         close_go_to_measure(context);
-        nk_popup_end(context);
         wormedit::ui::chrome::text_prompt_end(context, surface);
         return;
     }
@@ -1373,7 +1371,6 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
          .filter = nk_filter_decimal, .flags = static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER},
         state.dialogs.go_to_measure_focus_pending);
     if ((flags & NK_EDIT_COMMITTED) != 0) confirm_go_to_measure(view, action, context);
-    nk_popup_end(context);
     wormedit::ui::chrome::text_prompt_end(context, surface);
 }
 

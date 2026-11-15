@@ -337,7 +337,10 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const auto bounded = std::clamp(raw, 0.0L, static_cast<long double>(*rows - 1));
     const auto snapped = snap_canvas_row(chart, index, bounded, active_snap_grid(state), *rows);
     if (!snapped) return false;
-    const auto row = interaction_detail::kept_cursor_row(chart, index, state, *snapped, *rows, true);
+    // Snapping can round a kept row onto a cut it sits next to; leave the cut toward the side the
+    // scroll actually reached, not always forward (which pulled the cursor across the whole cut).
+    const auto reached_forward = bounded >= static_cast<long double>(*snapped);
+    const auto row = interaction_detail::kept_cursor_row(chart, index, state, *snapped, *rows, reached_forward);
     const auto position = index.position_at(row);
     const auto from = state.cursor;
     // Pixel coordinates are doubles, even when row arithmetic uses long double.

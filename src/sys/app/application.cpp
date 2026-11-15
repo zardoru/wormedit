@@ -4653,6 +4653,8 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         if (audio_runtime.preview_output.playing() || audio_runtime.audition_session.is_active())
             return frame_demand_t::every_frame("audio playback");
+        // The scrub sound only stops, and playback only resumes, from per-frame updates.
+        if (audio_runtime.scrub.busy()) return frame_demand_t::every_frame("scrub audio");
 #endif
         const auto& viewport = views.compose_viewport_input;
         if (viewport.is_autoscroll_active() || viewport.is_momentum_active() ||

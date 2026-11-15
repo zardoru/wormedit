@@ -41,6 +41,10 @@ class scrub_controller_t {
     [[nodiscard]] auto active() const noexcept -> bool {
         return tracker_.phase() != scrub_phase_t::idle;
     }
+    // A gesture, its fade-out or the wait before playback resumes still needs frames to finish.
+    [[nodiscard]] auto busy() const noexcept -> bool {
+        return active() || tracker_.is_resume_pending() || scrub_.active();
+    }
 
   private:
     void cancel();

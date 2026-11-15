@@ -211,6 +211,7 @@ add_executable(wormedit_core_tests
     sys/tap_timing_apply_tests.cpp
     sys/timing_settings_tests.cpp
     core/timing_tests.cpp
+    ui/compose_timing_region_tests.cpp
     core/timing_discontinuity_tests.cpp
     core/timing_anchor_editor_tests.cpp
     core/timing_lane_controller_tests.cpp

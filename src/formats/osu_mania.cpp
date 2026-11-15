@@ -2702,6 +2702,23 @@ void append_sample_control_timing_lines(std::vector<osu_output_event_t>& output,
     }
 }
 
+// osu! repeats bar lines every `meter` beats from the last red line, so a measure start only
+// needs its own red line when no red line exists yet, the meter changes, or the bar phase of
+// the previous red line does not land on this row (BPM changes already carry their own line).
+template <typename fail_t>
+auto measure_start_needs_red_line(const chart_document_t& chart, const measure_index_t& measures,
+                                  const std::set<std::uint64_t>& red_rows, std::uint64_t row,
+                                  fail_t&& fail) -> bool {
+    const auto after = red_rows.upper_bound(row);
+    if (after == red_rows.begin()) return true;
+    const auto previous = *std::prev(after);
+    if (previous == row) return false;
+    const auto meter = osu_meter_at(chart, measures, row, fail);
+    if (osu_meter_at(chart, measures, previous, fail) != meter) return true;
+    const auto bar_rows_times_four = std::uint64_t{meter} * chart.divisions_per_standard_measure;
+    return (row - previous) * 4 % bar_rows_times_four != 0;
+}
+
 template <typename timestamp_t, typename account_t, typename fail_t>
 auto build_osu_timing_output(
     const chart_document_t& chart, const measure_index_t& measures,
@@ -2739,7 +2756,7 @@ auto build_osu_timing_output(
                                timestamp_at_row, effects_at, account_event, fail);
     for (const auto& entry : measures.entries) {
         const auto row = entry.absolute_begin_row;
-        if (red_rows.contains(row)) continue;
+        if (!measure_start_needs_red_line(chart, measures, red_rows, row, fail)) continue;
         const auto active = osu_bpm_group_before_or_at(bpm_timing, row);
         append_osu_timing_line(
             output, red_rows, timing_rows, serial, row,

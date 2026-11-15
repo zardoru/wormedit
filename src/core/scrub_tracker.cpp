@@ -11,6 +11,8 @@ scrub_tracker_t::scrub_tracker_t(scrub_settings_t settings) : settings_(settings
     settings_.dead_zone = std::clamp(settings_.dead_zone, 0.0, settings_.maximum_speed);
     settings_.idle_seconds = std::max(settings_.idle_seconds, 0.0);
     settings_.resume_delay_seconds = std::max(settings_.resume_delay_seconds, 0.0);
+    settings_.touch_hold_fingers = std::max(settings_.touch_hold_fingers, 1);
+    settings_.touch_hold_seconds = std::max(settings_.touch_hold_seconds, 0.0);
 }
 
 void scrub_tracker_t::cancel() noexcept {
@@ -20,18 +22,34 @@ void scrub_tracker_t::cancel() noexcept {
     speed_ = 0.0;
     resume_on_end_ = false;
     resume_pending_ = false;
+    touch_since_.reset();
 }
 
-auto scrub_tracker_t::begin(const scrub_input_t& input) -> scrub_output_t {
-    phase_ = scrub_phase_t::moving;
+auto scrub_tracker_t::begin(const scrub_input_t& input, bool held) -> scrub_output_t {
+    phase_ = held ? scrub_phase_t::held : scrub_phase_t::moving;
+    touch_since_.reset();
     last_time_ = input.now_seconds;
     last_position_ = input.position_seconds;
-    last_scroll_time_ = input.now_seconds;
+    // A touch-held record starts out already quiet.
+    last_scroll_time_ = held ? input.now_seconds - settings_.idle_seconds : input.now_seconds;
     speed_ = 0.0;
     // A gesture that restarts before playback resumed keeps owing that resume.
     resume_on_end_ = input.was_playing || resume_pending_;
     resume_pending_ = false;
     return {.phase = phase_, .began = true, .anchor_seconds = *input.position_seconds};
+}
+
+// Fingers laid on the pad while the chart plays hold the record even before any scroll.
+auto scrub_tracker_t::begin_from_touch(const scrub_input_t& input) -> std::optional<scrub_output_t> {
+    const auto touching = input.was_playing && input.position_seconds && input.fingers &&
+                          *input.fingers >= settings_.touch_hold_fingers;
+    if (!touching) {
+        touch_since_.reset();
+        return std::nullopt;
+    }
+    if (!touch_since_) touch_since_ = input.now_seconds;
+    if (input.now_seconds - *touch_since_ < settings_.touch_hold_seconds) return std::nullopt;
+    return begin(input, true);
 }
 
 void scrub_tracker_t::follow(const scrub_input_t& input, double elapsed) {
@@ -63,6 +81,7 @@ auto scrub_tracker_t::finish(const scrub_input_t& input) -> scrub_output_t {
 auto scrub_tracker_t::update(const scrub_input_t& input) -> scrub_output_t {
     if (phase_ == scrub_phase_t::idle) {
         if (input.scrolled && input.position_seconds) return begin(input);
+        if (const auto touched = begin_from_touch(input)) return *touched;
         scrub_output_t out;
         if (resume_pending_ && input.now_seconds >= resume_due_) {
             resume_pending_ = false;

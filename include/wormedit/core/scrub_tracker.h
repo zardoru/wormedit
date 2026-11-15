@@ -19,6 +19,10 @@ struct scrub_settings_t {
     double idle_seconds{0.1};
     // Playback that scrub interrupted resumes this long after the gesture ends.
     double resume_delay_seconds{0.15};
+    // Resting this many fingers on the pad while playing holds the record without any scroll.
+    int touch_hold_fingers{2};
+    // ...once they have rested this long, so a brief tap or pinch does not blip the sound.
+    double touch_hold_seconds{0.08};
 };
 
 struct scrub_input_t {
@@ -70,7 +74,8 @@ class scrub_tracker_t {
     [[nodiscard]] auto settings() const noexcept -> const scrub_settings_t& { return settings_; }
 
   private:
-    [[nodiscard]] auto begin(const scrub_input_t& input) -> scrub_output_t;
+    [[nodiscard]] auto begin(const scrub_input_t& input, bool held = false) -> scrub_output_t;
+    [[nodiscard]] auto begin_from_touch(const scrub_input_t& input) -> std::optional<scrub_output_t>;
     void follow(const scrub_input_t& input, double elapsed);
     [[nodiscard]] auto finish(const scrub_input_t& input) -> scrub_output_t;
 
@@ -79,6 +84,7 @@ class scrub_tracker_t {
     std::optional<double> last_time_;
     std::optional<double> last_position_;
     double last_scroll_time_{};
+    std::optional<double> touch_since_;
     double speed_{};
     bool resume_on_end_{};
     // The gesture ended and a playing session still has to restart.

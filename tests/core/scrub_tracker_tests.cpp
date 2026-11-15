@@ -142,3 +142,36 @@ TEST_CASE("core.scrub_tracker cancel returns to idle without resuming", "[scrub]
     for (int i = 0; i < 60; ++i) REQUIRE_FALSE(drag.step(0.0, false).resume_playback);
     REQUIRE(drag.tracker.phase() == scrub_phase_t::idle);
 }
+
+TEST_CASE("core.scrub_tracker fingers laid on the pad hold a playing record without scrolling", "[scrub]") {
+    drag_t drag;
+    // One finger is just the pointer: nothing happens.
+    for (int i = 0; i < 20; ++i) REQUIRE_FALSE(drag.step(0.0, false, 1, true).began);
+    // Two fingers must rest briefly before the record is held.
+    auto first = drag.step(1.0, false, 2, true);
+    REQUIRE_FALSE(first.began);
+    bool began = false;
+    for (int i = 0; i < 10 && !began; ++i) began = drag.step(1.0, false, 2, true).began;
+    REQUIRE(began);
+    // While they rest, the record stays held even though the playhead keeps moving.
+    for (int i = 0; i < 60; ++i) {
+        const auto out = drag.step(1.0, false, 2, true);
+        REQUIRE(out.phase == scrub_phase_t::held);
+        REQUIRE(out.speed == 0.0);
+        REQUIRE_FALSE(out.ended);
+    }
+    // Lifting them releases it, and playback resumes shortly after.
+    bool ended = false;
+    for (int i = 0; i < 10 && !ended; ++i) ended = drag.step(1.0, false, 0, true).ended;
+    REQUIRE(ended);
+    bool resumed = false;
+    for (int i = 0; i < 30 && !resumed; ++i) resumed = drag.step(1.0, false, 0, true).resume_playback;
+    REQUIRE(resumed);
+}
+
+TEST_CASE("core.scrub_tracker a brief two-finger tap or a stopped transport holds nothing", "[scrub]") {
+    drag_t drag;
+    for (int i = 0; i < 3; ++i) REQUIRE_FALSE(drag.step(1.0, false, 2, true).began);
+    for (int i = 0; i < 10; ++i) REQUIRE_FALSE(drag.step(1.0, false, 0, true).began);
+    for (int i = 0; i < 30; ++i) REQUIRE_FALSE(drag.step(0.0, false, 2, false).began);
+}

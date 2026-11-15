@@ -13,6 +13,7 @@
 #include <wormedit/window.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace wormedit::sys {
@@ -47,8 +48,12 @@ void build_transport_position_view(frontend_workspace_view_t& flattened,
     auto whole_row = row->numerator / static_cast<std::int64_t>(row->denominator);
     if (row->numerator < 0 && row->numerator % static_cast<std::int64_t>(row->denominator) != 0)
         --whole_row;
+    std::optional<std::int64_t> alternate_row;
+    const auto* axis = state ? state->cut_axis.get() : nullptr;
+    if (axis && !axis->is_empty() && whole_row >= 0)
+        alternate_row = static_cast<std::int64_t>(std::floor(axis->collapsed_row(whole_row)));
     view.transport_position = ui::transport_position_view_t{
-        .row = whole_row, .measure = measure, .beat = beat};
+        .row = whole_row, .measure = measure, .beat = beat, .alternate_row = alternate_row};
 }
 
 void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,
@@ -141,6 +146,22 @@ auto make_workspace_frame_transport(const application_frame_projection_context_t
         if (const auto stopped = stopped_playhead(context)) {
             transport.frame = stopped->frame;
             transport.end_frame = std::max(transport.end_frame, stopped->end_frame);
+        }
+    }
+    // Source and post-cut time. Playing or paused with the cut clock, `frame` is post-cut; every
+    // other state reports source time. Timing focus plays the source clock without cuts.
+    transport.time_is_source = preview.timing_focus;
+    transport.display_frame = transport.frame;
+    const auto* axis = context.compose_interaction_state ? context.compose_interaction_state->cut_axis.get()
+                                                          : nullptr;
+    if (axis && !axis->is_empty()) {
+        const auto frames = export_cut_frame_timeline_t::from(axis->timeline(), audio::output_sample_rate);
+        if (frames.value.intervals().size() != 0) {
+            const auto source = transport.source_frame();
+            const auto collapsed = frames.value.collapsed_frame(source);
+            transport.display_frame = preview.timing_focus ? source : collapsed;
+            transport.alternate_frame = preview.timing_focus ? collapsed : source;
+            transport.alternate_available = transport.alternate_frame != transport.display_frame;
         }
     }
     return transport;

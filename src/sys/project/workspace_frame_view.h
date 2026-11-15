@@ -30,6 +30,12 @@ struct workspace_frame_transport_t {
     std::uint64_t end_frame{};
     std::uint32_t sample_rate{44'100};
     const export_cut_frame_timeline_t* cut_frames{};
+    // The frame the time readout shows: source time in timing focus, post-cut time in normal
+    // Compose (playing, paused or stopped). `frame` keeps its own per-state meaning for the seek bar.
+    std::uint64_t display_frame{};
+    bool alternate_available{};
+    std::uint64_t alternate_frame{};
+    bool time_is_source{};
 
     [[nodiscard]] auto source_frame() const -> std::uint64_t {
         return cut_frames ? cut_frames->source_frame(frame) : frame;

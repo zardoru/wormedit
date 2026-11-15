@@ -68,6 +68,12 @@ struct workspace_view_t {
     uint64_t transport_frame;
     uint64_t transport_end_frame;
     uint32_t transport_sample_rate;
+    uint64_t transport_display_frame{};
+    // The playhead on the other clock; unset when no export cut separates source and post-cut time.
+    bool transport_alternate_available{};
+    uint64_t transport_alternate_frame{};
+    // The readout shows source time (timing focus) rather than post-cut time.
+    bool transport_time_is_source{};
     std::optional<transport_position_view_t> transport_position;
     std::vector<std::string> summary_lines;
     bool history_available;

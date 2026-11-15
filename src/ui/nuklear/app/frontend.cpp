@@ -2188,9 +2188,12 @@ static auto workspace_status_text(const wormedit::ui::workspace_view_t& view, st
         [](const auto& key) { return key.clicked != 0; });
     const auto rate = view.transport_sample_rate == 0 ? 1U : view.transport_sample_rate;
     text.refresh({.status = line, .artist = view.artist, .difficulty = view.selected_difficulty,
-        .selected = selected, .seconds = view.transport_frame / rate,
+        .selected = selected, .seconds = view.transport_display_frame / rate,
         .playing = view.transport_playing, .immediate = input,
-        .milliseconds = static_cast<std::uint32_t>((view.transport_frame % rate) * 1000 / rate),
+        .milliseconds = static_cast<std::uint32_t>((view.transport_display_frame % rate) * 1000 / rate),
+        .alternate_available = view.transport_alternate_available,
+        .alternate_seconds = view.transport_alternate_frame / rate,
+        .alternate_milliseconds = static_cast<std::uint32_t>((view.transport_alternate_frame % rate) * 1000 / rate),
         .position = view.transport_position}, SDL_GetTicksNS());
     return text;
 }
@@ -2321,8 +2324,9 @@ static void render_status_transport_buttons(const wormedit::ui::workspace_view_t
     render_metronome_toggle(*view, *action);
 }
 
-static void render_transport_readout(const std::string& text, const char* hint,
-                                     void (*draw)(nk_command_buffer*, struct nk_rect, struct nk_color)) {
+static void render_transport_readout(const std::string& text, const std::string& hint,
+                                     void (*draw)(nk_command_buffer*, struct nk_rect, struct nk_color),
+                                     const std::string& alternate = {}) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
     const float icon_size = bounds.w < 110.0f ? 18.0f : 24.0f;
@@ -2335,7 +2339,7 @@ static void render_transport_readout(const std::string& text, const char* hint,
                 bounds.w - text_offset, font->height), text.c_str(), static_cast<int>(text.size()),
         font, nk_rgba(0, 0, 0, 0), tint);
     if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds)) {
-        const auto tooltip = std::string{hint} + "\n" + text;
+        const auto tooltip = hint + "\n" + text + (alternate.empty() ? std::string{} : "\n" + alternate);
         wormedit::ui::nuklear::tooltip::text(g_context, tooltip.c_str());
     }
 }
@@ -2403,10 +2407,16 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (notification_visible)
         render_notification_badge(view->notifications, *action);
     else nk_spacing(g_context, 1);
-    render_transport_readout(status.elapsed(), "Playhead time (minutes:seconds.milliseconds)",
-                             wormedit::ui::vector_icons::timer);
-    if (layout.show_row) render_transport_readout(status.row(), "Current absolute chart row (zero-based)",
-                             wormedit::ui::vector_icons::grid);
+    const auto& other_time = status.alternate_elapsed();
+    render_transport_readout(status.elapsed(), view->transport_time_is_source
+            ? "Playhead time, source (minutes:seconds.milliseconds)"
+            : "Playhead time, export cuts removed (minutes:seconds.milliseconds)",
+        wormedit::ui::vector_icons::timer,
+        other_time.empty() ? std::string{}
+            : (view->transport_time_is_source ? "Export cuts removed: " : "Source: ") + other_time);
+    if (layout.show_row) render_transport_readout(status.row(), "Current absolute chart row (zero-based, source)",
+        wormedit::ui::vector_icons::grid,
+        status.alternate_row().empty() ? std::string{} : "Export cuts removed: " + status.alternate_row());
     if (layout.show_musical) render_transport_readout(status.musical_position(), "Measure:beat (one-based, using the chart meter)",
                              wormedit::ui::vector_icons::measure_lane);
     if (layout.show_details) render_elided_status_label(status.details(), NK_TEXT_RIGHT, g_context->style.text.color);

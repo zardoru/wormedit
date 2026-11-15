@@ -79,3 +79,20 @@ TEST_CASE("Transport readouts mark unavailable chart coordinates", "[transport-s
     CHECK(text.row() == "—");
     CHECK(text.musical_position() == "—");
 }
+
+TEST_CASE("Status text carries the other clock and the post-cut row for tooltips", "[transport-status]") {
+    transport_status_text_t text;
+    transport_status_input_t input{.status = "Ready", .seconds = 72, .milliseconds = 236,
+        .alternate_available = true, .alternate_seconds = 50, .alternate_milliseconds = 10,
+        .position = transport_position_view_t{.row = 960, .measure = 5, .beat = 1, .alternate_row = 400}};
+    text.refresh(input, 1);
+    CHECK(text.elapsed() == "1:12.236");
+    CHECK(text.alternate_elapsed() == "0:50.010");
+    CHECK(text.alternate_row() == "400");
+    input.alternate_available = false;
+    input.position->alternate_row.reset();
+    input.immediate = true;
+    text.refresh(input, 2);
+    CHECK(text.alternate_elapsed().empty());
+    CHECK(text.alternate_row().empty());
+}

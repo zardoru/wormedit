@@ -19,7 +19,14 @@ auto clamp_row(long double row, const measure_index_t& measures) -> std::uint64_
     return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5L), 0.0L, last));
 }
 
-auto measure_target(const measure_index_t& measures, double playhead, double amount) -> double {
+// A measure the export cut hides entirely is not a place to go: measure steps skip it.
+auto measure_hidden(const measure_index_entry_t& entry, const export_cut_axis_t* cut_axis) -> bool {
+    return cut_axis && entry.row_capacity != 0 && cut_axis->contains_row(entry.absolute_begin_row) &&
+           cut_axis->contains_row(entry.absolute_begin_row + entry.row_capacity - 1);
+}
+
+auto measure_target(const measure_index_t& measures, double playhead, double amount,
+                    const export_cut_axis_t* cut_axis = nullptr) -> double {
     const auto count = std::llround(amount);
     const auto row = static_cast<std::uint64_t>(std::max(0.0, std::floor(playhead)));
     const auto after = std::ranges::upper_bound(measures.entries, row, {},
@@ -27,7 +34,19 @@ auto measure_target(const measure_index_t& measures, double playhead, double amo
     if (after == measures.entries.begin()) return playhead;
     const auto current = static_cast<long long>(std::distance(measures.entries.begin(), after)) - 1;
     const auto last = static_cast<long long>(measures.entries.size()) - 1;
-    const auto destination = std::clamp(current + count, 0LL, last);
+    auto destination = std::clamp(current + count, 0LL, last);
+    if (cut_axis && !cut_axis->is_empty()) {
+        // Count only visible measures, stopping at the first or last chart measure.
+        destination = current;
+        const auto direction = count >= 0 ? 1LL : -1LL;
+        for (auto remaining = std::llabs(count); remaining > 0; --remaining) {
+            auto next = destination + direction;
+            while (next >= 0 && next <= last && measure_hidden(measures.entries[static_cast<std::size_t>(next)], cut_axis))
+                next += direction;
+            if (next < 0 || next > last) break;
+            destination = next;
+        }
+    }
     const auto& from = measures.entries[static_cast<std::size_t>(current)];
     const auto& to = measures.entries[static_cast<std::size_t>(destination)];
     const auto offset = playhead - static_cast<double>(from.absolute_begin_row);
@@ -83,12 +102,12 @@ auto skip_target_row(const measure_index_t& measures, double playhead_row,
         return stepped;
     }
     case playhead_skip_unit_t::measure:
-        return clamp_row(measure_target(measures, playhead_row, amount), measures);
+        return clamp_row(measure_target(measures, playhead_row, amount, cut_axis), measures);
     case playhead_skip_unit_t::page: {
         if (divisions_per_measure == 0) return std::nullopt;
         const auto distance = std::ceil(static_cast<double>(divisions_per_measure) / 2.0 *
                                         std::abs(std::round(amount)));
-        const auto target = measure_target(measures, playhead_row, amount);
+        const auto target = measure_target(measures, playhead_row, amount, cut_axis);
         return clamp_row(amount > 0 ? std::max(target, playhead_row + distance)
                                     : std::min(target, playhead_row - distance), measures);
     }

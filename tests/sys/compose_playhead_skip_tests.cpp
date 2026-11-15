@@ -237,3 +237,33 @@ TEST_CASE("steps skip rows the caller cannot stand on, in the travel direction",
     CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 960, false) == 720);
     CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 480, true) == 720);
 }
+
+TEST_CASE("measure and page steps skip measures the cut hides entirely", "[sys][playhead-skip][cut]") {
+    // 40 measures of 960 rows at 240 BPM: one measure is exactly one second.
+    measure_index_t measures;
+    chart_document_t chart{.id = chart_id_t{2}, .divisions_per_standard_measure = 960,
+        .bpms = {{.id = object_id_t{22}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {240, 1}}}};
+    for (std::uint64_t i = 0; i < 40; ++i) {
+        measures.entries.push_back({.id = measure_id_t{i + 1}, .absolute_begin_row = i * 960, .row_capacity = 960});
+        chart.measures.push_back({.id = measure_id_t{i + 1}});
+    }
+    measures.total_rows = 40 * 960;
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    // Measures 17..24 (seconds 16..24) are cut.
+    const std::array cut{export_cut_t{.id = object_id_t{1}, .begin_milliseconds = 16000, .end_milliseconds = 24000}};
+    const auto timeline = export_cut_timeline_t::from(cut);
+    REQUIRE(timeline.ok());
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
+    REQUIRE(axis.ok());
+    const auto& hidden = axis.value;
+    constexpr double measure_25 = 24.0 * 960;
+    constexpr std::uint64_t measure_16 = 15ull * 960;
+    for (const auto unit : {playhead_skip_unit_t::measure, playhead_skip_unit_t::page}) {
+        CHECK(playhead_skip_target_row(measures, measure_25, unit, -1, 960, 4, &hidden, &*timing.value) == measure_16);
+        CHECK(playhead_skip_target_row(measures, static_cast<double>(measure_16), unit, 1, 960, 4, &hidden, &*timing.value) ==
+              static_cast<std::uint64_t>(measure_25));
+    }
+    // Without a cut the step is the neighbouring measure.
+    CHECK(playhead_skip_target_row(measures, measure_25, playhead_skip_unit_t::measure, -1, 960, 4) == 23ull * 960);
+}

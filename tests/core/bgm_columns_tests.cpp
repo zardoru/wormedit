@@ -185,9 +185,18 @@ TEST_CASE("BGM column count works on every format and ignores bmson stem lanes",
         auto song = column_song();
         song.charts.front().source_family = family;
         if (family == format_family_t::bmson) {
-            song.charts.front().bgm_source_lanes.push_back(
+            song.audio_assets.push_back({.id = asset_id_t{40},
+                                         .source_path = "stem.wav",
+                                         .stream = {48'000, 2, 144'000, true}});
+            auto& chart = song.charts.front();
+            chart.sound_channels.push_back(
+                {.id = object_id_t{901}, .name = "Stem",
+                 .source_clip = {.id = clip_id_t{960}, .source = asset_id_t{40},
+                                 .begin_frame = 0, .end_frame = 144'000}});
+            chart.bgm_source_lanes.push_back(
                 {.id = object_id_t{900}, .name = "Stem", .source_order = 50,
                  .stem_channel = object_id_t{901}});
+            REQUIRE(validate_document(song).empty());
         }
         auto history = document_history_t::from(std::move(song));
         const auto stems = family == format_family_t::bmson ? 1u : 0u;

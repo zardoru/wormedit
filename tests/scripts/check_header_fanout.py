@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Ratchet: a first-party header may not reach more translation units than its baseline.
+"""Ratchet: a first-party header may not be reached by more headers than its baseline.
 
 Rebuild cost follows header fan-out: touching a header recompiles every .cpp that includes it
 directly or transitively. This builds the include graph of src/, include/ and tests/ from the
-#include lines (no build needed; #if branches are all followed), counts the .cpp files reaching
-each header, and compares with tests/scripts/header_fanout_baseline.txt.
+#include lines (no build needed; #if branches are all followed) and counts, per header, how many
+OTHER HEADERS reach it. Counting headers rather than .cpp files means adding a new source file
+never trips the check; only a new #include inside a header (which widens every includer) does.
 
-- A header listed in the baseline may not exceed its number.
-- A header missing from the baseline may reach at most LIMIT translation units. To add a wide
+- A header listed in tests/scripts/header_fanout_baseline.txt may not exceed its number.
+- A header missing from the baseline may be reached by at most LIMIT headers. To add a wide
   header on purpose, split it, forward-declare, or edit the baseline in a reviewed change.
-- Only headers reaching at least LIMIT units are listed. Run with --update after a drop to lower
-  the baseline; --top N prints the widest headers.
+- Only headers reached by at least LIMIT headers are listed. Run with --update after a drop to
+  lower the baseline; --top N prints the widest headers with their .cpp reach too.
 """
 import pathlib
 import re
@@ -19,7 +20,7 @@ from collections import defaultdict
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINE = pathlib.Path(__file__).with_name("header_fanout_baseline.txt")
-LIMIT = 100
+LIMIT = 20
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
 SEARCH_ROOTS = [ROOT / "src", ROOT / "include", ROOT / "tests"]
 
@@ -56,10 +57,10 @@ def build_graph() -> tuple[dict[pathlib.Path, set[pathlib.Path]], list[pathlib.P
     return graph, units
 
 
-def fanout() -> dict[str, int]:
+def fanout() -> tuple[dict[str, int], dict[str, int]]:
     graph, units = build_graph()
     reached: dict[pathlib.Path, set[pathlib.Path]] = defaultdict(set)
-    for unit in units:
+    for unit in graph:
         seen: set[pathlib.Path] = set()
         stack = [unit]
         while stack:
@@ -69,8 +70,12 @@ def fanout() -> dict[str, int]:
                     stack.append(dep)
         for header in seen:
             reached[header].add(unit)
-    return {h.relative_to(ROOT).as_posix(): len(u) for h, u in reached.items()
-            if h.suffix != ".cpp" and len(u) >= LIMIT}
+    unit_set = set(units)
+    headers = {h.relative_to(ROOT).as_posix(): len(u - unit_set) for h, u in reached.items()
+               if h.suffix != ".cpp" and len(u - unit_set) >= LIMIT}
+    cpps = {h.relative_to(ROOT).as_posix(): len(u & unit_set) for h, u in reached.items()
+            if h.suffix != ".cpp"}
+    return headers, cpps
 
 
 def read_baseline() -> dict[str, int]:
@@ -85,20 +90,20 @@ def read_baseline() -> dict[str, int]:
 
 
 def main() -> int:
-    counts = fanout()
+    counts, cpp_reach = fanout()
     if "--top" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--top") + 1])
         for name, number in sorted(counts.items(), key=lambda item: -item[1])[:limit]:
-            print(f"{number:5d} {name}")
+            print(f"{number:5d} headers {cpp_reach[name]:5d} cpps {name}")
         return 0
     if "--update" in sys.argv:
-        lines = [f"# header translation-units-reaching-it (>= {LIMIT}); may only go down "
+        lines = [f"# header headers-reaching-it (>= {LIMIT} headers); may only go down "
                  "(see check_header_fanout.py)"]
         lines += [f"{name} {number}" for name, number in sorted(counts.items())]
         BASELINE.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return 0
     baseline = read_baseline()
-    failures = [f"{name}: reaches {number} translation units, baseline "
+    failures = [f"{name}: is reached by {number} headers, baseline "
                 f"{baseline.get(name, 'none (limit %d)' % LIMIT)}; split it, forward-declare, "
                 f"or include it from fewer headers" for name, number in sorted(counts.items())
                 if number > baseline.get(name, LIMIT - 1)]

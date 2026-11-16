@@ -54,14 +54,24 @@ jobs:
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build ${{ matrix.linux_packages }}
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache lld ${{ matrix.linux_packages }}
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja ccache
+
+      - name: Restore compiler cache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.name }}-
 
       - name: Configure
         env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 1G
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
           CXXFLAGS: ${{ matrix.cxx_flags }}
@@ -69,7 +79,14 @@ jobs:
           cmake --preset ${{ matrix.preset }}
 
       - name: Build
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 1G
         run: cmake --build --preset ${{ matrix.preset }} -- -k 0
+
+      - name: Compiler cache statistics
+        if: runner.os != 'Windows' && always()
+        run: ccache --show-stats || true
 
       - name: Check event harness discovery
         if: matrix.name == 'linux-gcc'

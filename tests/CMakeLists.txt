@@ -17,6 +17,9 @@ set_tests_properties(tooling.raw-buttons PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.raw-scroll-groups
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_scroll_groups.py")
 set_tests_properties(tooling.raw-scroll-groups PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.header-fanout
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_header_fanout.py")
+set_tests_properties(tooling.header-fanout PROPERTIES LABELS "unit;tooling")
 
 if(UNIX)
     add_executable(wormedit_crash_backtrace_tests

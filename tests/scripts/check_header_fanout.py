@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Ratchet: a first-party header may not be reached by more headers than its baseline.
+"""Ratchet: including a first-party header may not pull in more headers than its baseline.
 
-Rebuild cost follows header fan-out: touching a header recompiles every .cpp that includes it
-directly or transitively. This builds the include graph of src/, include/ and tests/ from the
-#include lines (no build needed; #if branches are all followed) and counts, per header, how many
-OTHER HEADERS reach it. Counting headers rather than .cpp files means adding a new source file
-never trips the check; only a new #include inside a header (which widens every includer) does.
+Rebuild cost follows what a header drags along: every .cpp that includes a heavy header is
+recompiled when anything in its closure changes. This builds the include graph of src/, include/
+and tests/ from the #include lines (no build needed; #if branches are all followed) and counts,
+per header, the first-party headers reachable from it (its weight). The weight only changes when
+someone adds an #include to that header or to one of its dependencies, so adding a source file
+or a new leaf header never trips the check.
 
 - A header listed in tests/scripts/header_fanout_baseline.txt may not exceed its number.
-- A header missing from the baseline may be reached by at most LIMIT headers. To add a wide
-  header on purpose, split it, forward-declare, or edit the baseline in a reviewed change.
-- Only headers reached by at least LIMIT headers are listed. Run with --update after a drop to
-  lower the baseline; --top N prints the widest headers with their .cpp reach too.
+- A header missing from the baseline (a new one) may pull in at most LIMIT - 1 headers. To add a
+  heavy header on purpose, split it, forward-declare, or edit the baseline in a reviewed change.
+- Only headers weighing at least LIMIT are listed. Run with --update after a drop to lower the
+  baseline; --top N prints the heaviest headers with the number of .cpp files that reach them.
 """
 import pathlib
 import re
@@ -20,7 +21,7 @@ from collections import defaultdict
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINE = pathlib.Path(__file__).with_name("header_fanout_baseline.txt")
-LIMIT = 20
+LIMIT = 60
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
 SEARCH_ROOTS = [ROOT / "src", ROOT / "include", ROOT / "tests"]
 
@@ -58,24 +59,33 @@ def build_graph() -> tuple[dict[pathlib.Path, set[pathlib.Path]], list[pathlib.P
 
 
 def fanout() -> tuple[dict[str, int], dict[str, int]]:
+    """Per header: first-party headers its inclusion pulls in (weight), and .cpp files reaching it."""
     graph, units = build_graph()
-    reached: dict[pathlib.Path, set[pathlib.Path]] = defaultdict(set)
-    for unit in graph:
+    unit_set = set(units)
+    weight: dict[str, int] = {}
+    for header in graph:
+        if header in unit_set:
+            continue
         seen: set[pathlib.Path] = set()
+        stack = [header]
+        while stack:
+            for dep in graph.get(stack.pop(), ()):
+                if dep not in seen:
+                    seen.add(dep)
+                    stack.append(dep)
+        weight[header.relative_to(ROOT).as_posix()] = len(seen)
+    cpps: dict[str, int] = defaultdict(int)
+    for unit in units:
+        seen = set()
         stack = [unit]
         while stack:
             for dep in graph.get(stack.pop(), ()):
                 if dep not in seen:
                     seen.add(dep)
                     stack.append(dep)
-        for header in seen:
-            reached[header].add(unit)
-    unit_set = set(units)
-    headers = {h.relative_to(ROOT).as_posix(): len(u - unit_set) for h, u in reached.items()
-               if h.suffix != ".cpp" and len(u - unit_set) >= LIMIT}
-    cpps = {h.relative_to(ROOT).as_posix(): len(u & unit_set) for h, u in reached.items()
-            if h.suffix != ".cpp"}
-    return headers, cpps
+        for dep in seen:
+            cpps[dep.relative_to(ROOT).as_posix()] += 1
+    return {name: n for name, n in weight.items() if n >= LIMIT}, cpps
 
 
 def read_baseline() -> dict[str, int]:
@@ -94,16 +104,16 @@ def main() -> int:
     if "--top" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--top") + 1])
         for name, number in sorted(counts.items(), key=lambda item: -item[1])[:limit]:
-            print(f"{number:5d} headers {cpp_reach[name]:5d} cpps {name}")
+            print(f"{number:5d} headers pulled in, reached by {cpp_reach[name]:5d} cpps: {name}")
         return 0
     if "--update" in sys.argv:
-        lines = [f"# header headers-reaching-it (>= {LIMIT} headers); may only go down "
+        lines = [f"# header first-party-headers-it-pulls-in (>= {LIMIT}); may only go down "
                  "(see check_header_fanout.py)"]
         lines += [f"{name} {number}" for name, number in sorted(counts.items())]
         BASELINE.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return 0
     baseline = read_baseline()
-    failures = [f"{name}: is reached by {number} headers, baseline "
+    failures = [f"{name}: pulls in {number} first-party headers, baseline "
                 f"{baseline.get(name, 'none (limit %d)' % LIMIT)}; split it, forward-declare, "
                 f"or include it from fewer headers" for name, number in sorted(counts.items())
                 if number > baseline.get(name, LIMIT - 1)]

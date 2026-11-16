@@ -153,6 +153,7 @@ add_library(wormedit_core
     src/core/player_preview.cpp
     src/core/quantize.cpp
     src/core/snap.cpp
+    src/core/row_step.cpp
     src/core/dead_span_rules.cpp
     src/core/span_manipulation.cpp
     src/core/rational.cpp
@@ -195,6 +196,7 @@ add_library(wormedit_core
     src/core/timing_anchor_editor.cpp
     src/core/timing_lane_controller.cpp
     src/core/viewport_input.cpp
+    src/core/scrub_tracker.cpp
     src/core/virtual_canvas.cpp
     src/core/video_preview.cpp
     src/core/visual_layout.cpp
@@ -293,6 +295,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         src/formats/export_cut_audio.cpp
         src/audio/playback_rate.cpp
         src/audio/time_stretch.cpp
+        src/audio/scrub_reader.cpp
         src/audio/onset.cpp
         src/audio/offline_mix.cpp
         src/audio/metronome.cpp
@@ -852,6 +855,8 @@ if(WORMEDIT_BUILD_APP)
             src/sys/audio/waveform_analysis_runtime.cpp
             src/sys/audio/sdl_audition_output.cpp
             src/sys/audio/sdl_preview_output.cpp
+            src/sys/audio/sdl_scrub_output.cpp
+            src/sys/audio/scrub_controller.cpp
             src/sys/audio/audio_options_runtime.cpp
         )
         target_link_libraries(wormedit PRIVATE wormedit::audio_decoder)

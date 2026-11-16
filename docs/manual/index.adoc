@@ -53,6 +53,8 @@ include::chapters/scripting.adoc[leveloffset=+1]
 
 include::chapters/bms-branches.adoc[leveloffset=+1]
 
+include::chapters/exporting-bmson.adoc[leveloffset=+1]
+
 include::chapters/comparing.adoc[leveloffset=+1]
 
 include::chapters/walkthrough-bms.adoc[leveloffset=+1]

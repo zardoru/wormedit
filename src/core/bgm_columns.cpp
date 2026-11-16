@@ -21,6 +21,11 @@ auto events_in_column(const chart_document_t& chart, object_id_t column) -> std:
 
 } // namespace
 
+auto ordinal_bgm_column_count(const chart_document_t& chart) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(
+        chart.bgm_source_lanes, [](const auto& lane) { return !lane.stem_channel; }));
+}
+
 auto grow_bgm_columns(chart_document_t& chart, std::size_t count)
     -> result_t<void, std::string> {
     if (count > maximum_bgm_column_count)
@@ -43,17 +48,20 @@ auto grow_bgm_columns(chart_document_t& chart, std::size_t count)
 }
 
 namespace {
+// Stem lanes (bmson sound channels) are not countable columns; only the
+// ordinal ones are.
 auto shrink_columns(chart_document_t& chart, std::size_t count, document_command_result_t& result)
     -> bool {
-    while (chart.bgm_source_lanes.size() > count) {
-        const auto& last = chart.bgm_source_lanes.back();
-        if (const auto events = events_in_column(chart, last.id); events != 0) {
+    while (ordinal_bgm_column_count(chart) > count) {
+        const auto last = std::ranges::find_if(chart.bgm_source_lanes.rbegin(), chart.bgm_source_lanes.rend(),
+                                               [](const auto& lane) { return !lane.stem_channel; });
+        if (const auto events = events_in_column(chart, last->id); events != 0) {
             reject(result, diagnostic_code_t::invalid_id,
-                   "Cannot remove " + last.name + ": it holds " + std::to_string(events) +
+                   "Cannot remove " + last->name + ": it holds " + std::to_string(events) +
                        (events == 1 ? " BGM event" : " BGM events"));
             return false;
         }
-        chart.bgm_source_lanes.pop_back();
+        chart.bgm_source_lanes.erase(std::next(last).base());
     }
     return true;
 }
@@ -131,16 +139,10 @@ auto apply_bgm_column_count(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "BGM column chart is missing");
         return result;
     }
-    if (target->source_family != format_family_t::bms &&
-        target->source_family != format_family_t::osu_mania) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "BGM column counts are available only for BMS and osu!mania charts");
-        return result;
-    }
-    const auto current = target->bgm_source_lanes.size();
+    const auto current = ordinal_bgm_column_count(*target);
     if (count == current) return result;
     if (count > current) {
-        if (auto grown = grow_bgm_columns(*target, count); !grown) {
+        if (auto grown = grow_bgm_columns(*target, target->bgm_source_lanes.size() + (count - current)); !grown) {
             reject(result, diagnostic_code_t::invalid_id, std::move(grown.error()));
             return result;
         }

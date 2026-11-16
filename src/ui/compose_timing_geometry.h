@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -34,8 +35,59 @@ inline auto compose_timing_width(std::uint16_t mask) -> double {
     return width;
 }
 
+// A lane never gets narrower than its icon, and the region never wider than this multiple of
+// its natural width.
+inline constexpr double compose_timing_lane_minimum_width = 24.0;
+inline constexpr double compose_timing_region_maximum_scale = 2.0;
+
+// When the region is too narrow for every visible lane, lanes leave in this order (first
+// entry first); the last lane standing is never dropped.
+inline constexpr std::array<wormedit::timing_lane_kind_t, wormedit::timing_lane_kind_count>
+    compose_timing_lane_hide_order{
+        wormedit::timing_lane_kind_t::sample_set, wormedit::timing_lane_kind_t::volume,
+        wormedit::timing_lane_kind_t::anchor,     wormedit::timing_lane_kind_t::kiai,
+        wormedit::timing_lane_kind_t::warp,       wormedit::timing_lane_kind_t::speed,
+        wormedit::timing_lane_kind_t::scroll,     wormedit::timing_lane_kind_t::delay,
+        wormedit::timing_lane_kind_t::stop,       wormedit::timing_lane_kind_t::bpm};
+
+inline auto compose_timing_minimum_width(std::uint16_t mask) -> double {
+    return compose_timing_lane_minimum_width * std::popcount(static_cast<unsigned>(mask));
+}
+
+// The lanes of `mask` that fit in `available` pixels at their icon-sized minimums.
+inline auto compose_timing_fit_mask(std::uint16_t mask, double available) -> std::uint16_t {
+    auto fitted = mask;
+    for (const auto lane : compose_timing_lane_hide_order) {
+        if (std::popcount(static_cast<unsigned>(fitted)) <= 1 ||
+            compose_timing_minimum_width(fitted) <= available) break;
+        fitted = static_cast<std::uint16_t>(fitted & ~(1U << static_cast<unsigned>(lane)));
+    }
+    return fitted;
+}
+
+// Width the user may give the region of `mask`: at least one icon, at most twice natural.
+inline auto compose_timing_region_clamp(double width, std::uint16_t mask) -> double {
+    const auto maximum = std::max(compose_timing_lane_minimum_width,
+                                  compose_timing_region_maximum_scale * compose_timing_width(mask));
+    return std::isfinite(width) ? std::clamp(width, compose_timing_lane_minimum_width, maximum)
+                                : compose_timing_lane_minimum_width;
+}
+
 inline auto compose_timing_right(const wormedit::ui::compose_view_t& view) -> double {
     return view.bga_lane_visible ? view.bga_lane_bounds.left : view.playable_field_left_pixels;
+}
+
+// Width of one visible lane when the lanes of `mask` share `region` pixels: natural widths
+// scaled up proportionally, but squeezed only down to the icon-sized minimum, so the region
+// can never take a lane below its icon (the mask is fitted to the region beforehand).
+inline auto compose_timing_lane_scaled_width(std::uint16_t mask, unsigned ordinal, double region) -> double {
+    const auto natural = compose_timing_width(mask);
+    const auto lane = compose_timing_lane_widths[ordinal];
+    if (natural <= 0.0) return 0.0;
+    if (region >= natural) return lane * region / natural;
+    const auto minimum = compose_timing_minimum_width(mask);
+    const auto squeeze = natural > minimum ? std::clamp((region - minimum) / (natural - minimum), 0.0, 1.0) : 0.0;
+    return compose_timing_lane_minimum_width + (lane - compose_timing_lane_minimum_width) * squeeze;
 }
 
 // One horizontal partition for projection, picking, markers and span gestures.
@@ -47,13 +99,13 @@ inline auto compose_timing_lane_extent(const wormedit::ui::compose_view_t& view,
         (view.timing_lane_visibility_mask & (1U << ordinal)) == 0) return std::nullopt;
     const auto right = compose_timing_right(view);
     if (!std::isfinite(right) || right <= compose_measure_rail_width) return std::nullopt;
-    const auto scale = (right - compose_measure_rail_width) /
-                       compose_timing_width(view.timing_lane_visibility_mask);
+    const auto region = right - compose_measure_rail_width;
     double left = compose_measure_rail_width;
     for (unsigned index = 0; index < ordinal; ++index)
         if (view.timing_lane_visibility_mask & (1U << index))
-            left += compose_timing_lane_widths[index] * scale;
-    return std::pair{left, std::min(right, left + compose_timing_lane_widths[ordinal] * scale)};
+            left += compose_timing_lane_scaled_width(view.timing_lane_visibility_mask, index, region);
+    return std::pair{left, std::min(right, left + compose_timing_lane_scaled_width(
+                                                   view.timing_lane_visibility_mask, ordinal, region))};
 }
 
 inline auto compose_timing_lane_at(const wormedit::ui::compose_view_t& view, double x)

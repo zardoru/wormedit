@@ -537,6 +537,32 @@ inline void end_form_popup(nk_context* context, retained_popup_t& state, retaine
     if (began) menu_surface_end(context, form_popup_saved_surface());
 }
 
+// A plain popup (confirmations, small pickers, prompts) in the same surface as menus and form
+// popups: `menu_padding` all around, rounded panel, soft shadow, transparent window fills and no
+// stock square border. Returns false when Nuklear refuses it; then nothing needs ending. On
+// success finish with surface_popup_end(context, saved), which is nk_popup_end() plus restoring
+// the window fills (call nk_popup_close() before it to close). Row heights inside are
+// the caller's; the bounds must include the 2 * menu_padding the surface takes.
+inline auto surface_popup_begin(nk_context* context, const char* name, struct nk_rect bounds,
+                                MenuSurface& saved,
+                                nk_flags flags = NK_WINDOW_NO_SCROLLBAR) -> bool {
+    auto& window = context->style.window;
+    const auto padding = window.popup_padding;
+    const auto border = window.popup_border;
+    window.popup_padding = nk_vec2(menu_padding, menu_padding);
+    window.popup_border = 0.0f;
+    const auto began = nk_popup_begin(context, NK_POPUP_STATIC, name,
+                                      flags & ~static_cast<nk_flags>(NK_WINDOW_BORDER), bounds) != 0;
+    window.popup_padding = padding;
+    window.popup_border = border;
+    if (began) saved = menu_surface_begin(context);
+    return began;
+}
+inline void surface_popup_end(nk_context* context, const MenuSurface& saved) {
+    nk_popup_end(context);
+    menu_surface_end(context, saved);
+}
+
 // The dropdown chevron, drawn as two strokes in the Lucide `chevron-down` shape. Header-only
 // on purpose: tests that only draw combos do not link the icon textures.
 inline constexpr float chevron_size = 14.0f;

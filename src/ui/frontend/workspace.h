@@ -68,6 +68,13 @@ struct workspace_view_t {
     uint64_t transport_frame;
     uint64_t transport_end_frame;
     uint32_t transport_sample_rate;
+    // The playhead on the source clock and on the compose clock (export cuts removed); equal
+    // unless a cut separates them, which `transport_clocks_differ` reports.
+    uint64_t transport_source_clock_frame{};
+    uint64_t transport_compose_clock_frame{};
+    bool transport_clocks_differ{};
+    // The readout shows the source clock (timing focus) rather than the compose clock.
+    bool transport_time_is_source{};
     std::optional<transport_position_view_t> transport_position;
     std::vector<std::string> summary_lines;
     bool history_available;

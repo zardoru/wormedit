@@ -1,11 +1,15 @@
 #include "sys/compose/input/compose_playhead_skip.h"
 #include "sys/audio/preview_cursor_frame.h"
 
+#include <wormedit/core/row_step.h>
+
 #include <wormedit/audio/decoder.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
+#include <functional>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -173,4 +177,97 @@ TEST_CASE("Preview cursor retains a supplied geometry failure", "[sys][playhead-
         {chart.measures.front().id, 0}, 0.0, &failed);
     REQUIRE(std::holds_alternative<std::string>(result));
     CHECK(std::get<std::string>(result) == "Chart cursor has invalid measure geometry.");
+}
+
+TEST_CASE("playing skips never land in a cut and count only visible steps", "[sys][playhead-skip][cut]") {
+    const auto chart = skip_chart();
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    // At 240 BPM a beat (240 rows) is 250 ms: 208..729 ms hides rows 200..700.
+    const std::array cut{export_cut_t{.id = object_id_t{1}, .begin_milliseconds = 208, .end_milliseconds = 729}};
+    const auto timeline = export_cut_timeline_t::from(cut);
+    REQUIRE(timeline.ok());
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
+    REQUIRE(axis.ok());
+    const auto& hidden = axis.value;
+    REQUIRE(hidden.contains_row(480));
+    const auto forward = playhead_skip_target_row(two_measures(), 100.0, playhead_skip_unit_t::beat, 1, 960, 4, &hidden);
+    REQUIRE(forward);
+    CHECK_FALSE(hidden.contains_row(*forward));
+    CHECK(*forward > 100);
+    const auto backward = playhead_skip_target_row(two_measures(), 900.0, playhead_skip_unit_t::beat, -1, 960, 4, &hidden);
+    REQUIRE(backward);
+    CHECK_FALSE(hidden.contains_row(*backward));
+    CHECK(*backward < 900);
+    const auto two = playhead_skip_target_row(two_measures(), 100.0, playhead_skip_unit_t::snap, 2, 960, 4, &hidden);
+    REQUIRE(two);
+    CHECK(*two > *forward);
+    CHECK_FALSE(hidden.contains_row(*two));
+}
+
+TEST_CASE("the playing stepper and the parked cursor share one resolver", "[sys][playhead-skip][cut]") {
+    const auto chart = skip_chart();
+    const auto measures = two_measures();
+    const row_step_t snap{.resolution = row_step_resolution_t::snap,
+                          .grid = {4, quantization_space_t::standard_measure}};
+    for (const auto row : {0.0L, 100.0L, 240.0L, 959.0L, 960.0L, 1900.0L})
+        for (const auto forward : {true, false})
+            CHECK(adjacent_step_row(chart, measures, row, snap, 1920, forward) ==
+                  adjacent_snap_canvas_row(chart, measures, row, snap.grid, 1920, forward));
+    // Beat mode ignores the snap grid; snap mode follows it.
+    CHECK(step_visible_rows(chart, measures, nullptr, {.resolution = row_step_resolution_t::beat,
+              .grid = {16, quantization_space_t::standard_measure}}, 1920, 100, true) == 240);
+    CHECK(step_visible_rows(chart, measures, nullptr, {.grid = {16, quantization_space_t::standard_measure}},
+              1920, 100, true) == 120);
+    // An unusable grid is rejected instead of stepping.
+    CHECK_FALSE(step_visible_rows(chart, measures, nullptr, {.grid = {7, quantization_space_t::standard_measure}},
+              1920, 100, true));
+}
+
+TEST_CASE("steps skip rows the caller cannot stand on, in the travel direction", "[sys][playhead-skip][cut]") {
+    const auto chart = skip_chart();
+    const auto measures = two_measures();
+    // Row 720 stands for a kept row whose time is inside a cut: a seek there reads back past it.
+    const std::function<bool(std::uint64_t)> unusable = [](std::uint64_t row) { return row == 720; };
+    const row_step_t beat{.resolution = row_step_resolution_t::beat, .unusable = &unusable};
+    CHECK(step_visible_rows(chart, measures, nullptr, beat, 1920, 960, false) == 480);
+    CHECK(step_visible_rows(chart, measures, nullptr, beat, 1920, 480, true) == 960);
+    // Without the predicate the same steps land on it.
+    const row_step_t plain{.resolution = row_step_resolution_t::beat};
+    CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 960, false) == 720);
+    CHECK(step_visible_rows(chart, measures, nullptr, plain, 1920, 480, true) == 720);
+}
+
+TEST_CASE("measure and page steps skip measures the cut hides entirely", "[sys][playhead-skip][cut]") {
+    // 40 measures of 960 rows at 240 BPM: one measure is exactly one second.
+    measure_index_t measures;
+    chart_document_t chart{.id = chart_id_t{2}, .divisions_per_standard_measure = 960,
+        .bpms = {{.id = object_id_t{22}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {240, 1}}}};
+    for (std::uint64_t i = 0; i < 40; ++i) {
+        measures.entries.push_back({.id = measure_id_t{i + 1}, .absolute_begin_row = i * 960, .row_capacity = 960});
+        chart.measures.push_back({.id = measure_id_t{i + 1}});
+    }
+    measures.total_rows = 40 * 960;
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    // Measures 17..24 (seconds 16..24) are cut.
+    const std::array cut{export_cut_t{.id = object_id_t{1}, .begin_milliseconds = 16000, .end_milliseconds = 24000}};
+    const auto timeline = export_cut_timeline_t::from(cut);
+    REQUIRE(timeline.ok());
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
+    REQUIRE(axis.ok());
+    const auto& hidden = axis.value;
+    constexpr double measure_25 = 24.0 * 960;
+    constexpr std::uint64_t measure_16 = 15ull * 960;
+    for (const auto unit : {playhead_skip_unit_t::measure, playhead_skip_unit_t::page}) {
+        CHECK(playhead_skip_target_row(measures, measure_25, unit, -1, 960, 4, &hidden, &*timing.value) == measure_16);
+        CHECK(playhead_skip_target_row(measures, static_cast<double>(measure_16), unit, 1, 960, 4, &hidden, &*timing.value) ==
+              static_cast<std::uint64_t>(measure_25));
+    }
+    // Without a cut the step is the neighbouring measure.
+    CHECK(playhead_skip_target_row(measures, measure_25, playhead_skip_unit_t::measure, -1, 960, 4) == 23ull * 960);
+    // The post-cut measure number drops the hidden measures: M25 reads as 17.
+    CHECK(hidden_measures_before(measures, &hidden, 24) == 8);
+    CHECK(hidden_measures_before(measures, &hidden, 16) == 0);
+    CHECK(hidden_measures_before(measures, nullptr, 24) == 0);
 }

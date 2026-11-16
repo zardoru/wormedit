@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/catalog_chrome.h"
+#include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/nuklear/chrome/content_layout.h"
 #include "ui/nuklear/compose/compose_bga_panel.h"
 #include "ui/nuklear/chrome/catalog_confirmation.h"
@@ -421,6 +422,11 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     }
     if (block_list_pointer) nk_widget_disable_end(context);
     render_bga_usage(context, *view, *action, *state, block_list_pointer);
+    if (view->bga_ids_available) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        if (wormedit::ui::chrome::button_label(context, "Next free BMP slot") != 0)
+            emit_compose_menu_command(*action, *view, "navigation.next_free_bmp_slot");
+    }
     if (view->bga_ids_available)
         wormedit::ui::nuklear::render_catalog_capacity(context,
             {.used = view->bga_ids_used, .total = view->bga_ids_total,
@@ -476,7 +482,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
     if (wormedit::ui::chrome::popup_update_release_pending(
             context, state->bga_interaction.bga_stack_release_pending)) return;
     if (!state->bga_interaction.bga_stack_open) return;
-    const auto local_bounds = nk_rect(24, 48, 300, 360);
+    const auto local_bounds = nk_rect(24, 48, 300, 360 + 2 * wormedit::ui::chrome::menu_padding);
     const auto screen_bounds = wormedit::ui::chrome::popup_screen_bounds(context, local_bounds);
     if (!bga_stack_is_valid(*view, *state)) {
         state->bga_interaction.bga_stack_open = false;
@@ -490,9 +496,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "BGA events at measure",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-                        local_bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(context, "BGA events at measure", local_bounds,
+                                                   surface)) {
         state->bga_interaction.bga_stack_open = false;
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
         return;
@@ -535,5 +541,5 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const wormedit
         nk_popup_close(context);
         wormedit::ui::chrome::popup_arm_release(state->bga_interaction.bga_stack_release_pending);
     }
-    nk_popup_end(context);
+    wormedit::ui::chrome::surface_popup_end(context, surface);
 }

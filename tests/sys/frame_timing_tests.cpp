@@ -2143,6 +2143,31 @@ TEST_CASE("Compose horizontal layout orders timing, BGA, playable and BGM panes"
     CHECK(compose_horizontal_layout_is_ordered());
 }
 
+
+
+TEST_CASE("A user-chosen timing width replaces the natural one within its limits",
+          "[sys][horizontal-layout][timing-region]") {
+    using namespace wormedit::sys;
+    const auto automatic = compose_horizontal_layout(900, 5, true, 0, 0xFF);
+    CHECK(automatic.bga_pane_left_pixels == 426.0);
+    CHECK(automatic.timing_lane_mask == 0xFFU);
+    const auto narrowed = compose_horizontal_layout(900, 5, true, 0, 0xFF, 100.0);
+    CHECK(narrowed.bga_pane_left_pixels == compose_measure_rail_width_pixels + 100.0);
+    CHECK(narrowed.timing_lane_mask == 0x1BU);
+    // Wider than twice natural is capped; the window still limits what fits.
+    const auto widened = compose_horizontal_layout(2000, 5, true, 0, 0xFF, 5000.0);
+    CHECK(widened.bga_pane_left_pixels == compose_measure_rail_width_pixels + 768.0);
+    const auto cramped = compose_horizontal_layout(900, 5, true, 0, 0xFF, 5000.0);
+    CHECK(cramped.bga_pane_left_pixels == 900.0 - 240.0);
+    // Never smaller than one icon, which keeps BPM.
+    const auto minimum = compose_horizontal_layout(900, 5, true, 0, 0xFF, 1.0);
+    CHECK(minimum.bga_pane_left_pixels == compose_measure_rail_width_pixels + 24.0);
+    CHECK(minimum.timing_lane_mask == 1U);
+    // BGA keeps its fixed width regardless.
+    CHECK(compose_horizontal_layout(900, 5, true, 2, 0xFF, 100.0).bga_pane_width_pixels == 96.0);
+}
+
+
 TEST_CASE("scroll overrides follow mode identity across native and imported charts", "[frame-timing]") {
     chart_document_t chart;
     lane_layout_t layout;
@@ -8818,6 +8843,37 @@ void check_retained_timing_marker_positions(const ui::compose_view_t& view) {
 }
 } // namespace
 
+TEST_CASE("Bookmarks inside an export cut are hidden and the one on its end stays",
+          "[sys][export-cut][bookmarks]") {
+    // 120 BPM: a measure is two seconds, so 0..16000 ms hides measures 1..8 and ends on measure 9.
+    auto song = dense_song(12, 0);
+    song.export_cuts = {{.id = object_id_t{9001}, .label = "Shorten intro",
+        .begin_milliseconds = 0, .end_milliseconds = 16000}};
+    auto& chart = song.charts.front();
+    for (const auto measure : {0, 4, 8, 9})
+        chart.bookmarks.push_back({.id = object_id_t{9100 + static_cast<std::uint64_t>(measure)},
+            .label = "M" + std::to_string(measure + 1),
+            .position = local_position_t{chart.measures[static_cast<std::size_t>(measure)].id, 0}});
+    chart.bookmarks.push_back({.id = object_id_t{9200}, .label = "Audio inside",
+        .anchor = marker_anchor_t::audio_time, .audio_milliseconds = 8000});
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    REQUIRE(view.cut_axis);
+    REQUIRE(view.beat_bookmarks.size() == 4);
+    for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
+        const auto& bookmark = view.beat_bookmarks[index];
+        CAPTURE(index, bookmark.chart_row);
+        // The cut's end row is visible; every row inside [begin, end) is not.
+        CHECK(bookmark.projection_visible == !view.cut_axis->contains_row(bookmark.chart_row));
+    }
+    CHECK_FALSE(view.beat_bookmarks[0].projection_visible);
+    CHECK_FALSE(view.beat_bookmarks[1].projection_visible);
+    CHECK(view.beat_bookmarks[2].projection_visible);
+    REQUIRE(view.audio_bookmarks.size() == 1);
+    CHECK_FALSE(view.audio_bookmarks[0].projection_visible);
+}
+
 TEST_CASE("Retained timing markers agree with live positions after export cuts while scrolling",
           "[sys][export-cut][timing-geometry][static-source]") {
     const bool downscroll = GENERATE(false, true);
@@ -9297,7 +9353,7 @@ TEST_CASE("Player preview and chart readout follow the source frame across audio
     expect_compose_test(view.player_preview.scene_available);
     expect_compose_test(view.player_preview.sample_frame == source);
     expect_compose_test(view.transport_position.has_value());
-    expect_compose_test(view.transport_position->row == static_cast<std::int64_t>(source * 480 / 44'100));
+    expect_compose_test(view.transport_position->source_row == static_cast<std::int64_t>(source * 480 / 44'100));
 }
 
 TEST_CASE("Stopped cursor and audition preview retain their source clock with compiled cuts",

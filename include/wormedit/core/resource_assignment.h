@@ -31,6 +31,14 @@ struct bms_identifier_capacity_t {
                                            std::string_view name_space)
     -> bms_identifier_capacity_t;
 
+// First unoccupied slot after `from` (1..1295; 0 or an out-of-range value starts before 01) in the
+// "WAV" or "BMP" namespace, wrapping past ZZ back to 01 and ending at `from` itself. A slot is
+// occupied when any resource holds it, whether or not its file is missing. Returns nothing when
+// every slot is taken. The span is the codec's base-36 namespace, so it follows the codec.
+[[nodiscard]] auto find_next_free_bms_slot(const song_document_t& document,
+                                           std::string_view name_space, std::size_t from)
+    -> std::optional<std::size_t>;
+
 // Shared case-insensitive WAV namespace and base-36 slot matching for review
 // and commit. Zero and malformed identifiers never occupy a supported slot.
 [[nodiscard]] auto bms_wav_slot_value(const target_resource_identity_t& identity)

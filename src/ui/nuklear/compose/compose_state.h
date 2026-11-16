@@ -175,8 +175,20 @@ struct worm_ui_nuklear_compose_wheel_event_t {
 
 // SDL wheel x/y are fractional wheel units, not native pixel coordinates.
 // Preserve their magnitude and normalize the flipped-device convention once.
+// Where `fractional_is_smooth` is set (macOS: trackpads and Magic Mice send precise fractional
+// units), an event with a fractional component is smooth pixel motion; whole-unit events are
+// notches everywhere, and other platforms treat every event as a notch.
+#if defined(__APPLE__)
+inline constexpr bool worm_ui_nuklear_wheel_fractional_is_smooth = true;
+#else
+inline constexpr bool worm_ui_nuklear_wheel_fractional_is_smooth = false;
+#endif
+// SDL's macOS precise-scroll units are a tenth of a pixel; a smooth event scrolls the content by
+// the finger's own distance.
+inline constexpr double worm_ui_nuklear_smooth_wheel_pixels_per_unit = 10.0;
 auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
-    double mouse_y, std::uint16_t modifiers, bool flipped)
+    double mouse_y, std::uint16_t modifiers, bool flipped,
+    bool fractional_is_smooth = worm_ui_nuklear_wheel_fractional_is_smooth)
     -> std::optional<worm_ui_nuklear_compose_wheel_event_t>;
 
 inline auto worm_ui_nuklear_compose_wheel_speed(double delta, bool tab_modifier) noexcept
@@ -631,6 +643,19 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t stem_lane_resize_hover_lane{};
     } stem_lanes;
 
+    // Drag of the timing region's right-edge handle (see compose_edge_handle.h). The width
+    // itself lives in the application state; this only carries the gesture.
+    struct timing_region_t {
+        bool drag_active{};
+        bool moved{};
+        // An interrupted drag puts the width it started from back on the next frame.
+        bool restore_pending{};
+        // Edge hovered or being dragged this frame; drives the edge highlight and cursor.
+        bool hovered{};
+        compose_drag_capture_t capture{};
+        double anchor_width{};
+    } timing_region;
+
     struct snap_grid_t {
         wormedit::ui::chrome::ContextMenu snap_grid_menu{.title = "Editing grid"};
         int snap_grid_choice{};
@@ -775,6 +800,8 @@ struct worm_ui_nuklear_compose_state_t {
         float bga_list_x{}, bga_list_y{}, bga_list_width{}, bga_list_height{};
         // The BGA rows shown last frame, kept so Ctrl+A over the list can select them.
         std::vector<std::uint64_t> bga_shown;
+        // Last slot the "Next free BMP slot" command reported; the next search starts after it.
+        std::size_t free_slot_cursor{};
     } bga_catalog;
 
     struct sounds_dock_t {

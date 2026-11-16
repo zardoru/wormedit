@@ -1,3 +1,4 @@
+#include <wormedit/core/bgm_columns.h>
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose/views/compose_view.h"
@@ -656,11 +657,18 @@ auto compose_editor_layout_width(double viewport_width, double editor_right) -> 
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::uint16_t timing_lane_mask)
+                               std::uint16_t timing_lane_mask, double timing_region_width_pixels)
     -> compose_horizontal_layout_t {
     constexpr double bga_pane_width = 48.0;
-    const auto desired_timing_right = compose_measure_rail_width_pixels +
-        wormedit::ui::compose_timing_width(timing_lane_mask);
+    // A user-chosen width (0 = automatic) replaces the natural one, within the icon-sized
+    // minimum and twice natural; the window still decides how much of it fits.
+    const auto desired_timing_width = timing_region_width_pixels > 0.0
+        ? wormedit::ui::compose_timing_region_clamp(timing_region_width_pixels, timing_lane_mask)
+        : wormedit::ui::compose_timing_width(timing_lane_mask);
+    const auto timing_floor = compose_measure_rail_width_pixels +
+        (timing_lane_mask != 0 ? wormedit::ui::compose_timing_lane_minimum_width : 0.0);
+    const auto desired_timing_right = std::max(timing_floor,
+        compose_measure_rail_width_pixels + desired_timing_width);
     const auto reserved_bga = bga_pane_width * std::min<std::size_t>(bga_lane_count, 4);
     // Lanes keep their natural width; the timing rail and BGM pane are what gets cropped.
     const auto natural = std::clamp(static_cast<double>(std::max<std::size_t>(lane_count, 1)) *
@@ -668,7 +676,7 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
                                     compose_minimum_playable_field_width_pixels,
                                     compose_maximum_playable_field_width_pixels);
     const auto bga_left = std::clamp(viewport_width_pixels - natural - reserved_bga,
-                                     compose_measure_rail_width_pixels, desired_timing_right);
+                                     timing_floor, desired_timing_right);
     const auto field_left = bga_left + reserved_bga;
     const auto available = std::max(1.0, viewport_width_pixels - field_left);
     const auto playable = std::max(1.0, std::min(natural, available));
@@ -677,7 +685,9 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
             .playable_field_width_pixels = playable,
             .bgm_pane_left_pixels = field_left + playable,
             .bgm_pane_width_pixels = has_bgm_lanes ? std::max(0.0, available - playable) : 0.0,
-            .bga_pane_width_pixels = reserved_bga};
+            .bga_pane_width_pixels = reserved_bga,
+            .timing_lane_mask = wormedit::ui::compose_timing_fit_mask(
+                timing_lane_mask, bga_left - compose_measure_rail_width_pixels)};
 }
 
 auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool {
@@ -1864,7 +1874,11 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
                                   interaction_view.bga_lane_visible ? std::popcount(
                                       wormedit::editor_bga_visible_lane_mask(chart,
                                           interaction_view.bga_revealed_lane_mask)) : 0,
-                                  effective_compose_timing_lane_mask(application_state));
+                                  effective_compose_timing_lane_mask(application_state),
+                                  application_state.project.compose_view.compose_timing_region_width_pixels);
+    // The region can be too narrow for every requested lane; geometry, drawing and picking all
+    // see only the ones that fit.
+    view.timing_lane_visibility_mask = horizontal_layout.timing_lane_mask;
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bga_pane_width = horizontal_layout.bga_pane_width_pixels;
     const auto playable_field_width = horizontal_layout.playable_field_width_pixels;
@@ -2432,10 +2446,8 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
     populate_draw_stem_sources(flattened, cache, history.document, chart);
     populate_draw_source_label(flattened, cache, history.document);
     populate_bgm_draw_hint(view, chart);
-    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
-    view.bgm_column_count_editable =
-        chart.source_family == wormedit::format_family_t::bms ||
-        chart.source_family == wormedit::format_family_t::osu_mania;
+    view.bgm_column_count = static_cast<std::uint32_t>(wormedit::ordinal_bgm_column_count(chart));
+    view.bgm_column_count_editable = true;
     const auto downscroll = compose_field_downscroll(chart, application_state.preferences.editor_preferences);
     view.downscroll = downscroll;
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,

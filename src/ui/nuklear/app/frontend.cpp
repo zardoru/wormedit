@@ -1175,6 +1175,41 @@ static bool compose_dock_input_available() {
         !compose.bookmark_ui.bookmark_rename.release_pending && !compose_popup_owns_input();
 }
 
+size_t worm_ui_frontend_free_slot_search_start(bool bmp) {
+    const auto& compose = worm_ui_nuklear_compose_state();
+    if (bmp) return compose.bga_catalog.free_slot_cursor;
+    return compose.keysound_filters.keysound_slots_mode && compose.keysound_catalog.keysound_selected_slot_explicit
+        ? compose.keysound_catalog.keysound_selected_slot : 0;
+}
+
+bool worm_ui_frontend_reveal_free_slot(uint64_t project_id, uint64_t chart_id, uint64_t revision,
+                                       bool bmp, size_t slot) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (!compose_dock_input_available() || compose.layer_editor.layer_creation_request ||
+        compose.document_context.last_project_id != project_id || compose.document_context.last_chart_id != chart_id ||
+        compose.document_context.last_document_revision != revision || slot == 0 || slot > 1295) return false;
+    if (bmp) {
+        compose.bga_catalog.free_slot_cursor = slot;
+        return true;
+    }
+    auto& layout = compose.dock_layout.layout;
+    layout.show(wormedit::dock_panel_t::sounds, true);
+    if (compose.dock_layout.compact_dock_layout) layout.show(wormedit::dock_panel_t::layers, false);
+    compose.dock_layout.sounds_dock_bmson_tab = false;
+    auto& filters = compose.keysound_filters;
+    auto& catalog = compose.keysound_catalog;
+    filters.keysound_slots_mode = true;
+    catalog.keysound_slots_search.fill(0);
+    catalog.keysound_selected_slot = static_cast<std::uint16_t>(slot);
+    catalog.keysound_selected_slot_explicit = true;
+    catalog.keysound_selected_slot_resource = 0;
+    catalog.keysound_selected_slot_resource_known = false;
+    catalog.keysound_reveal_primary = true;
+    compose.keysound_slots.keysound_slot_feedback.clear();
+    worm_ui_keysound_clear(catalog.keysound_selection);
+    return true;
+}
+
 bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
     uint64_t project_id, uint64_t chart_id, uint64_t revision) {
     auto& compose = worm_ui_nuklear_compose_state();
@@ -2119,12 +2154,14 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         const auto content = nk_window_get_content_region(g_context);
         popup_bounds = nk_rect(
             std::clamp(bounds.x - content.x, 0.0f, std::max(0.0f, content.w - 340.0f)),
-            std::max(0.0f, bounds.y - content.y - 70.0f), 340, 60);
+            std::max(0.0f, bounds.y - content.y - 70.0f), 340,
+            60 + 2 * wormedit::ui::chrome::menu_padding);
         open = true;
     }
     if (!open) return;
-    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "Minimap preferences",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, popup_bounds)) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(g_context, "Minimap preferences", popup_bounds,
+                                                   surface)) {
         open = false;
         return;
     }
@@ -2140,7 +2177,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         nk_popup_close(g_context);
     }
-    nk_popup_end(g_context);
+    wormedit::ui::chrome::surface_popup_end(g_context, surface);
 }
 
 static void render_status_minimap(const wormedit::ui::workspace_view_t& view,
@@ -2187,10 +2224,14 @@ static auto workspace_status_text(const wormedit::ui::workspace_view_t& view, st
         std::ranges::any_of(g_context->input.keyboard.keys,
         [](const auto& key) { return key.clicked != 0; });
     const auto rate = view.transport_sample_rate == 0 ? 1U : view.transport_sample_rate;
+    const auto clock_at = [rate](std::uint64_t frame) {
+        return wormedit::ui::transport_clock_t{.seconds = frame / rate,
+            .milliseconds = static_cast<std::uint32_t>((frame % rate) * 1000 / rate)};
+    };
     text.refresh({.status = line, .artist = view.artist, .difficulty = view.selected_difficulty,
-        .selected = selected, .seconds = view.transport_frame / rate,
-        .playing = view.transport_playing, .immediate = input,
-        .milliseconds = static_cast<std::uint32_t>((view.transport_frame % rate) * 1000 / rate),
+        .selected = selected, .playing = view.transport_playing, .immediate = input,
+        .source_clock = clock_at(view.transport_source_clock_frame), .compose_clock = clock_at(view.transport_compose_clock_frame),
+        .clocks_differ = view.transport_clocks_differ, .time_is_source = view.transport_time_is_source,
         .position = view.transport_position}, SDL_GetTicksNS());
     return text;
 }
@@ -2321,8 +2362,9 @@ static void render_status_transport_buttons(const wormedit::ui::workspace_view_t
     render_metronome_toggle(*view, *action);
 }
 
-static void render_transport_readout(const std::string& text, const char* hint,
-                                     void (*draw)(nk_command_buffer*, struct nk_rect, struct nk_color)) {
+static void render_transport_readout(const std::string& text, const std::string& hint,
+                                     void (*draw)(nk_command_buffer*, struct nk_rect, struct nk_color),
+                                     const std::string& alternate = {}) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
     const float icon_size = bounds.w < 110.0f ? 18.0f : 24.0f;
@@ -2335,7 +2377,7 @@ static void render_transport_readout(const std::string& text, const char* hint,
                 bounds.w - text_offset, font->height), text.c_str(), static_cast<int>(text.size()),
         font, nk_rgba(0, 0, 0, 0), tint);
     if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds)) {
-        const auto tooltip = std::string{hint} + "\n" + text;
+        const auto tooltip = hint + "\n" + text + (alternate.empty() ? std::string{} : "\n" + alternate);
         wormedit::ui::nuklear::tooltip::text(g_context, tooltip.c_str());
     }
 }
@@ -2403,12 +2445,20 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (notification_visible)
         render_notification_badge(view->notifications, *action);
     else nk_spacing(g_context, 1);
-    render_transport_readout(status.elapsed(), "Playhead time (minutes:seconds.milliseconds)",
-                             wormedit::ui::vector_icons::timer);
-    if (layout.show_row) render_transport_readout(status.row(), "Current absolute chart row (zero-based)",
-                             wormedit::ui::vector_icons::grid);
-    if (layout.show_musical) render_transport_readout(status.musical_position(), "Measure:beat (one-based, using the chart meter)",
-                             wormedit::ui::vector_icons::measure_lane);
+    const auto& other_time = status.other_elapsed();
+    render_transport_readout(status.elapsed(), view->transport_time_is_source
+            ? "Playhead time, source (minutes:seconds.milliseconds)"
+            : "Playhead time, export cuts removed (minutes:seconds.milliseconds)",
+        wormedit::ui::vector_icons::timer,
+        other_time.empty() ? std::string{}
+            : (view->transport_time_is_source ? "Export cuts removed: " : "Source: ") + other_time);
+    if (layout.show_row) render_transport_readout(status.source_row(), "Current absolute chart row (zero-based, source)",
+        wormedit::ui::vector_icons::grid,
+        status.compose_row().empty() ? std::string{} : "Export cuts removed: " + status.compose_row());
+    if (layout.show_musical) render_transport_readout(status.source_musical_position(), "Measure:beat (one-based, using the chart meter, source)",
+                             wormedit::ui::vector_icons::measure_lane,
+        status.compose_musical_position().empty() ? std::string{}
+            : "Export cuts removed: " + status.compose_musical_position());
     if (layout.show_details) render_elided_status_label(status.details(), NK_TEXT_RIGHT, g_context->style.text.color);
 }
 

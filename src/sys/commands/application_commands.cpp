@@ -65,6 +65,8 @@ constexpr command_name_t command_names[]{
     {"navigation.next_bookmark", application_command_kind_t::navigation_next_bookmark},
     {"navigation.go_to_bookmark", application_command_kind_t::navigation_go_to_bookmark},
     {"navigation.go_to_sound", application_command_kind_t::navigation_go_to_sound},
+    {"navigation.next_free_wav_slot", application_command_kind_t::navigation_next_free_wav_slot},
+    {"navigation.next_free_bmp_slot", application_command_kind_t::navigation_next_free_bmp_slot},
     {"view.open_layers", application_command_kind_t::view_open_layers},
     {"document.export_output_group", application_command_kind_t::document_export_output_group},
     {"semantic_layer.create", application_command_kind_t::semantic_layer_create},

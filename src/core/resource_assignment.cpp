@@ -364,6 +364,20 @@ auto find_bms_identifier_run(const song_document_t& document, std::string_view n
     return std::nullopt;
 }
 
+auto find_next_free_bms_slot(const song_document_t& document, std::string_view name_space,
+                             std::size_t from) -> std::optional<std::size_t> {
+    if (name_space != "WAV" && name_space != "BMP") return std::nullopt;
+    constexpr auto base = std::size_t{36};
+    const auto occupied = bms_occupied(document, name_space, base);
+    const auto last = occupied.size() - 1;
+    if (from > last) from = 0;
+    for (std::size_t step = 1; step <= last; ++step) {
+        const auto slot = (from + step - 1) % last + 1;
+        if (!occupied[slot]) return slot;
+    }
+    return std::nullopt;
+}
+
 auto bms_identifier_capacity(const song_document_t& document, std::string_view name_space)
     -> bms_identifier_capacity_t {
     if (name_space != "WAV" && name_space != "BMP") return {};

@@ -178,21 +178,36 @@ TEST_CASE("osu!mania BGM column growth preserves samples and undoes as one step"
           resource_id_t{40});
 }
 
-TEST_CASE("BGM column count rejects BMSON without changing its lanes",
+TEST_CASE("BGM column count works on every format and ignores bmson stem lanes",
           "[unit][core][bgm-columns]") {
-    auto song = column_song();
-    song.charts.front().source_family = format_family_t::bmson;
-    auto history = document_history_t::from(std::move(song));
-    const auto revision = history.document.revision;
-    const auto result = apply_bgm_column_count(history, chart_id_t{2}, 6);
-    CHECK_FALSE(result.applied);
-    REQUIRE(result.diagnostics.size() == 1);
-    CHECK(result.diagnostics.front().message ==
-          "BGM column counts are available only for BMS and osu!mania charts");
-    CHECK(history.document.revision == revision);
-    CHECK(lane_count(history) == 1);
-    check_original_bgm_event(history.document.charts.front());
-    CHECK(history.undo.empty());
+    for (const auto family : {format_family_t::native_project, format_family_t::bmson,
+                              format_family_t::stepmania, format_family_t::quaver}) {
+        auto song = column_song();
+        song.charts.front().source_family = family;
+        if (family == format_family_t::bmson) {
+            song.audio_assets.push_back({.id = asset_id_t{40},
+                                         .source_path = "stem.wav",
+                                         .stream = {48'000, 2, 144'000, true}});
+            auto& chart = song.charts.front();
+            chart.sound_channels.push_back(
+                {.id = object_id_t{901}, .name = "Stem",
+                 .source_clip = {.id = clip_id_t{960}, .source = asset_id_t{40},
+                                 .begin_frame = 0, .end_frame = 144'000}});
+            chart.bgm_source_lanes.push_back(
+                {.id = object_id_t{900}, .name = "Stem", .source_order = 50,
+                 .stem_channel = object_id_t{901}});
+            REQUIRE(validate_document(song).empty());
+        }
+        auto history = document_history_t::from(std::move(song));
+        const auto stems = family == format_family_t::bmson ? 1u : 0u;
+        REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 4).applied);
+        CHECK(ordinal_bgm_column_count(history.document.charts.front()) == 4);
+        CHECK(history.document.charts.front().bgm_source_lanes.size() == 4 + stems);
+        REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 2).applied);
+        CHECK(ordinal_bgm_column_count(history.document.charts.front()) == 2);
+        CHECK(history.document.charts.front().bgm_source_lanes.size() == 2 + stems);
+        check_original_bgm_event(history.document.charts.front());
+    }
 }
 
 TEST_CASE("BGM column growth reserves all IDs before reaching the ceiling",

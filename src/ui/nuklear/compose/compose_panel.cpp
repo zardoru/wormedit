@@ -25,6 +25,7 @@
 #include "ui/nuklear/compose/compose_sounds_panel.h"
 #include "ui/nuklear/compose/compose_bga_panel.h"
 #include "ui/nuklear/compose/compose_measures_panel.h"
+#include "ui/nuklear/chrome/text_prompt.h"
 #include "ui/nuklear/compose/compose_layers_panel.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/compose/compose_recipe_form.h"
@@ -985,7 +986,7 @@ static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_re
     -> struct nk_rect {
     const bool audio_timing = is_inline_audio_timing(state.inline_timing.inline_timing_lane);
     const float popup_width = audio_timing ? 310.0f : 196.0f;
-    const float popup_height = audio_timing ? 224.0f : 75.0f;
+    const float popup_height = (audio_timing ? 224.0f : 75.0f) + 2.0f * wormedit::ui::chrome::menu_padding;
     const auto popup_x = std::clamp(state.inline_timing.inline_timing_anchor_screen_x,
                                     viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
     const auto popup_y = std::clamp(state.inline_timing.inline_timing_anchor_screen_y - 24.0f,
@@ -1038,9 +1039,10 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         worm_ui_nuklear_inline_timing_initial_text(
             timing, state.inline_timing.inline_timing_text.data(), state.inline_timing.inline_timing_text.size());
 
-    if (!nk_popup_begin(panel.context, NK_POPUP_STATIC, "Compose timing value",
-                        NK_WINDOW_NO_SCROLLBAR,
-                        compose_inline_timing_popup_bounds(panel.context, viewport))) {
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::surface_popup_begin(
+            panel.context, "Compose timing value",
+            compose_inline_timing_popup_bounds(panel.context, viewport), surface)) {
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         return;
     }
@@ -1062,7 +1064,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     }
     nk_layout_row_dynamic(panel.context, is_inline_audio_timing(timing.stage_lane) ? 36.0f : 17.0f, 1);
     nk_label_wrap(panel.context, inline_audio_timing_status(timing));
-    nk_popup_end(panel.context);
+    wormedit::ui::chrome::surface_popup_end(panel.context, surface);
 }
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
@@ -1279,6 +1281,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto resize_consumed = process_stem_lane_resize(pointer_event, double_clicks,
                                                           double_click_count, compose_pointer_captured);
     compose_pointer_captured |= resize_consumed;
+    const auto timing_resize_consumed = process_timing_region_resize(
+        pointer_event, double_clicks, double_click_count, compose_pointer_captured);
+    compose_pointer_captured |= timing_resize_consumed;
     action->compose_has_pointer_hover = !state.input_queue.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
@@ -1294,7 +1299,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     update_compose_sound_hover(pointer_event);
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed = compose_input_queries_t{state}.is_paint_blocked() ||
-        beat_fit_pointer_consumed || resize_consumed || mix_consumed || compose_action_has_cancel(action);
+        beat_fit_pointer_consumed || resize_consumed || timing_resize_consumed || mix_consumed || compose_action_has_cancel(action);
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
@@ -1339,41 +1344,37 @@ static void render_go_to_measure(nk_context* context, const wormedit::ui::compos
     }
     const auto region = nk_window_get_content_region(context);
     const auto parent = nk_window_get_bounds(context);
-    const auto width = std::min(320.0f, std::max(160.0f, parent.w - 24.0f));
+    const auto width = wormedit::ui::chrome::text_prompt_width_for(region);
+    const auto height = wormedit::ui::chrome::text_prompt_height;
     const auto bounds = nk_rect(parent.x + (parent.w - width) * 0.5f - region.x,
-                                parent.y + (parent.h - 120.0f) * 0.5f - region.y,
-                                width, 120.0f);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Go to measure",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+                                parent.y + (parent.h - height) * 0.5f - region.y, width, height);
+    wormedit::ui::chrome::MenuSurface surface{};
+    if (!wormedit::ui::chrome::text_prompt_begin(context, "Go to measure", bounds, surface)) {
         state.dialogs.go_to_measure_open = false;
         state.dialogs.go_to_measure_focus_pending = false;
         return;
     }
     if (state.dialogs.go_to_measure_cancel_pending) {
         close_go_to_measure(context);
-        nk_popup_end(context);
+        wormedit::ui::chrome::text_prompt_end(context, surface);
         return;
     }
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+    char range[40];
     if (view.bms_measure_labels)
-        nk_label(context, "Measure #000-#999", NK_TEXT_LEFT);
+        std::snprintf(range, sizeof(range), "#000-#999");
     else
-        nk_labelf(context, NK_TEXT_LEFT, "Measure M1-M%llu",
-                  static_cast<unsigned long long>(view.compose_measure_count));
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    if (state.dialogs.go_to_measure_focus_pending) {
-        nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
-        state.dialogs.go_to_measure_focus_pending = false;
-    }
-    const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
-        context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
-        state.dialogs.go_to_measure_text.data(), static_cast<int>(state.dialogs.go_to_measure_text.size()),
-        nk_filter_decimal);
+        std::snprintf(range, sizeof(range), "M1-M%llu",
+                      static_cast<unsigned long long>(view.compose_measure_count));
+    const auto flags = wormedit::ui::chrome::text_prompt_body(
+        context,
+        {.title = "Go to measure", .placeholder = range,
+         .hint = "Enter to go · Esc to cancel", .error = state.dialogs.go_to_measure_error.data(),
+         .buffer = state.dialogs.go_to_measure_text.data(),
+         .capacity = static_cast<int>(state.dialogs.go_to_measure_text.size()),
+         .filter = nk_filter_decimal, .flags = static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER},
+        state.dialogs.go_to_measure_focus_pending);
     if ((flags & NK_EDIT_COMMITTED) != 0) confirm_go_to_measure(view, action, context);
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
-    nk_label(context, state.dialogs.go_to_measure_error[0] ? state.dialogs.go_to_measure_error.data()
-                                                : "Enter to go · Esc to cancel", NK_TEXT_LEFT);
-    nk_popup_end(context);
+    wormedit::ui::chrome::text_prompt_end(context, surface);
 }
 
 static void begin_layer_menu_input_frame() {

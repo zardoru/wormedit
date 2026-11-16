@@ -44,6 +44,11 @@ struct application_command_services_t {
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
     std::function<std::uint64_t(std::uint64_t)> transport_preview_frame_from_source;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
+    // Free-slot search: the slot the UI searches after (0 = before 01) and the reveal of the result
+    // (selects it in the WAV slot list, or remembers it as the BMP search position).
+    std::function<std::size_t(bool bmp)> free_slot_search_start;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t, bool bmp, std::size_t slot)>
+        reveal_free_slot;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
     std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
         compose_dock_command;
@@ -173,6 +178,14 @@ struct application_command_state_t {
         std::chrono::steady_clock::time_point at;
     };
 
+    // Where the last pixel scroll moved the playing playhead. A seek takes a moment to reach the
+    // audio clock, so a scroll within the repeat window continues from here, not the lagging clock.
+    struct playhead_scroll_record_t {
+        wormedit::chart_id_t chart{};
+        double row{};
+        std::chrono::steady_clock::time_point at;
+    };
+
     application_command_services_t services;
     bookmark_navigation_t bookmarks;
     metronome_t* metronome{};
@@ -267,6 +280,8 @@ struct application_command_state_t {
 
         struct compose_view_state_t {
             double compose_editor_right_pixels{};
+            // Width the user gave the timing rows' region by dragging its edge; 0 = automatic.
+            double compose_timing_region_width_pixels{};
             std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
             std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
             std::uint16_t compose_timing_lane_visibility_mask{wormedit::default_timing_lane_mask};
@@ -309,6 +324,9 @@ struct application_command_state_t {
             std::optional<double> preview_playhead_absolute_row;
             std::optional<minimap_start_frame_t> minimap_start_frame;
             std::optional<playhead_skip_record_t> last_playhead_skip;
+            std::optional<playhead_scroll_record_t> last_playhead_scroll;
+            // A continuous (touchpad) scroll moved the field this frame; scrub audio consumes it.
+            bool scrub_scrolled{};
         } transport;
     } project;
 
@@ -320,6 +338,7 @@ struct application_command_state_t {
     void invalidate_playing_seek_records() {
         bookmarks.clear_seek_record();
         project.transport.last_playhead_skip.reset();
+        project.transport.last_playhead_scroll.reset();
     }
 };
 

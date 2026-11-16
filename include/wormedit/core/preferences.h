@@ -79,6 +79,8 @@ struct editor_preferences_t {
     // Live playback monitoring only; offline audio export retains the authored mix.
     bool audition_on_playback{true};
     bool invert_scroll_wheel{};
+    // Smooth scrolling plays the song like a needle on a record (touchpads with fractional wheel deltas).
+    bool scrub_audio_on_scroll{true};
     std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;
 };

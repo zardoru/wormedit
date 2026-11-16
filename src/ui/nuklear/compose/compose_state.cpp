@@ -590,10 +590,10 @@ auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& vi
                              input.find('/') == std::string_view::npos;
     auto result = action;
     result.timing.stage_action = wormedit::ui::timing_stage_action_t::confirm;
-    result.timing_chart_id.value = view.chart_id.value;
-    result.timing_document_revision = view.document_revision;
+    result.timing.chart_id.value = view.chart_id.value;
+    result.timing.document_revision = view.document_revision;
     result.timing.object_id.value = view.stage_existing_object_id.value;
-    result.timing_lane = view.stage_lane;
+    result.timing.lane = view.stage_lane;
     result.timing.value = view.stage_value;
     result.timing.secondary_value = view.stage_secondary_value;
     result.timing.transition_is_seconds = view.stage_transition_is_seconds;

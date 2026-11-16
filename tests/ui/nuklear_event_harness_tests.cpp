@@ -7625,7 +7625,7 @@ struct timing_stage_workflow_t {
     }
 
     void dispatch(const workspace_action_snapshot_t& snapshot) {
-        timing.dispatch(snapshot.get(), {.history = editor.history, .workspace = *editor.binding.value,
+        timing.dispatch(snapshot.get().timing, {.history = editor.history, .workspace = *editor.binding.value,
             .notifications = editor.sink}, false, 4);
         project();
     }

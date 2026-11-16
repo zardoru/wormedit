@@ -553,9 +553,9 @@ void confirm_sound_review(walkthrough_t& flow, bool slots) {
 auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id_t {
     const auto path = slot_import_paths().front();
     const wormedit::ui::workspace_action_t action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
-        .stamp.chart_id = {flow.workspace.value->selected_chart->value},
-        .stamp.document_revision = flow.history.document.revision,
-        .resource.import_paths = {path}, .resource.sound_slot = slot};
+        .stamp = {.chart_id = {flow.workspace.value->selected_chart->value},
+                  .document_revision = flow.history.document.revision},
+        .resource = {.import_paths = {path}, .sound_slot = slot}};
     apply_sound_action(flow, action);
     const auto rows = sound_slots_view_t::from(flow.history.document, {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1}, &flow.chart());
     require_step(rows.rows.size() == 1);

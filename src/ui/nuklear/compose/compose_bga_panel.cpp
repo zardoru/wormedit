@@ -102,8 +102,8 @@ auto thumbnail(const wormedit::ui::compose_view_t& view, const wormedit::ui::com
 }
 void reveal_bga_lane(wormedit::ui::workspace_action_t& action, std::uint8_t kind) {
     append_compose_input(&action, WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL);
-    if (action.compose_inputs.size() == 0) return;
-    auto& output = action.compose_inputs[action.compose_inputs.size() - 1];
+    if (action.input.compose_inputs.size() == 0) return;
+    auto& output = action.input.compose_inputs[action.input.compose_inputs.size() - 1];
     output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(kind);
     output.bga_lane_kind_valid = true;
 }
@@ -464,8 +464,8 @@ static bool draw_bga_stack_row(nk_context* context, const wormedit::ui::compose_
     const auto clicked = wormedit::ui::chrome::button_label(context, label);
     if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return false;
-    if (action.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
-        auto& input = action.compose_inputs.emplace_back();
+    if (action.input.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+        auto& input = action.input.compose_inputs.emplace_back();
         input = {};
         input.kind = WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK;
         input.object_id.value = event.event_id.value;

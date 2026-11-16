@@ -286,8 +286,8 @@ static void process_compose_lane_key(const auto& key_event, const wormedit::ui::
         if (binding.scancode != key_event.scancode || binding.lane_id.value == 0) continue;
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0.0, 0.0,
                              binding.lane_id.value, (key_event.modifiers & SDL_KMOD_SHIFT) != 0);
-        if (!state.input_queue.action_overflowed && action->compose_inputs.size() > 0)
-            action->compose_inputs[action->compose_inputs.size() - 1].resource_id.value =
+        if (!state.input_queue.action_overflowed && action->input.compose_inputs.size() > 0)
+            action->input.compose_inputs[action->input.compose_inputs.size() - 1].resource_id.value =
                 view->selected_note_count != 0
                     ? 0 : worm_ui_nuklear_armed_dock_sound(state, *view);
         if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0 && !state.input_queue.action_overflowed &&
@@ -441,12 +441,12 @@ void process_compose_key_events(struct nk_context* context, const wormedit::ui::
                                        bool ime_composition_active) {
     if (state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open || ime_composition_active ||
         compose_text_owned(context)) {
-        action->compose_input_ownership = state.dialogs.go_to_measure_open ? 1 : 2;
+        action->input.compose_input_ownership = state.dialogs.go_to_measure_open ? 1 : 2;
         cancel_compose_gestures(action);
     }
     if (process_go_to_measure_keys(context, *view, action, window_focused,
                                    ime_composition_active)) {
-        action->compose_input_ownership = 1;
+        action->input.compose_input_ownership = 1;
         cancel_compose_gestures(action);
         release_discarded_compose_keys(action);
         state.input_queue.key_event_count = 0;

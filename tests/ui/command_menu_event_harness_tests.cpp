@@ -76,7 +76,7 @@ TEST_CASE("Command menu skips disabled rows and Escape never invokes or leaks it
     fixture.open();
     const auto escape = fixture.press(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     expect_menu(!escape.get().command_menu_invoked);
-    expect_menu(escape.get().compose_inputs.size() == 0);
+    expect_menu(escape.get().input.compose_inputs.size() == 0);
     expect_menu(fixture.harness.drawn_text().find("Command menu") == std::string::npos);
 }
 
@@ -92,7 +92,7 @@ TEST_CASE("Command menu pointer activation invokes its row without leaking to th
     });
     REQUIRE(activated != frames.end());
     expect_menu(std::string_view{activated->get().command_menu_command_id} == "second");
-    for (const auto& frame : frames) expect_menu(frame.get().compose_inputs.empty());
+    for (const auto& frame : frames) expect_menu(frame.get().input.compose_inputs.empty());
 }
 
 TEST_CASE("Closing the command menu preserves the armed sound for the next paint stroke",
@@ -114,7 +114,7 @@ TEST_CASE("Closing the command menu preserves the armed sound for the next paint
     (void)fixture.harness.frame();
     const auto frames = wormedit::test::click_at(fixture.harness, 300, 400);
     expect_menu(std::ranges::any_of(frames, [](const auto& frame) {
-        return std::ranges::any_of(frame.get().compose_inputs, [](const auto& input) {
+        return std::ranges::any_of(frame.get().input.compose_inputs, [](const auto& input) {
             return input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN && input.resource_id.value == 40;
         });
     }));
@@ -231,9 +231,9 @@ TEST_CASE("Command menu blocks IME activation and consumes held Enter after clos
     enter.key.repeat = true;
     const auto held = fixture.harness.frame({&enter, 1});
     expect_menu(!held.get().command_menu_invoked);
-    expect_menu(held.get().compose_inputs.size() == 0);
+    expect_menu(held.get().input.compose_inputs.size() == 0);
     const auto up = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
-    expect_menu(fixture.harness.frame({&up, 1}).get().compose_inputs.size() == 0);
+    expect_menu(fixture.harness.frame({&up, 1}).get().input.compose_inputs.size() == 0);
 }
 
 TEST_CASE("Command palette keeps title and keycaps together above search", "[frontend-state][event-harness][command-menu]") {

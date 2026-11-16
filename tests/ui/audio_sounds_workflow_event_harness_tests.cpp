@@ -63,8 +63,8 @@ struct fixture_t {
     auto press(SDL_Keycode code, SDL_Scancode scan) -> workspace_action_snapshot_t {
         const auto down=key(code,scan,true); auto result=harness.frame({&down,1});
         const auto up=key(code,scan,false); const auto released=harness.frame({&up,1});
-        release_shortcuts=released.get().shortcut_events.size();
-        release_compose_inputs=released.get().compose_inputs.size();
+        release_shortcuts=released.get().input.shortcut_events.size();
+        release_compose_inputs=released.get().input.compose_inputs.size();
         return result;
     }
     void focus_list() {

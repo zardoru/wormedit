@@ -87,7 +87,7 @@ TEST_CASE("Preview dialog occlusion keeps Compose cleanup stamped to the visible
     CHECK(frame.get().compose_input_project_id.value == view.project_id.value);
     CHECK(frame.get().compose_input_chart_id.value == view.chart_id.value);
     CHECK(frame.get().compose_input_document_revision == view.document_revision);
-    CHECK(frame.get().compose_input_viewport_width_pixels == view.viewport_width_pixels);
+    CHECK(frame.get().input.compose_input_viewport_width_pixels == view.viewport_width_pixels);
 }
 
 TEST_CASE("The area menu sets the song preview from the selection", "[frontend-state][event-harness][song-preview]") {

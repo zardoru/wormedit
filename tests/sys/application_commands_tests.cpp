@@ -2794,12 +2794,12 @@ void check_placement_audition(bool enabled) {
     const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(view), position);
     REQUIRE(y.has_value());
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
+    action.input.shortcut_window_focused = true;
     action.compose_input_chart_id.value = interaction->chart.value;
     action.compose_input_document_revision = history.document.revision;
-    action.compose_input_viewport_width_pixels = compose.viewport_width_pixels;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    action.input.compose_input_viewport_width_pixels = compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .x_pixels = compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, interaction->viewport_height_pixels,
             compose_field_downscroll(chart, application.preferences.editor_preferences))};

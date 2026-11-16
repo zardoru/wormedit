@@ -462,6 +462,46 @@ struct timing_target_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+/* Input the frontend sampled this frame. Read by the shortcut and Compose input dispatch; not a request. */
+struct frame_input_t {
+    // Current field span, stamped onto BGM-bar view inputs for centered zoom/pan retention.
+    double minimap_visible_begin_fraction;
+    double minimap_visible_end_fraction;
+    bool minimap_window_capture_active;
+    double minimap_window_capture_begin_fraction;
+    double minimap_window_capture_end_fraction;
+    int64_t hover_source_frame;
+    bool hover_source_frame_valid;
+    uint64_t hover_source_total_frames;
+    uint32_t hover_source_sample_rate;
+    double compose_input_viewport_width_pixels;
+    // Uncovered editor right edge in the same source coordinates as the viewport.
+    double compose_input_editor_right_pixels;
+    bool compose_has_pointer_hover;
+    double compose_pointer_hover_x_pixels;
+    double compose_pointer_hover_y_pixels;
+    bool compose_viewport_pointer_valid;
+    double compose_viewport_pointer_x_pixels;
+    double compose_viewport_pointer_y_pixels;
+    bool compose_viewport_middle_click;
+    double compose_viewport_middle_click_x_pixels;
+    double compose_viewport_middle_click_y_pixels;
+    std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
+    std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
+    std::vector<wormedit::ui::shortcut_event_t> shortcut_events;
+    bool shortcut_overflowed;
+    bool shortcut_window_focused;
+    bool shortcut_notification_history_focused;
+    bool shortcut_text_entry_active;
+    // Compose ownership transition: 1 = modal, 2 = text/IME.
+    uint8_t compose_input_ownership;
+    bool shortcut_ime_composition_active;
+    bool shortcut_compose_lane_focused;
+    wormedit::lane_id_t shortcut_focused_lane_id;
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
 struct workspace_action_t {
     timing_link_action_t timing_link;
     wormedit::ui::file_jobs_action_t file_jobs;
@@ -493,16 +533,6 @@ struct workspace_action_t {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
-    // Current field span, stamped onto BGM-bar view inputs for centered zoom/pan retention.
-    double minimap_visible_begin_fraction;
-    double minimap_visible_end_fraction;
-    bool minimap_window_capture_active;
-    double minimap_window_capture_begin_fraction;
-    double minimap_window_capture_end_fraction;
-    int64_t hover_source_frame;
-    bool hover_source_frame_valid;
-    uint64_t hover_source_total_frames;
-    uint32_t hover_source_sample_rate;
     uint8_t transport_rate_index;
     wormedit::audio::playback_rate_id_t transport_rate_id;
     bool transport_keep_pitch;
@@ -542,6 +572,8 @@ struct workspace_action_t {
     std::string recovery_save_as_destination;
     // Metadata payloads own their text and lists across frontend calls.
     metadata_edit_request_t metadata;
+    // Input sampled this frame (keyboard, pointer, hover); not requests.
+    frame_input_t input;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;
@@ -565,22 +597,10 @@ struct workspace_action_t {
     quantization_tie_t compose_quantize_tie;
     quantization_hold_t compose_quantize_holds;
     std::string compose_quantize_preset_name;
-    double compose_input_viewport_width_pixels;
-    // Uncovered editor right edge in the same source coordinates as the viewport.
-    double compose_input_editor_right_pixels;
     // Drag of the timing region's edge handle: the width asked for (0 = none) or a reset to automatic.
     double compose_timing_region_width_pixels;
     bool compose_timing_region_width_reset;
     wormedit::object_id_t compose_sound_hover_object_id;
-    bool compose_has_pointer_hover;
-    double compose_pointer_hover_x_pixels;
-    double compose_pointer_hover_y_pixels;
-    bool compose_viewport_pointer_valid;
-    double compose_viewport_pointer_x_pixels;
-    double compose_viewport_pointer_y_pixels;
-    bool compose_viewport_middle_click;
-    double compose_viewport_middle_click_x_pixels;
-    double compose_viewport_middle_click_y_pixels;
     bool compose_note_label_focus_consumed;
     std::string compose_note_label;
     wormedit::object_id_t compose_bookmark_id;
@@ -640,8 +660,6 @@ struct workspace_action_t {
     uint8_t compose_semantic_layer_green;
     uint8_t compose_semantic_layer_blue;
     uint8_t compose_semantic_layer_alpha;
-    std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
-    std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
     wormedit::ui::timing_recipe_form_t compose_recipe_form;
     wormedit::ui::generator_form_t compose_generator_form;
     wormedit::recipe_id_t compose_recipe_id;
@@ -669,16 +687,6 @@ struct workspace_action_t {
     std::string timing_primary_denominator_text;
     std::string timing_secondary_numerator_text;
     std::string timing_secondary_denominator_text;
-    std::vector<wormedit::ui::shortcut_event_t> shortcut_events;
-    bool shortcut_overflowed;
-    bool shortcut_window_focused;
-    bool shortcut_notification_history_focused;
-    bool shortcut_text_entry_active;
-    // Compose ownership transition: 1 = modal, 2 = text/IME.
-    uint8_t compose_input_ownership;
-    bool shortcut_ime_composition_active;
-    bool shortcut_compose_lane_focused;
-    wormedit::lane_id_t shortcut_focused_lane_id;
     bool command_menu_invoked;
     std::string command_menu_command_id;
 

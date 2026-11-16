@@ -79,7 +79,7 @@ TEST_CASE("Project Alt arrows reorder the focused chart with the current stamp",
     check_chart(action.kind == (up ? WORM_UI_PROJECT_CHART_UP : WORM_UI_PROJECT_CHART_DOWN));
     check_chart(action.chart_id == wormedit::chart_id_t{20});
     check_chart(action.document_revision == 53 && action.session_generation == 17);
-    check_chart(frame.get().shortcut_events.empty());
+    check_chart(frame.get().input.shortcut_events.empty());
     // Focus follows the stable chart identity after its new order is projected.
     std::swap(f.harness.view().setup.charts[1], f.harness.view().setup.charts[up ? 0 : 2]);
     ++f.harness.view().setup.document_revision;

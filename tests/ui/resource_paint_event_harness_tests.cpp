@@ -40,7 +40,7 @@ struct resource_brush_fixture_t {
     }
 };
 auto has_input(const workspace_action_snapshot_t& frame, WormUiComposeInputKind kind) -> bool {
-    return std::ranges::any_of(frame.get().compose_inputs, [kind](const auto& input) { return input.kind == kind; });
+    return std::ranges::any_of(frame.get().input.compose_inputs, [kind](const auto& input) { return input.kind == kind; });
 }
 }
 
@@ -52,7 +52,7 @@ TEST_CASE("Keysound brush sweeps ten notes in one pointer motion without placing
     const auto motion = test::mouse_motion(x, y);
     const auto moved = fixture.harness.frame(std::span{&motion, 1});
     std::set<std::uint64_t> visited;
-    for (const auto& input : moved.get().compose_inputs)
+    for (const auto& input : moved.get().input.compose_inputs)
         if (input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_UPDATE && input.object_id)
             visited.insert(input.object_id.value);
     CHECK(visited == std::set<std::uint64_t>{100, 101, 102, 103, 104, 105, 106, 107, 108, 109});

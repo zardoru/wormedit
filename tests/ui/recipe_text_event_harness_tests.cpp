@@ -67,8 +67,8 @@ TEST_CASE("SV recipe text deletion owns shortcuts while its tooltip is visible",
     check_recipe(harness.drawn_text().find("The value at the start") != std::string::npos);
     const auto position = key_event(SDLK_HOME, SDL_SCANCODE_HOME);
     const auto positioned = harness.frame(std::array{position});
-    check_recipe(positioned.get().shortcut_text_entry_active);
-    check_recipe(positioned.get().compose_inputs.empty());
+    check_recipe(positioned.get().input.shortcut_text_entry_active);
+    check_recipe(positioned.get().input.compose_inputs.empty());
     (void)harness.frame(std::array{key_event(position.key.key, position.key.scancode, false)});
     if (backspace) {
         (void)harness.frame(std::array{key_event(SDLK_RIGHT, SDL_SCANCODE_RIGHT)});
@@ -78,12 +78,12 @@ TEST_CASE("SV recipe text deletion owns shortcuts while its tooltip is visible",
     const auto erase = key_event(backspace ? SDLK_BACKSPACE : SDLK_DELETE,
                                 backspace ? SDL_SCANCODE_BACKSPACE : SDL_SCANCODE_DELETE, true, repeat);
     const auto edited = harness.frame(std::array{erase});
-    check_recipe(edited.get().shortcut_text_entry_active);
-    REQUIRE(edited.get().shortcut_events.size() == 1);
-    check_recipe(edited.get().shortcut_events.front().hid_usage ==
+    check_recipe(edited.get().input.shortcut_text_entry_active);
+    REQUIRE(edited.get().input.shortcut_events.size() == 1);
+    check_recipe(edited.get().input.shortcut_events.front().hid_usage ==
           (backspace ? wormedit::shortcut_key_t::backspace : wormedit::shortcut_key_t::delete_key));
-    check_recipe(edited.get().shortcut_events.front().repeat == repeat);
-    check_recipe(edited.get().compose_inputs.empty());
+    check_recipe(edited.get().input.shortcut_events.front().repeat == repeat);
+    check_recipe(edited.get().input.compose_inputs.empty());
     check_recipe(edited.get().compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
     check_recipe(std::string_view{edited.get().compose_recipe_form.value_from.text} == ".2345");
     (void)harness.frame(std::array{key_event(erase.key.key, erase.key.scancode, false)});
@@ -91,8 +91,8 @@ TEST_CASE("SV recipe text deletion owns shortcuts while its tooltip is visible",
     // Returning to the canvas must restore ordinary selection deletion.
     (void)wormedit::test::click_at(harness, 300, 300);
     const auto canvas = harness.frame(std::array{erase});
-    check_recipe(!canvas.get().shortcut_text_entry_active);
-    REQUIRE(canvas.get().shortcut_events.size() == 1);
+    check_recipe(!canvas.get().input.shortcut_text_entry_active);
+    REQUIRE(canvas.get().input.shortcut_events.size() == 1);
 }
 
 TEST_CASE("Only a live popup overrides its parent text editor", "[frontend-state][recipe-text]") {

@@ -780,74 +780,74 @@ auto apply_bmson_draw_point(const wormedit::ui::compose_input_action_t& input,
 }
 
 
-void update_compose_viewport_pointer_input(const wormedit::ui::workspace_action_t& ui_action,
+void update_compose_viewport_pointer_input(const wormedit::ui::frame_input_t& frame,
                                            wormedit::viewport_input_controller_t& viewport_input,
                                            compose_scene_cache_t& scene_cache,
                                            double bgm_pane_width, double bgm_pane_left_pixels,
                                            double viewport_width_pixels) {
     using namespace wormedit;
-    if (ui_action.compose_input_ownership != 0) {
+    if (frame.compose_input_ownership != 0) {
         viewport_input.modal_opened();
         scene_cache.frame.viewport_autoscroll_active = false;
-    } else if (!ui_action.shortcut_window_focused) {
+    } else if (!frame.shortcut_window_focused) {
         viewport_input.focus_lost();
         scene_cache.frame.viewport_autoscroll_active = false;
     } else {
-        if (ui_action.compose_viewport_middle_click) {
+        if (frame.compose_viewport_middle_click) {
             const auto middle_click_pane =
                 bgm_pane_width > 0.0 &&
-                        std::isfinite(ui_action.compose_viewport_middle_click_x_pixels) &&
-                        ui_action.compose_viewport_middle_click_x_pixels >=
+                        std::isfinite(frame.compose_viewport_middle_click_x_pixels) &&
+                        frame.compose_viewport_middle_click_x_pixels >=
                             bgm_pane_left_pixels &&
-                        ui_action.compose_viewport_middle_click_x_pixels <=
+                        frame.compose_viewport_middle_click_x_pixels <=
                             viewport_width_pixels
                     ? viewport_pane_t::bgm
                     : viewport_pane_t::chart;
             viewport_input.middle_click(middle_click_pane,
-                                        ui_action.compose_viewport_middle_click_x_pixels,
-                                        ui_action.compose_viewport_middle_click_y_pixels);
+                                        frame.compose_viewport_middle_click_x_pixels,
+                                        frame.compose_viewport_middle_click_y_pixels);
             scene_cache.frame.viewport_autoscroll_active = viewport_input.is_autoscroll_active();
             if (scene_cache.frame.viewport_autoscroll_active) {
                 scene_cache.frame.viewport_autoscroll_anchor_x_pixels =
-                    ui_action.compose_viewport_middle_click_x_pixels;
+                    frame.compose_viewport_middle_click_x_pixels;
                 scene_cache.frame.viewport_autoscroll_anchor_y_pixels =
-                    ui_action.compose_viewport_middle_click_y_pixels;
+                    frame.compose_viewport_middle_click_y_pixels;
             }
         }
-        if (ui_action.compose_viewport_pointer_valid) {
-            viewport_input.update_autoscroll_pointer(ui_action.compose_viewport_pointer_x_pixels,
-                                                     ui_action.compose_viewport_pointer_y_pixels);
+        if (frame.compose_viewport_pointer_valid) {
+            viewport_input.update_autoscroll_pointer(frame.compose_viewport_pointer_x_pixels,
+                                                     frame.compose_viewport_pointer_y_pixels);
             scene_cache.frame.viewport_autoscroll_pointer_x_pixels =
-                ui_action.compose_viewport_pointer_x_pixels;
+                frame.compose_viewport_pointer_x_pixels;
             scene_cache.frame.viewport_autoscroll_pointer_y_pixels =
-                ui_action.compose_viewport_pointer_y_pixels;
+                frame.compose_viewport_pointer_y_pixels;
         }
     }
-    if (ui_action.compose_inputs.size() != 0 && !ui_action.compose_viewport_middle_click) {
+    if (frame.compose_inputs.size() != 0 && !frame.compose_viewport_middle_click) {
         if (viewport_input.is_normal_edit_press()) {
             scene_cache.frame.viewport_autoscroll_active = false;
         }
     }
 }
 
-void update_compose_pointer_hover(const wormedit::ui::workspace_action_t& ui_action, bool gesture_active,
+void update_compose_pointer_hover(const wormedit::ui::frame_input_t& frame, bool gesture_active,
                                   const wormedit::chart_document_t* chart,
                                   const wormedit::editor_interaction_view_model_t* interaction_view,
                                   std::uint64_t revision, double field_left_pixels,
                                   double field_width_pixels, compose_scene_cache_t& scene_cache,
                                   const wormedit::editor_preferences_t& preferences) {
     using namespace wormedit;
-    scene_cache.frame.paint_pointer = ui_action.compose_has_pointer_hover && !gesture_active
-        ? std::optional{std::pair{ui_action.compose_pointer_hover_x_pixels,
-                                  ui_action.compose_pointer_hover_y_pixels}} : std::nullopt;
-    if (!ui_action.compose_has_pointer_hover || gesture_active || !chart || !interaction_view) {
+    scene_cache.frame.paint_pointer = frame.compose_has_pointer_hover && !gesture_active
+        ? std::optional{std::pair{frame.compose_pointer_hover_x_pixels,
+                                  frame.compose_pointer_hover_y_pixels}} : std::nullopt;
+    if (!frame.compose_has_pointer_hover || gesture_active || !chart || !interaction_view) {
         scene_cache.frame.hover.reset();
     } else {
         if (const auto* index = scene_cache.hit_test_index_for(*chart, revision)) {
             scene_cache.frame.hover = hover_editor_object(
                 *chart, *index, *interaction_view,
-                {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
-                 .y_pixels = compose_source_y(ui_action.compose_pointer_hover_y_pixels,
+                {.x_pixels = frame.compose_pointer_hover_x_pixels,
+                 .y_pixels = compose_source_y(frame.compose_pointer_hover_y_pixels,
                                               interaction_view->viewport_height_pixels,
                                               compose_field_downscroll(*chart, preferences)),
                  .field_left_pixels = field_left_pixels,
@@ -1478,9 +1478,9 @@ auto cancel_compose_gesture(compose_input_context_t& context,
                                               context.environment.controls.navigation,
                                               context.environment.commands,
                                               context.environment.controls.cache);
-    if (context.ui_action.compose_input_ownership == 1)
+    if (context.ui_action.input.compose_input_ownership == 1)
         context.environment.controls.navigation.modal_opened();
-    else if (context.ui_action.compose_input_ownership == 2)
+    else if (context.ui_action.input.compose_input_ownership == 2)
         context.environment.controls.navigation.text_input_started();
     accepted = "Compose gesture canceled.";
     return compose_input_family_result_t::continue_with_result();
@@ -2278,8 +2278,8 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
     using namespace wormedit;
     auto status = std::string{};
     auto lane_stamp = chart_stamp_t::from(context.environment.document.history.document, context.state.chart);
-    for (std::size_t index = 0; index < context.ui_action.compose_inputs.size(); ++index) {
-        const auto& input = context.ui_action.compose_inputs[index];
+    for (std::size_t index = 0; index < context.ui_action.input.compose_inputs.size(); ++index) {
+        const auto& input = context.ui_action.input.compose_inputs[index];
         // The entry boundary covers item zero; layout/hover setup cannot mutate the document.
         const auto current = is_lane_key_continuation_input(input)
             ? context.is_input_current(lane_stamp) : context.is_input_current();
@@ -2425,16 +2425,16 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
                                      double viewport_delta_seconds, std::string status)
     -> std::string {
     using namespace wormedit;
-    for (std::size_t index = 0; index < context.ui_action.compose_viewport_inputs.size(); ++index) {
+    for (std::size_t index = 0; index < context.ui_action.input.compose_viewport_inputs.size(); ++index) {
         // With no object inputs, the entry boundary covers viewport item zero as well.
-        if ((index != 0 || context.ui_action.compose_inputs.size() != 0) && !context.is_input_current()) {
+        if ((index != 0 || context.ui_action.input.compose_inputs.size() != 0) && !context.is_input_current()) {
             const auto message = stale_action_message("Remaining Compose viewport input");
             notification_sink_t::from(context.notifications)
                 .post_feedback(notification_severity_t::warning, notification_source_t::input,
                                message);
             return message;
         }
-        const auto& input = context.ui_action.compose_viewport_inputs[index];
+        const auto& input = context.ui_action.input.compose_viewport_inputs[index];
         if (input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM) {
             apply_compose_pinch_zoom(input, context, status);
             continue;
@@ -2442,7 +2442,7 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
         const auto bgm_pane =
             context.bgm_pane_width > 0.0 && std::isfinite(input.cursor_x_pixels) &&
             input.cursor_x_pixels >= context.bgm_pane_left_pixels &&
-            input.cursor_x_pixels <= context.ui_action.compose_input_viewport_width_pixels;
+            input.cursor_x_pixels <= context.ui_action.input.compose_input_viewport_width_pixels;
         apply_compose_viewport_actions(
             context.environment.controls.viewport.handle_wheel(
                 {.pane = bgm_pane ? viewport_pane_t::bgm : viewport_pane_t::chart,
@@ -2481,21 +2481,21 @@ void reset_compose_autoscroll_if_idle(compose_input_context_t& context) {
 
 } // namespace compose_input_detail
 
-auto consume_minimap_preferences(wormedit::ui::workspace_action_t& action,
+auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
                                  application_command_state_t& application) -> bool {
-    if (action.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return false;
+    if (frame.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return false;
     bool changed = false;
     std::size_t kept = 0;
-    for (std::size_t index = 0; index < action.compose_inputs.size(); ++index) {
-        const auto& input = action.compose_inputs[index];
+    for (std::size_t index = 0; index < frame.compose_inputs.size(); ++index) {
+        const auto& input = frame.compose_inputs[index];
         if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
             application.preferences.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
         } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {
             application.project.bgm.bgm_bar_hidden = input.overview_primary;
-        } else action.compose_inputs[kept++] = input;
+        } else frame.compose_inputs[kept++] = input;
     }
-    action.compose_inputs.resize(kept);
+    frame.compose_inputs.resize(kept);
     return changed;
 }
 
@@ -2521,8 +2521,8 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id.value ||
         !stamp.is_current(history.document, state.chart) ||
-        !std::isfinite(ui_action.compose_input_viewport_width_pixels) ||
-        ui_action.compose_input_viewport_width_pixels <= 0.0) {
+        !std::isfinite(ui_action.input.compose_input_viewport_width_pixels) ||
+        ui_action.input.compose_input_viewport_width_pixels <= 0.0) {
         scene_cache.navigation_travel.cancel();
         if (workspace.active_tab != workspace_tab_t::compose ||
             (state).is_stale(history.document.revision))
@@ -2533,7 +2533,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
-    if (ui_action.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) {
+    if (ui_action.input.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) {
         scene_cache.navigation_travel.cancel();
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         const auto message = "Compose input batch exceeded its capacity; the active gesture was canceled.";
@@ -2541,7 +2541,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
-    if (ui_action.compose_viewport_inputs.size() > wormedit::ui::compose_viewport_input_admission_limit) {
+    if (ui_action.input.compose_viewport_inputs.size() > wormedit::ui::compose_viewport_input_admission_limit) {
         scene_cache.navigation_travel.cancel();
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         const auto message = "Compose viewport input exceeded its capacity; the active gesture was canceled.";
@@ -2558,7 +2558,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
         input_chart == nullptr ? std::size_t{} : input_chart->bgm_source_lanes.size();
     const auto horizontal_layout = compose_horizontal_layout(
         compose_editor_layout_width(
-            ui_action.compose_input_viewport_width_pixels,
+            ui_action.input.compose_input_viewport_width_pixels,
             application_state.project.compose_view.compose_editor_right_pixels),
         input_chart == nullptr ? 0 : maximum_layout_lane_count(*input_chart), bgm_lane_count != 0,
         state.bga_lane_visible && input_chart != nullptr
@@ -2585,11 +2585,11 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
                                 .bgm_pane_left_pixels = bgm_pane_left_pixels,
                                 .field_left_pixels = field_left_pixels,
                                 .field_width_pixels = field_width_pixels};
-    update_compose_viewport_pointer_input(ui_action, viewport_input, scene_cache, bgm_pane_width,
+    update_compose_viewport_pointer_input(ui_action.input, viewport_input, scene_cache, bgm_pane_width,
                                           bgm_pane_left_pixels,
-                                          ui_action.compose_input_viewport_width_pixels);
+                                          ui_action.input.compose_input_viewport_width_pixels);
     update_compose_pointer_hover(
-        ui_action, gesture_active, chart == nullptr ? nullptr : &*chart,
+        ui_action.input, gesture_active, chart == nullptr ? nullptr : &*chart,
         scene_cache.frame.interaction_view ? &*scene_cache.frame.interaction_view : nullptr,
         history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
         application_state.preferences.editor_preferences);
@@ -2606,7 +2606,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
     if (!status.empty()) {
         return status;
     }
-    return ui_action.compose_inputs.size() != 0 || ui_action.compose_viewport_inputs.size() != 0
+    return ui_action.input.compose_inputs.size() != 0 || ui_action.input.compose_viewport_inputs.size() != 0
                ? "Compose input handled."
                : std::string{};
 }
@@ -2629,10 +2629,10 @@ void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id.value ||
         history.document.revision != action.compose_input_document_revision ||
-        !std::isfinite(action.compose_input_viewport_width_pixels) || action.compose_input_viewport_width_pixels <= 0 ||
-        !std::isfinite(action.compose_input_editor_right_pixels) || action.compose_input_editor_right_pixels <= 0) return;
+        !std::isfinite(action.input.compose_input_viewport_width_pixels) || action.input.compose_input_viewport_width_pixels <= 0 ||
+        !std::isfinite(action.input.compose_input_editor_right_pixels) || action.input.compose_input_editor_right_pixels <= 0) return;
     application.project.compose_view.compose_editor_right_pixels = compose_editor_layout_width(
-        action.compose_input_viewport_width_pixels, action.compose_input_editor_right_pixels);
+        action.input.compose_input_viewport_width_pixels, action.input.compose_input_editor_right_pixels);
 }
 
 namespace compose_input_detail {
@@ -2669,13 +2669,13 @@ auto dispatch_compose_bgm_mix_inputs(wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, const wormedit::notification_sink_t* notifications)
     -> std::string {
-    if (action.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return {};
+    if (action.input.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return {};
     std::size_t kept{};
     std::string status;
-    for (std::size_t index = 0; index < action.compose_inputs.size(); ++index) {
-        const auto& input = action.compose_inputs[index];
+    for (std::size_t index = 0; index < action.input.compose_inputs.size(); ++index) {
+        const auto& input = action.input.compose_inputs[index];
         if (input.kind != WORM_UI_COMPOSE_INPUT_BGM_MUTE && input.kind != WORM_UI_COMPOSE_INPUT_BGM_SOLO) {
-            action.compose_inputs[kept++] = input;
+            action.input.compose_inputs[kept++] = input;
             continue;
         }
         bool accepted{};
@@ -2685,7 +2685,7 @@ auto dispatch_compose_bgm_mix_inputs(wormedit::ui::workspace_action_t& action,
                                     : wormedit::notification_severity_t::warning,
                            wormedit::notification_source_t::audio, status);
     }
-    action.compose_inputs.resize(kept);
+    action.input.compose_inputs.resize(kept);
     return status;
 }
 
@@ -2702,23 +2702,23 @@ auto dispatch_compose_input_action(wormedit::ui::workspace_action_t& ui_action,
 
     const auto mix_status = dispatch_compose_bgm_mix_inputs(ui_action, history, workspace,
         application_state, notifications);
-    if (!mix_status.empty() && ui_action.compose_inputs.size() == 0) {
+    if (!mix_status.empty() && ui_action.input.compose_inputs.size() == 0) {
         refresh_compose_editor_width(ui_action, history, workspace, application_state);
         return mix_status;
     }
     // View-only BGM bar inputs never reach the editor dispatcher.
     const bgm_bar_input_context_t bgm_bar_context{
         .total_frames = scene_cache.waveform.waveform_overview_total_frames,
-        .visible_begin_fraction = ui_action.minimap_visible_begin_fraction,
-        .visible_end_fraction = ui_action.minimap_visible_end_fraction,
+        .visible_begin_fraction = ui_action.input.minimap_visible_begin_fraction,
+        .visible_end_fraction = ui_action.input.minimap_visible_end_fraction,
         .project = history.document.id,
         .chart = state.chart,
         .document_revision = history.document.revision,
         .asset = workspace.transport.audio_asset.value_or(asset_id_t{})};
-    (void)consume_bgm_bar_inputs(ui_action, application_state.project.bgm.bgm_bar_range,
+    (void)consume_bgm_bar_inputs(ui_action.input, application_state.project.bgm.bgm_bar_range,
                                  application_state.project.bgm.bgm_bar_pan_override, bgm_bar_context);
-    const bool preference_changed = consume_minimap_preferences(ui_action, application_state);
-    if (preference_changed && ui_action.compose_inputs.size() == 0) {
+    const bool preference_changed = consume_minimap_preferences(ui_action.input, application_state);
+    if (preference_changed && ui_action.input.compose_inputs.size() == 0) {
         const auto message = "Minimap paused-click preference changed for this session.";
         notification_sink_t::from(notifications)
             .post_feedback(wormedit::notification_severity_t::hint,

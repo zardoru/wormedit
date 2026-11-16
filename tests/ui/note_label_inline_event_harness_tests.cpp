@@ -78,7 +78,7 @@ TEST_CASE("note double-click opens a prefilled inline label editor and Enter app
 
     // Typing reaches the field, not the canvas.
     const auto typed = harness.frame(std::array{text_input("2")}).get();
-    check_label(typed.compose_inputs.size() == 0);
+    check_label(typed.input.compose_inputs.size() == 0);
     const auto enter = harness.frame(std::array{key_down(SDLK_RETURN, SDL_SCANCODE_RETURN)}).get();
     check_label(enter.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL);
     // The field opens with its text selected, so typing replaces the prefilled label.

@@ -201,7 +201,7 @@ void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
     cancel_compose_navigation(action);
     worm_ui_nuklear_compose_discard_frame_input();
     if (action) {
-        action->minimap_window_capture_active = false;
+        action->input.minimap_window_capture_active = false;
         if (pending) append_compose_cancel_once(action);
         state.input_queue.cancel_pending = false;
     } else state.input_queue.cancel_pending = true;
@@ -238,8 +238,8 @@ void append_compose_input(
     if (!action) {
         return;
     }
-    if (action->compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) {
-        action->compose_inputs[wormedit::ui::compose_input_admission_limit - 1] = {
+    if (action->input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) {
+        action->input.compose_inputs[wormedit::ui::compose_input_admission_limit - 1] = {
             .kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
             .lane_id = {0},
             .object_id = {0},
@@ -259,7 +259,7 @@ void append_compose_input(
             .beat_fit_snap_step_numerator = 1,
             .beat_fit_snap_step_denominator = 1,
         };
-        action->compose_inputs.resize(wormedit::ui::compose_input_admission_limit);
+        action->input.compose_inputs.resize(wormedit::ui::compose_input_admission_limit);
         cancel_compose_gestures(nullptr);
         state.input_queue.action_overflowed = true;
         return;
@@ -272,7 +272,7 @@ void append_compose_input(
     case WORM_UI_COMPOSE_RESOURCE_ROLE_BGA: role = wormedit::resource_role_t::bga; break;
     default: role = static_cast<wormedit::resource_role_t>(255); break;
     }
-    action->compose_inputs.emplace_back() = {
+    action->input.compose_inputs.emplace_back() = {
         .kind = kind,
         .lane_id = {lane_id},
         .object_id = {object_id},
@@ -298,8 +298,8 @@ void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
                                   WormUiComposeInputKind kind, double y,
                                   bool ctrl_held, bool onset_snap_held) {
     append_compose_input(action, kind, 0.0, y);
-    if (!action || action->compose_inputs.size() == 0) return;
-    auto& event = action->compose_inputs[action->compose_inputs.size() - 1];
+    if (!action || action->input.compose_inputs.size() == 0) return;
+    auto& event = action->input.compose_inputs[action->input.compose_inputs.size() - 1];
     event.beat_fit_ctrl_held = ctrl_held;
     event.beat_fit_onset_snap_held = onset_snap_held;
     const auto index = std::min<std::size_t>(state.waveform_drag.beat_fit_snap_step_index,
@@ -368,8 +368,8 @@ bool compose_action_has_cancel(const wormedit::ui::workspace_action_t* action) {
     if (!action) {
         return false;
     }
-    for (size_t index = 0; index < action->compose_inputs.size(); ++index) {
-        if (action->compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE) {
+    for (size_t index = 0; index < action->input.compose_inputs.size(); ++index) {
+        if (action->input.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE) {
             return true;
         }
     }
@@ -642,7 +642,7 @@ static void stamp_visible_compose_input(const wormedit::ui::compose_view_t* view
     if (!view || !view->visible) return;
     // Modal occlusion cancels captures; cleanup still belongs to the visible chart.
     wormedit::ui::stamp_compose_input(action, *view, wormedit::ui::compose_project_stamp_t::include);
-    action.compose_input_viewport_width_pixels = view->viewport_width_pixels;
+    action.input.compose_input_viewport_width_pixels = view->viewport_width_pixels;
 }
 
 void worm_ui_nuklear_prepare_compose_panel(const wormedit::ui::compose_view_t* view, bool compose_tab_active,
@@ -1110,8 +1110,8 @@ static void commit_audio_span_drag(const ComposePointerEventContext& input) {
         input.pointer_x, drag.current_y_pixels, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, 0, 0, false,
         wormedit::timing_lane_kind_t::bpm, drag.chart_id, drag.revision);
-    if (input.action->compose_inputs.size() == 0) return;
-    auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+    if (input.action->input.compose_inputs.size() == 0) return;
+    auto& queued = input.action->input.compose_inputs[input.action->input.compose_inputs.size() - 1];
     queued.object_id = drag.export_cut_id;
     queued.span_edge = drag.edge;
     queued.span_anchor_y_pixels = drag.anchor_y_pixels;
@@ -1357,8 +1357,8 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 state.bga_interaction.bga_event_move_object_id, 0, false, wormedit::timing_lane_kind_t::bpm,
                 state.timing_drag.bga_capture.chart, state.timing_drag.bga_capture.revision,
                 state.bga_interaction.bga_event_move_anchor_row);
-            if (input.action->compose_inputs.size() != 0) {
-                auto& output = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+            if (input.action->input.compose_inputs.size() != 0) {
+                auto& output = input.action->input.compose_inputs[input.action->input.compose_inputs.size() - 1];
                 output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(compose_bga_lane_kind_at(*input.view,
                     input.pointer_x, input.pointer_y).value_or(255));
                 output.bga_lane_kind_valid = true;

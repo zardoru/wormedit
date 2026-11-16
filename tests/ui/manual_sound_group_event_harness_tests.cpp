@@ -149,7 +149,7 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     check_event(std::ranges::none_of(ignored, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS ||
                frame.get().compose_action == WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS ||
-               frame.get().compose_inputs.size() != 0;
+               frame.get().input.compose_inputs.size() != 0;
     }));
 }
 

@@ -154,7 +154,7 @@ TEST_CASE("double clicking a bookmark line opens a captured rename editor and En
     const auto clicked = click_bookmark(harness, x, y, 2);
     for (const auto& frame : clicked) {
         check_rename(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_rename(frame.get().compose_inputs.size() == 0);
+        check_rename(frame.get().input.compose_inputs.size() == 0);
     }
     (void)harness.frame();
     require_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
@@ -164,7 +164,7 @@ TEST_CASE("double clicking a bookmark line opens a captured rename editor and En
     const std::array number_key{press_one()};
     const auto shortcut_suppressed = harness.frame(number_key).get();
     check_rename(shortcut_suppressed.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_rename(shortcut_suppressed.compose_inputs.size() == 0);
+    check_rename(shortcut_suppressed.input.compose_inputs.size() == 0);
 
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
@@ -199,7 +199,7 @@ TEST_CASE("Escape cancels bookmark rename and outside clicks do not place a char
     const std::array escape{press_escape()};
     const auto cancelled = harness.frame(escape).get();
     check_rename(cancelled.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_rename(cancelled.compose_inputs.size() == 0);
+    check_rename(cancelled.input.compose_inputs.size() == 0);
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
 
@@ -208,7 +208,7 @@ TEST_CASE("Escape cancels bookmark rename and outside clicks do not place a char
     const auto outside = click_bookmark(harness, 70.0f, 400.0f);
     for (const auto& frame : outside) {
         check_rename(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_rename(frame.get().compose_inputs.size() == 0);
+        check_rename(frame.get().input.compose_inputs.size() == 0);
     }
 }
 
@@ -229,7 +229,7 @@ TEST_CASE("blur cancels bookmark rename without forwarding the outside click",
     const auto outside = click_bookmark(harness, 70.0f, 400.0f);
     for (const auto& frame : outside) {
         check_rename(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_rename(frame.get().compose_inputs.size() == 0);
+        check_rename(frame.get().input.compose_inputs.size() == 0);
     }
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
@@ -245,7 +245,7 @@ TEST_CASE("bookmark rename cancels when its document revision becomes stale",
     ++harness.view().compose.document_revision;
     const auto frame = harness.frame().get();
     check_rename(frame.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_rename(frame.compose_inputs.size() == 0);
+    check_rename(frame.input.compose_inputs.size() == 0);
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
@@ -260,7 +260,7 @@ TEST_CASE("bookmark rename cancels when the captured bookmark is deleted",
     ++harness.view().compose.document_revision;
     const auto frame = harness.frame().get();
     check_rename(frame.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_rename(frame.compose_inputs.size() == 0);
+    check_rename(frame.input.compose_inputs.size() == 0);
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 

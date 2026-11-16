@@ -413,8 +413,8 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
                                                   const wormedit::ui::compose_view_t& view,
                                                   wormedit::ui::workspace_action_t& action) {
-    if (state.input_queue.action_overflowed || action.compose_inputs.size() == 0) return;
-    action.compose_inputs[action.compose_inputs.size() - 1].resource_id.value =
+    if (state.input_queue.action_overflowed || action.input.compose_inputs.size() == 0) return;
+    action.input.compose_inputs[action.input.compose_inputs.size() - 1].resource_id.value =
         worm_ui_nuklear_armed_dock_sound(state, view);
 }
 
@@ -772,8 +772,8 @@ void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
     state.pointer_capture.draw_source_kind = id ? kind : 0;
     state.pointer_capture.draw_source_id = id;
     if (!id) reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);
-    if (action.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
-    action.compose_inputs.emplace_back() = {
+    if (action.input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
+    action.input.compose_inputs.emplace_back() = {
         .kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
         .resource_role = id == 0 ? std::nullopt
             : std::optional{kind == 1 ? wormedit::resource_role_t::sample

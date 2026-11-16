@@ -28,9 +28,9 @@ using wormedit::ui::lucide::Glyph;
 static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
                                          const wormedit::ui::compose_view_t* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
-        action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit ||
+        action->input.compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit ||
         view->bgm_maximum_horizontal_scroll_pixels <= 0.0) return;
-    action->compose_viewport_inputs.emplace_back() = {
+    action->input.compose_viewport_inputs.emplace_back() = {
         .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
         .zoom_modifier = false,
         .delta_x = delta_pixels,
@@ -69,9 +69,9 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
         .selected = view->bgm_bar_reserved,
         .enabled = view->bgm_bar_available}.render(context);
     if (!clicked ||
-        action->compose_inputs.size() >= wormedit::ui::compose_input_admission_limit)
+        action->input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit)
         return;
-    auto& input = action->compose_inputs.emplace_back();
+    auto& input = action->input.compose_inputs.emplace_back();
     input = {};
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
     input.overview_primary = view->bgm_bar_reserved;
@@ -662,8 +662,8 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
         if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label.data(),
                 toolbar.view->note_paint_mode_active &&
                     toolbar.view->armed_note_kind == static_cast<wormedit::note_kind_t>(kind)}.render(toolbar.context) &&
-            toolbar.action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
-            toolbar.action->compose_inputs.emplace_back() = {
+            toolbar.action->input.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+            toolbar.action->input.compose_inputs.emplace_back() = {
                 .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = static_cast<wormedit::note_kind_t>(kind)};
             // Picking a note kind selects the paint tool, mirroring Select above.
             if (!toolbar.view->note_paint_mode_active &&

@@ -31,8 +31,8 @@ auto lifecycle_motion(float x, float y) -> SDL_Event {
     return event;
 }
 auto lifecycle_has(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind) -> bool {
-    for (std::size_t i = 0; i < action.compose_inputs.size(); ++i)
-        if (action.compose_inputs[i].kind == kind) return true;
+    for (std::size_t i = 0; i < action.input.compose_inputs.size(); ++i)
+        if (action.input.compose_inputs[i].kind == kind) return true;
     return false;
 }
 void lifecycle_require(bool value) { REQUIRE(value); }
@@ -423,7 +423,7 @@ TEST_CASE("Object selection waits for release and Escape consumes a pending sele
     const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto cancelled = f.harness.frame(std::span{&escape, 1});
     CHECK(lifecycle_has(cancelled.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
-    CHECK(cancelled.get().shortcut_events.size() == 0);
+    CHECK(cancelled.get().input.shortcut_events.size() == 0);
     const auto release = lifecycle_button(f.x, f.y, false);
     const auto late = f.harness.frame(std::span{&release, 1});
     CHECK_FALSE(lifecycle_has(late.get(), WORM_UI_COMPOSE_INPUT_POINTER_CLICK));
@@ -450,7 +450,7 @@ TEST_CASE("Pressing outside a selected area keeps it until a replacement gesture
     const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto cancelled = f.harness.frame(std::span{&escape, 1});
     CHECK(cancelled.get().compose_action != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR);
-    CHECK(cancelled.get().shortcut_events.size() == 0);
+    CHECK(cancelled.get().input.shortcut_events.size() == 0);
 }
 
 TEST_CASE("Area drag keeps capture through Shift navigation and key release",
@@ -534,14 +534,14 @@ TEST_CASE("Keyboard queue overflow drains frame input and defers stamped audio c
     lifecycle_check(cancelled.get().audio_offset_drag_chart_id.value == capture.chart);
     lifecycle_check(cancelled.get().audio_offset_drag_document_revision == capture.revision);
     lifecycle_check(cancelled.get().audio_offset_drag_sample_rate == capture.sample_rate);
-    lifecycle_check(cancelled.get().compose_viewport_inputs.size() == 0);
+    lifecycle_check(cancelled.get().input.compose_viewport_inputs.size() == 0);
     lifecycle_check(!lifecycle_has(cancelled.get(), WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS));
     lifecycle_check(!state.input_queue.waveform_offset_cancel_pending);
     // The next view acknowledges cancellation, as the application dispatcher does.
     f.harness.view().compose.waveform_offset_drag_active = false;
     const auto following = f.harness.frame();
     lifecycle_check(following.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
-    lifecycle_check(following.get().compose_viewport_inputs.size() == 0);
+    lifecycle_check(following.get().input.compose_viewport_inputs.size() == 0);
 }
 
 TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch input",
@@ -565,13 +565,13 @@ TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch i
     events.push_back(go);
     const auto opened = h.frame(events, SDL_KMOD_CTRL);
     lifecycle_require(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
-    lifecycle_check(opened.get().compose_viewport_inputs.size() == 0);
-    lifecycle_check(!opened.get().compose_viewport_middle_click);
+    lifecycle_check(opened.get().input.compose_viewport_inputs.size() == 0);
+    lifecycle_check(!opened.get().input.compose_viewport_middle_click);
     const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     (void)h.frame(std::span{&escape, 1});
     const auto quiet = h.frame();
-    lifecycle_check(quiet.get().compose_viewport_inputs.size() == 0);
-    lifecycle_check(!quiet.get().compose_viewport_middle_click);
+    lifecycle_check(quiet.get().input.compose_viewport_inputs.size() == 0);
+    lifecycle_check(!quiet.get().input.compose_viewport_middle_click);
     lifecycle_check(!worm_ui_nuklear_compose_state().pinch.pinch.active);
 }
 
@@ -721,8 +721,8 @@ TEST_CASE("A bookmark click replays painting without emitting a bookmark move",
 namespace {
 auto last_input(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind)
     -> const wormedit::ui::compose_input_action_t* {
-    for (std::size_t i = action.compose_inputs.size(); i > 0; --i)
-        if (action.compose_inputs[i - 1].kind == kind) return &action.compose_inputs[i - 1];
+    for (std::size_t i = action.input.compose_inputs.size(); i > 0; --i)
+        if (action.input.compose_inputs[i - 1].kind == kind) return &action.input.compose_inputs[i - 1];
     return nullptr;
 }
 } // namespace

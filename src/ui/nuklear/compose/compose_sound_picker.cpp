@@ -14,7 +14,7 @@ void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_
     const auto& result = view.sound_picker;
     if (!result.ready || index >= result.rows.size() || result.rows[index].missing ||
         std::strcmp(picker.query.data(), result.query.c_str()) != 0 ||
-        action.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
+        action.input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
     const auto id = result.rows[index].resource_id.value;
     if (!id) return;
     compose.keysound_catalog.keysound_selection.selected = {id};

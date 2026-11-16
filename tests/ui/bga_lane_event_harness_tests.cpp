@@ -83,7 +83,7 @@ auto scroll_to_profile_and_select(nuklear_event_harness_t& harness,
 auto has_input(const workspace_action_snapshot_t& action, WormUiComposeInputKind kind,
                std::uint64_t object_id) -> bool {
     const auto& value = action.get();
-    return std::ranges::any_of(std::span(value.compose_inputs),
+    return std::ranges::any_of(std::span(value.input.compose_inputs),
         [&](const auto& input) { return input.kind == kind && ((kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
             kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART) ? input.lane_id.value : input.object_id.value) == object_id; });
 }
@@ -98,7 +98,7 @@ auto has_input(const std::array<workspace_action_snapshot_t, 2>& actions,
 auto has_resource_place(const std::array<workspace_action_snapshot_t, 2>& actions) -> bool {
     return std::ranges::any_of(actions, [](const auto& action) {
         const auto& value = action.get();
-        return std::ranges::any_of(std::span(value.compose_inputs),
+        return std::ranges::any_of(std::span(value.input.compose_inputs),
             [](const auto& input) {
                 return input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE;
             });
@@ -250,16 +250,16 @@ void verify_bga_stack_outside_dismissal(nuklear_event_harness_t& harness) {
     const auto pressed = harness.frame(down);
     check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
     check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
-    check_bga(pressed.get().compose_inputs.size() == 0);
+    check_bga(pressed.get().input.compose_inputs.size() == 0);
     check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
     const auto up = std::array{mouse_motion(outside.first, outside.second),
                                mouse_button(false, outside.first, outside.second)};
     const auto released = harness.frame(up);
-    check_bga(released.get().compose_inputs.size() == 0);
+    check_bga(released.get().input.compose_inputs.size() == 0);
     check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     const auto quiet = harness.frame();
-    check_bga(quiet.get().compose_inputs.size() == 0);
+    check_bga(quiet.get().input.compose_inputs.size() == 0);
     check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
 }
 
@@ -268,7 +268,7 @@ void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     const auto dismissed = harness.frame(std::span{&escape, 1});
     check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
     check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
-    check_bga(dismissed.get().compose_inputs.size() == 0);
+    check_bga(dismissed.get().input.compose_inputs.size() == 0);
     check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
     auto key_up = escape;
@@ -276,10 +276,10 @@ void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     key_up.key.type = SDL_EVENT_KEY_UP;
     key_up.key.down = false;
     const auto released = harness.frame(std::span{&key_up, 1});
-    check_bga(released.get().compose_inputs.size() == 0);
+    check_bga(released.get().input.compose_inputs.size() == 0);
     check_bga(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
     const auto quiet = harness.frame();
-    check_bga(quiet.get().compose_inputs.size() == 0);
+    check_bga(quiet.get().input.compose_inputs.size() == 0);
     check_bga(!worm_ui_nuklear_compose_state().bga_interaction.bga_stack_release_pending);
 }
 
@@ -425,11 +425,11 @@ TEST_CASE("horizontal BGA drag emits the Layer 2 destination kind once", "[event
     const auto release = std::array{mouse_motion(finish.first, finish.second), mouse_button(false, finish.first, finish.second)};
     const auto output = harness.frame(release);
     const auto& action = output.get();
-    check_bga(action.compose_inputs.size() == 1);
-    check_bga(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE);
-    check_bga(action.compose_inputs[0].bga_lane_kind_valid);
-    check_bga(action.compose_inputs[0].bga_lane_kind == wormedit::visual_event_kind_t::layer2);
-    check_bga(action.compose_inputs[0].object_id.value == 81);
+    check_bga(action.input.compose_inputs.size() == 1);
+    check_bga(action.input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE);
+    check_bga(action.input.compose_inputs[0].bga_lane_kind_valid);
+    check_bga(action.input.compose_inputs[0].bga_lane_kind == wormedit::visual_event_kind_t::layer2);
+    check_bga(action.input.compose_inputs[0].object_id.value == 81);
 }
 
 TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
@@ -475,7 +475,7 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     CHECK_FALSE(has_resource_place(bgm_click));
     CHECK(has_resource_place(bga_click));
     for (const auto& output : bga_click)
-        for (const auto& input : std::span(output.get().compose_inputs))
+        for (const auto& input : std::span(output.get().input.compose_inputs))
             if (input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE) {
                 check_bga(input.bga_lane_kind_valid);
                 check_bga(input.bga_lane_kind == wormedit::visual_event_kind_t::layer2);
@@ -589,7 +589,7 @@ namespace {
 auto any_input_of(const std::array<workspace_action_snapshot_t, 2>& actions, WormUiComposeInputKind kind) -> bool {
     return std::ranges::any_of(actions, [&](const auto& action) {
         const auto& value = action.get();
-        return std::ranges::any_of(std::span(value.compose_inputs),
+        return std::ranges::any_of(std::span(value.input.compose_inputs),
             [&](const auto& input) { return input.kind == kind; });
     });
 }
@@ -667,9 +667,9 @@ TEST_CASE("dragging a selected note onto the BGM area moves it to a BGM lane ins
     const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
     const auto released = f.harness.frame(up);
     const auto& inputs = released.get();
-    const auto drop = std::ranges::find_if(std::span(inputs.compose_inputs),
+    const auto drop = std::ranges::find_if(std::span(inputs.input.compose_inputs),
         [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE; });
-    REQUIRE(drop != std::span(inputs.compose_inputs).end());
+    REQUIRE(drop != std::span(inputs.input.compose_inputs).end());
     CHECK((drop->lane_id.value == 45 && drop->note_move_to_bgm));
     CHECK_FALSE(any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
 }
@@ -694,9 +694,9 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
     const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
     const auto released = f.harness.frame(up);
     const auto& inputs = released.get();
-    const auto drop = std::ranges::find_if(std::span(inputs.compose_inputs),
+    const auto drop = std::ranges::find_if(std::span(inputs.input.compose_inputs),
         [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE; });
-    REQUIRE(drop != std::span(inputs.compose_inputs).end());
+    REQUIRE(drop != std::span(inputs.input.compose_inputs).end());
     CHECK(drop->lane_id.value == 3);
     CHECK(drop->object_id.value == 501);
 }
@@ -718,10 +718,10 @@ TEST_CASE("Shift lane key routes successive assignment with BGM selected",
     press.key.scancode = SDL_SCANCODE_1;
     press.key.down = true;
     const auto shifted = harness.frame(std::span{&press, 1}, SDL_KMOD_SHIFT);
-    REQUIRE(shifted.get().compose_inputs.size() == 1);
-    CHECK(shifted.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    CHECK(shifted.get().compose_inputs[0].successive);
-    CHECK(shifted.get().compose_inputs[0].lane_id.value == 3);
+    REQUIRE(shifted.get().input.compose_inputs.size() == 1);
+    CHECK(shifted.get().input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    CHECK(shifted.get().input.compose_inputs[0].successive);
+    CHECK(shifted.get().input.compose_inputs[0].lane_id.value == 3);
 }
 
 TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
@@ -777,7 +777,7 @@ TEST_CASE("BGA lane controls reveal every kind without a hidden dropdown", "[eve
         const auto actions = click(harness, control->first, control->second);
         const auto revealed = std::ranges::any_of(actions, [&](const auto& snapshot) {
             const auto& action = snapshot.get();
-            return std::ranges::any_of(std::span(action.compose_inputs),
+            return std::ranges::any_of(std::span(action.input.compose_inputs),
                 [&](const auto& input) {
                     return input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL &&
                         input.bga_lane_kind_valid && input.bga_lane_kind == static_cast<wormedit::visual_event_kind_t>(kinds[index]);
@@ -885,7 +885,7 @@ auto double_click_stem_edge(resizable_stem_lane_fixture_t& f) -> workspace_actio
 
 auto no_stem_point_actions(const workspace_action_snapshot_t& action) -> bool {
     const auto& value = action.get();
-    return std::ranges::none_of(std::span(value.compose_inputs),
+    return std::ranges::none_of(std::span(value.input.compose_inputs),
         [](const auto& input) {
             return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
                    input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART;
@@ -1087,8 +1087,8 @@ TEST_CASE("Draw BGA source emits one stroke with the destination kind and no res
     const auto frames = click(harness, center.first, center.second);
     size_t begins{}, releases{};
     for (const auto& frame : frames) {
-        for (size_t i = 0; i < frame.get().compose_inputs.size(); ++i) {
-            const auto& input = frame.get().compose_inputs[i];
+        for (size_t i = 0; i < frame.get().input.compose_inputs.size(); ++i) {
+            const auto& input = frame.get().input.compose_inputs[i];
             if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
                 ++begins;
                 check_bga(input.resource_id.value == 91 && input.paint_intent == 1);
@@ -1127,7 +1127,7 @@ TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
     const auto placed = click(f.harness, point.first, point.second);
     bool matched{};
     for (const auto& snapshot : placed)
-        for (const auto& input : std::span(snapshot.get().compose_inputs))
+        for (const auto& input : std::span(snapshot.get().input.compose_inputs))
             matched |= input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN &&
                        input.resource_role == wormedit::resource_role_t::bgm &&
                        input.lane_id.value == 45 && input.resource_id.value == 81;
@@ -1189,7 +1189,7 @@ struct dock_stem_fixture_t {
 
 auto stem_input(const workspace_action_snapshot_t& action) -> const wormedit::ui::compose_input_action_t* {
     const auto& value = action.get();
-    const auto inputs = std::span(value.compose_inputs);
+    const auto inputs = std::span(value.input.compose_inputs);
     const auto found = std::ranges::find_if(inputs, [](const auto& input) {
         return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART ||
                input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
@@ -1461,7 +1461,7 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
         const auto packed_click = click(packed.harness, packed_point.first, packed_point.second);
         const wormedit::ui::compose_input_action_t* packed_input{};
         for (const auto& snapshot : packed_click)
-            for (const auto& input : std::span(snapshot.get().compose_inputs))
+            for (const auto& input : std::span(snapshot.get().input.compose_inputs))
                 if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) packed_input = &input;
         check_bga(packed_input && packed_input->lane_id.value == 45 &&
                   packed_input->resource_id.value == 800'001 &&
@@ -1516,7 +1516,7 @@ TEST_CASE("Single ordinary BGM drag sends the destination source lane through re
     const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
     const auto released = f.harness.frame(up);
     const auto& output = released.get();
-    const auto inputs = std::span(output.compose_inputs);
+    const auto inputs = std::span(output.input.compose_inputs);
     const auto found = std::ranges::find_if(inputs, [](const auto& input) {
         return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
     });
@@ -1534,7 +1534,7 @@ TEST_CASE("Toolbar BGA visibility is actionable while no lane is projected",
     (void)harness.frame();
     const auto actions = harness.click_widget("Show BGA event lane");
     check_bga(actions.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY);
-    check_bga(actions.front().get().compose_inputs.size() == 0);
+    check_bga(actions.front().get().input.compose_inputs.size() == 0);
     check_bga(actions.back().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -1639,7 +1639,7 @@ TEST_CASE("Offset editor commits one exact stamped action from either timing sur
     text.text.type = SDL_EVENT_TEXT_INPUT;
     text.text.text = "-1/8";
     const auto typed = f.harness.frame(std::array{text});
-    check_bga(typed.get().compose_inputs.size() == 0);
+    check_bga(typed.get().input.compose_inputs.size() == 0);
     const auto committed = f.harness.frame(std::array{timing_control_key(SDLK_RETURN, SDL_SCANCODE_RETURN)});
     check_bga(committed.get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
     check_bga(committed.get().compose_audio_offset_numerator == -1);
@@ -1727,7 +1727,7 @@ TEST_CASE("Inspector BPM snap choice is shared with the timing-focus toolbar",
     const auto selected = click(f.harness, half->first, half->second);
     check_bga(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == 2);
     check_bga(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_bga(selected.front().get().compose_inputs.size() == 0);
+    check_bga(selected.front().get().input.compose_inputs.size() == 0);
     check_bga(selected.front().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     f.harness.view().compose.timing_focus = true;
     (void)f.harness.frame();
@@ -1759,7 +1759,7 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     check_bga(toggled.front().get().compose_input_project_id.value==1);
     check_bga(toggled.front().get().compose_input_chart_id.value==1);
     check_bga(toggled.front().get().compose_input_document_revision==1);
-    check_bga(toggled.front().get().compose_inputs.size()==0);
+    check_bga(toggled.front().get().input.compose_inputs.size()==0);
     check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layers[0].assist_tick_enabled=true;
     (void)harness.frame(std::array{mouse_motion(assist.first,assist.second)});

@@ -559,16 +559,16 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     if (!action) {
         return;
     }
-    action->shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input()
+    action->input.shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input()
                                        ? 0 : g_shortcut_event_count);
-    for (size_t index = 0; index < action->shortcut_events.size(); ++index) {
-        action->shortcut_events[index] = g_shortcut_events[index];
+    for (size_t index = 0; index < action->input.shortcut_events.size(); ++index) {
+        action->input.shortcut_events[index] = g_shortcut_events[index];
     }
-    action->shortcut_overflowed = g_shortcut_events_overflowed;
-    action->shortcut_window_focused = g_window_focused;
-    action->shortcut_notification_history_focused = notification_history_focused();
+    action->input.shortcut_overflowed = g_shortcut_events_overflowed;
+    action->input.shortcut_window_focused = g_window_focused;
+    action->input.shortcut_notification_history_focused = notification_history_focused();
     auto& compose_state = worm_ui_nuklear_compose_state();
-    action->shortcut_text_entry_active = command_menu_owns_input() || nuklear_text_entry_active() ||
+    action->input.shortcut_text_entry_active = command_menu_owns_input() || nuklear_text_entry_active() ||
                                          compose_state.inline_timing.inline_timing_input_consumed ||
                                          compose_state.inline_offset.inline_offset_input_consumed ||
                                          compose_state.layer_editor.layers_menu_input_consumed ||
@@ -577,9 +577,9 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     compose_state.inline_timing.inline_timing_input_consumed = false;
     compose_state.inline_offset.inline_offset_input_consumed = false;
     compose_state.layer_editor.layers_menu_input_consumed = false;
-    action->shortcut_ime_composition_active = g_ime_composition_active;
-    action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
-    action->shortcut_focused_lane_id.value = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
+    action->input.shortcut_ime_composition_active = g_ime_composition_active;
+    action->input.shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
+    action->input.shortcut_focused_lane_id.value = action->input.shortcut_compose_lane_focused ? focused_lane_id : 0;
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -1312,7 +1312,7 @@ static void consume_layer_creation_request(const wormedit::ui::workspace_view_t&
         !view.compose.visible || !view.compose.scene_available || external_project_modal_active(view) ||
         view.compose.input_occluded || *request != worm_ui_compose_target_t{view.compose.project_id.value, view.compose.chart_id.value,
                                               view.compose.document_revision} ||
-        action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.compose_inputs.size() != 0 ||
+        action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.input.compose_inputs.size() != 0 ||
         (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE &&
          action.compose_action != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
     worm_ui_nuklear_open_layer_creation(view.compose, compose);
@@ -2233,8 +2233,8 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
     if (wormedit::ui::chrome::button_label(g_context, label) &&
-        action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
-        auto& input = action->compose_inputs.emplace_back();
+        action->input.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+        auto& input = action->input.compose_inputs.emplace_back();
         input = {};
         input.kind = WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR;
         input.overview_primary = !view.minimap_click_moves_paused_playhead;
@@ -2968,12 +2968,12 @@ static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& vi
         (view.transport_end_frame / seek_steps) * pointer_step +
         ((view.transport_end_frame % seek_steps) * pointer_step) / seek_steps;
     if (source_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return;
-    action.hover_source_frame = static_cast<std::int64_t>(source_frame);
-    action.hover_source_frame_valid = true;
-    action.hover_source_total_frames = view.transport_end_frame;
-    action.hover_source_sample_rate = view.transport_sample_rate;
+    action.input.hover_source_frame = static_cast<std::int64_t>(source_frame);
+    action.input.hover_source_frame_valid = true;
+    action.input.hover_source_total_frames = view.transport_end_frame;
+    action.input.hover_source_sample_rate = view.transport_sample_rate;
     const auto& compose = view.compose;
-    if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.hover_source_frame &&
+    if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.input.hover_source_frame &&
         compose.hover_timing_total_frames == view.transport_end_frame &&
         compose.hover_timing_sample_rate == view.transport_sample_rate &&
         wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
@@ -4048,7 +4048,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
                           compose_lane_focused ? view->compose.cursor->lane_id.value : 0);
     if (view->active_tab == WORM_UI_WORKSPACE_TAB_SETUP && !context_invocation_blocked() &&
         !command_menu_owns_input() && !worm_ui_nuklear_setup_popup_owns_input())
-        std::erase_if(action.shortcut_events, [&](const auto& key) {
+        std::erase_if(action.input.shortcut_events, [&](const auto& key) {
             return worm_ui_nuklear_project_chart_shortcut(view->setup, key, action);
         });
     g_audio.offset_escape_pending = false;

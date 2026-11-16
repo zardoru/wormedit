@@ -148,8 +148,8 @@ void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::
     append_compose_input(&action, kind, 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, id.value, 0, false,
                          wormedit::timing_lane_kind_t::scroll, view.chart_id.value, view.document_revision);
-    if (!action.compose_inputs.empty())
-        action.compose_inputs.back().span_edge = static_cast<std::uint8_t>(command);
+    if (!action.input.compose_inputs.empty())
+        action.input.compose_inputs.back().span_edge = static_cast<std::uint8_t>(command);
 }
 
 void queue_command(const ComposeInspectorContext& inspector, recipe_command_t command) {

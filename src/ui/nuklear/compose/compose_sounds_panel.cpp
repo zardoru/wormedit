@@ -1378,8 +1378,8 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
     if (chrome::context_menu_item(menu, context, "Select same sound (whole chart)")) {
         append_compose_input(panel.action, WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART,
             0, 0, 0, false, WORM_UI_COMPOSE_SELECTION_ADD);
-        if (panel.action->compose_inputs.size())
-            panel.action->compose_inputs[panel.action->compose_inputs.size() - 1].resource_id.value = menu.stamp.object_id;
+        if (panel.action->input.compose_inputs.size())
+            panel.action->input.compose_inputs[panel.action->input.compose_inputs.size() - 1].resource_id.value = menu.stamp.object_id;
     } else if (chrome::context_menu_item(menu, context, "Group..."))
         open_manual_group_review(panel);
     else if (chrome::context_menu_item(menu, context, "Ungroup"))

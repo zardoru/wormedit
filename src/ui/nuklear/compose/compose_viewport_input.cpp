@@ -109,17 +109,17 @@ static ComposeViewportCursor update_compose_viewport_pointer(
     const auto note_left = view.playable_field_left_pixels;
     const auto note_right = view.playable_field_right_pixels;
     if (!state.input_queue.action_overflowed && input.window_focused && view.scene_available) {
-        input.action->compose_viewport_pointer_valid = true;
-        input.action->compose_viewport_pointer_x_pixels = x;
-        input.action->compose_viewport_pointer_y_pixels = y;
+        input.action->input.compose_viewport_pointer_valid = true;
+        input.action->input.compose_viewport_pointer_x_pixels = x;
+        input.action->input.compose_viewport_pointer_y_pixels = y;
         if (!compose_area_capture_active() && state.input_queue.middle_click_pending && state.input_queue.middle_click_x >= input.viewport.x &&
             state.input_queue.middle_click_x < input.input_right && state.input_queue.middle_click_y >= input.viewport.y &&
             state.input_queue.middle_click_y <= input.viewport.y + input.viewport.h) {
-            input.action->compose_viewport_middle_click = true;
-            input.action->compose_viewport_middle_click_x_pixels =
+            input.action->input.compose_viewport_middle_click = true;
+            input.action->input.compose_viewport_middle_click_x_pixels =
                 (static_cast<double>(state.input_queue.middle_click_x) - input.viewport.x) *
                 view.viewport_width_pixels / input.viewport.w;
-            input.action->compose_viewport_middle_click_y_pixels =
+            input.action->input.compose_viewport_middle_click_y_pixels =
                 (static_cast<double>(state.input_queue.middle_click_y) - input.viewport.y) *
                 view.viewport_height_pixels / input.viewport.h;
         }
@@ -174,11 +174,11 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
             const auto zoom_modifier = compose_wheel_zooms(wheel.modifiers);
             // Smooth events are in SDL units of a tenth of a pixel; the controller reads pixels.
             const auto unit_pixels = wheel.coarse_steps ? 1.0 : worm_ui_nuklear_smooth_wheel_pixels_per_unit;
-            if (input.action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit)
+            if (input.action->input.compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit)
                 break;
             const auto visual_y = (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels /
                                   input.viewport.h;
-            input.action->compose_viewport_inputs.emplace_back() = {
+            input.action->input.compose_viewport_inputs.emplace_back() = {
                 .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
                                            : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
                 .zoom_modifier = zoom_modifier,
@@ -212,13 +212,13 @@ static void append_compose_pinch_inputs(const ComposeViewportInputContext& input
             state.pinch.pinch = {};
             return;
         }
-        if (input.action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit) {
+        if (input.action->input.compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit) {
             state.pinch.pinch = {};
             return;
         }
         const auto visual_y = (update.mouse_y - input.viewport.y) * view.viewport_height_pixels /
                               input.viewport.h;
-        input.action->compose_viewport_inputs.emplace_back() = {
+        input.action->input.compose_viewport_inputs.emplace_back() = {
             .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
             .cursor_x_pixels = (update.mouse_x - input.viewport.x) * view.viewport_width_pixels /
                                input.viewport.w,
@@ -323,7 +323,7 @@ static bool start_compose_fit_drag(const ComposeBeatFitInput& input, bool offset
 
 static void cancel_unmatched_view_beat_fit(const ComposeBeatFitInput& input) {
     const auto cancel_pending = std::ranges::any_of(
-        input.action->compose_inputs.begin(), input.action->compose_inputs.end(),
+        input.action->input.compose_inputs.begin(), input.action->input.compose_inputs.end(),
         [](const auto& event) { return event.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL; });
     if (!cancel_pending) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
@@ -500,10 +500,10 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
     if ((event == worm_ui_nuklear_overview_event_t::scroll &&
          !nk_input_is_mouse_moved(&input.context->input)) ||
         event == worm_ui_nuklear_overview_event_t::none ||
-        input.action->compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
+        input.action->input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
     append_compose_input(input.action, event == worm_ui_nuklear_overview_event_t::click
         ? WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK : WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
-    auto& emitted = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+    auto& emitted = input.action->input.compose_inputs[input.action->input.compose_inputs.size() - 1];
     const auto captured_window = worm_ui_nuklear_overview_window_for_capture(
         state.waveform_drag.waveform_overview_capture, state.waveform_drag.waveform_overview_capture.window_capture &&
             (state.waveform_drag.waveform_overview_drag_active ||

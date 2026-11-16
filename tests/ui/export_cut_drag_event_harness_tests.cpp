@@ -21,8 +21,8 @@ void check_cut_grip(bool condition, std::source_location where = std::source_loc
 
 auto cut_drag_input(const ui::workspace_action_t& action, WormUiComposeInputKind kind)
     -> const ui::compose_input_action_t* {
-    const auto found = std::ranges::find(action.compose_inputs, kind, &ui::compose_input_action_t::kind);
-    return found == action.compose_inputs.end() ? nullptr : &*found;
+    const auto found = std::ranges::find(action.input.compose_inputs, kind, &ui::compose_input_action_t::kind);
+    return found == action.input.compose_inputs.end() ? nullptr : &*found;
 }
 
 struct cut_drag_fixture_t {

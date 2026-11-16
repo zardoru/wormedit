@@ -25,8 +25,8 @@ auto fit_button(float x, float y, bool down) -> SDL_Event {
 }
 auto find_fit_input(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind)
     -> const wormedit::ui::compose_input_action_t* {
-    for (std::size_t i = 0; i < action.compose_inputs.size(); ++i)
-        if (action.compose_inputs[i].kind == kind) return &action.compose_inputs[i];
+    for (std::size_t i = 0; i < action.input.compose_inputs.size(); ++i)
+        if (action.input.compose_inputs[i].kind == kind) return &action.input.compose_inputs[i];
     return nullptr;
 }
 }
@@ -58,8 +58,8 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     v.beat_fit_target_y_pixels = 120;
     const auto plain = h.frame({}, SDL_KMOD_CTRL);
     const auto* pi = find_fit_input(plain.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);
-    INFO("active=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_ctrl_held << " events=" << plain.get().compose_inputs.size());
-    for (std::size_t i = 0; i < plain.get().compose_inputs.size(); ++i) INFO("kind=" << plain.get().compose_inputs[i].kind);
+    INFO("active=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_ctrl_held << " events=" << plain.get().input.compose_inputs.size());
+    for (std::size_t i = 0; i < plain.get().input.compose_inputs.size(); ++i) INFO("kind=" << plain.get().input.compose_inputs[i].kind);
     verify_fit_event(pi); verify_fit_event(pi->beat_fit_ctrl_held); verify_fit_event(!(pi->beat_fit_onset_snap_held));
     const auto onset = h.frame({}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
     const auto* oi = find_fit_input(onset.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);

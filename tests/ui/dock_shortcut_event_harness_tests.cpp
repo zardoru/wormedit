@@ -34,8 +34,8 @@ auto press_and_dispatch(nuklear_event_harness_t& harness, SDL_Keycode code,
     event.key.scancode = scan;
     event.key.down = true;
     const auto frame = harness.frame(std::span{&event, 1}, modifiers);
-    require_dock(frame.get().shortcut_events.size() == 1);
-    const auto& input = frame.get().shortcut_events[0];
+    require_dock(frame.get().input.shortcut_events.size() == 1);
+    const auto& input = frame.get().input.shortcut_events[0];
     const auto registry = registry_for_docks();
     return dispatch_shortcut(registry,
         {.chord = {static_cast<shortcut_key_t>(input.hid_usage), input.modifiers},
@@ -247,7 +247,7 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
     const auto escape = dialog_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto action = harness.frame({&escape, 1});
     check_dock(action.get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(action.get().shortcut_events.size() == 0);
+    check_dock(action.get().input.shortcut_events.size() == 0);
     check_dock(!state.layer_editor.layer_creation_context);
 }
 

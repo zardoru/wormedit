@@ -95,7 +95,7 @@ void stamp_action(const wormedit::ui::compose_view_t& view, wormedit::ui::worksp
 }
 
 auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {
-    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_inputs.size() == 0 &&
+    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.input.compose_inputs.size() == 0 &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
          action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
 }

@@ -339,7 +339,7 @@ TEST_CASE("bookmark chooser retains its Enter routing during synthetic IME compo
     const auto enter = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
     const auto selected = harness.frame(std::span{&enter, 1});
     check_selected_action(selected, 80, 7, 11);
-    check_chooser_lifecycle(selected.get().shortcut_events.size() == 0);
+    check_chooser_lifecycle(selected.get().input.shortcut_events.size() == 0);
     check_chooser_lifecycle(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open);
 }
 
@@ -364,7 +364,7 @@ TEST_CASE("bookmark chooser context loss cancels without navigation or shortcut 
         check_chooser_lifecycle(!state.open);
         check_chooser_lifecycle(state.release_pending);
         check_chooser_lifecycle(canceled.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_chooser_lifecycle(canceled.get().shortcut_events.size() == 0);
+        check_chooser_lifecycle(canceled.get().input.shortcut_events.size() == 0);
     }
 }
 

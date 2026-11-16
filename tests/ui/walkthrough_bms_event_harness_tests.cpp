@@ -330,7 +330,7 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     const auto motion = test::mouse_motion(400, 400);
     (void)flow.harness.frame(std::span{&motion, 1});
     const auto press = flow.press(SDLK_2, SDL_SCANCODE_2);
-    require_step(press.get().compose_inputs.size() == 1);
+    require_step(press.get().input.compose_inputs.size() == 1);
     const auto started = flow.dispatch(press);
     INFO(started);
     const auto released = flow.dispatch(flow.press(SDLK_2, SDL_SCANCODE_2, false));

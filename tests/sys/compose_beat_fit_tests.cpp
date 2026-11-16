@@ -69,11 +69,11 @@ struct fit_fixture_t {
         action = {};
         action.compose_input_chart_id.value = state.chart.value;
         action.compose_input_document_revision = history.document.revision;
-        action.compose_input_viewport_width_pixels = 800;
-        action.compose_inputs.resize(1);
+        action.input.compose_input_viewport_width_pixels = 800;
+        action.input.compose_inputs.resize(1);
         const auto source_y = world_pixel - state.viewport_scroll_pixels;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-        action.compose_inputs[0] = {.kind = kind,
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+        action.input.compose_inputs[0] = {.kind = kind,
             .object_id = {history.document.charts.front().divisions_per_standard_measure / 2},
             .y_pixels = downscroll ? state.viewport_height_pixels - source_y : source_y,
             .beat_fit_ctrl_held = ctrl, .beat_fit_onset_snap_held = onset,

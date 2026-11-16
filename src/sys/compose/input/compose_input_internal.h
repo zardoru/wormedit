@@ -556,13 +556,13 @@ auto dispatch_bmson_compose_input(const wormedit::ui::workspace_action_t& ui_act
     }
 }
 
-void update_compose_viewport_pointer_input(const wormedit::ui::workspace_action_t& ui_action,
+void update_compose_viewport_pointer_input(const wormedit::ui::frame_input_t& frame,
                                            wormedit::viewport_input_controller_t& viewport_input,
                                            compose_scene_cache_t& scene_cache,
                                            double bgm_pane_width, double bgm_pane_left_pixels,
                                            double viewport_width_pixels);
 
-void update_compose_pointer_hover(const wormedit::ui::workspace_action_t& ui_action, bool gesture_active,
+void update_compose_pointer_hover(const wormedit::ui::frame_input_t& frame, bool gesture_active,
                                   const wormedit::chart_document_t* chart,
                                   const wormedit::editor_interaction_view_model_t* interaction_view,
                                   std::uint64_t revision, double field_left_pixels,
@@ -1684,7 +1684,7 @@ void reset_compose_autoscroll_if_idle(compose_input_context_t& context);
 } // namespace wormedit::sys::compose_input_detail
 
 namespace wormedit::sys {
-auto consume_minimap_preferences(wormedit::ui::workspace_action_t& action,
+auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
                                  application_command_state_t& application) -> bool;
 
 auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_action,

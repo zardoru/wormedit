@@ -172,9 +172,9 @@ struct bga_input_fixture_t : action_notification_fixture_t {
     }
     auto input(WormUiComposeInputKind kind, std::uint8_t lane_kind) -> wormedit::ui::workspace_action_t {
         auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
-        value.compose_input_viewport_width_pixels = 900;
-        value.compose_inputs.resize(1);
-        value.compose_inputs[0] = {.kind = kind, .object_id = {41},
+        value.input.compose_input_viewport_width_pixels = 900;
+        value.input.compose_inputs.resize(1);
+        value.input.compose_inputs[0] = {.kind = kind, .object_id = {41},
             .timing_chart_id = {1}, .timing_document_revision = history.document.revision,
             .resource_role = wormedit::resource_role_t::bga, .x_pixels = 150,
             .y_pixels = compose_source_y(state.pixels_per_standard_measure / 4 - state.viewport_scroll_pixels,
@@ -213,7 +213,7 @@ TEST_CASE("BGA production input changes Layer to Layer 2 with one undo", "[bga][
 TEST_CASE("BGA production dock placement targets Layer 2", "[bga][compose-input]") {
     bga_input_fixture_t fixture;
     auto input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE, 5);
-    input.compose_inputs[0].object_id.value = 31;
+    input.input.compose_inputs[0].object_id.value = 31;
     INFO(fixture.dispatch_input(input));
     require_action(fixture.history.undo.size() == 1);
     require_action(fixture.history.document.charts.front().bga_events.size() == 2);
@@ -242,7 +242,7 @@ TEST_CASE("BGA production invalid and stale move payloads preserve state", "[bga
     auto invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 255);
     fixture.dispatch_input(invalid);
     invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 5);
-    invalid.compose_inputs[0].timing_chart_id.value = 99;
+    invalid.input.compose_inputs[0].timing_chart_id.value = 99;
     fixture.dispatch_input(invalid);
     invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 5);
     invalid.compose_input_document_revision = revision + 1;
@@ -255,11 +255,11 @@ TEST_CASE("BGA production video overlay placement and replacement reject unchang
     bga_input_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
     auto input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE, 5);
-    input.compose_inputs[0].object_id.value = 32;
+    input.input.compose_inputs[0].object_id.value = 32;
     check_action(fixture.dispatch_input(input).find("Video can only") != std::string::npos);
     input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE, 2);
-    input.compose_inputs[0].object_id.value = 32;
-    input.compose_inputs[0].lane_id.value = 41;
+    input.input.compose_inputs[0].object_id.value = 32;
+    input.input.compose_inputs[0].lane_id.value = 41;
     check_action(fixture.dispatch_input(input).find("Video can only") != std::string::npos);
     fixture.check_unchanged(revision);
 }
@@ -908,9 +908,9 @@ namespace {
 auto draw_bga_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind,
     uint64_t row, bool erase = false) -> wormedit::ui::workspace_action_t {
     auto value = fixture.input(kind, 5);
-    value.compose_inputs[0].resource_id.value = erase ? 0 : 31;
-    value.compose_inputs[0].paint_intent = erase ? 2 : 1;
-    value.compose_inputs[0].y_pixels = compose_source_y(
+    value.input.compose_inputs[0].resource_id.value = erase ? 0 : 31;
+    value.input.compose_inputs[0].paint_intent = erase ? 2 : 1;
+    value.input.compose_inputs[0].y_pixels = compose_source_y(
         row * fixture.state.pixels_per_standard_measure / 960.0 - fixture.state.viewport_scroll_pixels,
         fixture.state.viewport_height_pixels,
         compose_field_downscroll(fixture.history.document.charts.front(), fixture.application.preferences.editor_preferences));
@@ -942,7 +942,7 @@ TEST_CASE("Invalid paint selector rejects before touching a captured BGA stroke"
     const auto revision = fixture.history.document.revision;
 
     auto invalid_release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
-    invalid_release.compose_inputs[0].paint_intent = 255;
+    invalid_release.input.compose_inputs[0].paint_intent = 255;
     const auto status = fixture.dispatch_input(invalid_release);
     check_action(!status.empty());
     const auto entries = fixture.entries();
@@ -998,8 +998,8 @@ TEST_CASE("Draw source choice projects session state without changing the docume
     bga_input_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
     auto input = fixture.input(WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, 0);
-    input.compose_inputs[0].resource_role = wormedit::resource_role_t::bga;
-    input.compose_inputs[0].resource_id.value = 31;
+    input.input.compose_inputs[0].resource_role = wormedit::resource_role_t::bga;
+    input.input.compose_inputs[0].resource_id.value = 31;
     (void)fixture.dispatch_input(input);
     check_action(fixture.application.project.compose_gesture.draw_source_kind == 2);
     check_action(fixture.application.project.compose_gesture.draw_source_id == 31);
@@ -1010,16 +1010,16 @@ namespace {
 auto note_draw_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint8_t intent)
     -> wormedit::ui::workspace_action_t {
     auto value = fixture.input(kind, 0);
-    value.compose_inputs[0].resource_role = wormedit::resource_role_t::sample;
-    value.compose_inputs[0].resource_id.value = 0;
-    value.compose_inputs[0].paint_intent = intent;
+    value.input.compose_inputs[0].resource_role = wormedit::resource_role_t::sample;
+    value.input.compose_inputs[0].resource_id.value = 0;
+    value.input.compose_inputs[0].paint_intent = intent;
     const auto& chart = fixture.history.document.charts.front();
-    const auto layout = compose_horizontal_layout(value.compose_input_viewport_width_pixels,
+    const auto layout = compose_horizontal_layout(value.input.compose_input_viewport_width_pixels,
         maximum_layout_lane_count(chart), !chart.bgm_source_lanes.empty(),
         fixture.state.bga_lane_visible ? std::popcount(editor_bga_visible_lane_mask(
             chart, fixture.state.bga_revealed_lane_mask)) : 0,
         effective_compose_timing_lane_mask(fixture.application));
-    value.compose_inputs[0].x_pixels = layout.field_left_pixels + layout.playable_field_width_pixels * .5;
+    value.input.compose_inputs[0].x_pixels = layout.field_left_pixels + layout.playable_field_width_pixels * .5;
     return value;
 }
 void add_draw_test_note(bga_input_fixture_t& fixture) {
@@ -1077,17 +1077,17 @@ TEST_CASE("Compose selector admission rejects invalid paint and span values befo
     check_action(!fixture.state.gesture<wormedit::pending_note_paint_gesture_t>());
 
     auto invalid_semantic = fixture.input(WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN, 0);
-    invalid_semantic.compose_inputs[0].paint_intent = 0;
+    invalid_semantic.input.compose_inputs[0].paint_intent = 0;
     check_action(rejected(invalid_semantic));
     check_action(!fixture.state.is_pending());
 
     auto invalid_draw = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
-    invalid_draw.compose_inputs[0].paint_intent = 255;
+    invalid_draw.input.compose_inputs[0].paint_intent = 255;
     check_action(rejected(invalid_draw));
     check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
 
     auto invalid_source = fixture.input(WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, 0);
-    invalid_source.compose_inputs[0].resource_role = wormedit::resource_role_t::bgm;
+    invalid_source.input.compose_inputs[0].resource_role = wormedit::resource_role_t::bgm;
     check_action(rejected(invalid_source));
     check_action(fixture.application.project.compose_gesture.draw_source_kind == 0);
 
@@ -1098,7 +1098,7 @@ TEST_CASE("Compose selector admission rejects invalid paint and span values befo
                             WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT,
                             WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND}) {
         auto invalid = fixture.input(kind, 0);
-        invalid.compose_inputs[0].span_edge = 255;
+        invalid.input.compose_inputs[0].span_edge = 255;
         check_action(rejected(invalid));
     }
 
@@ -1153,7 +1153,7 @@ void check_t463_point(uint64_t row, bool shift, bool expected_restart, bool empt
     }
     auto input = draw_bga_input(fixture, shift ? WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART :
         WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, row);
-    input.compose_inputs[0].lane_id.value = 84;
+    input.input.compose_inputs[0].lane_id.value = 84;
     const auto before = fixture.history.document.charts.front().sound_channels.front().events.size();
     INFO(fixture.dispatch_input(input));
     require_action(fixture.history.undo.size() == 1);
@@ -1176,7 +1176,7 @@ TEST_CASE("BMSON Draw rejects stale geometry and stem sources on packed columns 
     bga_input_fixture_t fixture;
     prepare_t463_stem(fixture);
     auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 240);
-    input.compose_inputs[0].lane_id.value = 84;
+    input.input.compose_inputs[0].lane_id.value = 84;
     auto stale_stem_stamp = fixture.cache.stems.stem_index.key()->stamp;
     stale_stem_stamp.document.revision = 0;
     seed_stem_geometry_fixture(fixture.cache.stems.stem_index, stale_stem_stamp,
@@ -1185,9 +1185,9 @@ TEST_CASE("BMSON Draw rejects stale geometry and stem sources on packed columns 
     (void)fixture.dispatch_input(input);
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
-    input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW;
-    input.compose_inputs[0].lane_id.value = 85;
-    input.compose_inputs[0].resource_id.value = 82;
+    input.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW;
+    input.input.compose_inputs[0].lane_id.value = 85;
+    input.input.compose_inputs[0].resource_id.value = 82;
     (void)fixture.dispatch_input(input);
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
@@ -1201,8 +1201,8 @@ TEST_CASE("BMSON packed Draw creates its source channel and semantic event with 
     fixture.history.document.resources.push_back({.id = resource_id_t{91}, .name = "kick.wav",
         .asset = asset_id_t{90}, .roles = {resource_role_t::sample}});
     auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW, 240);
-    input.compose_inputs[0].lane_id.value = 85;
-    input.compose_inputs[0].resource_id.value = 91;
+    input.input.compose_inputs[0].lane_id.value = 85;
+    input.input.compose_inputs[0].resource_id.value = 91;
     INFO(fixture.dispatch_input(input));
     require_action(fixture.history.undo.size() == 1);
     check_action(fixture.history.document.charts.front().sound_channels.size() == 2);
@@ -1545,9 +1545,9 @@ namespace {
 auto draw_bgm_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint64_t row,
                     bool erase = false) -> wormedit::ui::workspace_action_t {
     auto value = draw_bga_input(fixture, kind, row, erase);
-    value.compose_inputs[0].resource_role = wormedit::resource_role_t::bgm;
-    value.compose_inputs[0].lane_id.value = 50;
-    value.compose_inputs[0].resource_id.value = erase ? 0 : 33;
+    value.input.compose_inputs[0].resource_role = wormedit::resource_role_t::bgm;
+    value.input.compose_inputs[0].lane_id.value = 50;
+    value.input.compose_inputs[0].resource_id.value = erase ? 0 : 33;
     return value;
 }
 void prepare_bgm_draw_fixture(bga_input_fixture_t& fixture) {
@@ -1763,19 +1763,19 @@ TEST_CASE("Lane-key placement and the first snap move survive sharing an input b
     f.state.cursor = {measure_id_t{1}, 240};
     f.application.project.compose_gesture.note_paint_mode_active = true;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
                                 .lane_id = {1}};
     const auto begun = f.dispatch_input(action);
     INFO(begun);
     require_action(f.state.hold());
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
     if (!shared_frame) {
         const auto released = f.dispatch_input(action);
         INFO(released);
         action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
-        action.compose_inputs.clear();
+        action.input.compose_inputs.clear();
     }
-    action.compose_inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS,
+    action.input.compose_inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS,
         .navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
                                      : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD});
     const auto status = f.dispatch_input(action);
@@ -1788,7 +1788,7 @@ TEST_CASE("Lane-key placement and the first snap move survive sharing an input b
     check_action(!note.end);
     check_action(f.history.undo.size() == 1);
     action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
-    action.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
+    action.input.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
                                                         : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
     (void)f.dispatch_input(action);
     check_action_false(f.navigation.is_active());
@@ -1814,14 +1814,14 @@ TEST_CASE("Lane-key placement does not consume the first snap move after a viewp
     check_action(f.state.cursor_subrow == 0.0);
     f.application.project.compose_gesture.note_paint_mode_active = true;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}};
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}};
     (void)f.dispatch_input(action);
     action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0);
-    action.compose_inputs[0].lane_id = {1};
+    action.input.compose_inputs[0].lane_id = {1};
     (void)f.dispatch_input(action);
     require_action(f.history.undo.size() == 1);
     action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
-    action.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
+    action.input.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
                                                         : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
     const auto status = f.dispatch_input(action);
     INFO(status);
@@ -1844,7 +1844,7 @@ TEST_CASE("Playing Compose navigation uses beats while stopped editing retains i
                                               notification_source_t::input);
     };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
-    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
+    action.input.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     (void)f.dispatch_input(action);
     check_action(f.application.project.transport.preview_playhead_absolute_row == 480);
     check_action(sought > 0);
@@ -1873,7 +1873,7 @@ TEST_CASE("Compose navigation during area selection moves the stopped cursor or 
                                               notification_source_t::input);
     };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
-    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
+    action.input.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     (void)f.dispatch_input(action);
     if (playing) {
         check_action(sought > 0);
@@ -1883,7 +1883,7 @@ TEST_CASE("Compose navigation during area selection moves the stopped cursor or 
         check_action((f.state.cursor == local_position_t{measure_id_t{1}, 240}));
     }
     require_action(f.state.gesture<pending_editor_area_selection_t>() != nullptr);
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
     (void)f.dispatch_input(action);
     check_action(!f.navigation.is_active());
     check_action(f.state.gesture<pending_editor_area_selection_t>() != nullptr);
@@ -1898,13 +1898,13 @@ TEST_CASE("Tab measure navigation moves cursor immediately and scrolls over seve
     f.state.pixels_per_standard_measure = 600;
     f.state.viewport_scroll_pixels = -100;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
-    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    action.input.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
     check_action((f.state.cursor == local_position_t{measure_id_t{2}, 0}));
     check_action(f.cache.navigation_travel.target.has_value());
     const auto target = *f.cache.navigation_travel.target;
     check_action(f.state.viewport_scroll_pixels == -100);
-    action.compose_inputs.resize(0);
+    action.input.compose_inputs.resize(0);
     (void)dispatch_compose_input_action(action, f.history, f.workspace, f.state, f.viewport,
         f.navigation, f.application, f.cache, 0.02, &f.sink);
     check_action(f.state.viewport_scroll_pixels > -100 && f.state.viewport_scroll_pixels < target);
@@ -1949,9 +1949,9 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
                                               notification_source_t::input);
     };
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
-    action.compose_inputs.resize(0);
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {
+    action.input.compose_inputs.resize(0);
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {
         .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_y = ((forward != downscroll) != inverted) ? 1.0 : -1.0,
         .cursor_x_pixels = 200, .cursor_y_pixels = 200};
@@ -1970,11 +1970,11 @@ TEST_CASE("Interrupted Tab travel settles at the chosen cursor without changing 
     f.state.pixels_per_standard_measure = 600;
     f.state.viewport_scroll_pixels = -100;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
-    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    action.input.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
     require_action(f.cache.navigation_travel.target.has_value());
     const auto destination = *f.cache.navigation_travel.target;
-    action.compose_inputs[0].kind = interrupt;
+    action.input.compose_inputs[0].kind = interrupt;
     (void)f.dispatch_input(action);
     check_action(!f.cache.navigation_travel.target);
     check_action(f.state.viewport_scroll_pixels == destination);
@@ -1989,11 +1989,11 @@ TEST_CASE("An edit during Tab travel finishes at the chosen cursor after advanci
     f.state.pixels_per_standard_measure = 600;
     f.state.viewport_scroll_pixels = -100;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
-    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    action.input.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
     require_action(f.cache.navigation_travel.target.has_value());
     const auto destination = *f.cache.navigation_travel.target;
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_DELETE_SELECTION;
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_DELETE_SELECTION;
     (void)f.dispatch_input(action);
     check_action(f.history.document.revision == 2);
     check_action(f.history.undo.size() == 1);
@@ -2026,7 +2026,7 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     };
     auto action = f.input(doubled ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
                                   : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
-    action.compose_inputs[0].navigation_action = doubled
+    action.input.compose_inputs[0].navigation_action = doubled
         ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
     const auto index = measure_index_t::from(chart).value();
@@ -2046,17 +2046,17 @@ TEST_CASE("Measure key release freezes the viewport and discards all remaining t
     f.state.pixels_per_standard_measure = 600;
     f.state.viewport_scroll_pixels = -100;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
-    action.compose_inputs[0].navigation_action = doubled
+    action.input.compose_inputs[0].navigation_action = doubled
         ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
     require_action(f.cache.navigation_travel.target.has_value());
     auto idle = action;
-    idle.compose_inputs.resize(0);
+    idle.input.compose_inputs.resize(0);
     (void)dispatch_compose_input_action(idle, f.history, f.workspace, f.state, f.viewport,
         f.navigation, f.application, f.cache, 0.02, &f.sink);
     const auto stopped_scroll = f.state.viewport_scroll_pixels;
     const auto stopped_cursor = f.state.cursor;
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
     (void)f.dispatch_input(action);
     check_action(!f.cache.navigation_travel.target);
     (void)dispatch_compose_input_action(idle, f.history, f.workspace, f.state, f.viewport,
@@ -2254,9 +2254,9 @@ TEST_CASE("Field wheel inversion reverses stopped coarse and smooth movement", "
     f.application.preferences.editor_preferences.invert_scroll_wheel = inverted;
     f.state.viewport_scroll_pixels = 600;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
-    action.compose_inputs.resize(0);
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = kind, .delta_y = 1.0,
+    action.input.compose_inputs.resize(0);
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = kind, .delta_y = 1.0,
         .cursor_x_pixels = 200, .cursor_y_pixels = 200};
     (void)f.dispatch_input(action);
     check_action(f.state.viewport_scroll_pixels != 600);
@@ -2270,9 +2270,9 @@ TEST_CASE("Wheel inversion leaves modifier zoom unchanged", "[compose-action-not
     f.application.preferences.editor_preferences.invert_scroll_wheel = inverted;
     const auto zoom = f.state.pixels_per_standard_measure;
     auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
-    action.compose_inputs.resize(0);
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+    action.input.compose_inputs.resize(0);
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .zoom_modifier = true, .delta_y = 1.0, .cursor_x_pixels = 200, .cursor_y_pixels = 200};
     (void)f.dispatch_input(action);
     check_action(f.state.pixels_per_standard_measure < zoom);
@@ -3026,12 +3026,12 @@ struct measure_lane_input_fixture_t : action_notification_fixture_t {
     auto input(WormUiComposeInputKind kind, std::uint64_t row = 0, std::uint64_t measure = 0)
         -> wormedit::ui::workspace_action_t {
         auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
-        value.compose_input_viewport_width_pixels = 900;
-        value.compose_inputs.resize(1);
+        value.input.compose_input_viewport_width_pixels = 900;
+        value.input.compose_inputs.resize(1);
         const auto y = static_cast<double>(row) * state.pixels_per_standard_measure / 960.0 -
                        state.viewport_scroll_pixels;
-        value.compose_inputs.resize(std::max(value.compose_inputs.size(), std::size_t{1}));
-        value.compose_inputs[0] = {.kind = kind, .object_id = {measure}, .x_pixels = 20,
+        value.input.compose_inputs.resize(std::max(value.input.compose_inputs.size(), std::size_t{1}));
+        value.input.compose_inputs[0] = {.kind = kind, .object_id = {measure}, .x_pixels = 20,
             .y_pixels = compose_source_y(y, state.viewport_height_pixels,
                 compose_field_downscroll(history.document.charts.front(), application.preferences.editor_preferences))};
         return value;

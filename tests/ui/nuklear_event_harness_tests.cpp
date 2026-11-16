@@ -6271,10 +6271,10 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
     down.button.clicks = up.button.clicks = 2;
     const auto action = harness.frame(std::array{mouse_motion(x, y), down, up});
     expect_draw(action.get().timing.stage_action == wormedit::ui::timing_stage_action_t::begin);
-    expect_draw(action.get().timing_lane == lane);
+    expect_draw(action.get().timing.lane == lane);
     expect_draw(action.get().timing.object_id.value == 991);
-    expect_draw(action.get().timing_chart_id.value == harness.view().timing.chart_id.value);
-    expect_draw(action.get().timing_document_revision == harness.view().timing.document_revision);
+    expect_draw(action.get().timing.chart_id.value == harness.view().timing.chart_id.value);
+    expect_draw(action.get().timing.document_revision == harness.view().timing.document_revision);
     view.timing_lane_visibility_mask = 0;
     expect_draw(!(compose_timing_marker_at(view, 0, 0)));
     expect_draw(!(compose_timing_marker_at(view, (extent->first + extent->second) * .5, 200)));
@@ -7978,7 +7978,7 @@ TEST_CASE("Production Alt Anchor press inserts only in timing focus", "[frontend
     const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_ALT);
     expect_t422(frame.get().timing.stage_action == wormedit::ui::timing_stage_action_t::quick_insert);
-    expect_t422(frame.get().timing_lane == wormedit::timing_lane_kind_t::anchor);
+    expect_t422(frame.get().timing.lane == wormedit::timing_lane_kind_t::anchor);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
 }
 

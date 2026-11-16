@@ -166,7 +166,7 @@ TEST_CASE("Draw mode places a sample-set control from the armed toolbar bank",
         return frame.get().timing.stage_action == ui::timing_stage_action_t::quick_insert;
     });
     REQUIRE(inserted != frames.end());
-    CHECK(inserted->get().timing_lane == timing_lane_kind_t::sample_set);
+    CHECK(inserted->get().timing.lane == timing_lane_kind_t::sample_set);
     CHECK(inserted->get().timing.primary_numerator_text == "3");
-    CHECK(inserted->get().timing_chart_id == view.chart_id);
+    CHECK(inserted->get().timing.chart_id == view.chart_id);
 }

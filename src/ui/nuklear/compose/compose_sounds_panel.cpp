@@ -410,7 +410,7 @@ void render_add_sounds_button(const SoundsPanel& panel) {
         state.keysound_slots.keysound_slot_feedback = "Wait for the selected WAV slot to load, or select a slot.";
         return;
     }
-    panel.action->sound_import_pick_requested = true;
+    panel.action->sound_import.pick_requested = true;
 }
 
 void render_section_add_buttons(const SoundsPanel& panel) {
@@ -421,8 +421,8 @@ void render_section_add_buttons(const SoundsPanel& panel) {
     nk_layout_row_template_end(panel.context);
     nk_label(panel.context, "Stems", NK_TEXT_LEFT);
     if (wormedit::ui::chrome::button_label(panel.context, "Add stem…")) {
-        panel.action->sound_import_pick_requested = true;
-        panel.action->sound_import_kind = wormedit::ui::sound_import_kind_t::stem;
+        panel.action->sound_import.pick_requested = true;
+        panel.action->sound_import.kind = wormedit::ui::sound_import_kind_t::stem;
     }
     nk_layout_row_template_begin(panel.context, 24);
     nk_layout_row_template_push_dynamic(panel.context);
@@ -430,8 +430,8 @@ void render_section_add_buttons(const SoundsPanel& panel) {
     nk_layout_row_template_end(panel.context);
     nk_label(panel.context, "Keysounds", NK_TEXT_LEFT);
     if (wormedit::ui::chrome::button_label(panel.context, "Add keysound…")) {
-        panel.action->sound_import_pick_requested = true;
-        panel.action->sound_import_kind = wormedit::ui::sound_import_kind_t::keysound;
+        panel.action->sound_import.pick_requested = true;
+        panel.action->sound_import.kind = wormedit::ui::sound_import_kind_t::keysound;
     }
 }
 

@@ -42,14 +42,14 @@ void submit_import(wormedit::ui::workspace_action_t& action) {
     auto submitted = worm_ui_nuklear_sound_import_confirm(pending);
     if (!submitted) return;
     for (const auto& item : submitted->items)
-        action.sound_import_items.push_back({item.path, item.name,
+        action.sound_import.items.push_back({item.path, item.name,
             item.kind, pending.fixed_kind != wormedit::ui::sound_import_kind_t::generic});
     for (const auto& group : submitted->groups)
-        action.sound_import_groups.push_back({group.name,
+        action.sound_import.groups.push_back({group.name,
             group.existing_group.value_or(wormedit::sound_group_id_t{}), group.member_indexes});
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-    action.sound_import_project_id = wormedit::song_id_t{pending.project_id};
-    action.sound_import_kind = pending.fixed_kind;
+    action.sound_import.project_id = wormedit::song_id_t{pending.project_id};
+    action.sound_import.kind = pending.fixed_kind;
     action.compose_input_chart_id.value = pending.chart_id;
     action.compose_input_document_revision = pending.document_revision;
 }
@@ -130,8 +130,8 @@ void worm_ui_nuklear_consume_sound_picker(const wormedit::ui::workspace_view_t& 
         picker.target.chart == view.selected_chart_id.value && picker.target.revision == view.document_revision;
     if (!same_target || picker.paths.empty()) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
-    action.sound_import_project_id = view.project_id;
-    action.sound_import_kind = picker.target.kind;
+    action.sound_import.project_id = view.project_id;
+    action.sound_import.kind = picker.target.kind;
     action.compose_input_chart_id.value = view.selected_chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_import_paths = std::move(picker.paths);

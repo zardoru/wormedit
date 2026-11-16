@@ -10,19 +10,19 @@
 namespace wormedit::sys {
 namespace {
 
-auto row_matches(const wormedit::ui::workspace_action_t& action, const sound_usage_row_t& row) -> bool {
+auto row_matches(const wormedit::ui::sound_usage_activation_t& usage, const sound_usage_row_t& row) -> bool {
     const auto& position = row.position;
-    return action.sound_usage_chart_id.value == row.chart.value &&
-           action.sound_usage_kind == row.kind &&
-           action.sound_usage_scope == row.scope &&
-           action.sound_usage_object_id.value == row.object.value &&
-           action.sound_usage_channel_id.value == row.channel.value &&
-           action.sound_usage_clip_id.value == row.clip.value &&
-           action.sound_usage_referenced_resource_id.value == row.referenced_resource.value &&
-           action.sound_usage_referenced_asset_id.value == row.referenced_asset.value &&
-           action.sound_usage_position_valid == position.has_value() &&
-           action.sound_usage_measure_id.value == (position ? position->measure.value : 0) &&
-           action.sound_usage_row == (position ? position->row : 0);
+    return usage.chart_id.value == row.chart.value &&
+           usage.kind == row.kind &&
+           usage.scope == row.scope &&
+           usage.object_id.value == row.object.value &&
+           usage.channel_id.value == row.channel.value &&
+           usage.clip_id.value == row.clip.value &&
+           usage.referenced_resource_id.value == row.referenced_resource.value &&
+           usage.referenced_asset_id.value == row.referenced_asset.value &&
+           usage.position_valid == position.has_value() &&
+           usage.measure_id.value == (position ? position->measure.value : 0) &&
+           usage.row == (position ? position->row : 0);
 }
 
 auto rejection(std::string message) -> sound_usage_action_result_t {
@@ -39,17 +39,17 @@ auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
     if (action.kind != WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE ||
         workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
         request.selected_project_id != history.document.id ||
-        request.selected_resource_id != action.sound_usage_resource_id ||
-        action.sound_usage_song_id.value != history.document.id.value ||
-        action.sound_usage_document_revision != history.document.revision)
+        request.selected_resource_id != action.sound_usage.resource_id ||
+        action.sound_usage.song_id.value != history.document.id.value ||
+        action.sound_usage.document_revision != history.document.revision)
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =
-        sound_usage_view_t::from(history.document, action.sound_usage_resource_id);
-    if (!usage.valid || usage.asset.value != action.sound_usage_asset_id.value)
+        sound_usage_view_t::from(history.document, action.sound_usage.resource_id);
+    if (!usage.valid || usage.asset.value != action.sound_usage.asset_id.value)
         return rejection("The selected sound is no longer available.");
     const auto found =
-        std::ranges::find_if(usage.rows, [&](const auto& row) { return row_matches(action, row); });
+        std::ranges::find_if(usage.rows, [&](const auto& row) { return row_matches(action.sound_usage, row); });
     if (found == usage.rows.end())
         return rejection("The sound usage is no longer available.");
 

@@ -47,21 +47,21 @@ auto usage_action(const document_history_t& history, bool source_row = false)
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
     if (found == usage.rows.end())
         return action;
-    action.sound_usage_song_id.value = usage.song.value;
-    action.sound_usage_document_revision = usage.revision;
-    action.sound_usage_resource_id.value = usage.resource.value;
-    action.sound_usage_asset_id.value = usage.asset.value;
-    action.sound_usage_chart_id.value = found->chart.value;
-    action.sound_usage_kind = found->kind;
-    action.sound_usage_scope = found->scope;
-    action.sound_usage_object_id.value = found->object.value;
-    action.sound_usage_channel_id.value = found->channel.value;
-    action.sound_usage_clip_id.value = found->clip.value;
-    action.sound_usage_referenced_resource_id.value = found->referenced_resource.value;
-    action.sound_usage_referenced_asset_id.value = found->referenced_asset.value;
-    action.sound_usage_position_valid = found->position.has_value();
-    action.sound_usage_measure_id.value = found->position ? found->position->measure.value : 0;
-    action.sound_usage_row = found->position ? found->position->row : 0;
+    action.sound_usage.song_id.value = usage.song.value;
+    action.sound_usage.document_revision = usage.revision;
+    action.sound_usage.resource_id.value = usage.resource.value;
+    action.sound_usage.asset_id.value = usage.asset.value;
+    action.sound_usage.chart_id.value = found->chart.value;
+    action.sound_usage.kind = found->kind;
+    action.sound_usage.scope = found->scope;
+    action.sound_usage.object_id.value = found->object.value;
+    action.sound_usage.channel_id.value = found->channel.value;
+    action.sound_usage.clip_id.value = found->clip.value;
+    action.sound_usage.referenced_resource_id.value = found->referenced_resource.value;
+    action.sound_usage.referenced_asset_id.value = found->referenced_asset.value;
+    action.sound_usage.position_valid = found->position.has_value();
+    action.sound_usage.measure_id.value = found->position ? found->position->measure.value : 0;
+    action.sound_usage.row = found->position ? found->position->row : 0;
     return action;
 }
 
@@ -220,23 +220,23 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
                                   *interaction, original_workspace, original_interaction);
     };
     SECTION("stale song") {
-        reject([](auto& a) { a.sound_usage_song_id = song_id_t{9}; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { a.sound_usage.song_id = song_id_t{9}; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale revision") {
-        reject([](auto& a) { ++a.sound_usage_document_revision; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.sound_usage.document_revision; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale selected resource") {
         reject([](auto&) {}, [](auto& r) { r.selected_resource_id = resource_id_t{99}; }, [](auto&) {});
     }
     SECTION("stale asset") {
-        reject([](auto& a) { ++a.sound_usage_asset_id.value; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.sound_usage.asset_id.value; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("deleted row") {
         reject([](auto&) {}, [](auto&) {},
                [](auto& h) { h.document.charts.front().measures.front().notes.clear(); });
     }
     SECTION("mismatched full row") {
-        reject([](auto& a) { ++a.sound_usage_object_id.value; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.sound_usage.object_id.value; }, [](auto&) {}, [](auto&) {});
     }
 }
 

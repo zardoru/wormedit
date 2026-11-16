@@ -253,13 +253,13 @@ void set_inline_timing_number(wormedit::ui::workspace_action_t& action, wormedit
     std::snprintf(denominator, sizeof(denominator), "%llu",
                   static_cast<unsigned long long>(value.denominator));
     if (lane == wormedit::timing_lane_kind_t::warp) {
-        action.timing_secondary_numerator_text = numerator;
-        action.timing_secondary_denominator_text = denominator;
-        action.timing_secondary_value = static_cast<double>(value.numerator);
+        action.timing.secondary_numerator_text = numerator;
+        action.timing.secondary_denominator_text = denominator;
+        action.timing.secondary_value = static_cast<double>(value.numerator);
     } else {
-        action.timing_primary_numerator_text = numerator;
-        action.timing_primary_denominator_text = denominator;
-        action.timing_value = wormedit::to_double(value);
+        action.timing.primary_numerator_text = numerator;
+        action.timing.primary_denominator_text = denominator;
+        action.timing.value = wormedit::to_double(value);
     }
 }
 
@@ -547,7 +547,7 @@ auto worm_ui_nuklear_inline_timing_review_new_stage(
         state.inline_timing.inline_timing_seen_stage_y == view.stage_marker_y_pixels;
     if (same_stage) return false;
     if (state.inline_timing.inline_timing_open || state.inline_timing.inline_timing_popup_close_pending ||
-        action.timing_stage_action != wormedit::ui::timing_stage_action_t::none)
+        action.timing.stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     state.inline_timing.inline_timing_stage_seen = true;
     state.inline_timing.inline_timing_seen_chart_id = view.chart_id.value;
@@ -589,33 +589,33 @@ auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& vi
     const auto bpm_decimal = view.stage_lane == wormedit::timing_lane_kind_t::bpm &&
                              input.find('/') == std::string_view::npos;
     auto result = action;
-    result.timing_stage_action = wormedit::ui::timing_stage_action_t::confirm;
+    result.timing.stage_action = wormedit::ui::timing_stage_action_t::confirm;
     result.timing_chart_id.value = view.chart_id.value;
     result.timing_document_revision = view.document_revision;
-    result.timing_object_id.value = view.stage_existing_object_id.value;
+    result.timing.object_id.value = view.stage_existing_object_id.value;
     result.timing_lane = view.stage_lane;
-    result.timing_value = view.stage_value;
-    result.timing_secondary_value = view.stage_secondary_value;
-    result.timing_transition_is_seconds = view.stage_transition_is_seconds;
-    result.timing_toggle_primary = view.stage_toggle_primary;
-    result.timing_pause_unit = view.stage_pause_unit;
-    result.timing_primary_numerator_text = view.stage_primary_numerator_text.c_str();
-    result.timing_primary_denominator_text = view.stage_primary_denominator_text.c_str();
-    result.timing_secondary_numerator_text = view.stage_secondary_numerator_text.c_str();
-    result.timing_secondary_denominator_text = view.stage_secondary_denominator_text.c_str();
-    result.timing_bpm_decimal_text = view.stage_primary_decimal_text.c_str();
-    result.timing_bpm_decimal_edited = false;
-    result.timing_bpm_step = 0;
+    result.timing.value = view.stage_value;
+    result.timing.secondary_value = view.stage_secondary_value;
+    result.timing.transition_is_seconds = view.stage_transition_is_seconds;
+    result.timing.toggle_primary = view.stage_toggle_primary;
+    result.timing.pause_unit = view.stage_pause_unit;
+    result.timing.primary_numerator_text = view.stage_primary_numerator_text.c_str();
+    result.timing.primary_denominator_text = view.stage_primary_denominator_text.c_str();
+    result.timing.secondary_numerator_text = view.stage_secondary_numerator_text.c_str();
+    result.timing.secondary_denominator_text = view.stage_secondary_denominator_text.c_str();
+    result.timing.bpm_decimal_text = view.stage_primary_decimal_text.c_str();
+    result.timing.bpm_decimal_edited = false;
+    result.timing.bpm_step = 0;
     if (anchor_frame) {
-        result.timing_primary_numerator_text = std::to_string(static_cast<unsigned long long>(*anchor_frame));
-        result.timing_primary_denominator_text = "1";
-        result.timing_value = static_cast<double>(*anchor_frame);
+        result.timing.primary_numerator_text = std::to_string(static_cast<unsigned long long>(*anchor_frame));
+        result.timing.primary_denominator_text = "1";
+        result.timing.value = static_cast<double>(*anchor_frame);
     } else {
         set_inline_timing_number(result, view.stage_lane, *value);
     }
     if (bpm_decimal) {
-        result.timing_bpm_decimal_text = input;
-        result.timing_bpm_decimal_edited = true;
+        result.timing.bpm_decimal_text = input;
+        result.timing.bpm_decimal_edited = true;
     }
     action = result;
     return true;
@@ -627,7 +627,7 @@ void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state
     state.inline_timing.inline_timing_open = false;
     state.inline_timing.inline_timing_focus_pending = false;
     state.inline_timing.inline_timing_popup_close_pending = true;
-    action.timing_stage_action = wormedit::ui::timing_stage_action_t::cancel;
+    action.timing.stage_action = wormedit::ui::timing_stage_action_t::cancel;
 }
 
 void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,

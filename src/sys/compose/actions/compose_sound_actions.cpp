@@ -394,8 +394,8 @@ struct assign_sound_slot_batch_action_t {
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
         if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
-        if (action.sound_import_items.empty() ||
-            action.sound_import_items.size() > maximum_bulk_sound_import)
+        if (action.sound_import.items.empty() ||
+            action.sound_import.items.size() > maximum_bulk_sound_import)
             return compose_action_outcome_t::blocked(
                 "Choose between 1 and 1295 audio files for the WAV slots.");
 
@@ -405,9 +405,9 @@ struct assign_sound_slot_batch_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
         auto files = std::vector<import_resource_asset_action_t>{};
-        files.reserve(action.sound_import_items.size());
-        for (std::size_t index = 0; index < action.sound_import_items.size(); ++index) {
-            const auto& item = action.sound_import_items[index];
+        files.reserve(action.sound_import.items.size());
+        for (std::size_t index = 0; index < action.sound_import.items.size(); ++index) {
+            const auto& item = action.sound_import.items[index];
             if (item.path.empty() || item.name.empty() ||
                 item.kind != sound_kind_t::keysound)
                 return compose_action_outcome_t::blocked(
@@ -444,7 +444,7 @@ struct assign_sound_slot_batch_action_t {
                 .rebind_failure = "Sounds updated, but workspace rebinding failed.",
                 .unknown_severity = notification_severity_t::info,
                 .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-            "Assigned " + sound_count_text(action.sound_import_items.size()) + " starting at WAV " +
+            "Assigned " + sound_count_text(action.sound_import.items.size()) + " starting at WAV " +
                 identifier + ".");
     }
 };
@@ -700,7 +700,7 @@ struct import_compose_sounds_action_t {
             if (!action.compose_import_paths[index].empty())
                 paths.emplace_back(action.compose_import_paths[index]);
         return import_keysound_feedback(history, chart, paths,
-                                        action.sound_import_kind ==
+                                        action.sound_import.kind ==
                                                 wormedit::ui::sound_import_kind_t::stem
                                             ? sound_kind_t::stem
                                             : sound_kind_t::keysound);
@@ -711,19 +711,19 @@ static_assert(compose_action<import_compose_sounds_action_t, const resource_acti
 auto confirmed_import_entries(const wormedit::ui::workspace_action_t& action, const song_document_t& document,
                               bool bms_chart, std::string& reason)
     -> std::optional<std::vector<bulk_sound_import_entry_t>> {
-    if (action.sound_import_items.empty() ||
-        action.sound_import_items.size() > maximum_bulk_sound_import) {
+    if (action.sound_import.items.empty() ||
+        action.sound_import.items.size() > maximum_bulk_sound_import) {
         reason = "Sound import needs between 1 and 1295 files.";
         return std::nullopt;
     }
     const auto known = sample_source_paths(document);
     auto planned = std::unordered_set<std::string>{};
     auto entries = std::vector<bulk_sound_import_entry_t>{};
-    entries.reserve(action.sound_import_items.size());
+    entries.reserve(action.sound_import.items.size());
     constexpr auto minimum_kind = sound_kind_t::stem;
     constexpr auto maximum_kind = sound_kind_t::sample;
-    for (std::size_t index = 0; index < action.sound_import_items.size(); ++index) {
-        const auto& item = action.sound_import_items[index];
+    for (std::size_t index = 0; index < action.sound_import.items.size(); ++index) {
+        const auto& item = action.sound_import.items[index];
         if (item.path.empty() || item.name.empty() || item.kind < minimum_kind || item.kind > maximum_kind) {
             reason = "The reviewed sound list contains an invalid item.";
             return std::nullopt;
@@ -763,9 +763,9 @@ auto confirmed_import_groups(const wormedit::ui::workspace_action_t& action, std
                              std::string& reason)
     -> std::optional<std::vector<bulk_sound_import_group_t>> {
     auto groups = std::vector<bulk_sound_import_group_t>{};
-    groups.reserve(action.sound_import_groups.size());
-    for (std::size_t index = 0; index < action.sound_import_groups.size(); ++index) {
-        const auto& group = action.sound_import_groups[index];
+    groups.reserve(action.sound_import.groups.size());
+    for (std::size_t index = 0; index < action.sound_import.groups.size(); ++index) {
+        const auto& group = action.sound_import.groups[index];
         if (group.name.empty() || group.member_indices.empty()) {
             reason = "A reviewed group has no valid members.";
             return std::nullopt;
@@ -794,7 +794,7 @@ struct confirm_compose_sound_import_action_t {
         auto& history = context.document.history;
         const auto chart = context.chart;
 
-        const chart_stamp_t stamp{.document = {.project = action.sound_import_project_id,
+        const chart_stamp_t stamp{.document = {.project = action.sound_import.project_id,
                                                .revision = action.compose_input_document_revision},
                                   .chart = action.compose_input_chart_id};
         if (!stamp.is_current(history.document, chart))
@@ -833,7 +833,7 @@ struct confirm_compose_sound_import_action_t {
         if (!applied.applied)
             return compose_action_outcome_t::from("Sound import made no document change.",
                                                   notification_severity_t::info);
-        auto message = "Added " + sound_count_text(action.sound_import_items.size());
+        auto message = "Added " + sound_count_text(action.sound_import.items.size());
         const auto range_count =
             bms_chart
                 ? imported_bms_id_ranges(history.document, imported_resource_begin, loose_entries)
@@ -920,13 +920,13 @@ struct edit_sound_properties_action_t {
         auto& history = context.document.history;
         const auto& workspace = context.document.workspace;
         if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
-            action.sound_properties_project_id != history.document.id ||
-            action.sound_properties_chart_id != *workspace.selected_chart ||
-            action.sound_properties_document_revision != history.document.revision) {
+            action.sound_properties.project_id != history.document.id ||
+            action.sound_properties.chart_id != *workspace.selected_chart ||
+            action.sound_properties.document_revision != history.document.revision) {
             return compose_action_outcome_t::blocked(stale_action_message("Sound properties"));
         }
         const auto resource = std::ranges::find(history.document.resources,
-                                                resource_id_t{action.sound_properties_resource_id},
+                                                resource_id_t{action.sound_properties.resource_id},
                                                 &resource_entry_t::id);
         if (resource == history.document.resources.end()) {
             return compose_action_outcome_t::blocked("The sound properties draft is invalid.");
@@ -939,11 +939,11 @@ struct edit_sound_properties_action_t {
         auto& history = context.document.history;
         auto applied = apply_resource_sound_metadata(
             history, {.resource = selected->id,
-                      .kind = action.sound_properties_tags ? selected->sound_kind :
-                          static_cast<sound_kind_t>(action.sound_properties_kind),
-                      .tags = action.sound_properties_tags.value_or(selected->tags),
-                      .name = action.sound_properties_tags ? std::nullopt :
-                          std::optional{action.sound_properties_name}});
+                      .kind = action.sound_properties.tags ? selected->sound_kind :
+                          static_cast<sound_kind_t>(action.sound_properties.kind),
+                      .tags = action.sound_properties.tags.value_or(selected->tags),
+                      .name = action.sound_properties.tags ? std::nullopt :
+                          std::optional{action.sound_properties.name}});
         return compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{
@@ -961,7 +961,7 @@ auto dispatch_sound_properties_action(const wormedit::ui::workspace_action_t& ac
                                       document_history_t& history,
                                       workspace_controller_t& workspace,
                                       notification_sink_t notifications) -> bool {
-    if (!action.sound_properties_apply)
+    if (!action.sound_properties.apply)
         return false;
     const document_edit_inputs_t document{history, workspace, notifications};
     const resource_action_context_t context{action, document, {}};

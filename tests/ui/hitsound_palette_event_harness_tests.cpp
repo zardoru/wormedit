@@ -163,10 +163,10 @@ TEST_CASE("Draw mode places a sample-set control from the armed toolbar bank",
     const auto y = viewport.y + 200.0f / 600 * viewport.height;
     const auto frames = test::click_at(harness, x, y);
     const auto inserted = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().timing_stage_action == ui::timing_stage_action_t::quick_insert;
+        return frame.get().timing.stage_action == ui::timing_stage_action_t::quick_insert;
     });
     REQUIRE(inserted != frames.end());
     CHECK(inserted->get().timing_lane == timing_lane_kind_t::sample_set);
-    CHECK(inserted->get().timing_primary_numerator_text == "3");
+    CHECK(inserted->get().timing.primary_numerator_text == "3");
     CHECK(inserted->get().timing_chart_id == view.chart_id);
 }

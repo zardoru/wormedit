@@ -332,8 +332,8 @@ TEST_CASE("Compose edits reject a stale boundary before reaching synchronous han
                                WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM,
                                WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP);
     auto action = fixture.action(kind);
-    action.timing_meter_numerator_text = "3";
-    action.timing_meter_denominator_text = "4";
+    action.timing.meter_numerator_text = "3";
+    action.timing.meter_denominator_text = "4";
     const std::uint64_t measure = 1;
     action.compose_measure_ids = {measure};
     --action.compose_input_document_revision;
@@ -2619,7 +2619,7 @@ TEST_CASE("Standalone sound-import confirmation shares stale feedback",
     action_notification_fixture_t fixture;
     const auto kind = GENERATE(0, 1, 2);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
-    action.sound_import_project_id = song_id_t{fixture.history.document.id.value + (kind == 0 ? 1 : 0)};
+    action.sound_import.project_id = song_id_t{fixture.history.document.id.value + (kind == 0 ? 1 : 0)};
     if (kind == 1) ++action.compose_input_chart_id.value;
     if (kind == 2) --action.compose_input_document_revision;
     const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
@@ -2696,8 +2696,8 @@ TEST_CASE("Rejected Compose meter edits keep their validation feedback without r
                                           : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
     const std::array<std::uint64_t, 1> ids{0};
     action.compose_measure_ids.assign(ids.begin(), ids.end());
-    action.timing_meter_numerator_text = "0";
-    action.timing_meter_denominator_text = "4";
+    action.timing.meter_numerator_text = "0";
+    action.timing.meter_denominator_text = "4";
     check_action(fixture.dispatch(action) == "A meter needs a non-zero numerator and denominator.");
     const auto entries = fixture.entries();
     require_action(entries.size() == 1);

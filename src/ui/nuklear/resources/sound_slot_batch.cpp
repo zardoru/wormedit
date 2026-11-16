@@ -183,9 +183,9 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
             action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
             action.compose_input_chart_id.value = state.chart_id;
             action.compose_input_document_revision = state.revision;
-            action.sound_import_project_id = wormedit::song_id_t{state.project_id};
+            action.sound_import.project_id = wormedit::song_id_t{state.project_id};
             for (const auto& item : state.items)
-                action.sound_import_items.push_back({.path = item.path, .name = item.name,
+                action.sound_import.items.push_back({.path = item.path, .name = item.name,
                     .kind = wormedit::sound_kind_t::keysound});
 
             action.compose_sound_slot = state.first_slot;

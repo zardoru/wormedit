@@ -48,15 +48,15 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
         .selected_chart = wormedit::chart_id_t{2}};
     const wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})}};
     wormedit::ui::workspace_action_t action{};
-    action.timing_chart_id = wormedit::chart_id_t{2};
-    action.timing_document_revision = 7;
+    action.timing.chart_id = wormedit::chart_id_t{2};
+    action.timing.document_revision = 7;
     action.audio_offset_drag_chart_id = wormedit::chart_id_t{2};
     action.audio_offset_drag_document_revision = 7;
     action.audio_offset_drag_sample_rate = 48'000;
-    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage));
+    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage));
     CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
     workspace.selected_chart.reset();
-    const auto timing = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    const auto timing = wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage);
     REQUIRE(timing.has_value());
     CHECK(*timing == "Timing event staging expired because its chart or revision changed.");
     const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000);
@@ -73,13 +73,13 @@ TEST_CASE("Application timing stage validation keeps captured identity and reque
     wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
         .payload = {.report = {.existing_event = wormedit::object_id_t{3}}}}};
     wormedit::ui::workspace_action_t action{};
-    action.timing_chart_id = wormedit::chart_id_t{2};
-    action.timing_object_id = wormedit::object_id_t{3};
-    action.timing_document_revision = 7;
-    if (source == 0) --action.timing_document_revision;
+    action.timing.chart_id = wormedit::chart_id_t{2};
+    action.timing.object_id = wormedit::object_id_t{3};
+    action.timing.document_revision = 7;
+    if (source == 0) --action.timing.document_revision;
     else if (source == 1) --stage.value->stamp.document.revision;
     else stage.value->stamp.chart = wormedit::chart_id_t{4};
-    const auto failure = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    const auto failure = wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage);
     REQUIRE(failure.has_value());
     wormedit::test::check_stale_action_message(*failure, "Timing event staging");
 }
@@ -344,12 +344,12 @@ struct SoundImportDispatchFixture {
         -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-        action.sound_import_project_id = history.document.id;
+        action.sound_import.project_id = history.document.id;
         action.compose_input_chart_id.value = chart.value;
         action.compose_input_document_revision = history.document.revision;
-        if (items) action.sound_import_items.assign(items, items + item_count);
+        if (items) action.sound_import.items.assign(items, items + item_count);
 
-        if (groups) action.sound_import_groups.assign(groups, groups + group_count);
+        if (groups) action.sound_import.groups.assign(groups, groups + group_count);
 
         return dispatch_compose_sound_action(action, history, workspace, chart, application_state, sink);
     }
@@ -381,12 +381,12 @@ struct SoundSlotBatchDispatchFixture {
                   std::uint64_t revision = 0) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-        action.sound_import_project_id = history.document.id;
+        action.sound_import.project_id = history.document.id;
         action.compose_input_chart_id.value = chart.value;
         action.compose_input_document_revision = revision == 0 ? history.document.revision : revision;
         action.compose_sound_slot = slot;
         action.compose_sound_slot_confirmed = confirmed;
-        if (items) action.sound_import_items.assign(items, items + count);
+        if (items) action.sound_import.items.assign(items, items + count);
 
         return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
     }
@@ -615,7 +615,7 @@ void section_dispatch_preserves_model(wormedit::ui::sound_import_kind_t kind, bo
         const auto* raw_path = path.c_str();
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
-        action.sound_import_kind = kind;
+        action.sound_import.kind = kind;
         action.compose_import_paths = {raw_path};
 
         message = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
@@ -656,12 +656,12 @@ TEST_CASE("sound_import fixed section confirmation rejects stale revision atomic
     const wormedit::ui::sound_import_item_t item{path.c_str(), "Section stem", wormedit::sound_kind_t::stem, true};
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-    action.sound_import_project_id = fixture.history.document.id;
+    action.sound_import.project_id = fixture.history.document.id;
     action.compose_input_chart_id.value = fixture.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
-    action.sound_import_items = {item};
+    action.sound_import.items = {item};
 
-    action.sound_import_kind = wormedit::ui::sound_import_kind_t::stem;
+    action.sound_import.kind = wormedit::ui::sound_import_kind_t::stem;
     ++fixture.history.document.revision;
     const auto resources = fixture.history.document.resources.size();
     const auto channels = fixture.history.document.charts.front().sound_channels.size();

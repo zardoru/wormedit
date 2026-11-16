@@ -1021,7 +1021,7 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     const auto chart = action.compose_input_chart_id;
-    if (!dock.slots_mode || action.sound_import_project_id != history.document.id ||
+    if (!dock.slots_mode || action.sound_import.project_id != history.document.id ||
         !workspace.selected_chart || chart != *workspace.selected_chart ||
         workspace.active_tab != wormedit::workspace_tab_t::compose ||
         action.compose_input_document_revision != history.document.revision) {
@@ -1062,7 +1062,7 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     if (!request && !confirm) return false;
     std::string feedback;
     const auto chart = action.compose_input_chart_id;
-    if ((action.sound_import_project_id.value && action.sound_import_project_id != history.document.id) ||
+    if ((action.sound_import.project_id.value && action.sound_import.project_id != history.document.id) ||
         !workspace.selected_chart || chart != *workspace.selected_chart ||
         action.compose_input_document_revision != history.document.revision) {
         feedback = "The import target changed. Cancel and choose the files again.";
@@ -1076,7 +1076,7 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
                                    index < action.compose_import_paths.size(); ++index)
             if (!action.compose_import_paths[index].empty()) paths.emplace_back(action.compose_import_paths[index]);
         feedback = wormedit::sys::finish_compose_action(notifications,
-            wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import_kind,
+            wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import.kind,
                 workspace.selected_chart ? history.read_chart(*workspace.selected_chart) : nullptr)).message;
         return true;
     }
@@ -3085,8 +3085,8 @@ struct application_t::implementation_t {
 
     bool dispatch_timing_workspace_action(const wormedit::ui::workspace_action_t& action,
                                           application_command_state_t& application_state) {
-        if (action.timing_stage_action != wormedit::ui::timing_stage_action_t::none) {
-            const auto chart = session.history.read_chart(action.timing_chart_id);
+        if (action.timing.stage_action != wormedit::ui::timing_stage_action_t::none) {
+            const auto chart = session.history.read_chart(action.timing.chart_id);
             const auto denominator =
                 chart == nullptr
                     ? views.project.timing_grid.active_denominator
@@ -3094,7 +3094,7 @@ struct application_t::implementation_t {
                           *chart, {.denominator = views.project.timing_grid.active_denominator},
                           application_state.project.compose_view.edit_snap_enabled).denominator;
             views.project.timing_edit.dispatch(
-                action, document_inputs(), application_state.project.timing_recipe.timing_locked,
+                action.timing, document_inputs(), application_state.project.timing_recipe.timing_locked,
                 denominator);
             return true;
         }

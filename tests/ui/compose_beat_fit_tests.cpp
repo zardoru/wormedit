@@ -230,12 +230,12 @@ TEST_CASE("Staged timing uses the shared lock and threshold while retaining Appl
     (void)f.h.frame();
     const auto p = f.press(wormedit::timing_lane_kind_t::bpm, 200);
     const auto small = f.h.frame(std::array{fit_motion(p.first, p.second + 3)});
-    verify_fit_event(small.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
+    verify_fit_event(small.get().timing.stage_action == wormedit::ui::timing_stage_action_t::none);
     const auto move = f.h.frame(std::array{fit_motion(p.first, p.second + 20)});
-    verify_fit_event(move.get().timing_stage_action == wormedit::ui::timing_stage_action_t::move);
+    verify_fit_event(move.get().timing.stage_action == wormedit::ui::timing_stage_action_t::move);
     verify_fit_event(move.get().timing_chart_id.value == 1 && move.get().timing_document_revision == 1);
     const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 20, false)});
-    verify_fit_event(end.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
+    verify_fit_event(end.get().timing.stage_action == wormedit::ui::timing_stage_action_t::none);
     verify_fit_event(!worm_ui_nuklear_compose_state().timing_drag.timing_stage_capture.active);
 }
 

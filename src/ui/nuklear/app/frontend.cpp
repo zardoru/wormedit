@@ -4024,8 +4024,8 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
     render_command_menu(g_context, *view, action, width, height);
-    if (action.sound_import_pick_requested && !g_headless)
-        worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import_kind);
+    if (action.sound_import.pick_requested && !g_headless)
+        worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import.kind);
     consume_layer_creation_request(*view, action);
     worm_ui_nuklear_render_compose_dialogs(g_context, view->compose, action,
         worm_ui_nuklear_compose_state());

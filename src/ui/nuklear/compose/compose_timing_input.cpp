@@ -58,14 +58,14 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         state.timing_drag.timing_stage_drag_active = false;
         state.timing_drag.timing_stage_capture.cancel();
     } else if (continuation.moved && nk_input_is_mouse_moved(&input.context->input) &&
-               action.timing_stage_action == wormedit::ui::timing_stage_action_t::none) {
-        action.timing_stage_action = wormedit::ui::timing_stage_action_t::move;
-        action.timing_chart_id.value = state.timing_drag.timing_stage_capture.chart;
-        action.timing_document_revision = state.timing_drag.timing_stage_capture.revision;
-        action.timing_object_id.value = timing.stage_existing_object_id.value;
-        action.timing_lane = timing.stage_lane;
-        action.timing_has_target_y = true;
-        action.timing_target = compose_timing_target(view, input.pointer_y);
+               action.timing.stage_action == wormedit::ui::timing_stage_action_t::none) {
+        action.timing.stage_action = wormedit::ui::timing_stage_action_t::move;
+        action.timing.chart_id.value = state.timing_drag.timing_stage_capture.chart;
+        action.timing.document_revision = state.timing_drag.timing_stage_capture.revision;
+        action.timing.object_id.value = timing.stage_existing_object_id.value;
+        action.timing.lane = timing.stage_lane;
+        action.timing.has_target_y = true;
+        action.timing.target = compose_timing_target(view, input.pointer_y);
     }
 }
 

@@ -966,11 +966,11 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
         worm_ui_nuklear_inline_timing_update(state, timing, *panel.action, true, false);
         // Keep a rejected proposal editable here. Application acceptance removes the
         // stage, and the next frame dismisses this popup through the normal binding check.
-        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::confirm)
+        if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::confirm)
             state.inline_timing.inline_timing_open = true;
-    } else if (changed && panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+    } else if (changed && panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::none &&
         worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing.inline_timing_text.data(), *panel.action)) {
-        panel.action->timing_stage_action = wormedit::ui::timing_stage_action_t::update;
+        panel.action->timing.stage_action = wormedit::ui::timing_stage_action_t::update;
     }
 }
 
@@ -1024,7 +1024,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     const auto& timing = *panel.timing_view;
     if (!timing.stage_active) {
         // The opening double-click reaches the application after this frame.
-        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::begin) return;
+        if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::begin) return;
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }

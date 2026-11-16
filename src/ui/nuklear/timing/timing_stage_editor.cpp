@@ -90,16 +90,16 @@ static void set_timing_action(wormedit::ui::workspace_action_t* action, const wo
     if (!action || !view) {
         return;
     }
-    action->timing_stage_action = kind;
-    action->timing_chart_id.value = view->chart_id.value;
-    action->timing_document_revision = view->document_revision;
-    action->timing_object_id.value = view->stage_existing_object_id.value;
-    action->timing_lane = view->stage_lane;
-    action->timing_value = primary;
-    action->timing_secondary_value = secondary;
-    action->timing_transition_is_seconds = transition_is_seconds;
-    action->timing_toggle_primary = view->stage_toggle_primary;
-    action->timing_pause_unit = view->stage_pause_unit;
+    action->timing.stage_action = kind;
+    action->timing.chart_id.value = view->chart_id.value;
+    action->timing.document_revision = view->document_revision;
+    action->timing.object_id.value = view->stage_existing_object_id.value;
+    action->timing.lane = view->stage_lane;
+    action->timing.value = primary;
+    action->timing.secondary_value = secondary;
+    action->timing.transition_is_seconds = transition_is_seconds;
+    action->timing.toggle_primary = view->stage_toggle_primary;
+    action->timing.pause_unit = view->stage_pause_unit;
 }
 
 static void copy_timing_text(char* destination, size_t capacity, const char* source) {
@@ -117,12 +117,12 @@ static void copy_timing_form_to_action(wormedit::ui::workspace_action_t* action)
     if (!action) {
         return;
     }
-    action->timing_bpm_decimal_text = state.bpm_decimal.data();
-    action->timing_bpm_decimal_edited = state.bpm_decimal_edited;
-    action->timing_primary_numerator_text = state.primary_numerator.data();
-    action->timing_primary_denominator_text = state.primary_denominator.data();
-    action->timing_secondary_numerator_text = state.secondary_numerator.data();
-    action->timing_secondary_denominator_text = state.secondary_denominator.data();
+    action->timing.bpm_decimal_text = state.bpm_decimal.data();
+    action->timing.bpm_decimal_edited = state.bpm_decimal_edited;
+    action->timing.primary_numerator_text = state.primary_numerator.data();
+    action->timing.primary_denominator_text = state.primary_denominator.data();
+    action->timing.secondary_numerator_text = state.secondary_numerator.data();
+    action->timing.secondary_denominator_text = state.secondary_denominator.data();
 }
 
 
@@ -365,11 +365,11 @@ static void render_stage_secondary(TimingStageEditor& editor) {
 
 static void update_stage_action_fields(TimingStageEditor& editor) {
     auto* action = editor.action;
-    if (!action || action->timing_stage_action == wormedit::ui::timing_stage_action_t::none) return;
-    action->timing_transition_is_seconds = editor.seconds != 0;
-    action->timing_toggle_primary = editor.toggle_primary != 0;
+    if (!action || action->timing.stage_action == wormedit::ui::timing_stage_action_t::none) return;
+    action->timing.transition_is_seconds = editor.seconds != 0;
+    action->timing.toggle_primary = editor.toggle_primary != 0;
     copy_timing_form_to_action(action);
-    action->timing_bpm_step = editor.bpm_step;
+    action->timing.bpm_step = editor.bpm_step;
 }
 
 static void commit_stage_action(TimingStageEditor& editor, wormedit::ui::timing_stage_action_t kind) {
@@ -402,7 +402,7 @@ static void render_stage_anchoring(TimingStageEditor& editor) {
     }
     if (changed && editor.action) {
         set_timing_action(editor.action, &view, wormedit::ui::timing_stage_action_t::update);
-        editor.action->timing_anchoring = settings;
+        editor.action->timing.anchoring = settings;
     }
     wormedit::ui::chrome::section_pop(editor.context);
 }
@@ -427,15 +427,15 @@ static void render_stage_actions(TimingStageEditor& editor) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         remove = wormedit::ui::chrome::button_label(context, "Delete event");
     }
-    if (action && action->timing_stage_action == wormedit::ui::timing_stage_action_t::none && editor.changed)
+    if (action && action->timing.stage_action == wormedit::ui::timing_stage_action_t::none && editor.changed)
         set_timing_action(action, &view, wormedit::ui::timing_stage_action_t::update, view.stage_value,
                           view.stage_secondary_value, editor.seconds != 0);
     update_stage_action_fields(editor);
     if (remove) commit_stage_action(editor, wormedit::ui::timing_stage_action_t::remove);
     else if (cancel) commit_stage_action(editor, wormedit::ui::timing_stage_action_t::cancel);
     else if (confirm) commit_stage_action(editor, wormedit::ui::timing_stage_action_t::confirm);
-    if (action && action->timing_stage_action != wormedit::ui::timing_stage_action_t::none)
-        action->timing_toggle_primary = editor.toggle_primary != 0;
+    if (action && action->timing.stage_action != wormedit::ui::timing_stage_action_t::none)
+        action->timing.toggle_primary = editor.toggle_primary != 0;
 }
 
 static void render_active_timing_stage(nk_context* context, const wormedit::ui::timing_view_t* view,

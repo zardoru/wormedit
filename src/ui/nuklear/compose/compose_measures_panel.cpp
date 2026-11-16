@@ -110,8 +110,8 @@ void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& vie
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
         !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
     action.compose_measure_ids = state.measures_dock.measure_selection.selected;
-    action.timing_meter_numerator_text = row.numerator.data();
-    action.timing_meter_denominator_text = row.denominator.data();
+    action.timing.meter_numerator_text = row.numerator.data();
+    action.timing.meter_denominator_text = row.denominator.data();
 }
 
 void length_controls(nk_context* context, const wormedit::ui::compose_view_t& view,

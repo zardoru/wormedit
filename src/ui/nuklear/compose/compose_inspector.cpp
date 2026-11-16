@@ -34,20 +34,20 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         nk_label(context, "BPM: unset", NK_TEXT_LEFT);
     nk_layout_row_push(context, 1.0f - wormedit::ui::chrome::property_label_ratio);
     const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
-        action->timing_stage_action == wormedit::ui::timing_stage_action_t::none;
+        action->timing.stage_action == wormedit::ui::timing_stage_action_t::none;
     if (!can_edit_initial_bpm) nk_widget_disable_begin(context);
     const auto clicked = wormedit::ui::chrome::Button{"Set BPM", wormedit::ui::chrome::ButtonKind::secondary,
         nullptr, can_edit_initial_bpm}.render(context);
     if (!can_edit_initial_bpm) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if (clicked && can_edit_initial_bpm) {
-        action->timing_stage_action = wormedit::ui::timing_stage_action_t::begin;
-        action->timing_chart_id.value = timing_view->chart_id.value;
-        action->timing_document_revision = timing_view->document_revision;
-        action->timing_lane = wormedit::timing_lane_kind_t::bpm;
-        action->timing_object_id.value = timing_view->initial_bpm_event_id.value;
-        action->timing_has_target_y = !timing_view->initial_bpm_event_id;
-        action->timing_target = wormedit::ui::timing_target_t{.screen_y = 0.0, .viewport_height_pixels = 1.0,
+        action->timing.stage_action = wormedit::ui::timing_stage_action_t::begin;
+        action->timing.chart_id.value = timing_view->chart_id.value;
+        action->timing.document_revision = timing_view->document_revision;
+        action->timing.lane = wormedit::timing_lane_kind_t::bpm;
+        action->timing.object_id.value = timing_view->initial_bpm_event_id.value;
+        action->timing.has_target_y = !timing_view->initial_bpm_event_id;
+        action->timing.target = wormedit::ui::timing_target_t{.screen_y = 0.0, .viewport_height_pixels = 1.0,
             .document_begin_fraction = 0.0, .document_end_fraction = 1.0, .downscroll = false};
     }
 }
@@ -177,7 +177,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         }
         // The event being edited is a card beside Tempo, not a third level inside it.
         if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
-            inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+            inspector.action->timing.stage_action == wormedit::ui::timing_stage_action_t::none &&
             chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED, true)) {
             worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
                                                        inspector.action);
@@ -273,8 +273,8 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
     action->compose_input_chart_id.value = view->chart_id.value;
     action->compose_input_document_revision = view->document_revision;
-    action->timing_meter_numerator_text = state.recipe_editor.meter_numerator.data();
-    action->timing_meter_denominator_text = state.recipe_editor.meter_denominator.data();
+    action->timing.meter_numerator_text = state.recipe_editor.meter_numerator.data();
+    action->timing.meter_denominator_text = state.recipe_editor.meter_denominator.data();
 }
 
 // The confirmation belongs to one measure at one document revision; a move or edit closes it.

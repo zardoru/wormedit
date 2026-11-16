@@ -8,7 +8,7 @@
 #include <optional>
 
 namespace wormedit::ui {
-struct workspace_action_t;
+struct timing_edit_request_t;
 }
 
 namespace wormedit::sys {
@@ -27,27 +27,27 @@ struct timing_edit_t {
     [[nodiscard]] const timing_lane_pseudonote_outcome_t* stage_view() const {
         return stage ? &*stage : nullptr;
     }
-    void dispatch(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void dispatch(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                   bool timing_locked, std::uint64_t active_snap_denominator);
     void cancel_if_stale(const document_history_t& history, const workspace_controller_t& workspace,
                          const application_command_state_t& application_state);
 
   private:
-    void begin(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void begin(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                bool timing_locked, std::uint64_t active_snap_denominator);
-    void quick_insert(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void quick_insert(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                       bool timing_locked, std::uint64_t active_snap_denominator);
     void cancel();
-    void dispatch_active(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void dispatch_active(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                          bool timing_locked, std::uint64_t active_snap_denominator);
-    void revise_value(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void revise_value(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                       bool timing_locked, std::uint64_t active_snap_denominator,
                       const chart_document_t* chart);
     void confirm(const document_edit_inputs_t& inputs, bool timing_locked);
-    void move(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void move(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
               bool timing_locked, std::uint64_t active_snap_denominator,
               const chart_document_t* chart);
-    void remove(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+    void remove(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                 bool timing_locked);
 };
 

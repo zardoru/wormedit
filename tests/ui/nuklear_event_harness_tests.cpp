@@ -1582,8 +1582,8 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     });
     REQUIRE(found != applied.end());
     CHECK(found->get().compose_measure_ids.size() == 3);
-    CHECK(std::string(found->get().timing_meter_numerator_text) == "6");
-    CHECK(std::string(found->get().timing_meter_denominator_text) == "8");
+    CHECK(std::string(found->get().timing.meter_numerator_text) == "6");
+    CHECK(std::string(found->get().timing.meter_denominator_text) == "8");
 }
 
 namespace {
@@ -2351,20 +2351,20 @@ TEST_CASE("Import action snapshots own item strings and group member indexes",
     std::array<std::size_t, 1> members{0};
     wormedit::ui::sound_import_group_t group{group_name.c_str(), wormedit::sound_group_id_t{22}, {members.begin(), members.end()}};
     wormedit::ui::workspace_action_t action{};
-    action.sound_import_items = {item};
-    action.sound_import_groups = {group};
+    action.sound_import.items = {item};
+    action.sound_import.groups = {group};
     workspace_action_snapshot_t snapshot{action};
     path = name = group_name = "overwritten";
     members[0] = 99;
-    action.sound_import_items[0].path = "overwritten";
-    action.sound_import_items[0].name.clear();
-    action.sound_import_groups[0].name.clear();
-    action.sound_import_groups[0].member_indices[0] = 99;
-    CHECK(std::string{snapshot.get().sound_import_items[0].path} == "/tmp/kick01.wav");
-    CHECK(std::string{snapshot.get().sound_import_items[0].name} == "Kick");
-    CHECK(std::string{snapshot.get().sound_import_groups[0].name} == "Drums");
-    CHECK(snapshot.get().sound_import_groups[0].member_indices[0] == 0);
-    CHECK(snapshot.get().sound_import_groups[0].existing_group_id.value == 22);
+    action.sound_import.items[0].path = "overwritten";
+    action.sound_import.items[0].name.clear();
+    action.sound_import.groups[0].name.clear();
+    action.sound_import.groups[0].member_indices[0] = 99;
+    CHECK(std::string{snapshot.get().sound_import.items[0].path} == "/tmp/kick01.wav");
+    CHECK(std::string{snapshot.get().sound_import.items[0].name} == "Kick");
+    CHECK(std::string{snapshot.get().sound_import.groups[0].name} == "Drums");
+    CHECK(snapshot.get().sound_import.groups[0].member_indices[0] == 0);
+    CHECK(snapshot.get().sound_import.groups[0].existing_group_id.value == 22);
 }
 
 TEST_CASE("Headless Compose keeps backward wheel navigation available during trailing audio",
@@ -3247,10 +3247,10 @@ void section_add_emits_picker_kind(std::string_view label, wormedit::ui::sound_i
     section_import_require(button.has_value());
     const auto actions = click_at(harness, button->first, button->second);
     const auto found = std::ranges::find_if(actions, [](const auto& a) {
-        return a.get().sound_import_pick_requested;
+        return a.get().sound_import.pick_requested;
     });
     section_import_require(found != actions.end());
-    section_import_check(found->get().sound_import_kind == kind);
+    section_import_check(found->get().sound_import.kind == kind);
 }
 void section_review_submits_fixed_kind(wormedit::ui::sound_import_kind_t kind, bool stale = false) {
     nuklear_event_harness_t harness{1280, 900};
@@ -3271,12 +3271,12 @@ void section_review_submits_fixed_kind(wormedit::ui::sound_import_kind_t kind, b
         return a.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     });
     section_import_require(found != actions.end());
-    section_import_check(found->get().sound_import_kind == kind);
+    section_import_check(found->get().sound_import.kind == kind);
     section_import_check(found->get().compose_input_document_revision == bound_revision);
-    section_import_check(found->get().sound_import_items.size() == 1);
+    section_import_check(found->get().sound_import.items.size() == 1);
 
-    section_import_check(found->get().sound_import_items[0].kind == static_cast<wormedit::sound_kind_t>(kind));
-    section_import_check(found->get().sound_import_items[0].kind_fixed);
+    section_import_check(found->get().sound_import.items[0].kind == static_cast<wormedit::sound_kind_t>(kind));
+    section_import_check(found->get().sound_import.items[0].kind_fixed);
 }
 }
 TEST_CASE("sound_import BMSON section buttons preserve exact picker kind", "[event-harness][sound_import]") {
@@ -6270,9 +6270,9 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
     auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
     down.button.clicks = up.button.clicks = 2;
     const auto action = harness.frame(std::array{mouse_motion(x, y), down, up});
-    expect_draw(action.get().timing_stage_action == wormedit::ui::timing_stage_action_t::begin);
+    expect_draw(action.get().timing.stage_action == wormedit::ui::timing_stage_action_t::begin);
     expect_draw(action.get().timing_lane == lane);
-    expect_draw(action.get().timing_object_id.value == 991);
+    expect_draw(action.get().timing.object_id.value == 991);
     expect_draw(action.get().timing_chart_id.value == harness.view().timing.chart_id.value);
     expect_draw(action.get().timing_document_revision == harness.view().timing.document_revision);
     view.timing_lane_visibility_mask = 0;
@@ -6311,9 +6311,9 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
     (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
     expect_draw(state.timing_drag.timing_stage_drag_active == !bga_press);
     const auto action = harness.frame(std::array{mouse_motion(x, y + 20)});
-    expect_draw(action.get().timing_stage_action == (bga_press ? wormedit::ui::timing_stage_action_t::none
+    expect_draw(action.get().timing.stage_action == (bga_press ? wormedit::ui::timing_stage_action_t::none
                                                         : wormedit::ui::timing_stage_action_t::move));
-    if (!bga_press) expect_draw(action.get().timing_object_id.value == 991);
+    if (!bga_press) expect_draw(action.get().timing.object_id.value == 991);
 }
 
 namespace {
@@ -7510,8 +7510,8 @@ void place_and_pick_timing_event(t422_fixture_t& fixture, timing_lane_kind_t lan
     auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
     down.button.clicks = up.button.clicks = 2;
     const auto captured = fixture.harness.frame(std::array{mouse_motion(x, y), down, up});
-    expect_t422(captured.get().timing_stage_action == ui::timing_stage_action_t::begin);
-    auto stage = begin_timing_stage(captured.get(), fixture.history, *fixture.binding.value, false, 4);
+    expect_t422(captured.get().timing.stage_action == ui::timing_stage_action_t::begin);
+    auto stage = begin_timing_stage(captured.get().timing, fixture.history, *fixture.binding.value, false, 4);
     expect_t422(stage.value.has_value());
     CAPTURE(row, stage.report()->position.measure.value, stage.report()->position.row);
     expect_t422(stage.report()->position == *position);
@@ -7540,8 +7540,8 @@ void place_and_pick_timing_event(t422_fixture_t& fixture, timing_lane_kind_t lan
     }));
     timing.document_revision = fixture.history.document.revision;
     const auto reopened = fixture.harness.frame(std::array{mouse_motion(x, y), down, up});
-    expect_t422(reopened.get().timing_object_id == id);
-    auto editing = begin_timing_stage(reopened.get(), fixture.history, *fixture.binding.value, false, 4);
+    expect_t422(reopened.get().timing.object_id == id);
+    auto editing = begin_timing_stage(reopened.get().timing, fixture.history, *fixture.binding.value, false, 4);
     expect_t422(editing.value.has_value());
     expect_t422(editing.report()->existing_event == id);
     worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state(), canceled);
@@ -7582,12 +7582,12 @@ TEST_CASE("Timing stage preserves fine row targets from the drawn cut axis",
              std::uint64_t{9841}, std::uint64_t{9853}, indices.measures->total_rows - 1,
              indices.measures->total_rows, indices.measures->total_rows + 1}) {
         ui::workspace_action_t action;
-        action.timing_chart_id = chart_id_t{1};
-        action.timing_document_revision = fixture.history.document.revision;
-        action.timing_lane = timing_lane_kind_t::scroll;
-        action.timing_has_target_y = true;
-        action.timing_target = compose_timing_target(view, compose_area_y(view, row));
-        const auto stage = begin_timing_stage(action, fixture.history, *fixture.binding.value, false, 960);
+        action.timing.chart_id = chart_id_t{1};
+        action.timing.document_revision = fixture.history.document.revision;
+        action.timing.lane = timing_lane_kind_t::scroll;
+        action.timing.has_target_y = true;
+        action.timing.target = compose_timing_target(view, compose_area_y(view, row));
+        const auto stage = begin_timing_stage(action.timing, fixture.history, *fixture.binding.value, false, 960);
         CAPTURE(cuts, downscroll, row);
         if (row >= indices.measures->total_rows) {
             expect_t422(!(stage.value));
@@ -7596,8 +7596,8 @@ TEST_CASE("Timing stage preserves fine row targets from the drawn cut axis",
         expect_t422(static_cast<bool>(stage.value));
         expect_t422(stage.report()->position == *indices.measures->position_at(row));
         if (row == indices.measures->total_rows - 1) {
-            action.timing_lane = timing_lane_kind_t::warp;
-            expect_t422(!(begin_timing_stage(action, fixture.history, *fixture.binding.value, false, 960).value));
+            action.timing.lane = timing_lane_kind_t::warp;
+            expect_t422(!(begin_timing_stage(action.timing, fixture.history, *fixture.binding.value, false, 960).value));
         }
     }
     expect_t422(fixture.history.undo.empty());
@@ -7635,8 +7635,8 @@ struct timing_stage_workflow_t {
         auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
         down.button.clicks = up.button.clicks = 2;
         const auto captured = editor.harness.frame(std::array{mouse_motion(x, y), down, up});
-        expect_t422(captured.get().timing_stage_action == ui::timing_stage_action_t::begin);
-        expect_t422(captured.get().timing_object_id == existing);
+        expect_t422(captured.get().timing.stage_action == ui::timing_stage_action_t::begin);
+        expect_t422(captured.get().timing.object_id == existing);
         dispatch(captured);
         expect_t422(timing.stage_view());
         expect_t422(static_cast<bool>(timing.stage_view()->value));
@@ -7654,7 +7654,7 @@ struct timing_stage_workflow_t {
         dispatch(editor.harness.frame(std::span{&text, 1}));
         const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
         const auto committed = editor.harness.frame(std::span{&enter, 1});
-        expect_t422(committed.get().timing_stage_action == ui::timing_stage_action_t::confirm);
+        expect_t422(committed.get().timing.stage_action == ui::timing_stage_action_t::confirm);
         dispatch(committed);
         expect_t422(!(timing.has_pending_edit()));
         const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_RETURN, SDL_SCANCODE_RETURN);
@@ -7977,7 +7977,7 @@ TEST_CASE("Production Alt Anchor press inserts only in timing focus", "[frontend
     (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
     const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_ALT);
-    expect_t422(frame.get().timing_stage_action == wormedit::ui::timing_stage_action_t::quick_insert);
+    expect_t422(frame.get().timing.stage_action == wormedit::ui::timing_stage_action_t::quick_insert);
     expect_t422(frame.get().timing_lane == wormedit::timing_lane_kind_t::anchor);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
 }
@@ -8069,13 +8069,13 @@ TEST_CASE("Production Alt drag from playable field cannot turn into Anchor inser
     const std::array press{mouse_motion(note->first, note->second),
         mouse_button(true, note->first, note->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
-    expect_t422(begin.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
+    expect_t422(begin.get().timing.stage_action == wormedit::ui::timing_stage_action_t::none);
     const auto move = mouse_motion(anchor.first, anchor.second);
     const auto dragged = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
-    expect_t422(dragged.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
+    expect_t422(dragged.get().timing.stage_action == wormedit::ui::timing_stage_action_t::none);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     const auto up = mouse_button(false, anchor.first, anchor.second);
-    expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing_stage_action ==
+    expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing.stage_action ==
                  wormedit::ui::timing_stage_action_t::none);
     expect_t422(f.history.undo.empty());
 }

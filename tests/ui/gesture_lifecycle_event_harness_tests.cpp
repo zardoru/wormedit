@@ -652,10 +652,10 @@ TEST_CASE("Timing stage release clears its pointer capture and retains the stage
     (void)f.begin();
     const auto motion = lifecycle_motion(f.x, f.y + 30);
     const auto moved = f.harness.frame(std::span{&motion, 1});
-    lifecycle_check(moved.get().timing_stage_action == wormedit::ui::timing_stage_action_t::move);
+    lifecycle_check(moved.get().timing.stage_action == wormedit::ui::timing_stage_action_t::move);
     const auto release = lifecycle_button(f.x, f.y + 40, false);
     const auto result = f.harness.frame(std::span{&release, 1});
-    lifecycle_check(result.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
+    lifecycle_check(result.get().timing.stage_action == wormedit::ui::timing_stage_action_t::none);
     lifecycle_check(!f.active());
     lifecycle_check(f.harness.view().timing.stage_active);
 }

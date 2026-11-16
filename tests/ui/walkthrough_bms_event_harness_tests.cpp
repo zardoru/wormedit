@@ -582,7 +582,7 @@ TEST_CASE("BMS walkthrough imports three picked files starting at an explicitly 
     select_import_slot(flow, "0A  (empty)");
     const auto picked = flow.harness.click_widget("Choose files for consecutive BMS WAV slots");
     require_step(std::ranges::any_of(picked, [](const auto& frame) {
-        return frame.get().sound_import_pick_requested;
+        return frame.get().sound_import.pick_requested;
     }));
     const auto paths = slot_import_paths();
     const auto staged = stage_sound_import(flow.history.document, *flow.workspace.value, paths);

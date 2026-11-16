@@ -722,20 +722,20 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     const auto timing_right = compose_timing_right(view);
     if (timing_view.stage_active || click_x < compose_measure_rail_width ||
         click_x >= timing_right ||
-        action.timing_stage_action != wormedit::ui::timing_stage_action_t::none)
+        action.timing.stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     const auto clicked_lane = wormedit::ui::compose_timing_lane_at(view, click_x);
     if (!clicked_lane) return false;
     const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
     const auto existing_object_id = clicked_marker ? clicked_marker->object_id.value : 0;
-    action.timing_stage_action = wormedit::ui::timing_stage_action_t::begin;
-    action.timing_chart_id.value = timing_view.chart_id.value;
-    action.timing_document_revision = timing_view.document_revision;
-    action.timing_lane = *clicked_lane;
-    action.timing_object_id.value = existing_object_id;
+    action.timing.stage_action = wormedit::ui::timing_stage_action_t::begin;
+    action.timing.chart_id.value = timing_view.chart_id.value;
+    action.timing.document_revision = timing_view.document_revision;
+    action.timing.lane = *clicked_lane;
+    action.timing.object_id.value = existing_object_id;
     if (existing_object_id == 0) {
-        action.timing_has_target_y = true;
-        action.timing_target = clicked_marker && clicked_marker->fixed_initial
+        action.timing.has_target_y = true;
+        action.timing.target = clicked_marker && clicked_marker->fixed_initial
             ? wormedit::ui::timing_target_t{.screen_y = 0.0, .viewport_height_pixels = 1.0,
                 .document_begin_fraction = 0.0, .document_end_fraction = 1.0, .downscroll = false}
             : compose_timing_target(view, click_y);
@@ -883,18 +883,18 @@ static auto begin_sample_control_draw(const ComposePointerEventContext& input) -
     if (!view.note_paint_mode_active || !view.hitsounds.visible || !lane ||
         (*lane != wormedit::timing_lane_kind_t::volume && *lane != wormedit::timing_lane_kind_t::sample_set) ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 || view.waveform_timing_locked ||
-        input.timing_view->stage_active || input.action->timing_stage_action != wormedit::ui::timing_stage_action_t::none)
+        input.timing_view->stage_active || input.action->timing.stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     auto& action = *input.action;
-    action.timing_stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
-    action.timing_chart_id = view.chart_id;
-    action.timing_document_revision = view.document_revision;
-    action.timing_lane = *lane;
-    action.timing_object_id = {};
-    action.timing_has_target_y = true;
-    action.timing_target = compose_timing_target(view, input.pointer_started_y);
+    action.timing.stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
+    action.timing.chart_id = view.chart_id;
+    action.timing.document_revision = view.document_revision;
+    action.timing.lane = *lane;
+    action.timing.object_id = {};
+    action.timing.has_target_y = true;
+    action.timing.target = compose_timing_target(view, input.pointer_started_y);
     if (*lane == wormedit::timing_lane_kind_t::sample_set)
-        action.timing_primary_numerator_text = std::to_string(view.hitsounds.values.fields[3].value_or(0));
+        action.timing.primary_numerator_text = std::to_string(view.hitsounds.values.fields[3].value_or(0));
     return true;
 }
 
@@ -911,16 +911,16 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
                               : wormedit::ui::compose_alt_click_inserts_anchor(mode);
     const auto lane = wormedit::ui::compose_timing_lane_at(view, input.pointer_started_x);
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
-        timing.stage_active || input.action->timing_stage_action != wormedit::ui::timing_stage_action_t::none)
+        timing.stage_active || input.action->timing.stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     auto& action = *input.action;
-    action.timing_stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
-    action.timing_chart_id.value = timing.chart_id.value;
-    action.timing_document_revision = timing.document_revision;
-    action.timing_lane = wanted;
-    action.timing_object_id.value = 0;
-    action.timing_has_target_y = true;
-    action.timing_target = compose_timing_target(view, input.pointer_started_y);
+    action.timing.stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
+    action.timing.chart_id.value = timing.chart_id.value;
+    action.timing.document_revision = timing.document_revision;
+    action.timing.lane = wanted;
+    action.timing.object_id.value = 0;
+    action.timing.has_target_y = true;
+    action.timing.target = compose_timing_target(view, input.pointer_started_y);
     return true;
 }
 

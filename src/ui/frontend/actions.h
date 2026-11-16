@@ -5,6 +5,8 @@
 #include <wormedit/core/metadata_inheritance_types.h>
 #include "timing_links.h"
 #include "metadata_edit.h"
+#include "timing_edit.h"
+#include "sound_requests.h"
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
 #include <wormedit/core/preview_mix.h>
@@ -20,13 +22,6 @@
 #include <vector>
 
 namespace wormedit::ui {
-struct sound_import_item_t {
-    std::string path;
-    std::string name;
-    sound_kind_t kind{sound_kind_t::unspecified};
-    bool kind_fixed{};
-    auto operator==(const sound_import_item_t&) const -> bool = default;
-};
 struct sound_slot_import_item_t {
     std::string path;
     std::string name;
@@ -40,12 +35,6 @@ struct sound_group_assignment_t {
     std::string name;
     std::vector<resource_id_t> sound_ids;
     auto operator==(const sound_group_assignment_t&) const -> bool = default;
-};
-struct sound_import_group_t {
-    std::string name;
-    sound_group_id_t existing_group_id{};
-    std::vector<std::size_t> member_indices;
-    auto operator==(const sound_import_group_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
@@ -447,20 +436,6 @@ typedef enum WormUiClipboardAction {
     WORM_UI_CLIPBOARD_PASTE,
 } WormUiClipboardAction;
 
-/* A timing pointer target captures its source-document fraction from the drawn axis when available.
-   Raw viewport coordinates and the visible slice also support surfaces without chart-axis geometry. */
-namespace wormedit::ui {
-struct timing_target_t {
-    double screen_y;
-    double viewport_height_pixels;
-    double document_begin_fraction;
-    double document_end_fraction;
-    bool downscroll;
-    std::optional<double> source_document_fraction;
-    auto operator==(const timing_target_t&) const -> bool = default;
-};
-} // namespace wormedit::ui
-
 namespace wormedit::ui {
 /* Input the frontend sampled this frame. Read by the shortcut and Compose input dispatch; not a request. */
 struct frame_input_t {
@@ -540,21 +515,7 @@ struct workspace_action_t {
     wormedit::asset_id_t audio_asset_id;
     wormedit::resource_id_t audio_resource_id;
     wormedit::ui::bga_usage_activation_t bga_usage;
-    wormedit::song_id_t sound_usage_song_id;
-    uint64_t sound_usage_document_revision;
-    wormedit::resource_id_t sound_usage_resource_id;
-    wormedit::asset_id_t sound_usage_asset_id;
-    wormedit::chart_id_t sound_usage_chart_id;
-    wormedit::measure_id_t sound_usage_measure_id;
-    uint64_t sound_usage_row;
-    wormedit::object_id_t sound_usage_object_id;
-    wormedit::object_id_t sound_usage_channel_id;
-    wormedit::clip_id_t sound_usage_clip_id;
-    wormedit::resource_id_t sound_usage_referenced_resource_id;
-    wormedit::asset_id_t sound_usage_referenced_asset_id;
-    sound_usage_kind_t sound_usage_kind;
-    sound_usage_scope_t sound_usage_scope;
-    bool sound_usage_position_valid;
+    wormedit::ui::sound_usage_activation_t sound_usage;
     wormedit::asset_id_t visual_asset_id;
     wormedit::player_preview_skin_t player_preview_skin;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
@@ -629,22 +590,10 @@ struct workspace_action_t {
     // Chart positions, including virtual tail measures; these are not stable measure IDs.
     std::vector<uint64_t> compose_measure_ids;
     uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
-    bool sound_properties_apply;
-    wormedit::song_id_t sound_properties_project_id{};
-    wormedit::chart_id_t sound_properties_chart_id{};
-    wormedit::resource_id_t sound_properties_resource_id{};
-    uint64_t sound_properties_document_revision;
-    std::string sound_properties_name;
-    wormedit::sound_kind_t sound_properties_kind{wormedit::sound_kind_t::unspecified};
-    // A tag-only edit; name and authored kind remain unchanged when present.
-    std::optional<std::vector<std::string>> sound_properties_tags;
+    wormedit::ui::sound_properties_request_t sound_properties;
     std::optional<wormedit::hitsound_change_t> compose_hitsound;
     std::optional<wormedit::ui::preview_audio_export_action_t> preview_audio_export;
-    bool sound_import_pick_requested;
-    wormedit::ui::sound_import_kind_t sound_import_kind{};
-    wormedit::song_id_t sound_import_project_id{};
-    std::vector<wormedit::ui::sound_import_item_t> sound_import_items;
-    std::vector<wormedit::ui::sound_import_group_t> sound_import_groups;
+    wormedit::ui::sound_import_request_t sound_import;
     uint16_t compose_sound_slot;
     wormedit::object_id_t compose_bmson_channel_id;
     bool compose_sound_slot_confirmed;
@@ -665,28 +614,7 @@ struct workspace_action_t {
     wormedit::recipe_id_t compose_recipe_id;
     std::string compose_measure_length_numerator_text;
     std::string compose_measure_length_denominator_text;
-    std::string timing_meter_numerator_text;
-    std::string timing_meter_denominator_text;
-    std::optional<timing_anchoring_t> timing_anchoring;
-    wormedit::ui::timing_stage_action_t timing_stage_action;
-    wormedit::chart_id_t timing_chart_id;
-    uint64_t timing_document_revision;
-    wormedit::object_id_t timing_object_id;
-    wormedit::timing_lane_kind_t timing_lane;
-    bool timing_has_target_y;
-    wormedit::ui::timing_target_t timing_target;
-    double timing_value;
-    double timing_secondary_value;
-    bool timing_transition_is_seconds;
-    bool timing_toggle_primary;
-    wormedit::pause_unit_t timing_pause_unit;
-    std::string timing_bpm_decimal_text;
-    bool timing_bpm_decimal_edited;
-    int timing_bpm_step;
-    std::string timing_primary_numerator_text;
-    std::string timing_primary_denominator_text;
-    std::string timing_secondary_numerator_text;
-    std::string timing_secondary_denominator_text;
+    wormedit::ui::timing_edit_request_t timing;
     bool command_menu_invoked;
     std::string command_menu_command_id;
 

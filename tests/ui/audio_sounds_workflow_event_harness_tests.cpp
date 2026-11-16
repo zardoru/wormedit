@@ -57,7 +57,7 @@ struct fixture_t {
         (void)harness.frame({&motion,1});
         const auto down=pointer(x,y,true); auto result=harness.frame({&down,1});
         const auto up=pointer(x,y,false); auto released=harness.frame({&up,1});
-        return released.get().kind != WORM_UI_WORKSPACE_ACTION_NONE || released.get().sound_properties_apply
+        return released.get().kind != WORM_UI_WORKSPACE_ACTION_NONE || released.get().sound_properties.apply
             ? released : result;
     }
     auto press(SDL_Keycode code, SDL_Scancode scan) -> workspace_action_snapshot_t {
@@ -125,10 +125,10 @@ TEST_CASE("Sounds properties are staged, revertible and stamped before Apply",
     (void)fixture.harness.frame();
     const auto apply=fixture.harness.drawn_text_center("Apply"); expect(apply);
     const auto result=fixture.click(apply->first,apply->second);
-    expect(result.get().sound_properties_apply);
-    expect(result.get().sound_properties_resource_id.value==101);
-    expect(result.get().sound_properties_document_revision==fixture.harness.view().document_revision);
-    expect(std::string_view{result.get().sound_properties_name}=="New kick");
+    expect(result.get().sound_properties.apply);
+    expect(result.get().sound_properties.resource_id.value==101);
+    expect(result.get().sound_properties.document_revision==fixture.harness.view().document_revision);
+    expect(std::string_view{result.get().sound_properties.name}=="New kick");
     ++fixture.harness.view().audio_slices.document_revision;
     (void)fixture.harness.frame();
     expect(std::string_view{state.properties_name}=="Kick");
@@ -148,17 +148,17 @@ TEST_CASE("Sounds tag chips emit one stamped add or remove without applying name
         const auto button = fixture.harness.drawn_text_center("Add tag");
         expect(button);
         const auto action = fixture.click(button->first, button->second);
-        expect(action.get().sound_properties_tags ==
+        expect(action.get().sound_properties.tags ==
               std::optional{std::vector<std::string>{"Drum", "Kick", "Low"}});
-        expect(std::string_view{action.get().sound_properties_name} == "Kick");
+        expect(std::string_view{action.get().sound_properties.name} == "Kick");
     }
     SECTION("remove") {
         const auto button = fixture.harness.drawn_text_center("Drum  ×");
         expect(button);
         const auto action = fixture.click(button->first, button->second);
-        expect(action.get().sound_properties_tags ==
+        expect(action.get().sound_properties.tags ==
               std::optional{std::vector<std::string>{"Kick"}});
-        expect(action.get().sound_properties_resource_id.value == 101);
+        expect(action.get().sound_properties.resource_id.value == 101);
     }
 }
 

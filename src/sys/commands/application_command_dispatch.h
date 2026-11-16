@@ -62,9 +62,9 @@ inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action
     return !action.compose_menu_command ||
         (action.input.shortcut_window_focused && !action.input.shortcut_ime_composition_active &&
          workspace.active_tab == workspace_tab_t::compose &&
-         action.compose_input_project_id == history.document.id &&
-         workspace.selected_chart && action.compose_input_chart_id == *workspace.selected_chart &&
-         action.compose_input_document_revision == history.document.revision);
+         action.stamp.project_id == history.document.id &&
+         workspace.selected_chart && action.stamp.chart_id == *workspace.selected_chart &&
+         action.stamp.document_revision == history.document.revision);
 }
 
 // External-player, play/pause, play-from-start, and cancel/restore callbacks own

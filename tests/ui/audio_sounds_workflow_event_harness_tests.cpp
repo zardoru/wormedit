@@ -84,10 +84,10 @@ TEST_CASE("Sounds keyboard selection and audition use resource identity and capt
     expect(worm_ui_nuklear_audio_state().selected_resource_id==102);
     result=fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id.value==102);
+    expect(result.get().resource.id.value==102);
     expect(fixture.release_shortcuts==0);
     expect(fixture.release_compose_inputs==0);
-    expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
     result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
     expect(result.get().audio_resource_id.value==103);
     expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
@@ -224,9 +224,9 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     const auto result=fixture.harness.frame({&down,1});
     expect(result.get().audio_resource_id.value==102);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id.value==102);
-    expect(result.get().compose_input_project_id.value==fixture.harness.view().project_id.value);
-    expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
+    expect(result.get().resource.id.value==102);
+    expect(result.get().stamp.project_id.value==fixture.harness.view().project_id.value);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
 }
 
 TEST_CASE("Sounds audition yields to properties text and IME editing",

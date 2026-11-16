@@ -174,11 +174,11 @@ TEST_CASE("double clicking a bookmark line opens a captured rename editor and En
     const std::array enter{press_enter()};
     const auto renamed = harness.frame(enter).get();
     check_rename(renamed.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK);
-    check_rename(renamed.compose_bookmark_id == bookmark.bookmark_id);
-    check_rename(renamed.compose_input_project_id == harness.view().compose.project_id);
-    check_rename(renamed.compose_input_chart_id == harness.view().compose.chart_id);
-    check_rename(renamed.compose_input_document_revision == harness.view().compose.document_revision);
-    check_rename(std::string_view{renamed.compose_marker_label} == "Renamé");
+    check_rename(renamed.marker.bookmark_id == bookmark.bookmark_id);
+    check_rename(renamed.stamp.project_id == harness.view().compose.project_id);
+    check_rename(renamed.stamp.chart_id == harness.view().compose.chart_id);
+    check_rename(renamed.stamp.document_revision == harness.view().compose.document_revision);
+    check_rename(std::string_view{renamed.marker.label} == "Renamé");
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
     check_rename(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.release_pending);
 }

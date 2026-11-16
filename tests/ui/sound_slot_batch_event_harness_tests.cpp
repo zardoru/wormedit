@@ -43,7 +43,7 @@ auto click(nuklear_event_harness_t& harness, const char* text) -> workspace_acti
 }
 void check_confirmed_batch(const wormedit::ui::workspace_action_t& action) {
     REQUIRE(action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
-    CHECK(action.compose_sound_slot == 35);
+    CHECK(action.resource.sound_slot == 35);
     REQUIRE(action.sound_import.items.size() == 2);
 
     CHECK(std::string{action.sound_import.items[0].path} == "/tmp/sound2.wav");

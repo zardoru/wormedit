@@ -1406,7 +1406,7 @@ static auto process_compose_bga_event_pointer(const ComposePointerEventContext& 
 }
 
 void update_compose_sound_hover(const ComposePointerEventContext& input) {
-    input.action->compose_sound_hover_object_id.value = !state.input_queue.action_overflowed && input.window_focused &&
+    input.action->resource.sound_hover_object_id.value = !state.input_queue.action_overflowed && input.window_focused &&
         input.view->scene_available && input.pointer_inside && !input.compose_pointer_captured
         ? compose_sound_object_at(*input.view, input.pointer_x, input.pointer_y) : 0;
 }

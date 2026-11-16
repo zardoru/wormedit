@@ -82,7 +82,7 @@ void check_cut_drag_stamp(const ui::workspace_action_t& action, const ui::compos
     CHECK(input.object_id == object_id_t{31});
     CHECK(input.timing_chart_id == chart_id_t{7});
     CHECK(input.timing_document_revision == 12);
-    CHECK(action.compose_input_project_id == song_id_t{3});
+    CHECK(action.stamp.project_id == song_id_t{3});
     CHECK(input.span_edge == edge);
     CHECK(std::abs(input.span_anchor_y_pixels - anchor) < 0.5);
 }

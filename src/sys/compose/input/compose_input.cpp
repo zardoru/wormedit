@@ -2237,7 +2237,7 @@ void finish_interrupted_compose_travel(const wormedit::ui::compose_input_action_
         input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION) return;
     // This input was validated against this revision; its own edit may have advanced history.
     context.environment.controls.cache.navigation_travel.finish(
-        context.state, context.ui_action.compose_input_document_revision);
+        context.state, context.ui_action.stamp.document_revision);
 }
 
 auto is_lane_key_input(const wormedit::ui::compose_input_action_t& input) -> bool {
@@ -2298,7 +2298,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
         status = std::move(step.status);
         if (step.stop) return status;
     }
-    if (context.ui_action.compose_note_label_focus_consumed)
+    if (context.ui_action.marker.note_label_focus_consumed)
         context.environment.controls.cache.frame.focus_note_label_editor = false;
     return status;
 }
@@ -2516,10 +2516,10 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
     if (!state.is_pending())
         state.scratch_on_right = application_state.scratch_on_right;
     const chart_stamp_t stamp{
-        .document = {.project = history.document.id, .revision = ui_action.compose_input_document_revision},
-        .chart = ui_action.compose_input_chart_id};
+        .document = {.project = history.document.id, .revision = ui_action.stamp.document_revision},
+        .chart = ui_action.stamp.chart_id};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
-        workspace.selected_chart->value != ui_action.compose_input_chart_id.value ||
+        workspace.selected_chart->value != ui_action.stamp.chart_id.value ||
         !stamp.is_current(history.document, state.chart) ||
         !std::isfinite(ui_action.input.compose_input_viewport_width_pixels) ||
         ui_action.input.compose_input_viewport_width_pixels <= 0.0) {
@@ -2594,7 +2594,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
         history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
         application_state.preferences.editor_preferences);
     auto status = dispatch_compose_input_batch(input_context);
-    if (ui_action.compose_note_label_focus_consumed) {
+    if (ui_action.marker.note_label_focus_consumed) {
         scene_cache.frame.focus_note_label_editor = false;
     }
 
@@ -2612,23 +2612,23 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
 }
 
 // A timing-region drag or reset from the handle on its right edge. 0 keeps the automatic width.
-static void apply_compose_timing_region_width(const wormedit::ui::workspace_action_t& action,
+static void apply_compose_timing_region_width(const wormedit::ui::compose_chart_request_t& request,
                                        application_command_state_t& application) {
     auto& stored = application.project.compose_view.compose_timing_region_width_pixels;
-    if (action.compose_timing_region_width_reset) stored = 0.0;
-    else if (action.compose_timing_region_width_pixels > 0.0)
+    if (request.timing_region_width_reset) stored = 0.0;
+    else if (request.timing_region_width_pixels > 0.0)
         stored = wormedit::ui::compose_timing_region_clamp(
-            action.compose_timing_region_width_pixels, effective_compose_timing_lane_mask(application));
+            request.timing_region_width_pixels, effective_compose_timing_lane_mask(application));
 }
 
 void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application) {
     if (workspace.active_tab == wormedit::workspace_tab_t::compose)
-        apply_compose_timing_region_width(action, application);
+        apply_compose_timing_region_width(action.chart, application);
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id.value ||
-        history.document.revision != action.compose_input_document_revision ||
+        workspace.selected_chart->value != action.stamp.chart_id.value ||
+        history.document.revision != action.stamp.document_revision ||
         !std::isfinite(action.input.compose_input_viewport_width_pixels) || action.input.compose_input_viewport_width_pixels <= 0 ||
         !std::isfinite(action.input.compose_input_editor_right_pixels) || action.input.compose_input_editor_right_pixels <= 0) return;
     application.project.compose_view.compose_editor_right_pixels = compose_editor_layout_width(
@@ -2642,8 +2642,8 @@ auto dispatch_bgm_mix_toggle(const wormedit::ui::compose_input_action_t& input,
     bool& accepted) -> std::string {
     const auto* chart = selected_chart(history, workspace);
     if (!chart || workspace.active_tab != wormedit::workspace_tab_t::compose ||
-        action.compose_input_chart_id.value != chart->id.value ||
-        action.compose_input_document_revision != history.document.revision)
+        action.stamp.chart_id.value != chart->id.value ||
+        action.stamp.document_revision != history.document.revision)
         return wormedit::stale_action_message("BGM mix input");
     if (std::ranges::find(chart->bgm_source_lanes, wormedit::object_id_t{input.lane_id.value},
         &wormedit::bgm_source_lane_t::id) == chart->bgm_source_lanes.end())

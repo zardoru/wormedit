@@ -16,7 +16,7 @@ auto edit_selected_note_labels_action_t::perform(compose_action_context_t& conte
     -> compose_action_outcome_t {
     using namespace wormedit;
     const auto label = context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL
-                           ? std::optional<std::string>{context.action.compose_note_label}
+                           ? std::optional<std::string>{context.action.marker.note_label}
                            : std::nullopt;
     auto applied = apply_note_label_edit(
         context.environment.document.history,
@@ -42,7 +42,7 @@ auto search_selected_note_labels_action_t::perform(compose_action_context_t& con
             : label_search_step_t::first;
     auto severity = notification_severity_t::warning;
     auto status = run_label_search(context.environment.document.history, context.state,
-                                   context.action.compose_note_label, step, &severity);
+                                   context.action.marker.note_label, step, &severity);
     return compose_action_outcome_t::from(std::move(status), severity,
                                           notification_source_t::input);
 }

@@ -593,13 +593,13 @@ struct compose_input_context_t {
                environment.document.workspace.active_tab == wormedit::workspace_tab_t::compose &&
                environment.document.workspace.selected_chart &&
                *environment.document.workspace.selected_chart ==
-                   ui_action.compose_input_chart_id;
+                   ui_action.stamp.chart_id;
     }
 
     auto is_input_current() const -> bool {
         return is_input_current({.document = {.project = environment.document.history.document.id,
-                                              .revision = ui_action.compose_input_document_revision},
-                                 .chart = ui_action.compose_input_chart_id});
+                                              .revision = ui_action.stamp.document_revision},
+                                 .chart = ui_action.stamp.chart_id});
     }
 
     auto is_timing_input_current(const wormedit::ui::compose_input_action_t& input) const -> bool {

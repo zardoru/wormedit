@@ -109,14 +109,14 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
             actions.push_back(&frame.get());
     require_event(actions.size() == 1);
     check_event(!worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open);
-    check_event(actions.front()->compose_sound_group_assignments.size() == 1);
+    check_event(actions.front()->resource.sound_group_assignments.size() == 1);
 
-    require_event(actions.front()->compose_sound_group_assignments.size() != 0);
-    check_event(actions.front()->compose_sound_group_assignments[0].sound_ids.size() == 2);
-    auto assigned_ids = actions.front()->compose_sound_group_assignments[0].sound_ids;
+    require_event(actions.front()->resource.sound_group_assignments.size() != 0);
+    check_event(actions.front()->resource.sound_group_assignments[0].sound_ids.size() == 2);
+    auto assigned_ids = actions.front()->resource.sound_group_assignments[0].sound_ids;
     std::ranges::sort(assigned_ids);
     check_event(assigned_ids == std::vector<wormedit::resource_id_t>{{7}, {41}});
-    check_event(actions.front()->compose_sound_group_keep_ids_together);
+    check_event(actions.front()->resource.sound_group_keep_ids_together);
     const auto emitted = std::ranges::count_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
     });

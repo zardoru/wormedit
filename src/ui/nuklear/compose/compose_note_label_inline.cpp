@@ -45,10 +45,10 @@ void stage_note_label_inline(wormedit::ui::workspace_action_t& action, const wor
                              const inline_label_editor_t& editor) {
     action.compose_action = editor.label[0] == '\0' ? WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL
                                                     : WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = editor.chart_id;
-    action.compose_input_document_revision = editor.document_revision;
-    action.compose_note_label = editor.label;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = editor.chart_id;
+    action.stamp.document_revision = editor.document_revision;
+    action.marker.note_label = editor.label;
 
 }
 
@@ -89,10 +89,10 @@ auto begin_compose_section_label_inline(inline_label_editor_t& editor,
 void stage_section_label_inline(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                                 const inline_label_editor_t& editor) {
     action.compose_action = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL;
-    action.compose_section_id.value = editor.bookmark_id;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = editor.chart_id;
-    action.compose_input_document_revision = editor.document_revision;
-    action.compose_marker_label = editor.label;
+    action.marker.section_id.value = editor.bookmark_id;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = editor.chart_id;
+    action.stamp.document_revision = editor.document_revision;
+    action.marker.label = editor.label;
 
 }

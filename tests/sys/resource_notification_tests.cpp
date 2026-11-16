@@ -61,11 +61,11 @@ struct resource_notification_fixture_t {
     }
     auto inspect_action() const -> wormedit::ui::workspace_action_t {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = 1;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_resource_asset_id.value = 1;
+        action.stamp.chart_id.value = 1;
+        action.stamp.document_revision = history.document.revision;
+        action.resource.asset_id.value = 1;
         action.metadata.inspect_import = true;
-        action.compose_import_path = source.c_str();
+        action.resource.import_path = source.c_str();
         return action;
     }
     auto wait_for_import() -> std::optional<std::string> {
@@ -231,7 +231,7 @@ TEST_CASE("metadata copy inspection rejection is explicit and does not mutate do
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.compose_input_document_revision++;
+    action.stamp.document_revision++;
     const auto revision = fixture.history.document.revision;
     const auto message = fixture.assets.start_copy_preview(action, fixture.history,
                                                            fixture.workspace, fixture.project);
@@ -277,7 +277,7 @@ TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
     action.metadata.import_copy_project = true;
-    ++action.compose_input_document_revision;
+    ++action.stamp.document_revision;
     const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     test::check_stale_action_message(message, "Metadata import-copy");

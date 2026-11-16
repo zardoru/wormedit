@@ -246,7 +246,7 @@ TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
     harness.view().compose.hold_bodies.clear();
     const auto opened = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(opened.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
-    check_popup(opened.get().compose_note_context_id.value == 42);
+    check_popup(opened.get().marker.note_context_id.value == 42);
     check_popup(opened.get().input.shortcut_events.size() == 0 && opened.get().input.compose_inputs.size() == 0);
     check_popup(compose_note_menu_open());
     const auto closed = press_context_key(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
@@ -275,7 +275,7 @@ TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing ke
     const auto space = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE);
     const auto assigned = harness.frame(std::span{&space, 1});
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().compose_semantic_layer_id.value == 7);
+    check_popup(assigned.get().layer.id.value == 7);
     check_popup(assigned.get().input.shortcut_events.size() == 0 && assigned.get().input.compose_inputs.size() == 0);
     const auto repeat = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, true, SDL_KMOD_NONE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
@@ -421,7 +421,7 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     (void)press_context_key(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
     const auto request = press_context_key(harness, SDLK_END, SDL_SCANCODE_END);
     check_popup(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
-    const auto first = request.get().compose_semantic_layer_first_row;
+    const auto first = request.get().layer.first_row;
     require_popup(first > wormedit::ui::note_layer_window_limit && first < 200);
     std::vector<wormedit::ui::compose_semantic_layer_view_t> window(200 - first);
     for (std::size_t index = 0; index < window.size(); ++index)
@@ -433,5 +433,5 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     (void)harness.frame();
     const auto assigned = press_context_key(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().compose_semantic_layer_id.value == 199);
+    check_popup(assigned.get().layer.id.value == 199);
 }

@@ -381,11 +381,11 @@ struct metadata_text_fixture_t {
     }
     void start_preview() {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = 1;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_resource_asset_id.value = 8;
+        action.stamp.chart_id.value = 1;
+        action.stamp.document_revision = history.document.revision;
+        action.resource.asset_id.value = 8;
         action.metadata.inspect_import = true;
-        action.compose_import_path = "/tmp/arena-copy-preview-source.wav";
+        action.resource.import_path = "/tmp/arena-copy-preview-source.wav";
         const auto status = runtime.start_copy_preview(action, history, workspace, base);
         INFO(status);
         REQUIRE(runtime.copy_preview_key());

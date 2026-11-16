@@ -27,19 +27,19 @@ auto selected_cut_value(compose_action_context_t& context)
         ? export_cut_interval_t::from_rows(*indices->timing.value, *snapped_begin, *snapped_end)
         : std::nullopt;
     if (!span) return std::unexpected("The selected area does not resolve to a positive source-song interval.");
-    return export_cut_edit_value_t{.label = context.action.compose_marker_label.empty()
-            ? std::nullopt : std::optional{context.action.compose_marker_label},
+    return export_cut_edit_value_t{.label = context.action.marker.label.empty()
+            ? std::nullopt : std::optional{context.action.marker.label},
         .begin_milliseconds = span->begin_milliseconds, .end_milliseconds = span->end_milliseconds};
 }
 
-auto typed_cut_value(const wormedit::ui::workspace_action_t& action)
+auto typed_cut_value(const wormedit::ui::compose_marker_request_t& request)
     -> result_t<export_cut_edit_value_t, std::string> {
-    const auto begin = parse_integer<std::int64_t>(action.compose_marker_audio_begin.c_str());
-    const auto end = parse_integer<std::int64_t>(action.compose_marker_audio_end.c_str());
+    const auto begin = parse_integer<std::int64_t>(request.audio_begin.c_str());
+    const auto end = parse_integer<std::int64_t>(request.audio_end.c_str());
     if (!begin || !end || *begin < 0 || *end <= *begin)
         return std::unexpected("Enter a nonnegative cut start and a later end in whole milliseconds.");
-    return export_cut_edit_value_t{.label = action.compose_marker_label.empty()
-            ? std::nullopt : std::optional{action.compose_marker_label},
+    return export_cut_edit_value_t{.label = request.label.empty()
+            ? std::nullopt : std::optional{request.label},
         .begin_milliseconds = *begin, .end_milliseconds = *end};
 }
 
@@ -47,13 +47,13 @@ auto build_export_cut_edit(compose_action_context_t& context)
     -> result_t<export_cut_edit_action_t, std::string> {
     const auto kind = context.action.compose_action;
     if (kind == WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT)
-        return delete_edit_t<export_cut_edit_value_t>{.id = context.action.compose_export_cut_id};
+        return delete_edit_t<export_cut_edit_value_t>{.id = context.action.marker.export_cut_id};
     auto value = kind == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION
-        ? selected_cut_value(context) : typed_cut_value(context.action);
+        ? selected_cut_value(context) : typed_cut_value(context.action.marker);
     if (!value) return std::unexpected(std::move(value.error()));
     if (kind == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION)
         return insert_edit_t<export_cut_edit_value_t>{.value = std::move(*value)};
-    return update_edit_t<export_cut_edit_value_t>{.id = context.action.compose_export_cut_id,
+    return update_edit_t<export_cut_edit_value_t>{.id = context.action.marker.export_cut_id,
         .value = std::move(*value)};
 }
 } // namespace

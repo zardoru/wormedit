@@ -129,7 +129,7 @@ auto apply_compose_quantize_settings_action_t::validate(compose_action_context_t
 auto apply_compose_quantize_settings_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     auto& editor = quantize_editor_for(context);
-    const auto request = quantize_request_from_action(context.action, {});
+    const auto request = quantize_request_from_action(context.action.quantize, {});
     if (!request)
         return compose_action_outcome_t::blocked(
             "Quantization settings must use a positive grid and supported policies.",
@@ -143,7 +143,7 @@ auto apply_compose_quantize_settings_action_t::perform(compose_action_context_t&
 }
 
 struct select_compose_quantize_preset_action_t {
-    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::compose_quantize_request_t::preset_index) index{};
     const quantization_preset_t* selected_preset{};
     auto operator==(const select_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
@@ -154,7 +154,7 @@ static_assert(compose_action<select_compose_quantize_preset_action_t, compose_ac
 auto select_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    index = context.action.compose_quantize_preset_index;
+    index = context.action.quantize.preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
         return compose_action_outcome_t::blocked(
             "The selected quantization preset is no longer available.",
@@ -186,7 +186,7 @@ auto validate_quantize_preset_save(const compose_action_context_t& context,
         return "Enter a name for the quantization preset (maximum 64 bytes).";
     if (name_length > quantization_preset_t::maximum_name_bytes)
         return "Quantization preset names must be at most 64 bytes.";
-    const std::string_view name(context.action.compose_quantize_preset_name.data(), name_length);
+    const std::string_view name(context.action.quantize.preset_name.data(), name_length);
     if (std::ranges::any_of(context.environment.document.history.document.quantization_presets,
                             [&](const auto& preset) { return preset.name == name; }))
         return "A quantization preset already has that name.";
@@ -208,8 +208,8 @@ static_assert(compose_action<save_compose_quantize_preset_action_t, compose_acti
 auto save_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto length = context.action.compose_quantize_preset_name.size();
-    request = quantize_request_from_action(context.action, {});
+    const auto length = context.action.quantize.preset_name.size();
+    request = quantize_request_from_action(context.action.quantize, {});
     if (const auto error = validate_quantize_preset_save(context, length, request))
         return compose_action_outcome_t::blocked(*error, notification_source_t::edit);
     return std::nullopt;
@@ -225,7 +225,7 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
     auto committed = transaction.finish_execution(transaction.stage(
         [this, &context](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
             proposed.quantization_presets.push_back({
-                .name = context.action.compose_quantize_preset_name,
+                .name = context.action.quantize.preset_name,
                 .divisions = request->divisions, .space = request->space,
                 .tie = request->tie, .holds = request->holds});
             return {.value = document_edit_effect_t{
@@ -249,7 +249,7 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
 }
 
 struct delete_compose_quantize_preset_action_t {
-    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::compose_quantize_request_t::preset_index) index{};
     auto operator==(const delete_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
@@ -259,7 +259,7 @@ static_assert(compose_action<delete_compose_quantize_preset_action_t, compose_ac
 auto delete_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    index = context.action.compose_quantize_preset_index;
+    index = context.action.quantize.preset_index;
     if (index >= context.environment.document.history.document.quantization_presets.size())
         return compose_action_outcome_t::blocked(
             "The selected quantization preset is no longer available.",
@@ -300,7 +300,7 @@ auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& 
 }
 
 struct rename_compose_quantize_preset_action_t {
-    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::compose_quantize_request_t::preset_index) index{};
     std::string_view name{};
     auto operator==(const rename_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
@@ -311,18 +311,18 @@ static_assert(compose_action<rename_compose_quantize_preset_action_t, compose_ac
 auto rename_compose_quantize_preset_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    index = context.action.compose_quantize_preset_index;
+    index = context.action.quantize.preset_index;
     const auto& presets = context.environment.document.history.document.quantization_presets;
     if (index >= presets.size())
         return compose_action_outcome_t::blocked(
             "The selected quantization preset is no longer available.",
             notification_source_t::edit);
-    const auto length = context.action.compose_quantize_preset_name.size();
+    const auto length = context.action.quantize.preset_name.size();
     if (length == 0 || length > quantization_preset_t::maximum_name_bytes)
         return compose_action_outcome_t::blocked(
             "Enter a name for the quantization preset (maximum 64 bytes).",
             notification_source_t::edit);
-    name = std::string_view(context.action.compose_quantize_preset_name.data(), length);
+    name = std::string_view(context.action.quantize.preset_name.data(), length);
     for (std::size_t other = 0; other < presets.size(); ++other)
         if (other != index && presets[other].name == name)
             return compose_action_outcome_t::blocked("A quantization preset already has that name.",

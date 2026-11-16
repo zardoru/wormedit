@@ -71,9 +71,9 @@ void activate_command(const wormedit::ui::workspace_view_t& view, std::size_t in
         row.id.size() >= 129 || action.menu_command_id[0]) return;
     action.command_menu_command_id = row.id.data();
     action.command_menu_invoked = true;
-    action.compose_input_project_id.value = state.opened.project;
-    action.compose_input_chart_id.value = state.opened.chart;
-    action.compose_input_document_revision = state.opened.revision;
+    action.stamp.project_id.value = state.opened.project;
+    action.stamp.chart_id.value = state.opened.chart;
+    action.stamp.document_revision = state.opened.revision;
     action.tab = state.opened.tab;
     cancel_command_menu();
 }

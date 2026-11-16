@@ -115,9 +115,9 @@ TEST_CASE("Markers dock activates existing bookmark navigation with a stamped ta
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
     });
     REQUIRE(action != frames.end());
-    CHECK(action->get().compose_bookmark_id == object_id_t{77});
-    CHECK(action->get().compose_input_chart_id == view.chart_id);
-    CHECK(action->get().compose_input_document_revision == view.document_revision);
+    CHECK(action->get().marker.bookmark_id == object_id_t{77});
+    CHECK(action->get().stamp.chart_id == view.chart_id);
+    CHECK(action->get().stamp.document_revision == view.document_revision);
     CHECK(f.layout().is_visible(dock_panel_t::markers));
 }
 TEST_CASE("Minimum width Sounds dock keeps its final toolbar control reachable", "[event-harness][dock-layout]") {

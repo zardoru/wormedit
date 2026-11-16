@@ -68,12 +68,12 @@ auto run_routed_native_resource_action(const resource_action_context_t& context,
     -> compose_action_outcome_t {
     if constexpr (Policy == resource_route_policy_t::bga_action) {
         if (context.document.history.document.revision !=
-            context.action.compose_input_document_revision)
+            context.action.stamp.document_revision)
             return compose_action_outcome_t::blocked(stale_action_message("BGA action"), Source);
     }
     if constexpr (Policy == resource_route_policy_t::sound_layer_edit) {
         if (auto rejected = metadata_command_detail::stale_rejection(
-                context.document.history, context.action.compose_input_document_revision,
+                context.document.history, context.action.stamp.document_revision,
                 "Sound layer edit"))
             return compose_action_outcome_t::from(rejected->diagnostics.front(),
                                                   notification_source_t::edit,

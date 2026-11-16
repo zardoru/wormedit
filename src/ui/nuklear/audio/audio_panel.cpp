@@ -495,10 +495,10 @@ void audition_sound(const wormedit::ui::audio_slices_view_t& view, const wormedi
     if (row.missing || row.asset_id.value == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
-    action.compose_resource_id.value = row.resource_id.value;
-    action.compose_input_project_id.value = view.usage_song_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.resource.id.value = row.resource_id.value;
+    action.stamp.project_id.value = view.usage_song_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
 }
 
 using sound_rows_t = std::vector<const wormedit::ui::sound_row_view_t*>;
@@ -691,9 +691,9 @@ void render_sound_source_copy_button(struct nk_context* context, const wormedit:
         nk_widget_disable_end(context);
     if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_resource_asset_id.value = sound.asset_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.resource.asset_id.value = sound.asset_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
     action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
 }
 

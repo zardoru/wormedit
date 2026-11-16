@@ -7,6 +7,7 @@
 #include "metadata_edit.h"
 #include "timing_edit.h"
 #include "sound_requests.h"
+#include "compose_requests.h"
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
 #include <wormedit/core/preview_mix.h>
@@ -29,12 +30,6 @@ struct sound_slot_import_item_t {
     std::string occupied_name;
     bool ambiguous{};
     auto operator==(const sound_slot_import_item_t&) const -> bool = default;
-};
-struct sound_group_assignment_t {
-    sound_group_id_t group_id{};
-    std::string name;
-    std::vector<resource_id_t> sound_ids;
-    auto operator==(const sound_group_assignment_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
@@ -536,92 +531,23 @@ struct workspace_action_t {
     // Input sampled this frame (keyboard, pointer, hover); not requests.
     frame_input_t input;
     WormUiComposeActionKind compose_action;
-    uint64_t compose_area_begin_row;
-    uint64_t compose_area_end_row;
-    bool compose_area_virtual;
-    bool compose_area_begin_edge;
-    bool compose_area_clear_requested;
-    uint64_t compose_measure_number;
-    uint32_t compose_bgm_column_count{};
-    uint32_t compose_lane_profile_index;
-    std::string compose_lane_layout_profile_id;
-    int64_t compose_audio_offset_numerator;
-    uint64_t compose_audio_offset_denominator;
-    wormedit::chart_id_t compose_input_chart_id;
-    wormedit::song_id_t compose_input_project_id;
-    uint64_t compose_input_document_revision;
-    size_t compose_quantize_preset_index;
-    bool compose_quantize_preset_selected;
-    uint64_t compose_snap_denominator;
-    uint64_t compose_quantize_divisions;
-    quantization_space_t compose_quantize_space;
-    quantization_tie_t compose_quantize_tie;
-    quantization_hold_t compose_quantize_holds;
-    std::string compose_quantize_preset_name;
-    // Drag of the timing region's edge handle: the width asked for (0 = none) or a reset to automatic.
-    double compose_timing_region_width_pixels;
-    bool compose_timing_region_width_reset;
-    wormedit::object_id_t compose_sound_hover_object_id;
-    bool compose_note_label_focus_consumed;
-    std::string compose_note_label;
-    wormedit::object_id_t compose_bookmark_id;
-    wormedit::bookmark_reorder_t compose_bookmark_reorder;
-    wormedit::object_id_t compose_section_id;
-    wormedit::object_id_t compose_export_cut_id;
-    std::string compose_marker_label;
-    std::string compose_marker_audio_begin;
-    std::string compose_marker_audio_end;
-    wormedit::layer_id_t compose_semantic_layer_id;
-    wormedit::object_id_t compose_note_context_id;
-    size_t compose_semantic_layer_first_row;
-    size_t compose_semantic_layer_row_count{};
-    wormedit::resource_id_t compose_resource_id;
-    uint32_t compose_fallback_candidate;
-    wormedit::object_id_t compose_bmson_bgm_event_id;
-    wormedit::asset_id_t compose_resource_asset_id;
-    std::vector<wormedit::resource_id_t> compose_sound_resource_ids;
-    std::vector<wormedit::ui::sound_group_assignment_t> compose_sound_group_assignments;
-    bool compose_sound_group_keep_ids_together;
-    bool compose_sound_overwrite_note_layers;
-    /* Renumber WAV or BMP identifiers for the selected resources, or all in the namespace. */
-    bool compose_renumber_all;
-    bool compose_renumber_bga;
-    std::vector<std::string> compose_import_paths;
-    // Chart positions, including virtual tail measures; these are not stable measure IDs.
-    std::vector<uint64_t> compose_measure_ids;
-    uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
+    wormedit::ui::compose_area_request_t area;
+    wormedit::ui::compose_measure_request_t measure;
+    wormedit::ui::compose_chart_request_t chart;
+    wormedit::ui::compose_document_stamp_t stamp;
+    wormedit::ui::compose_quantize_request_t quantize;
+    wormedit::ui::compose_resource_request_t resource;
+    wormedit::ui::compose_marker_request_t marker;
+    wormedit::ui::compose_layer_request_t layer;
     wormedit::ui::sound_properties_request_t sound_properties;
-    std::optional<wormedit::hitsound_change_t> compose_hitsound;
     std::optional<wormedit::ui::preview_audio_export_action_t> preview_audio_export;
     wormedit::ui::sound_import_request_t sound_import;
-    uint16_t compose_sound_slot;
-    wormedit::object_id_t compose_bmson_channel_id;
-    bool compose_sound_slot_confirmed;
-    size_t compose_output_group_index;
-    WormUiExistingFilesChoice compose_existing_files;
-    std::optional<resource_role_t> compose_resource_role;
-    std::string compose_import_path;
-    timing_lane_kind_t compose_timing_lane;
+    wormedit::ui::compose_recipe_request_t recipe;
     bms_program_action_t bms_program;
 
-    std::string compose_semantic_layer_name;
-    uint8_t compose_semantic_layer_red;
-    uint8_t compose_semantic_layer_green;
-    uint8_t compose_semantic_layer_blue;
-    uint8_t compose_semantic_layer_alpha;
-    wormedit::ui::timing_recipe_form_t compose_recipe_form;
-    wormedit::ui::generator_form_t compose_generator_form;
-    wormedit::recipe_id_t compose_recipe_id;
-    std::string compose_measure_length_numerator_text;
-    std::string compose_measure_length_denominator_text;
     wormedit::ui::timing_edit_request_t timing;
     bool command_menu_invoked;
     std::string command_menu_command_id;
-
-    void set_sound_resources(std::span<const std::uint64_t> ids) {
-        compose_sound_resource_ids.clear();
-        for (const auto id : ids) compose_sound_resource_ids.push_back(resource_id_t{id});
-    }
 };
 } // namespace wormedit::ui
 

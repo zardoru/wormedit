@@ -181,15 +181,15 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
         if (chrome::dialog_button(dialog, context, "Assign files", chrome::DialogButtonRole::primary,
                                   can_confirm)) {
             action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-            action.compose_input_chart_id.value = state.chart_id;
-            action.compose_input_document_revision = state.revision;
+            action.stamp.chart_id.value = state.chart_id;
+            action.stamp.document_revision = state.revision;
             action.sound_import.project_id = wormedit::song_id_t{state.project_id};
             for (const auto& item : state.items)
                 action.sound_import.items.push_back({.path = item.path, .name = item.name,
                     .kind = wormedit::sound_kind_t::keysound});
 
-            action.compose_sound_slot = state.first_slot;
-            action.compose_sound_slot_confirmed = has_occupants(state);
+            action.resource.sound_slot = state.first_slot;
+            action.resource.sound_slot_confirmed = has_occupants(state);
             state.commit_pending = true;
         }
     }

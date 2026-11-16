@@ -22,9 +22,9 @@ void retire_sound_layer_window(wormedit::ui::workspace_action_t& action) {
     if (!sound_layers) return;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action.compose_action = WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU;
-        action.compose_input_project_id.value = menu.stamp.project_id;
-        action.compose_input_chart_id.value = menu.stamp.chart_id;
-        action.compose_input_document_revision = menu.stamp.revision;
+        action.stamp.project_id.value = menu.stamp.project_id;
+        action.stamp.chart_id.value = menu.stamp.chart_id;
+        action.stamp.document_revision = menu.stamp.revision;
     }
     sound_layers = false;
 }
@@ -39,9 +39,9 @@ void menu_entry(nk_context* context, const char* title, const char* disabled_rea
                 WormUiComposeActionKind kind, wormedit::ui::workspace_action_t& action) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason)) {
         action.compose_action = kind;
-        action.compose_input_project_id.value = menu.stamp.project_id;
-        action.compose_input_chart_id.value = menu.stamp.chart_id;
-        action.compose_input_document_revision = menu.stamp.revision;
+        action.stamp.project_id.value = menu.stamp.project_id;
+        action.stamp.chart_id.value = menu.stamp.chart_id;
+        action.stamp.document_revision = menu.stamp.revision;
         consumed = true;
     }
 }
@@ -54,9 +54,9 @@ void raise_sound_layer_action(const wormedit::ui::compose_view_t& view, wormedit
                              WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
 }
 
 void render_sound_layer_entry(nk_context* context, const wormedit::ui::compose_view_t& view,
@@ -85,7 +85,7 @@ void render_sound_layer_row(nk_context* context, const wormedit::ui::compose_vie
     if (!chrome::context_menu_item(menu, context, layer.name.data(),
                                    layer.locked ? "Layer is locked" : nullptr)) return;
     raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
-    action.compose_semantic_layer_id.value = layer.layer_id.value;
+    action.layer.id.value = layer.layer_id.value;
     consumed = true;
 }
 
@@ -126,8 +126,8 @@ void render_sound_layers(nk_context* context, const wormedit::ui::compose_view_t
     if (menu.open && total &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size())) {
         raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
-        action.compose_semantic_layer_first_row = first;
-        action.compose_semantic_layer_row_count = std::max<std::size_t>(1, requested);
+        action.layer.first_row = first;
+        action.layer.row_count = std::max<std::size_t>(1, requested);
     }
 }
 
@@ -232,12 +232,12 @@ void update_capture(nk_context* context, const wormedit::ui::compose_view_t& vie
     const auto row = std::clamp(axis.row_at_y(source_y), 0.0L,
         static_cast<long double>(view.area_canvas_rows - 1));
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    action.compose_area_begin_row =
+    action.area.begin_row =
         capture.begin_edge ? static_cast<std::uint64_t>(std::llround(row)) : capture.begin;
-    action.compose_area_end_row =
+    action.area.end_row =
         capture.begin_edge ? capture.end : static_cast<std::uint64_t>(std::llround(row));
-    action.compose_area_virtual = capture.virtual_range;
-    action.compose_area_begin_edge = capture.begin_edge;
+    action.area.is_virtual = capture.virtual_range;
+    action.area.begin_edge = capture.begin_edge;
     if (nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT))
         capture.active = false;
 }

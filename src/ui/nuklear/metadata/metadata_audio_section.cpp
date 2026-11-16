@@ -196,10 +196,10 @@ static auto set_metadata_music_import_action(wormedit::ui::workspace_action_t* a
         action->metadata.import_copy_project || action->metadata.import_copy_export ||
         metadata->import_copy_pending)
         return false;
-    action->compose_import_path = path;
-    action->compose_resource_role = wormedit::resource_role_t::music;
-    action->compose_input_chart_id.value = metadata->chart_id.value;
-    action->compose_input_document_revision = metadata->document_revision;
+    action->resource.import_path = path;
+    action->resource.role = wormedit::resource_role_t::music;
+    action->stamp.chart_id.value = metadata->chart_id.value;
+    action->stamp.document_revision = metadata->document_revision;
     action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     return true;
 }
@@ -219,10 +219,10 @@ static void metadata_copy_inspection_button(struct nk_context* context,
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action->metadata.inspect_copy = true;
         action->metadata.inspect_export = export_copy;
-        action->compose_resource_asset_id.value = metadata->selected_music_asset_id.value;
-        action->compose_output_group_index = group_index;
-        action->compose_input_chart_id.value = metadata->chart_id.value;
-        action->compose_input_document_revision = metadata->document_revision;
+        action->resource.asset_id.value = metadata->selected_music_asset_id.value;
+        action->resource.output_group_index = group_index;
+        action->stamp.chart_id.value = metadata->chart_id.value;
+        action->stamp.document_revision = metadata->document_revision;
     }
     if (metadata->copy_preview_text.c_str() && !metadata->copy_preview_import &&
         metadata->copy_preview_asset_id.value == metadata->selected_music_asset_id.value &&
@@ -273,14 +273,14 @@ static void request_external_copy_inspection(const MetadataPanel& panel,
     if (disabled) nk_widget_disable_end(panel.context);
     if (!inspect || disabled || action->metadata.inspect_copy ||
         action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action->compose_import_path = source_path;
+    action->resource.import_path = source_path;
     action->metadata.inspect_copy = true;
     action->metadata.inspect_import = true;
     action->metadata.inspect_export = export_copy;
-    action->compose_resource_asset_id.value = metadata.next_import_asset_id.value;
-    action->compose_output_group_index = group_index;
-    action->compose_input_chart_id.value = metadata.chart_id.value;
-    action->compose_input_document_revision = metadata.document_revision;
+    action->resource.asset_id.value = metadata.next_import_asset_id.value;
+    action->resource.output_group_index = group_index;
+    action->stamp.chart_id.value = metadata.chart_id.value;
+    action->stamp.document_revision = metadata.document_revision;
 }
 
 static auto external_copy_preview_matches(const wormedit::ui::metadata_view_t& metadata,
@@ -318,12 +318,12 @@ static void request_external_copy(const MetadataPanel& panel, const char* source
     if (!copy || !can_copy || action->metadata.import_copy_project ||
         action->metadata.import_copy_export || action->metadata.inspect_copy ||
         action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action->compose_import_path = source_path;
-    action->compose_input_chart_id.value = metadata.chart_id.value;
-    action->compose_input_document_revision = metadata.document_revision;
-    action->compose_resource_asset_id.value = metadata.next_import_asset_id.value;
+    action->resource.import_path = source_path;
+    action->stamp.chart_id.value = metadata.chart_id.value;
+    action->stamp.document_revision = metadata.document_revision;
+    action->resource.asset_id.value = metadata.next_import_asset_id.value;
     if (export_copy) {
-        action->compose_output_group_index = group_index;
+        action->resource.output_group_index = group_index;
         action->metadata.import_copy_export = true;
     } else {
         action->metadata.import_copy_project = true;
@@ -500,13 +500,13 @@ static void render_dropped_selected_music_copy(
     if (!clicked || panel.action->metadata.inspect_copy ||
         panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE || !metadata.has_chart) return;
     auto* action = panel.action;
-    action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
-    action->compose_input_chart_id.value = metadata.chart_id.value;
-    action->compose_input_document_revision = metadata.document_revision;
+    action->resource.asset_id.value = metadata.selected_music_asset_id.value;
+    action->stamp.chart_id.value = metadata.chart_id.value;
+    action->stamp.document_revision = metadata.document_revision;
     if (destination == WORM_UI_METADATA_DROP_PROJECT)
         action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
     else {
-        action->compose_output_group_index = group->document_index;
+        action->resource.output_group_index = group->document_index;
         action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
     }
     (void)project;
@@ -701,9 +701,9 @@ static auto render_project_copy_info(const MetadataPanel& panel) -> std::optiona
     if (wormedit::ui::chrome::button_label(context, "Copy music into project assets") &&
         !panel.action->metadata.inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        panel.action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
-        panel.action->compose_input_chart_id.value = metadata.chart_id.value;
-        panel.action->compose_input_document_revision = metadata.document_revision;
+        panel.action->resource.asset_id.value = metadata.selected_music_asset_id.value;
+        panel.action->stamp.chart_id.value = metadata.chart_id.value;
+        panel.action->stamp.document_revision = metadata.document_revision;
         panel.action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
     }
     return info;
@@ -733,10 +733,10 @@ static void render_export_copy_info(const MetadataPanel& panel,
     if (wormedit::ui::chrome::button_label(context, "Copy music into selected export folder") &&
         !panel.action->metadata.inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        panel.action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
-        panel.action->compose_output_group_index = selected.document_index;
-        panel.action->compose_input_chart_id.value = metadata.chart_id.value;
-        panel.action->compose_input_document_revision = metadata.document_revision;
+        panel.action->resource.asset_id.value = metadata.selected_music_asset_id.value;
+        panel.action->resource.output_group_index = selected.document_index;
+        panel.action->stamp.chart_id.value = metadata.chart_id.value;
+        panel.action->stamp.document_revision = metadata.document_revision;
         panel.action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
     }
 }

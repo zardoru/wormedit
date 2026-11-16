@@ -32,10 +32,10 @@ auto activate_row(const wormedit::ui::bookmark_chooser_view_t& view, const worme
         return false;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
-    action.compose_bookmark_id.value = row.bookmark_id.value;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.marker.bookmark_id.value = row.bookmark_id.value;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
     worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;
 }
@@ -86,11 +86,11 @@ void emit_reorder(const wormedit::ui::bookmark_chooser_view_t& view,
     if (!bookmark || !target || bookmark == target || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
-    action.compose_bookmark_reorder = {.bookmark = bookmark, .target = target,
+    action.marker.bookmark_reorder = {.bookmark = bookmark, .target = target,
         .place_after = after, .sort = view.sort, .descending = view.descending};
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
-    action.compose_input_document_revision = view.document_revision;
+    action.stamp.project_id = view.project_id;
+    action.stamp.chart_id = view.chart_id;
+    action.stamp.document_revision = view.document_revision;
     state.sort = wormedit::bookmark_sort_t::custom;
     state.descending = false;
     state.dragged_bookmark = {};

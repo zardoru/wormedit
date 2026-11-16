@@ -445,7 +445,7 @@ TEST_CASE("Pressing outside a selected area keeps it until a replacement gesture
     const std::array press{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, true)};
     const auto pressed = f.harness.frame(press);
     CHECK(worm_ui_nuklear_compose_state().area_selection.area_selection_candidate_active);
-    CHECK_FALSE(pressed.get().compose_area_clear_requested);
+    CHECK_FALSE(pressed.get().area.clear_requested);
     CHECK(pressed.get().compose_action != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR);
     const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto cancelled = f.harness.frame(std::span{&escape, 1});

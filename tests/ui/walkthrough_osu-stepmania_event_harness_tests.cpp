@@ -274,8 +274,8 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     });
     expect(found != linked.end());
-    expect(found->get().compose_resource_role == wormedit::resource_role_t::music);
-    expect(std::string_view{found->get().compose_import_path} == "/music/song.ogg");
+    expect(found->get().resource.role == wormedit::resource_role_t::music);
+    expect(std::string_view{found->get().resource.import_path} == "/music/song.ogg");
 }
 
 TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds through production input",

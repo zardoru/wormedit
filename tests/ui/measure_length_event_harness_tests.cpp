@@ -23,8 +23,8 @@ TEST_CASE("Measures dock captures an owned exact ratio with its selected rows", 
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH;
     });
     REQUIRE(found != frames.end());
-    CHECK(found->get().compose_measure_ids == std::vector<std::uint64_t>{0, 5});
-    CHECK(found->get().compose_measure_length_numerator_text == "3");
+    CHECK(found->get().measure.ids == std::vector<std::uint64_t>{0, 5});
+    CHECK(found->get().measure.length_numerator_text == "3");
     std::snprintf(state.measures_dock.measures_length_numerator.data(), 32, "9");
-    CHECK(found->get().compose_measure_length_numerator_text == "3");
+    CHECK(found->get().measure.length_numerator_text == "3");
 }

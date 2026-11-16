@@ -140,11 +140,11 @@ void commit(const ComposeBeatFitInput& input) {
     auto& action = *input.action;
     action.compose_action = state.measure_resize.measure_resize_move_line ? WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE
                                                            : WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
-    action.compose_second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
-    action.compose_second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
-    action.compose_measure_ids = {state.measure_resize.measure_resize_measure_id};
+    action.measure.second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
+    action.measure.second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
+    action.measure.ids = {state.measure_resize.measure_resize_measure_id};
     action.timing.meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
     action.timing.meter_denominator_text = std::to_string(state.measure_resize.measure_resize_denominator);
 }

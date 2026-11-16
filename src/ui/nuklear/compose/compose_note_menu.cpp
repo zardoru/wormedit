@@ -39,11 +39,11 @@ bool raise(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
-    action.compose_note_context_id.value = menu.note;
-    action.compose_semantic_layer_id.value = layer;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
+    action.marker.note_context_id.value = menu.note;
+    action.layer.id.value = layer;
     return true;
 }
 
@@ -158,8 +158,8 @@ void render_submenu(nk_context* context, const wormedit::ui::compose_view_t& vie
     if (menu.popup.open && view.note_menu_layer_total_count &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size()) &&
         raise(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW)) {
-        action.compose_semantic_layer_first_row = first;
-        action.compose_semantic_layer_row_count = std::max<std::size_t>(1, requested);
+        action.layer.first_row = first;
+        action.layer.row_count = std::max<std::size_t>(1, requested);
     }
 }
 
@@ -278,7 +278,7 @@ void render(nk_context* context, const wormedit::ui::compose_view_t& view, worme
         if (chrome::context_menu_button(context, "Replace sound with current source",
                 can_replace ? nullptr : "Choose a sound source first") &&
             raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
-            action.compose_resource_id.value = source.pointer_capture.draw_source_id;
+            action.resource.id.value = source.pointer_capture.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
         nk_layout_row_dynamic(context, row_height, 1);

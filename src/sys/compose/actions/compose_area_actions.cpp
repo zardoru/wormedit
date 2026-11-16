@@ -50,7 +50,7 @@ struct quantize_compose_selection_action_t {
     std::optional<wormedit::quantize_request_t> request;
     static auto from(const compose_action_context_t& context)
         -> quantize_compose_selection_action_t {
-        return {.request = quantize_request_from_action(context.action, {})};
+        return {.request = quantize_request_from_action(context.action.quantize, {})};
     }
     auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
         if (!request)
@@ -280,19 +280,19 @@ auto resize_compose_area_action_t::validate(compose_action_context_t& context)
 
     using namespace wormedit;
     kind = context.action.compose_action;
-    begin = context.action.compose_area_begin_row;
-    end = context.action.compose_area_end_row;
-    bounds = context.action.compose_area_virtual
+    begin = context.action.area.begin_row;
+    end = context.action.area.end_row;
+    bounds = context.action.area.is_virtual
                  ? build_virtual_canvas(chart)
                  : std::variant<virtual_canvas_t, diagnostic_list_t>{virtual_canvas_t{}};
     const auto* virtual_geometry = std::get_if<virtual_canvas_t>(&*bounds);
-    const auto total = context.action.compose_area_virtual && virtual_geometry
+    const auto total = context.action.area.is_virtual && virtual_geometry
                            ? virtual_geometry->total_rows
                            : measures.total_rows;
     if (begin >= total || end >= total)
         return compose_action_outcome_t::blocked("The area is outside the chart geometry.");
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET) {
-        auto& moving = context.action.compose_area_begin_edge ? begin : end;
+        auto& moving = context.action.area.begin_edge ? begin : end;
         const auto snapped = wormedit::snap_absolute_row(chart, moving, wormedit::edit_snap_grid(chart, context.state));
         if (!snapped)
             return compose_action_outcome_t::blocked("The active grid cannot resize this area.");
@@ -310,7 +310,7 @@ auto resize_compose_area_action_t::perform(compose_action_context_t& context) co
     using namespace wormedit;
     const auto& chart = *source_chart;
     const auto& measures = *source_index;
-    if (context.action.compose_area_virtual) {
+    if (context.action.area.is_virtual) {
         const auto canvas = build_virtual_canvas(chart);
         const auto* geometry = std::get_if<virtual_canvas_t>(&canvas);
         if (!geometry || end >= geometry->total_rows)
@@ -437,9 +437,9 @@ auto process_compose_area_boundary(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     if (compose_area_pause_conversion(context.action.compose_action) &&
         context.environment.document.history.document.id.value !=
-            context.action.compose_input_project_id.value)
+            context.action.stamp.project_id.value)
         return compose_action_outcome_t::blocked(stale_action_message("Area conversion"));
-    if (context.action.compose_area_clear_requested) {
+    if (context.action.area.clear_requested) {
         clear_compose_area_range(context);
     }
     return std::nullopt;

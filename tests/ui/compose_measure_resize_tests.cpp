@@ -76,8 +76,8 @@ TEST_CASE("Alt+drag of a bar line sets the measure meter on release",
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, SDL_KMOD_LALT);
     require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
-    check_resize(action.get().compose_measure_ids.size() == 1);
-    check_resize(action.get().compose_measure_ids[0] == 77);
+    check_resize(action.get().measure.ids.size() == 1);
+    check_resize(action.get().measure.ids[0] == 77);
     check_resize(std::string(action.get().timing.meter_numerator_text) == "7");
     check_resize(std::string(action.get().timing.meter_denominator_text) == "8");
     check_resize(!state.measure_resize.measure_resize_active);
@@ -134,11 +134,11 @@ TEST_CASE("Shift+Alt drag moves only the bar line and trades length with the nex
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, both);
     require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
-    check_resize(action.get().compose_measure_ids[0] == 77);
+    check_resize(action.get().measure.ids[0] == 77);
     check_resize(std::string(action.get().timing.meter_numerator_text) == "7");
     check_resize(std::string(action.get().timing.meter_denominator_text) == "8");
-    check_resize(action.get().compose_second_meter_numerator == 9);
-    check_resize(action.get().compose_second_meter_denominator == 8);
+    check_resize(action.get().measure.second_meter_numerator == 9);
+    check_resize(action.get().measure.second_meter_denominator == 8);
 }
 
 TEST_CASE("Measure resize equality does not wrap 64 bit cross products",

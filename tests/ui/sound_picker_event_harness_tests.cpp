@@ -38,9 +38,9 @@ void check_source(const wormedit::ui::workspace_action_t& action, std::uint64_t 
     check_picker(action.input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
     check_picker(action.input.compose_inputs[0].resource_id.value == id);
     check_picker(action.input.compose_inputs[0].resource_role == wormedit::resource_role_t::sample);
-    check_picker(action.compose_input_project_id.value == 1);
-    check_picker(action.compose_input_chart_id.value == 1);
-    check_picker(action.compose_input_document_revision == 1);
+    check_picker(action.stamp.project_id.value == 1);
+    check_picker(action.stamp.chart_id.value == 1);
+    check_picker(action.stamp.document_revision == 1);
     check_picker(action.input.shortcut_events.size() == 0);
 }
 void type(nuklear_event_harness_t& harness, const char* text) {

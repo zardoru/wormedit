@@ -5,9 +5,9 @@ enum class compose_project_stamp_t { include, preserve };
 inline void stamp_compose_input(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                                 compose_project_stamp_t project) {
     if (project == compose_project_stamp_t::include)
-        action.compose_input_project_id = wormedit::song_id_t{view.project_id.value};
-    action.compose_input_chart_id = wormedit::chart_id_t{view.chart_id.value};
-    action.compose_input_document_revision = view.document_revision;
+        action.stamp.project_id = wormedit::song_id_t{view.project_id.value};
+    action.stamp.chart_id = wormedit::chart_id_t{view.chart_id.value};
+    action.stamp.document_revision = view.document_revision;
 }
 inline auto raise_compose_action(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                                  WormUiComposeActionKind kind,

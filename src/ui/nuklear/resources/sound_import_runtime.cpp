@@ -50,8 +50,8 @@ void submit_import(wormedit::ui::workspace_action_t& action) {
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.sound_import.project_id = wormedit::song_id_t{pending.project_id};
     action.sound_import.kind = pending.fixed_kind;
-    action.compose_input_chart_id.value = pending.chart_id;
-    action.compose_input_document_revision = pending.document_revision;
+    action.stamp.chart_id.value = pending.chart_id;
+    action.stamp.document_revision = pending.document_revision;
 }
 } // namespace
 
@@ -132,9 +132,9 @@ void worm_ui_nuklear_consume_sound_picker(const wormedit::ui::workspace_view_t& 
     action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
     action.sound_import.project_id = view.project_id;
     action.sound_import.kind = picker.target.kind;
-    action.compose_input_chart_id.value = view.selected_chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
-    action.compose_import_paths = std::move(picker.paths);
+    action.stamp.chart_id.value = view.selected_chart_id.value;
+    action.stamp.document_revision = view.document_revision;
+    action.resource.import_paths = std::move(picker.paths);
 }
 
 void worm_ui_nuklear_render_pending_sound_import(nk_context* context,

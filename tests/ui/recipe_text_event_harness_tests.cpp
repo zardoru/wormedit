@@ -85,7 +85,7 @@ TEST_CASE("SV recipe text deletion owns shortcuts while its tooltip is visible",
     check_recipe(edited.get().input.shortcut_events.front().repeat == repeat);
     check_recipe(edited.get().input.compose_inputs.empty());
     check_recipe(edited.get().compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
-    check_recipe(std::string_view{edited.get().compose_recipe_form.value_from.text} == ".2345");
+    check_recipe(std::string_view{edited.get().recipe.form.value_from.text} == ".2345");
     (void)harness.frame(std::array{key_event(erase.key.key, erase.key.scancode, false)});
 
     // Returning to the canvas must restore ordinary selection deletion.

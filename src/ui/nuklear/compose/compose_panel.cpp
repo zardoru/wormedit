@@ -1184,7 +1184,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     if (view->focus_note_label_editor && window_focused && !view->input_occluded &&
         begin_compose_note_label_inline(state.bookmark_ui.bookmark_rename, *view, state.note_label.note_label_anchor_x,
                                         state.note_label.note_label_anchor_y))
-        action->compose_note_label_focus_consumed = true;
+        action->marker.note_label_focus_consumed = true;
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     const bool owned_popup = !compose_note_menu_consumed() &&
@@ -1329,9 +1329,9 @@ static void confirm_go_to_measure(const wormedit::ui::compose_view_t& view,
     }
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE;
-    action.compose_measure_number = *number;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.measure.number = *number;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
     close_go_to_measure(context);
 }
 

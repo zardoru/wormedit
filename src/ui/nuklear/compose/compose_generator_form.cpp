@@ -27,10 +27,10 @@ void queue(const ComposeInspectorContext& inspector, WormUiComposeActionKind kin
     auto& action = *inspector.action;
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id = inspector.view->project_id;
-    action.compose_input_chart_id = inspector.view->chart_id;
-    action.compose_input_document_revision = inspector.view->document_revision;
-    action.compose_generator_form = editor.form;
+    action.stamp.project_id = inspector.view->project_id;
+    action.stamp.chart_id = inspector.view->chart_id;
+    action.stamp.document_revision = inspector.view->document_revision;
+    action.recipe.generator_form = editor.form;
 }
 namespace chrome = wormedit::ui::chrome;
 namespace metrics = wormedit::ui::metrics;

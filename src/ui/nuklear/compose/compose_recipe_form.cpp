@@ -136,11 +136,11 @@ void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
            WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
-    action.compose_recipe_id.value = view.recipe_form.recipe_id.value;
-    action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
+    action.recipe.recipe_id.value = view.recipe_form.recipe_id.value;
+    action.recipe.form = state.recipe_editor.recipe_edit_form;
 }
 
 void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,

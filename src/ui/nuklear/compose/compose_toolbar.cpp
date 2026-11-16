@@ -321,9 +321,9 @@ static auto request_bgm_column_count(const ComposeToolbarContext& toolbar, uint3
     auto* action = toolbar.action;
     if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
-    action->compose_bgm_column_count = count;
-    action->compose_input_chart_id.value = toolbar.view->chart_id.value;
-    action->compose_input_document_revision = toolbar.view->document_revision;
+    action->chart.bgm_column_count = count;
+    action->stamp.chart_id.value = toolbar.view->chart_id.value;
+    action->stamp.document_revision = toolbar.view->document_revision;
     bgm_column_count_draft(*toolbar.view).commit_pending = true;
     return true;
 }
@@ -462,8 +462,8 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
     const bool locked = toolbar.view->audio_offset_locked;
     if (wormedit::ui::chrome::button_label(context, "")) {
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
-        toolbar.action->compose_input_chart_id.value = toolbar.view->chart_id.value;
-        toolbar.action->compose_input_document_revision = toolbar.view->document_revision;
+        toolbar.action->stamp.chart_id.value = toolbar.view->chart_id.value;
+        toolbar.action->stamp.document_revision = toolbar.view->document_revision;
     }
     auto* canvas = nk_window_get_canvas(context);
     const auto color = context->style.text.color;
@@ -540,10 +540,10 @@ constexpr auto& hitsound_set_labels = wormedit::osu_sample_set_names;
 void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_field_t field,
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
-    action.compose_hitsound = {.field = field, .value = value};
-    action.compose_input_project_id.value = toolbar.view->project_id.value;
-    action.compose_input_chart_id.value = toolbar.view->chart_id.value;
-    action.compose_input_document_revision = toolbar.view->document_revision;
+    action.resource.hitsound = {.field = field, .value = value};
+    action.stamp.project_id.value = toolbar.view->project_id.value;
+    action.stamp.chart_id.value = toolbar.view->chart_id.value;
+    action.stamp.document_revision = toolbar.view->document_revision;
 }
 
 void draw_hitsound_check(nk_context* context, struct nk_rect bounds, std::optional<int> value,

@@ -105,9 +105,9 @@ TEST_CASE("clicking a bookmark row navigates to it with the document stamps",
         const auto& action = frame.get();
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) continue;
         navigated = true;
-        CHECK(action.compose_bookmark_id.value == 22);
-        CHECK(action.compose_input_chart_id.value == 7);
-        CHECK(action.compose_input_document_revision == 12);
+        CHECK(action.marker.bookmark_id.value == 22);
+        CHECK(action.stamp.chart_id.value == 7);
+        CHECK(action.stamp.document_revision == 12);
     }
     CHECK(navigated);
 }
@@ -179,10 +179,10 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     enter.key.scancode = SDL_SCANCODE_RETURN;
     const auto committed = fixture.harness.frame(std::array{enter}).get();
     CHECK(committed.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL);
-    CHECK(committed.compose_section_id.value == 31);
-    CHECK(std::string{committed.compose_marker_label} == "intro");
-    CHECK(committed.compose_input_chart_id.value == 7);
-    CHECK(committed.compose_input_document_revision == 12);
+    CHECK(committed.marker.section_id.value == 31);
+    CHECK(std::string{committed.marker.label} == "intro");
+    CHECK(committed.stamp.chart_id.value == 7);
+    CHECK(committed.stamp.document_revision == 12);
 }
 
 TEST_CASE("marker editing lives in the Markers dock instead of the Inspector", "[event-harness][markers]") {

@@ -61,7 +61,7 @@ TEST_CASE("Command menu searches all labels case-insensitively and dispatches en
     const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);
     expect_menu(result.get().command_menu_invoked);
     expect_menu(std::string_view{result.get().command_menu_command_id} == "second");
-    expect_menu(result.get().compose_input_project_id.value == 1);
+    expect_menu(result.get().stamp.project_id.value == 1);
     expect_menu(result.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 

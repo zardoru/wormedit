@@ -224,7 +224,7 @@ TEST_CASE("Timing Settings moves all timing lane controls into a modeless panel"
     for (std::size_t lane = 0; lane < labels.size(); ++lane) {
         const auto action = click_text(harness, labels[lane]);
         CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-        CHECK(static_cast<std::uint8_t>(action.get().compose_timing_lane) == lane);
+        CHECK(static_cast<std::uint8_t>(action.get().recipe.timing_lane) == lane);
     }
     view.timing_settings_visible = false;
     (void)harness.frame();
@@ -247,10 +247,10 @@ TEST_CASE("Volume and sample-set columns toggle independently in Timing Settings
     const auto enabled = click_text(harness, sample_set ? "SET: Off" : "VOL: Off");
     const auto lane = sample_set ? wormedit::timing_lane_kind_t::sample_set : wormedit::timing_lane_kind_t::volume;
     CHECK(enabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(enabled.get().compose_timing_lane == lane);
+    CHECK(enabled.get().recipe.timing_lane == lane);
     view.compose.timing_lane_visibility_mask |= 1U << static_cast<unsigned>(lane);
     (void)harness.frame();
     const auto disabled = click_text(harness, sample_set ? "SET: On" : "VOL: On");
     CHECK(disabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(disabled.get().compose_timing_lane == lane);
+    CHECK(disabled.get().recipe.timing_lane == lane);
 }

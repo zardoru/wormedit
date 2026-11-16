@@ -131,11 +131,11 @@ void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::
         return;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
-    action.compose_bookmark_id.value = editor.bookmark_id;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = editor.chart_id;
-    action.compose_input_document_revision = editor.document_revision;
-    action.compose_marker_label = editor.label;
+    action.marker.bookmark_id.value = editor.bookmark_id;
+    action.stamp.project_id.value = view.project_id.value;
+    action.stamp.chart_id.value = editor.chart_id;
+    action.stamp.document_revision = editor.document_revision;
+    action.marker.label = editor.label;
 
 }
 

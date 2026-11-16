@@ -319,9 +319,9 @@ void check_profile_action(const std::array<workspace_action_snapshot_t, 2>& sele
     const auto& pressed = selected[0].get();
     const auto& released = selected[1].get();
     check_bga(pressed.compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
-    check_bga(pressed.compose_lane_profile_index == target_index);
-    check_bga(pressed.compose_input_chart_id.value == 7);
-    check_bga(pressed.compose_input_document_revision == 11);
+    check_bga(pressed.chart.lane_profile_index == target_index);
+    check_bga(pressed.stamp.chart_id.value == 7);
+    check_bga(pressed.stamp.document_revision == 11);
     check_bga(released.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 }
@@ -1642,10 +1642,10 @@ TEST_CASE("Offset editor commits one exact stamped action from either timing sur
     check_bga(typed.get().input.compose_inputs.size() == 0);
     const auto committed = f.harness.frame(std::array{timing_control_key(SDLK_RETURN, SDL_SCANCODE_RETURN)});
     check_bga(committed.get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
-    check_bga(committed.get().compose_audio_offset_numerator == -1);
-    check_bga(committed.get().compose_audio_offset_denominator == 8);
-    check_bga(committed.get().compose_input_chart_id.value == 1);
-    check_bga(committed.get().compose_input_document_revision == 1);
+    check_bga(committed.get().chart.audio_offset_numerator == -1);
+    check_bga(committed.get().chart.audio_offset_denominator == 8);
+    check_bga(committed.get().stamp.chart_id.value == 1);
+    check_bga(committed.get().stamp.document_revision == 1);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
@@ -1755,10 +1755,10 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     const auto assist=harness.widget_center("Enable layer assist ticks");
     const auto toggled=click(harness,assist.first,assist.second);
     check_bga(toggled.front().get().compose_action==WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
-    check_bga(toggled.front().get().compose_semantic_layer_id.value==7);
-    check_bga(toggled.front().get().compose_input_project_id.value==1);
-    check_bga(toggled.front().get().compose_input_chart_id.value==1);
-    check_bga(toggled.front().get().compose_input_document_revision==1);
+    check_bga(toggled.front().get().layer.id.value==7);
+    check_bga(toggled.front().get().stamp.project_id.value==1);
+    check_bga(toggled.front().get().stamp.chart_id.value==1);
+    check_bga(toggled.front().get().stamp.document_revision==1);
     check_bga(toggled.front().get().input.compose_inputs.size()==0);
     check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layers[0].assist_tick_enabled=true;

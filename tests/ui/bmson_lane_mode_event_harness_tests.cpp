@@ -38,8 +38,8 @@ void check_emitted(const std::array<workspace_action_snapshot_t, 2>& frames,
     const auto found = std::ranges::find_if(frames,
         [kind](const auto& frame) { return frame.get().compose_action == kind; });
     require_ui(found != frames.end());
-    check_ui(found->get().compose_bmson_channel_id.value == channel);
-    check_ui(found->get().compose_resource_id.value == resource);
+    check_ui(found->get().resource.bmson_channel_id.value == channel);
+    check_ui(found->get().resource.id.value == resource);
     check_ui(found->get().input.compose_inputs.size() == 0);
 }
 void audio_fixture(nuklear_event_harness_t& harness, wormedit::ui::sound_row_view_t& row) {

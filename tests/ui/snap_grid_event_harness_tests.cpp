@@ -46,12 +46,12 @@ void prepare(nuklear_event_harness_t& harness) {
     require_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }
 void check_snap(const wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
-    INFO("action " << action.compose_action << " snap " << action.compose_snap_denominator);
+    INFO("action " << action.compose_action << " snap " << action.quantize.snap_denominator);
     check_grid(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
-    check_grid(action.compose_snap_denominator == denominator);
-    check_grid(action.compose_input_project_id.value == 1);
-    check_grid(action.compose_input_chart_id.value == 1);
-    check_grid(action.compose_input_document_revision == 1);
+    check_grid(action.quantize.snap_denominator == denominator);
+    check_grid(action.stamp.project_id.value == 1);
+    check_grid(action.stamp.chart_id.value == 1);
+    check_grid(action.stamp.document_revision == 1);
     check_grid(action.input.compose_inputs.size() == 0);
     check_grid(action.input.shortcut_events.size() == 0);
 }
@@ -122,8 +122,8 @@ TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action"
     require_grid(target.has_value());
     const auto picked=mouse(h,target->first,target->second,true);
     check_grid(picked.get().compose_action==WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
-    check_grid(picked.get().compose_input_chart_id.value==1);
-    check_grid(picked.get().compose_input_document_revision==1);
+    check_grid(picked.get().stamp.chart_id.value==1);
+    check_grid(picked.get().stamp.document_revision==1);
     check_grid(picked.get().input.compose_inputs.size()==0);
     (void)mouse(h,target->first,target->second,false);
     check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);

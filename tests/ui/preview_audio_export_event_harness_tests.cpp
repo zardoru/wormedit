@@ -84,9 +84,9 @@ TEST_CASE("Preview dialog occlusion keeps Compose cleanup stamped to the visible
     open_preview(harness);
     const auto frame = harness.frame();
     const auto& view = harness.view().compose;
-    CHECK(frame.get().compose_input_project_id.value == view.project_id.value);
-    CHECK(frame.get().compose_input_chart_id.value == view.chart_id.value);
-    CHECK(frame.get().compose_input_document_revision == view.document_revision);
+    CHECK(frame.get().stamp.project_id.value == view.project_id.value);
+    CHECK(frame.get().stamp.chart_id.value == view.chart_id.value);
+    CHECK(frame.get().stamp.document_revision == view.document_revision);
     CHECK(frame.get().input.compose_input_viewport_width_pixels == view.viewport_width_pixels);
 }
 

@@ -67,8 +67,8 @@ struct fit_fixture_t {
 
     void send(WormUiComposeInputKind kind, double world_pixel, bool ctrl = false, bool onset = false) {
         action = {};
-        action.compose_input_chart_id.value = state.chart.value;
-        action.compose_input_document_revision = history.document.revision;
+        action.stamp.chart_id.value = state.chart.value;
+        action.stamp.document_revision = history.document.revision;
         action.input.compose_input_viewport_width_pixels = 800;
         action.input.compose_inputs.resize(1);
         const auto source_y = world_pixel - state.viewport_scroll_pixels;

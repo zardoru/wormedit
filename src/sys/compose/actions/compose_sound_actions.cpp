@@ -1,4 +1,5 @@
 #include "sys/resources/bms_catalog_bindings.h"
+#include "sys/request_stamp_check.h"
 #include <wormedit/core/bms36.h>
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/app/application_edit_inputs.h"
@@ -329,7 +330,7 @@ struct assign_sound_slot_action_t {
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
-        if (!action.stamp.is_current(history.document, chart_id))
+        if (!request_stamp_current(action.stamp, history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
         if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
@@ -385,7 +386,7 @@ struct assign_sound_slot_batch_action_t {
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
-        if (!action.stamp.is_current(history.document, chart_id))
+        if (!request_stamp_current(action.stamp, history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
         if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
@@ -789,7 +790,7 @@ struct confirm_compose_sound_import_action_t {
         auto& history = context.document.history;
         const auto chart = context.chart;
 
-        if (!action.stamp.is_current(history.document, chart))
+        if (!request_stamp_current(action.stamp, history.document, chart))
             return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
         target = history.read_chart(chart);
         if (target == nullptr)
@@ -911,7 +912,7 @@ struct edit_sound_properties_action_t {
         auto& history = context.document.history;
         const auto& workspace = context.document.workspace;
         if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
-            !action.stamp.is_current(history.document, *workspace.selected_chart)) {
+            !request_stamp_current(action.stamp, history.document, *workspace.selected_chart)) {
             return compose_action_outcome_t::blocked(stale_action_message("Sound properties"));
         }
         const auto resource = std::ranges::find(history.document.resources,

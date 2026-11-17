@@ -1,4 +1,5 @@
 #include "common/window_presentation.h"
+#include "sys/request_stamp_check.h"
 #include "common/local_file_location.h"
 #include "sys/compose/generator_runtime.h"
 #include "core/text_util.h"
@@ -1020,7 +1021,7 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     const auto chart = action.stamp.chart_id;
     if (!dock.slots_mode || !workspace.selected_chart ||
         workspace.active_tab != wormedit::workspace_tab_t::compose ||
-        !action.stamp.is_current(history.document, *workspace.selected_chart)) {
+        !wormedit::sys::request_stamp_current(action.stamp, history.document, *workspace.selected_chart)) {
         feedback = "The WAV slots target changed. Choose the files again.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         if (confirm) worm_ui_frontend_sound_slot_batch_result(false, feedback.c_str());
@@ -1058,7 +1059,7 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     if (!request && !confirm) return false;
     std::string feedback;
     const auto chart = action.stamp.chart_id;
-    if (!workspace.selected_chart || !action.stamp.is_current(history.document, *workspace.selected_chart)) {
+    if (!workspace.selected_chart || !wormedit::sys::request_stamp_current(action.stamp, history.document, *workspace.selected_chart)) {
         feedback = "The import target changed. Cancel and choose the files again.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         if (confirm) worm_ui_frontend_sound_import_result(false, feedback.c_str());

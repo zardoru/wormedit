@@ -495,10 +495,10 @@ void audition_sound(const wormedit::ui::audio_slices_view_t& view, const wormedi
     if (row.missing || row.asset_id.value == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
-    action.compose_resource_id.value = row.resource_id.value;
-    action.compose_input_project_id.value = view.usage_song_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.resource.id.value = row.resource_id.value;
+    action.stamp.project_id.value = view.usage_song_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
 }
 
 using sound_rows_t = std::vector<const wormedit::ui::sound_row_view_t*>;
@@ -625,21 +625,22 @@ void dispatch_sound_usage_activation(const wormedit::ui::audio_slices_view_t& vi
         view.usage_resource_id.value == 0 || view.usage_resource_id.value != view.selected_resource_id.value)
         return;
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
-    action.sound_usage_song_id.value = view.usage_song_id.value;
-    action.sound_usage_document_revision = view.usage_document_revision;
-    action.sound_usage_resource_id.value = view.usage_resource_id.value;
-    action.sound_usage_asset_id.value = view.usage_asset_id.value;
-    action.sound_usage_chart_id.value = row.chart_id.value;
-    action.sound_usage_measure_id.value = row.measure_id.value;
-    action.sound_usage_row = row.row;
-    action.sound_usage_object_id.value = row.object_id.value;
-    action.sound_usage_channel_id.value = row.channel_id.value;
-    action.sound_usage_clip_id.value = row.clip_id.value;
-    action.sound_usage_referenced_resource_id.value = row.referenced_resource_id.value;
-    action.sound_usage_referenced_asset_id.value = row.referenced_asset_id.value;
-    action.sound_usage_kind = row.kind;
-    action.sound_usage_scope = row.scope;
-    action.sound_usage_position_valid = row.position_valid;
+    action.stamp = {.project_id = view.usage_song_id, .document_revision = view.usage_document_revision};
+    action.sound_usage = {
+        .resource_id = {view.usage_resource_id.value},
+        .asset_id = {view.usage_asset_id.value},
+        .chart_id = {row.chart_id.value},
+        .measure_id = {row.measure_id.value},
+        .row = row.row,
+        .object_id = {row.object_id.value},
+        .channel_id = {row.channel_id.value},
+        .clip_id = {row.clip_id.value},
+        .referenced_resource_id = {row.referenced_resource_id.value},
+        .referenced_asset_id = {row.referenced_asset_id.value},
+        .kind = row.kind,
+        .scope = row.scope,
+        .position_valid = row.position_valid,
+    };
 }
 
 void render_sound_usage_rows(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
@@ -691,9 +692,9 @@ void render_sound_source_copy_button(struct nk_context* context, const wormedit:
         nk_widget_disable_end(context);
     if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_resource_asset_id.value = sound.asset_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.resource.asset_id.value = sound.asset_id.value;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
     action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
 }
 
@@ -706,17 +707,22 @@ void reset_sound_properties(const wormedit::ui::audio_slices_view_t& view, const
     audio.new_tag[0] = '\0';
 }
 
+// The sound tab acts on the open song and its selected chart, if any.
+void stamp_sound_properties_request(const wormedit::ui::audio_slices_view_t& view,
+                                    wormedit::ui::workspace_action_t& action) {
+    action.stamp = {.chart_id = view.has_chart ? view.chart_id : wormedit::chart_id_t{},
+                    .project_id = view.usage_song_id, .document_revision = view.document_revision};
+}
+
 void submit_sound_tags(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound,
                        std::vector<std::string> tags, wormedit::ui::workspace_action_t& action) {
-    if (action.sound_properties_apply) return;
-    action.sound_properties_apply = true;
-    action.sound_properties_project_id = view.usage_song_id;
-    action.sound_properties_chart_id = view.has_chart ? view.chart_id : wormedit::chart_id_t{};
-    action.sound_properties_resource_id = sound.resource_id;
-    action.sound_properties_document_revision = view.document_revision;
-    action.sound_properties_name = sound.name.c_str();
-    action.sound_properties_kind = sound.kind;
-    action.sound_properties_tags = std::move(tags);
+    if (action.sound_properties.apply) return;
+    action.sound_properties.apply = true;
+    stamp_sound_properties_request(view, action);
+    action.sound_properties.resource_id = sound.resource_id;
+    action.sound_properties.name = sound.name.c_str();
+    action.sound_properties.kind = sound.kind;
+    action.sound_properties.tags = std::move(tags);
 }
 
 void render_sound_tags(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
@@ -780,14 +786,12 @@ void render_editable_sound_properties(nk_context* context, const wormedit::ui::a
     if (!can_apply) nk_widget_disable_begin(context);
     const auto apply = wormedit::ui::chrome::button_label(context, "Apply");
     if (!can_apply) nk_widget_disable_end(context);
-    if (apply && can_apply && !action.sound_properties_apply) {
-        action.sound_properties_apply = true;
-        action.sound_properties_project_id = view.usage_song_id;
-        action.sound_properties_chart_id = view.has_chart ? view.chart_id : wormedit::chart_id_t{};
-        action.sound_properties_resource_id = sound.resource_id;
-        action.sound_properties_document_revision = view.document_revision;
-        action.sound_properties_name = audio.properties_name;
-        action.sound_properties_kind = static_cast<wormedit::sound_kind_t>(audio.properties_kind);
+    if (apply && can_apply && !action.sound_properties.apply) {
+        action.sound_properties.apply = true;
+        stamp_sound_properties_request(view, action);
+        action.sound_properties.resource_id = sound.resource_id;
+        action.sound_properties.name = audio.properties_name;
+        action.sound_properties.kind = static_cast<wormedit::sound_kind_t>(audio.properties_kind);
     }
     if (wormedit::ui::chrome::button_label(context, "Revert")) reset_sound_properties(view, sound);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
@@ -917,7 +921,7 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         audio.import_drop_valid = audio.import_drop_width > 0 && audio.import_drop_height > 0;
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 2);
         if (wormedit::ui::chrome::button_label(context, "Add sounds…"))
-            action->sound_import_pick_requested = true;
+            action->sound_import.pick_requested = true;
         nk_label(context, "Drop audio files anywhere here to import", NK_TEXT_RIGHT);
         render_sound_columns(context, *view, *action);
         render_bmson_lane_mode_confirmation(context, *action, view->usage_song_id.value, view->chart_id.value,

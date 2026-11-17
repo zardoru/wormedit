@@ -268,7 +268,7 @@ TEST_CASE("Scope parameter text capture does not emit chart keyboard input", "[b
     const auto typed = harness.frame(events);
     CHECK(typed.get().bms_program.operation == operation_t::draft_parameter);
     CHECK(typed.get().bms_program.text.find('4') != std::string::npos);
-    CHECK(typed.get().compose_inputs.empty());
+    CHECK(typed.get().input.compose_inputs.empty());
 }
 TEST_CASE("Saving Text keeps content editing unavailable for that selected node", "[bms-scope]") {
     scope_flow_t flow;

@@ -48,15 +48,15 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
         .selected_chart = wormedit::chart_id_t{2}};
     const wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})}};
     wormedit::ui::workspace_action_t action{};
-    action.timing_chart_id = wormedit::chart_id_t{2};
-    action.timing_document_revision = 7;
+    action.timing.chart_id = wormedit::chart_id_t{2};
+    action.timing.document_revision = 7;
     action.audio_offset_drag_chart_id = wormedit::chart_id_t{2};
     action.audio_offset_drag_document_revision = 7;
     action.audio_offset_drag_sample_rate = 48'000;
-    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage));
+    CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage));
     CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
     workspace.selected_chart.reset();
-    const auto timing = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    const auto timing = wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage);
     REQUIRE(timing.has_value());
     CHECK(*timing == "Timing event staging expired because its chart or revision changed.");
     const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000);
@@ -73,13 +73,13 @@ TEST_CASE("Application timing stage validation keeps captured identity and reque
     wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
         .payload = {.report = {.existing_event = wormedit::object_id_t{3}}}}};
     wormedit::ui::workspace_action_t action{};
-    action.timing_chart_id = wormedit::chart_id_t{2};
-    action.timing_object_id = wormedit::object_id_t{3};
-    action.timing_document_revision = 7;
-    if (source == 0) --action.timing_document_revision;
+    action.timing.chart_id = wormedit::chart_id_t{2};
+    action.timing.object_id = wormedit::object_id_t{3};
+    action.timing.document_revision = 7;
+    if (source == 0) --action.timing.document_revision;
     else if (source == 1) --stage.value->stamp.document.revision;
     else stage.value->stamp.chart = wormedit::chart_id_t{4};
-    const auto failure = wormedit::sys::validate_timing_stage_binding(action, history, workspace, stage);
+    const auto failure = wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage);
     REQUIRE(failure.has_value());
     wormedit::test::check_stale_action_message(*failure, "Timing event staging");
 }
@@ -226,10 +226,10 @@ struct AreaFixture {
         state.retained_canvas_selection_range = canvas_row_span_t{121, 480};
         state.selected_notes = {object_id_t{1}};
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
-        action.compose_input_chart_id.value = 7;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_area_begin_row = 121;
-        action.compose_area_end_row = 620;
+        action.stamp.chart_id.value = 7;
+        action.stamp.document_revision = history.document.revision;
+        action.area.begin_row = 121;
+        action.area.end_row = 620;
     }
     auto dispatch() -> std::string {
         const auto result = dispatch_compose_area_action(action, history, state);
@@ -344,12 +344,12 @@ struct SoundImportDispatchFixture {
         -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-        action.sound_import_project_id = history.document.id;
-        action.compose_input_chart_id.value = chart.value;
-        action.compose_input_document_revision = history.document.revision;
-        if (items) action.sound_import_items.assign(items, items + item_count);
+        action.stamp.project_id = history.document.id;
+        action.stamp.chart_id.value = chart.value;
+        action.stamp.document_revision = history.document.revision;
+        if (items) action.sound_import.items.assign(items, items + item_count);
 
-        if (groups) action.sound_import_groups.assign(groups, groups + group_count);
+        if (groups) action.sound_import.groups.assign(groups, groups + group_count);
 
         return dispatch_compose_sound_action(action, history, workspace, chart, application_state, sink);
     }
@@ -381,12 +381,12 @@ struct SoundSlotBatchDispatchFixture {
                   std::uint64_t revision = 0) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-        action.sound_import_project_id = history.document.id;
-        action.compose_input_chart_id.value = chart.value;
-        action.compose_input_document_revision = revision == 0 ? history.document.revision : revision;
-        action.compose_sound_slot = slot;
-        action.compose_sound_slot_confirmed = confirmed;
-        if (items) action.sound_import_items.assign(items, items + count);
+        action.stamp.project_id = history.document.id;
+        action.stamp.chart_id.value = chart.value;
+        action.stamp.document_revision = revision == 0 ? history.document.revision : revision;
+        action.resource.sound_slot = slot;
+        action.resource.sound_slot_confirmed = confirmed;
+        if (items) action.sound_import.items.assign(items, items + count);
 
         return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
     }
@@ -615,8 +615,8 @@ void section_dispatch_preserves_model(wormedit::ui::sound_import_kind_t kind, bo
         const auto* raw_path = path.c_str();
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
-        action.sound_import_kind = kind;
-        action.compose_import_paths = {raw_path};
+        action.sound_import.kind = kind;
+        action.resource.import_paths = {raw_path};
 
         message = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
             fixture.chart, fixture.application_state, fixture.sink);
@@ -656,12 +656,12 @@ TEST_CASE("sound_import fixed section confirmation rejects stale revision atomic
     const wormedit::ui::sound_import_item_t item{path.c_str(), "Section stem", wormedit::sound_kind_t::stem, true};
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-    action.sound_import_project_id = fixture.history.document.id;
-    action.compose_input_chart_id.value = fixture.chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.sound_import_items = {item};
+    action.stamp.project_id = fixture.history.document.id;
+    action.stamp.chart_id.value = fixture.chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.sound_import.items = {item};
 
-    action.sound_import_kind = wormedit::ui::sound_import_kind_t::stem;
+    action.sound_import.kind = wormedit::ui::sound_import_kind_t::stem;
     ++fixture.history.document.revision;
     const auto resources = fixture.history.document.resources.size();
     const auto channels = fixture.history.document.charts.front().sound_channels.size();
@@ -727,8 +727,8 @@ TEST_CASE("Direct sound slot actions reject stale chart stamps before payload pr
     SoundSlotBatchDispatchFixture fixture;
     wormedit::ui::workspace_action_t action{};
     action.compose_action = kind;
-    action.compose_input_chart_id.value = fixture.chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    action.stamp.chart_id.value = fixture.chart.value;
+    action.stamp.document_revision = fixture.history.document.revision + 1;
     const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
         fixture.chart, fixture.application_state);
     REQUIRE(response.has_value());
@@ -1605,14 +1605,14 @@ TEST_CASE("Compose area edge crossing normalizes rows and cancellation restores 
     REQUIRE(original);
     const auto selected = fixture.state.selected_objects;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.compose_area_begin_edge = true;
-    fixture.action.compose_area_begin_row = 900;
-    fixture.action.compose_area_end_row = 480;
+    fixture.action.area.begin_edge = true;
+    fixture.action.area.begin_row = 900;
+    fixture.action.area.end_row = 480;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{480, 960});
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
-    fixture.action.compose_area_begin_row = 121;
-    fixture.action.compose_area_end_row = 480;
+    fixture.action.area.begin_row = 121;
+    fixture.action.area.end_row = 480;
     CHECK(fixture.dispatch() == "Area resize canceled.");
     check_original_area(fixture);
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
@@ -1627,13 +1627,13 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
     const auto range = fixture.state.retained_selection_range;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
     SECTION("stale revision") {
-        ++fixture.action.compose_input_document_revision;
+        ++fixture.action.stamp.document_revision;
     }
     SECTION("other chart") {
-        ++fixture.action.compose_input_chart_id.value;
+        ++fixture.action.stamp.chart_id.value;
     }
     SECTION("overflow row") {
-        fixture.action.compose_area_end_row = std::numeric_limits<std::uint64_t>::max();
+        fixture.action.area.end_row = std::numeric_limits<std::uint64_t>::max();
     }
     CHECK(fixture.dispatch() != "Selected area resized.");
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
@@ -1644,8 +1644,8 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
 TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][commands]") {
     AreaFixture fixture;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    fixture.action.compose_quantize_divisions = fixture.state.active_snap_denominator;
-    fixture.action.compose_quantize_holds = wormedit::quantization_hold_t::both_endpoints;
+    fixture.action.quantize.divisions = fixture.state.active_snap_denominator;
+    fixture.action.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
     CHECK(fixture.dispatch() == "Selected objects quantized.");
     const auto& chart = fixture.history.document.charts.front();
     CHECK(chart.measures.front().notes[0].position.row == 240);
@@ -1678,14 +1678,14 @@ TEST_CASE("Compose area resizing retains virtual canvas rows without materializi
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.compose_area_virtual = true;
-    fixture.action.compose_area_begin_row = 2400;
-    fixture.action.compose_area_end_row = 5000;
+    fixture.action.area.is_virtual = true;
+    fixture.action.area.begin_row = 2400;
+    fixture.action.area.end_row = 5000;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{2400, 5040});
     CHECK_FALSE(fixture.state.retained_selection_range);
     check_area_unchanged(fixture, original);
-    fixture.action.compose_area_end_row = 960000;
+    fixture.action.area.end_row = 960000;
     CHECK(fixture.dispatch() != "Selected area resized.");
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
 }
@@ -1739,8 +1739,8 @@ TEST_CASE("Compose area edges follow measure-local active grid across odd measur
     fixture.state.retained_selection_range =
         position_span_t{{measure_id_t{2}, 17}, {measure_id_t{2}, 480}};
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.compose_area_begin_row = 617;
-    fixture.action.compose_area_end_row = 1100;
+    fixture.action.area.begin_row = 617;
+    fixture.action.area.end_row = 1100;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{617, 1080});
     REQUIRE(fixture.state.retained_selection_range);
@@ -1755,8 +1755,8 @@ TEST_CASE("Compose area quantization rejects ambiguous identities without edits"
     const auto revision = fixture.history.document.revision;
     const auto position = chart.measures.front().notes.front().position;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    fixture.action.compose_quantize_divisions = fixture.state.active_snap_denominator;
-    fixture.action.compose_quantize_holds = wormedit::quantization_hold_t::both_endpoints;
+    fixture.action.quantize.divisions = fixture.state.active_snap_denominator;
+    fixture.action.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
     CHECK(fixture.dispatch().find("reuses an object ID") != std::string::npos);
     CHECK(fixture.history.document.revision == revision);
     CHECK(chart.measures.front().notes.front().position == position);
@@ -2402,17 +2402,14 @@ void check_bookmark_callback(bool value) { CHECK(value); }
 void require_bookmark_callback(bool value) { REQUIRE(value); }
 struct bookmark_chooser_recorder_t {
     unsigned calls{};
-    std::uint64_t project{}, chart{}, revision{};
+    worm_ui_compose_target_t target{};
     bool accepted{true};
     auto operator==(const bookmark_chooser_recorder_t&) const -> bool = default;
-    static auto open(void* context, std::uint64_t project, std::uint64_t chart,
-                      std::uint64_t revision) -> bool {
-        auto& self = *static_cast<bookmark_chooser_recorder_t*>(context);
-        ++self.calls;
-        self.project = project;
-        self.chart = chart;
-        self.revision = revision;
-        return self.accepted;
+    auto operator()(worm_ui_targeted_action_t action, worm_ui_compose_target_t requested) -> bool {
+        if (action != worm_ui_targeted_action_t::bookmark_chooser) return false;
+        ++calls;
+        target = requested;
+        return accepted;
     }
 };
 }
@@ -2422,13 +2419,12 @@ TEST_CASE("Go To Bookmark command opens the retained chooser with the active con
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
     bookmark_chooser_recorder_t chooser;
-    fixture.application_state.bookmarks.chooser_backend = {
-        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    fixture.application_state.services.run_targeted_ui_action = std::ref(chooser);
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
     check_bookmark_callback(chooser.calls == 1);
-    check_bookmark_callback(chooser.project == fixture.fixture.history.document.id.value);
-    check_bookmark_callback(chooser.chart == fixture.compose_state->chart.value);
-    check_bookmark_callback(chooser.revision == revision);
+    check_bookmark_callback(chooser.target.project == fixture.fixture.history.document.id.value);
+    check_bookmark_callback(chooser.target.chart == fixture.compose_state->chart.value);
+    check_bookmark_callback(chooser.target.revision == revision);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.compose_state->cursor == cursor);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
@@ -2441,23 +2437,18 @@ TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback"
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
     bookmark_chooser_recorder_t chooser{.accepted = false};
-    fixture.application_state.bookmarks.chooser_backend = {
-        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    fixture.application_state.services.run_targeted_ui_action = std::ref(chooser);
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
 }
-TEST_CASE("Bookmark navigation reset retains the chooser backend and clock and clears project seeks",
+TEST_CASE("Bookmark navigation reset retains the clock and clears project seeks",
           "[sys][application_commands][bookmark][ownership]") {
     application_command_state_t state;
-    bookmark_chooser_recorder_t chooser;
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
-    state.bookmarks.chooser_backend = {.open = bookmark_chooser_recorder_t::open, .context = &chooser};
     state.bookmarks.fixed_clock = &now;
     state.bookmarks.record_seek(wormedit::chart_id_t{7}, 192);
     reset_application_project_edit_state(state);
     check_bookmark_callback(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
     check_bookmark_callback(state.bookmarks.now() == now);
-    require_bookmark_callback(state.bookmarks.open_chooser(1, 7, 2));
-    check_bookmark_callback(chooser.calls == 1);
     now += std::chrono::milliseconds{301};
     check_bookmark_callback(state.bookmarks.now() == now);
 }
@@ -2467,13 +2458,13 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     const auto revision = fixture.fixture.history.document.revision;
     const auto undo_size = fixture.fixture.history.undo.size();
     unsigned calls{};
-    fixture.application_state.services.compose_dock_command = [&](WormUiComposeDockCommand dock,
-        std::uint64_t project, std::uint64_t chart, std::uint64_t expected_revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](worm_ui_targeted_action_t dock,
+        worm_ui_compose_target_t target) {
         ++calls;
-        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS);
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
+        check_bookmark_callback(dock >= worm_ui_targeted_action_t::dock_open_layers);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(target.revision == revision);
         return true;
     };
     for (const auto kind : {application_command_kind_t::view_open_layers,
@@ -2501,9 +2492,9 @@ TEST_CASE("Dock commands reject absent and unavailable callbacks",
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
                             application_command_kind_t::view_toggle_sounds}) {
-        fixture.application_state.services.compose_dock_command = {};
+        fixture.application_state.services.run_targeted_ui_action = {};
         check_bookmark_callback(!fixture.invoke(kind).value);
-        fixture.application_state.services.compose_dock_command = [](auto, auto, auto, auto) { return false; };
+        fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return false; };
         check_bookmark_callback(!fixture.invoke(kind).value);
     }
 }
@@ -2514,12 +2505,12 @@ TEST_CASE("Go to sound command opens the retained chooser with the active contex
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
     unsigned calls{};
-    fixture.application_state.services.open_sound_picker = [&](std::uint64_t project,
-        std::uint64_t chart, std::uint64_t expected_revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](auto action, auto target) {
         ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
+        check_bookmark_callback(action == worm_ui_targeted_action_t::sound_picker);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(target.revision == revision);
         return true;
     };
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
@@ -2535,9 +2526,9 @@ TEST_CASE("Go to sound command rejects a missing or blocked chooser callback",
           "[sys][application_commands][sound-picker]") {
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
-    fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return false; };
+    fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return false; };
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
-    fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return true; };
+    fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return true; };
     fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
 }
@@ -2803,12 +2794,12 @@ void check_placement_audition(bool enabled) {
     const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(view), position);
     REQUIRE(y.has_value());
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
-    action.compose_input_chart_id.value = interaction->chart.value;
-    action.compose_input_document_revision = history.document.revision;
-    action.compose_input_viewport_width_pixels = compose.viewport_width_pixels;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    action.input.shortcuts.window_focused = true;
+    action.stamp.chart_id.value = interaction->chart.value;
+    action.stamp.document_revision = history.document.revision;
+    action.input.compose_input_viewport_width_pixels = compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .x_pixels = compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, interaction->viewport_height_pixels,
             compose_field_downscroll(chart, application.preferences.editor_preferences))};
@@ -3151,12 +3142,12 @@ TEST_CASE("Project export command opens from every project tab without Compose d
           "[sys][application_commands][project-access]") {
     TimingInsertFixture fixture;
     unsigned calls{};
-    fixture.application_state.services.compose_dock_command = {};
-    fixture.application_state.services.open_project_export = [&](auto project, auto chart, auto revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](auto action, auto target) {
         ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.workspace.selected_chart->value);
-        check_bookmark_callback(revision == fixture.fixture.history.document.revision);
+        check_bookmark_callback(action == worm_ui_targeted_action_t::project_export);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.workspace.selected_chart->value);
+        check_bookmark_callback(target.revision == fixture.fixture.history.document.revision);
         return true;
     };
     for (const auto tab : {wormedit::workspace_tab_t::setup, wormedit::workspace_tab_t::metadata,
@@ -3169,7 +3160,7 @@ TEST_CASE("Project export command opens from every project tab without Compose d
     fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).value);
     fixture.compose_state->active_gesture.reset();
-    fixture.application_state.services.open_project_export = {};
+    fixture.application_state.services.run_targeted_ui_action = {};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).value);
 }
 

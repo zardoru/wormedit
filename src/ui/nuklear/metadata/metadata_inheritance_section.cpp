@@ -30,11 +30,11 @@ void render_inheritance_row(const MetadataPanel& panel,
 }
 void apply_inheritance(const MetadataPanel& panel) {
     auto& action = *panel.action;
-    if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) return;
-    action.metadata_edit = WORM_UI_METADATA_EDIT_INHERITANCE;
-    action.metadata_document_revision = panel.metadata->document_revision;
-    action.metadata_chart_id = panel.metadata->chart_id;
-    action.metadata_overrides = state.inheritance.overrides();
+    if (action.metadata.kind != WORM_UI_METADATA_EDIT_NONE) return;
+    action.metadata.kind = WORM_UI_METADATA_EDIT_INHERITANCE;
+    action.metadata.document_revision = panel.metadata->document_revision;
+    action.metadata.chart_id = panel.metadata->chart_id;
+    action.metadata.overrides = state.inheritance.overrides();
 }
 }
 void render_metadata_inheritance_section(const MetadataPanel& panel) {

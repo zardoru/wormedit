@@ -67,10 +67,10 @@ auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose
            WormUiComposeActionKind kind, const editor_t& editor) -> bool {
     if (!wormedit::ui::raise_compose_action(action, view, kind,
             wormedit::ui::compose_project_stamp_t::preserve)) return false;
-    action.compose_export_cut_id = editor.selected;
-    action.compose_marker_label = editor.label.data();
-    action.compose_marker_audio_begin = editor.begin.data();
-    action.compose_marker_audio_end = editor.end.data();
+    action.marker.export_cut_id = editor.selected;
+    action.marker.label = editor.label.data();
+    action.marker.audio_begin = editor.begin.data();
+    action.marker.audio_end = editor.end.data();
     return true;
 }
 

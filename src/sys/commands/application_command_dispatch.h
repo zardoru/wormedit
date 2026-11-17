@@ -60,11 +60,11 @@ auto reject_application_command(
 inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action_t& action,
     const document_history_t& history, const workspace_controller_t& workspace) -> bool {
     return !action.compose_menu_command ||
-        (action.shortcut_window_focused && !action.shortcut_ime_composition_active &&
+        (action.input.shortcuts.window_focused && !action.input.shortcuts.ime_composition_active &&
          workspace.active_tab == workspace_tab_t::compose &&
-         action.compose_input_project_id == history.document.id &&
-         workspace.selected_chart && action.compose_input_chart_id == *workspace.selected_chart &&
-         action.compose_input_document_revision == history.document.revision);
+         action.stamp.project_id == history.document.id &&
+         workspace.selected_chart && action.stamp.chart_id == *workspace.selected_chart &&
+         action.stamp.document_revision == history.document.revision);
 }
 
 // External-player, play/pause, play-from-start, and cancel/restore callbacks own

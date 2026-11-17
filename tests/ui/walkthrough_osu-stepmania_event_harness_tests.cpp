@@ -113,8 +113,8 @@ struct charting_t {
     }
     auto shortcut(const workspace_action_snapshot_t& snapshot) -> command_dispatch_outcome_t {
         const auto& action = snapshot.get();
-        expect(action.shortcut_events.size() == 1);
-        const auto& input = action.shortcut_events[0];
+        expect(action.input.shortcuts.events.size() == 1);
+        const auto& input = action.input.shortcuts.events[0];
         return dispatch_shortcut(registry,
             {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
                        .modifiers = input.modifiers}, .auto_repeat = input.repeat},
@@ -274,8 +274,8 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     });
     expect(found != linked.end());
-    expect(found->get().compose_resource_role == wormedit::resource_role_t::music);
-    expect(std::string_view{found->get().compose_import_path} == "/music/song.ogg");
+    expect(found->get().resource.role == wormedit::resource_role_t::music);
+    expect(std::string_view{found->get().resource.import_path} == "/music/song.ogg");
 }
 
 TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds through production input",
@@ -283,8 +283,8 @@ TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds throug
     charting_t flow;
     expect(flow.harness.ready());
     const auto tap = flow.send(key(SDLK_1, SDL_SCANCODE_1));
-    expect(tap.get().compose_inputs.size() == 1);
-    expect(tap.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect(tap.get().input.compose_inputs.size() == 1);
+    expect(tap.get().input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
     (void)flow.send(key(SDLK_1, SDL_SCANCODE_1, false));
     (void)flow.send(key(SDLK_2, SDL_SCANCODE_2));
     (void)flow.send(key(SDLK_UP, SDL_SCANCODE_UP));
@@ -465,8 +465,8 @@ TEST_CASE("Osu StepMania walkthrough Save copies linked song audio and repeat Sa
     charting_t flow;
     const auto save_key = key(SDLK_S, SDL_SCANCODE_S);
     const auto action = flow.harness.frame({&save_key, 1}, SDL_KMOD_CTRL);
-    expect(action.get().shortcut_events.size() == 1);
-    expect(action.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
+    expect(action.get().input.shortcuts.events.size() == 1);
+    expect(action.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t runtime{scheduler};
     const auto destination = directory.path / "song.wormedit";
@@ -572,7 +572,7 @@ void export_tutorial_from_compose(charting_t& flow, const std::filesystem::path&
     expect(model.value);
     auto shell = frontend_workspace_view_t::from(*model.value, flow.history.document, "Ready", {}, false);
     flow.harness.view().compose.output_groups = std::move(shell.view.compose.output_groups);
-    flow.commands.services.open_project_export = worm_ui_frontend_open_project_export;
+    flow.commands.services.run_targeted_ui_action = worm_ui_frontend_run_targeted_action;
     const auto export_key = key(SDLK_E, SDL_SCANCODE_E);
     expect(flow.shortcut(flow.harness.frame({&export_key, 1}, SDL_KMOD_CTRL)).value.is_invoked());
     const auto released = key(SDLK_E, SDL_SCANCODE_E, false);

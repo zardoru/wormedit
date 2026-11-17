@@ -66,7 +66,7 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined ob
     const auto clicked = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(clicked.empty());
     CHECK(clicked.back().get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-    CHECK(clicked.back().get().compose_semantic_layer_id.value == 7);
+    CHECK(clicked.back().get().layer.id.value == 7);
 }
 
 TEST_CASE("Layer painting can begin over a BGM event in its pane",
@@ -82,9 +82,9 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     view.semantic_layer_target = {.layer_id = {7}, .name = "Verse", .visible = true};
     const std::array hover{motion_event(300, 400)};
     const auto pointer = harness.frame(hover);
-    REQUIRE(pointer.get().compose_has_pointer_hover);
-    const auto x = pointer.get().compose_pointer_hover_x_pixels;
-    const auto y = pointer.get().compose_pointer_hover_y_pixels;
+    REQUIRE(pointer.get().input.compose_has_pointer_hover);
+    const auto x = pointer.get().input.compose_pointer_hover_x_pixels;
+    const auto y = pointer.get().input.compose_pointer_hover_y_pixels;
     wormedit::ui::compose_bgm_event_view_t event{};
     event.bounds = {x - 48, y - 24, x + 48, y + 24};
     event.event_id = wormedit::object_id_t{42};
@@ -94,8 +94,8 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     const auto frames = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : frames) {
-        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
-            began = began || frame.get().compose_inputs[index].kind ==
+        for (std::size_t index = 0; index < frame.get().input.compose_inputs.size(); ++index) {
+            began = began || frame.get().input.compose_inputs[index].kind ==
                                  WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN;
         }
     }
@@ -127,10 +127,10 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     const std::array hover{motion_event(300, 400)};
     const auto pointer = harness.frame(hover);
     wormedit::ui::compose_bgm_event_view_t bgm{};
-    bgm.bounds = {pointer.get().compose_pointer_hover_x_pixels - 48,
-                  pointer.get().compose_pointer_hover_y_pixels - 24,
-                  pointer.get().compose_pointer_hover_x_pixels + 48,
-                  pointer.get().compose_pointer_hover_y_pixels + 24};
+    bgm.bounds = {pointer.get().input.compose_pointer_hover_x_pixels - 48,
+                  pointer.get().input.compose_pointer_hover_y_pixels - 24,
+                  pointer.get().input.compose_pointer_hover_x_pixels + 48,
+                  pointer.get().input.compose_pointer_hover_y_pixels + 24};
     bgm.event_id = wormedit::object_id_t{42};
     bgm.source_lane_id = wormedit::object_id_t{1};
     view.bgm_events = {bgm};
@@ -146,8 +146,8 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     const auto frames = click_at(harness, 300, 400, SDL_KMOD_ALT);
     bool began{}, released{};
     for (const auto& frame : frames) {
-        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
-            const auto& input = frame.get().compose_inputs[index];
+        for (std::size_t index = 0; index < frame.get().input.compose_inputs.size(); ++index) {
+            const auto& input = frame.get().input.compose_inputs[index];
             if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
                 began = true;
                 check_layer_brush(input.paint_intent == 2);
@@ -179,7 +179,7 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     const auto frames = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(frames.empty());
     check_layer_brush(frames.back().get().compose_action == WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER);
-    check_layer_brush(frames.back().get().compose_semantic_layer_id.value == 7);
+    check_layer_brush(frames.back().get().layer.id.value == 7);
 }
 
 namespace {
@@ -207,7 +207,7 @@ auto click_chip(nuklear_event_harness_t& harness, const char* label)
 }
 
 void check_chip_inputs_empty(const std::vector<workspace_action_snapshot_t>& frames) {
-    for (const auto& frame : frames) check_layer_brush(frame.get().compose_inputs.size() == 0);
+    for (const auto& frame : frames) check_layer_brush(frame.get().input.compose_inputs.size() == 0);
 }
 }
 
@@ -303,10 +303,10 @@ TEST_CASE("Tool chip owns a held click across source change without painting on 
     harness.view().compose.draw_source_id.value = 180;
     harness.view().compose.document_revision = 2;
     const auto held = harness.frame(std::array{motion_event(300, 400)});
-    check_layer_brush(held.get().compose_inputs.size() == 0);
+    check_layer_brush(held.get().input.compose_inputs.size() == 0);
     check_layer_brush(worm_ui_nuklear_compose_state().pointer_capture.tool_chip_pointer_canceled);
     const auto released = harness.frame(std::array{button_event(false, 300, 400)});
-    check_layer_brush(released.get().compose_inputs.size() == 0);
+    check_layer_brush(released.get().input.compose_inputs.size() == 0);
     check_no_layer_brush(worm_ui_nuklear_compose_state().pointer_capture.tool_chip_pointer_active);
 }
 
@@ -325,7 +325,7 @@ TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an
     const auto revealed = harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     check_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) && state.pointer_capture.layer_chip_reveal_id == 0);
-    check_layer_brush(revealed.get().compose_semantic_layer_first_row > 8);
+    check_layer_brush(revealed.get().layer.first_row > 8);
     state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     view.semantic_layer_target = {.name = "Pick a layer"};
     check_chip_inputs_empty(click_chip(harness, "Pick a layer"));
@@ -340,8 +340,8 @@ TEST_CASE("Tool chip leaves outside canvas presses available and missing source 
     const auto outside = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : outside) {
-        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index)
-            began |= frame.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
+        for (std::size_t index = 0; index < frame.get().input.compose_inputs.size(); ++index)
+            began |= frame.get().input.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
     }
     check_layer_brush(began);
     harness.view().compose.draw_source_kind = 1;

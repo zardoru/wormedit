@@ -17,12 +17,21 @@ set_tests_properties(tooling.raw-buttons PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.raw-popups
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_popups.py")
 set_tests_properties(tooling.raw-popups PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.targeted-action-triple
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_targeted_action_triple.py")
+set_tests_properties(tooling.targeted-action-triple PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.workspace-action-members
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_workspace_action_members.py")
+set_tests_properties(tooling.workspace-action-members PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.raw-scroll-groups
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_scroll_groups.py")
 set_tests_properties(tooling.raw-scroll-groups PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.header-fanout
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_header_fanout.py")
 set_tests_properties(tooling.header-fanout PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.test-file-size
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_test_file_size.py")
+set_tests_properties(tooling.test-file-size PROPERTIES LABELS "unit;tooling")
 
 if(UNIX)
     add_executable(wormedit_crash_backtrace_tests
@@ -940,7 +949,29 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/timing_lane_ui_tests.cpp
         ../src/sys/app/application_timing_stage.cpp
         ../src/sys/compose/views/compose_hover_timing.cpp
-        sys/frame_timing_tests.cpp
+        sys/frame_timing_hooks.cpp
+        sys/frame_timing_phase_tests.cpp
+        sys/compose_quantize_ghost_tests.cpp
+        sys/frame_projection_retention_tests.cpp
+        sys/compose_waveform_projection_tests.cpp
+        sys/bmson_stem_projection_tests.cpp
+        sys/compose_paste_offset_tests.cpp
+        sys/compose_area_span_input_tests.cpp
+        sys/compose_overview_tests.cpp
+        sys/compose_geometry_arena_tests.cpp
+        sys/compose_arena_view_tests.cpp
+        sys/compose_input_batch_tests.cpp
+        sys/compose_paint_lane_key_tests.cpp
+        sys/workspace_cache_inspector_tests.cpp
+        sys/compose_move_feedback_tests.cpp
+        sys/compose_session_state_tests.cpp
+        sys/compose_bgm_mix_selection_tests.cpp
+        sys/shared_arithmetic_tests.cpp
+        sys/bmson_proposal_tests.cpp
+        sys/compose_hit_test_tests.cpp
+        sys/compose_refill_allocation_tests.cpp
+        sys/export_cut_projection_tests.cpp
+        sys/application_frame_projection_tests.cpp
         ../src/sys/app/application_command_state.cpp
         sys/presentation_latency_tests.cpp
         sys/transport_status_tests.cpp

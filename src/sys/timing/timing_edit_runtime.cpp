@@ -11,17 +11,17 @@
 namespace wormedit::sys {
 namespace runtime {
 
-void timing_edit_t::dispatch(const ui::workspace_action_t& action,
+void timing_edit_t::dispatch(const ui::timing_edit_request_t& edit,
                              const document_edit_inputs_t& inputs, bool timing_locked,
                              std::uint64_t active_snap_denominator) {
-    switch (action.timing_stage_action) {
+    switch (edit.stage_action) {
     case ui::timing_stage_action_t::none:
         return;
     case ui::timing_stage_action_t::begin:
-        begin(action, inputs, timing_locked, active_snap_denominator);
+        begin(edit, inputs, timing_locked, active_snap_denominator);
         return;
     case ui::timing_stage_action_t::quick_insert:
-        quick_insert(action, inputs, timing_locked, active_snap_denominator);
+        quick_insert(edit, inputs, timing_locked, active_snap_denominator);
         return;
     case ui::timing_stage_action_t::cancel:
         if (stage) {
@@ -35,17 +35,17 @@ void timing_edit_t::dispatch(const ui::workspace_action_t& action,
     case ui::timing_stage_action_t::confirm:
     case ui::timing_stage_action_t::remove:
         if (stage)
-            dispatch_active(action, inputs, timing_locked, active_snap_denominator);
+            dispatch_active(edit, inputs, timing_locked, active_snap_denominator);
         return;
     }
 }
 
-void timing_edit_t::begin(const ui::workspace_action_t& action,
+void timing_edit_t::begin(const ui::timing_edit_request_t& edit,
                           const document_edit_inputs_t& inputs, bool timing_locked,
                           std::uint64_t active_snap_denominator) {
     if (stage)
         return;
-    auto candidate = begin_timing_stage(action, inputs.history, inputs.workspace, timing_locked,
+    auto candidate = begin_timing_stage(edit, inputs.history, inputs.workspace, timing_locked,
                                         active_snap_denominator);
     if (candidate.value) {
         stage = std::move(candidate);
@@ -60,7 +60,7 @@ void timing_edit_t::begin(const ui::workspace_action_t& action,
 }
 
 // Timing focus: begin a new event with its default value and confirm it at once.
-void timing_edit_t::quick_insert(const ui::workspace_action_t& action,
+void timing_edit_t::quick_insert(const ui::timing_edit_request_t& edit,
                                  const document_edit_inputs_t& inputs, bool timing_locked,
                                  std::uint64_t active_snap_denominator) {
     if (stage) {
@@ -69,7 +69,7 @@ void timing_edit_t::quick_insert(const ui::workspace_action_t& action,
             "Confirm or cancel the open timing edit before inserting another event.");
         return;
     }
-    auto candidate = begin_timing_stage(action, inputs.history, inputs.workspace, timing_locked,
+    auto candidate = begin_timing_stage(edit, inputs.history, inputs.workspace, timing_locked,
                                         active_snap_denominator);
     if (!candidate.value) {
         inputs.notifications.post_rejection(notification_source_t::edit, candidate.diagnostics,
@@ -90,39 +90,39 @@ void timing_edit_t::cancel() {
     stage.reset();
 }
 
-void timing_edit_t::dispatch_active(const ui::workspace_action_t& action,
+void timing_edit_t::dispatch_active(const ui::timing_edit_request_t& edit,
                                     const document_edit_inputs_t& inputs, bool timing_locked,
                                     std::uint64_t active_snap_denominator) {
     if (auto failure =
-            validate_timing_stage_binding(action, inputs.history, inputs.workspace, *stage)) {
+            validate_timing_stage_binding(edit, inputs.history, inputs.workspace, *stage)) {
         cancel();
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::edit,
                                   *failure);
         return;
     }
     const auto* chart = inputs.history.read_chart(stage->captured_stamp().chart);
-    if (action.timing_stage_action == ui::timing_stage_action_t::remove) {
-        remove(action, inputs, timing_locked);
-    } else if (action.timing_stage_action == ui::timing_stage_action_t::move) {
-        move(action, inputs, timing_locked, active_snap_denominator, chart);
+    if (edit.stage_action == ui::timing_stage_action_t::remove) {
+        remove(edit, inputs, timing_locked);
+    } else if (edit.stage_action == ui::timing_stage_action_t::move) {
+        move(edit, inputs, timing_locked, active_snap_denominator, chart);
     } else {
-        revise_value(action, inputs, timing_locked, active_snap_denominator, chart);
+        revise_value(edit, inputs, timing_locked, active_snap_denominator, chart);
     }
 }
 
-void timing_edit_t::revise_value(const ui::workspace_action_t& action,
+void timing_edit_t::revise_value(const ui::timing_edit_request_t& edit,
                                  const document_edit_inputs_t& inputs, bool timing_locked,
                                  std::uint64_t active_snap_denominator,
                                  const chart_document_t* chart) {
-    if (action.timing_anchoring) {
+    if (edit.anchoring) {
         *stage = timing_lane_pseudonote_preview_t::revise(std::move(*stage), inputs.history,
-                                                          *action.timing_anchoring, timing_locked);
+                                                          *edit.anchoring, timing_locked);
         return;
     }
     const auto value = chart == nullptr ? std::optional<timing_lane_value_t>{}
                                         : timing_stage_value(*stage->report(), *chart,
                                                              *inputs.history.indices(chart->id),
-                                                             action, active_snap_denominator);
+                                                             edit, active_snap_denominator);
     if (!value) {
         stage->diagnostics = {{
             .severity = diagnostic_severity_t::error,
@@ -136,7 +136,7 @@ void timing_edit_t::revise_value(const ui::workspace_action_t& action,
     }
     *stage = timing_lane_pseudonote_preview_t::revise(std::move(*stage), inputs.history, *value,
                                                       timing_locked);
-    if (action.timing_stage_action == ui::timing_stage_action_t::confirm)
+    if (edit.stage_action == ui::timing_stage_action_t::confirm)
         confirm(inputs, timing_locked);
 }
 
@@ -161,14 +161,14 @@ void timing_edit_t::confirm(const document_edit_inputs_t& inputs, bool timing_lo
     stage.reset();
 }
 
-void timing_edit_t::move(const ui::workspace_action_t& action, const document_edit_inputs_t& inputs,
+void timing_edit_t::move(const ui::timing_edit_request_t& edit, const document_edit_inputs_t& inputs,
                          bool timing_locked, std::uint64_t active_snap_denominator,
                          const chart_document_t* chart) {
     const auto target =
-        chart == nullptr || !stage->report()->existing_event || !action.timing_has_target_y
+        chart == nullptr || !stage->report()->existing_event || !edit.has_target_y
             ? std::optional<local_position_t>{}
             : timing_position_from_fraction(*chart, *inputs.history.indices(chart->id),
-                                            timing_target_fraction(action.timing_target),
+                                            timing_target_fraction(edit.target),
                                             active_snap_denominator);
     if (!target || !(*stage = timing_lane_pseudonote_preview_t::revise(
                          std::move(*stage), inputs.history, *target, timing_locked))
@@ -182,9 +182,9 @@ void timing_edit_t::move(const ui::workspace_action_t& action, const document_ed
     }
 }
 
-void timing_edit_t::remove(const ui::workspace_action_t& action,
+void timing_edit_t::remove(const ui::timing_edit_request_t& edit,
                            const document_edit_inputs_t& inputs, bool timing_locked) {
-    const auto* kind = find_catalog_entry(timing_lanes, action.timing_lane);
+    const auto* kind = find_catalog_entry(timing_lanes, edit.lane);
     if (!stage->report()->existing_event || !kind || kind->kind != stage->report()->kind) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::edit,
                                   "The selected timing event cannot be deleted.");

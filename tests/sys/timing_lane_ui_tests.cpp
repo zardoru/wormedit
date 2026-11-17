@@ -59,13 +59,14 @@ TEST_CASE("Sample-control draw requests enter the existing timing proposal trans
     workspace_controller_t workspace;
     workspace.active_tab = workspace_tab_t::compose;
     workspace.selected_chart = chart_id_t{2};
-    const ui::workspace_action_t action{.timing_stage_action = ui::timing_stage_action_t::quick_insert,
-        .timing_chart_id = {2}, .timing_document_revision = 1,
-        .timing_lane = timing_lane_kind_t::sample_set,
-        .timing_has_target_y = true,
-        .timing_target = {.source_document_fraction = .5},
-        .timing_primary_numerator_text = "3"};
-    auto proposal = begin_timing_stage(action, history, workspace, false, 4);
+    const ui::workspace_action_t action{.timing = {
+        .stage_action = ui::timing_stage_action_t::quick_insert,
+        .chart_id = {2}, .document_revision = 1,
+        .lane = timing_lane_kind_t::sample_set,
+        .has_target_y = true,
+        .target = {.source_document_fraction = .5},
+        .primary_numerator_text = "3"}};
+    auto proposal = begin_timing_stage(action.timing, history, workspace, false, 4);
     REQUIRE(proposal.value);
     REQUIRE(apply_proposal(history, proposal, false));
     const auto& points = history.document.charts.front().sample_sets;

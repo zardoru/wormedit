@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/bms36.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/resource_assignment.h>
 
@@ -10,7 +11,7 @@
 
 namespace wormedit {
 
-inline constexpr std::size_t maximum_bulk_sound_import = 1'295;
+inline constexpr std::size_t maximum_bulk_sound_import = bms_max_slot;
 
 struct bulk_sound_import_entry_t {
     // role is forced to sample; the catalog role set is derived from `kind`.

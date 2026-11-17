@@ -89,13 +89,11 @@ void render_export_group_choices(const ResourcePanel& panel) {
 }
 
 void stamp_action(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
 }
 
 auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {
-    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_inputs.size() == 0 &&
+    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.input.compose_inputs.size() == 0 &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
          action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
 }
@@ -120,8 +118,8 @@ void publish_export_action(const ResourcePanel& panel, const wormedit::ui::compo
                            WormUiExistingFilesChoice policy) {
     stamp_action(*panel.view, *panel.action);
     panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
-    panel.action->compose_output_group_index = selected.document_index;
-    panel.action->compose_existing_files = policy;
+    panel.action->resource.output_group_index = selected.document_index;
+    panel.action->resource.existing_files = policy;
     close_export(*panel.state);
 }
 
@@ -244,7 +242,7 @@ void render_layer_creation(const ResourcePanel& panel) {
                                  valid && action_available(*panel.action))) {
             stamp_action(view, *panel.action);
             panel.action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-            panel.action->compose_semantic_layer_name = state.layer_editor.layer_creation_name.data();
+            panel.action->layer.name = state.layer_editor.layer_creation_name.data();
             state.layer_editor.layer_creation_context.reset();
         }
     }

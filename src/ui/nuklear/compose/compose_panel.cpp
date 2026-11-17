@@ -666,8 +666,8 @@ void worm_ui_nuklear_render_compose_minimap(
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
-    action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
-    action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->input.minimap.visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
         view->scene_available && view->waveform_overview_rows.size() != 0 &&
         bounds.w > 1.0f && bounds.h > 1.0f;
@@ -825,8 +825,8 @@ void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const wormedit::ui::
 void append_bgm_bar_input(wormedit::ui::workspace_action_t* action, WormUiComposeInputKind kind,
                           double amount, double audio_fraction) {
     append_compose_input(action, kind, amount);
-    if (action->compose_inputs.size() == 0) return;
-    auto& input = action->compose_inputs[action->compose_inputs.size() - 1];
+    if (action->input.compose_inputs.size() == 0) return;
+    auto& input = action->input.compose_inputs[action->input.compose_inputs.size() - 1];
     if (input.kind == kind) input.audio_fraction = audio_fraction;
 }
 
@@ -882,10 +882,10 @@ void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::co
         return;
     }
     const auto source_frame = static_cast<std::int64_t>(frame_value);
-    action->hover_source_frame = source_frame;
-    action->hover_source_frame_valid = true;
-    action->hover_source_total_frames = view->waveform_overview_total_frames;
-    action->hover_source_sample_rate = view->waveform_overview_sample_rate;
+    action->input.hover_source.frame = source_frame;
+    action->input.hover_source.frame_valid = true;
+    action->input.hover_source.total_frames = view->waveform_overview_total_frames;
+    action->input.hover_source.sample_rate = view->waveform_overview_sample_rate;
     if (!view->hover_timing_valid || view->hover_timing_source_frame != source_frame ||
         view->hover_timing_total_frames != view->waveform_overview_total_frames ||
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
@@ -902,8 +902,8 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
-    action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
-    action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->input.minimap.visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
         view->scene_available && view->bgm_bar_rows.size() != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
@@ -932,11 +932,11 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     process_compose_overview_input({context, view, action, bounds, available, pressed,
         window_focused && available, state.waveform_drag.waveform_beat_zero_drag_active,
         view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction, true});
-    action->minimap_window_capture_active = state.waveform_drag.waveform_overview_drag_active &&
+    action->input.minimap.window_capture_active = state.waveform_drag.waveform_overview_drag_active &&
         state.waveform_drag.waveform_overview_capture.window_capture;
-    action->minimap_window_capture_begin_fraction =
+    action->input.minimap.window_capture_begin_fraction =
         state.waveform_drag.waveform_overview_capture.window_begin;
-    action->minimap_window_capture_end_fraction = state.waveform_drag.waveform_overview_capture.window_end;
+    action->input.minimap.window_capture_end_fraction = state.waveform_drag.waveform_overview_capture.window_end;
 }
 
 struct ComposePanelRenderContext {
@@ -966,11 +966,11 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
         worm_ui_nuklear_inline_timing_update(state, timing, *panel.action, true, false);
         // Keep a rejected proposal editable here. Application acceptance removes the
         // stage, and the next frame dismisses this popup through the normal binding check.
-        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::confirm)
+        if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::confirm)
             state.inline_timing.inline_timing_open = true;
-    } else if (changed && panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+    } else if (changed && panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::none &&
         worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing.inline_timing_text.data(), *panel.action)) {
-        panel.action->timing_stage_action = wormedit::ui::timing_stage_action_t::update;
+        panel.action->timing.stage_action = wormedit::ui::timing_stage_action_t::update;
     }
 }
 
@@ -1024,7 +1024,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     const auto& timing = *panel.timing_view;
     if (!timing.stage_active) {
         // The opening double-click reaches the application after this frame.
-        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::begin) return;
+        if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::begin) return;
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }
@@ -1068,7 +1068,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 }
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
-    panel.action->compose_input_ownership = 1;
+    panel.action->input.compose_input_ownership = 1;
     cancel_compose_gestures(panel.action);
     state.input_queue.key_event_count = 0;
 }
@@ -1177,14 +1177,14 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto editor_input_right = inspector_drawn
         ? viewport.x + viewport.w - inspector_width - 8.0f
         : viewport.x + viewport.w;
-    action->compose_input_editor_right_pixels =
+    action->input.compose_input_editor_right_pixels =
         std::max(1.0, static_cast<double>(editor_input_right - viewport.x) *
                       view->viewport_width_pixels / viewport.w);
     // A note double-click selected the note and asked for its label editor; open it over the note.
     if (view->focus_note_label_editor && window_focused && !view->input_occluded &&
         begin_compose_note_label_inline(state.bookmark_ui.bookmark_rename, *view, state.note_label.note_label_anchor_x,
                                         state.note_label.note_label_anchor_y))
-        action->compose_note_label_focus_consumed = true;
+        action->marker.note_label_focus_consumed = true;
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     const bool owned_popup = !compose_note_menu_consumed() &&
@@ -1284,12 +1284,12 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto timing_resize_consumed = process_timing_region_resize(
         pointer_event, double_clicks, double_click_count, compose_pointer_captured);
     compose_pointer_captured |= timing_resize_consumed;
-    action->compose_has_pointer_hover = !state.input_queue.action_overflowed && window_focused &&
+    action->input.compose_has_pointer_hover = !state.input_queue.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
-    if (action->compose_has_pointer_hover) {
-        action->compose_pointer_hover_x_pixels = pointer_x;
-        action->compose_pointer_hover_y_pixels = pointer_y;
+    if (action->input.compose_has_pointer_hover) {
+        action->input.compose_pointer_hover_x_pixels = pointer_x;
+        action->input.compose_pointer_hover_y_pixels = pointer_y;
     }
     const bool compose_note_double_click_in_view = process_compose_double_clicks(
         {view, timing_view, action, double_clicks, double_click_count, viewport,
@@ -1329,9 +1329,9 @@ static void confirm_go_to_measure(const wormedit::ui::compose_view_t& view,
     }
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE;
-    action.compose_measure_number = *number;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.measure.number = *number;
+    action.stamp.chart_id.value = view.chart_id.value;
+    action.stamp.document_revision = view.document_revision;
     close_go_to_measure(context);
 }
 

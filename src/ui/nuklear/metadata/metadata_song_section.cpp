@@ -37,17 +37,17 @@ static int metadata_song_changed(const wormedit::ui::metadata_view_t* metadata) 
 
 static void set_metadata_song_action(wormedit::ui::workspace_action_t* action,
                                      const wormedit::ui::metadata_view_t* metadata) {
-    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+    if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
         !state.tag_buffers_valid ||
         state.search_tags.size() > wormedit::default_metadata_edit_limits.maximum_search_tags) {
         return;
     }
-    action->metadata_edit = WORM_UI_METADATA_EDIT_SONG;
-    action->metadata_document_revision = metadata->document_revision;
-    action->metadata_title = state.title.data();
-    action->metadata_artist = state.artist.data();
+    action->metadata.kind = WORM_UI_METADATA_EDIT_SONG;
+    action->metadata.document_revision = metadata->document_revision;
+    action->metadata.title = state.title.data();
+    action->metadata.artist = state.artist.data();
     for (const auto& tag : state.search_tags)
-        action->metadata_search_tags.emplace_back(tag.data());
+        action->metadata.search_tags.emplace_back(tag.data());
 }
 
 void reset_song_draft(const wormedit::ui::metadata_view_t& metadata) {

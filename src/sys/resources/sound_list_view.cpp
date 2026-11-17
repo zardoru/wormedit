@@ -1,4 +1,5 @@
 #include "sys/resources/bms_catalog_bindings.h"
+#include <wormedit/core/bms36.h>
 #include "core/text_util.h"
 #include <wormedit/core/document_index.h>
 #include "sys/resources/sound_list_view.h"
@@ -663,7 +664,7 @@ auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
 auto sound_slots_view_t::from(const song_document_t& document, const sound_slot_request_t& request,
                               const chart_document_t* chart) -> sound_slots_view_t {
     const auto bindings = bms_catalog_bindings_t(document, chart);
-    std::array<const resource_entry_t*, 1296> owners{};
+    std::array<const resource_entry_t*, bms_slot_count> owners{};
     for (const auto& resource : document.resources)
         for (const auto& identity : bindings.identities(resource))
             if (const auto number = slot_number(identity); number != 0) owners[number] = &resource;

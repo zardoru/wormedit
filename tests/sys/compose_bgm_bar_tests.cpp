@@ -113,7 +113,7 @@ TEST_CASE("bgm bar measure marks cover the window in order", "[sys][bgm-bar]") {
 TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][bgm-bar]") {
     wormedit::ui::workspace_action_t action{};
     auto push = [&](WormUiComposeInputKind kind, double fraction, double amount) {
-        auto& input = action.compose_inputs.emplace_back();
+        auto& input = action.input.compose_inputs.emplace_back();
         input = {};
         input.kind = kind;
         input.audio_fraction = fraction;
@@ -128,23 +128,23 @@ TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][b
         .visible_begin_fraction = 0.4, .visible_end_fraction = 0.6,
         .project = song_id_t{1}, .chart = chart_id_t{2}, .document_revision = 3,
         .asset = asset_id_t{4}};
-    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
-    CHECK(action.compose_inputs.size() == 2);
-    CHECK(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_UNDO);
-    CHECK(action.compose_inputs[1].kind == WORM_UI_COMPOSE_INPUT_REDO);
+    CHECK(consume_bgm_bar_inputs(action.input, range, pan_override, context));
+    CHECK(action.input.compose_inputs.size() == 2);
+    CHECK(action.input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_UNDO);
+    CHECK(action.input.compose_inputs[1].kind == WORM_UI_COMPOSE_INPUT_REDO);
     CHECK(range.end - range.begin == Catch::Approx(1.0 / (bgm_bar_zoom_step * bgm_bar_zoom_step)));
 
     push(WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN, 0.0, 0.01);
     const auto before = range;
-    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
+    CHECK(consume_bgm_bar_inputs(action.input, range, pan_override, context));
     require_bar_state(pan_override.has_value());
     check_bar_state(pan_override->range.begin == Catch::Approx(before.begin + 0.01));
     check_bar_state(range == before);
 
     push(WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET, 0.0, 0.0);
-    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
+    CHECK(consume_bgm_bar_inputs(action.input, range, pan_override, context));
     CHECK(range == bgm_bar_range_t{});
     check_bar_state(!pan_override.has_value());
-    CHECK(action.compose_inputs.size() == 2);
-    CHECK_FALSE(consume_bgm_bar_inputs(action, range, pan_override, context));
+    CHECK(action.input.compose_inputs.size() == 2);
+    CHECK_FALSE(consume_bgm_bar_inputs(action.input, range, pan_override, context));
 }

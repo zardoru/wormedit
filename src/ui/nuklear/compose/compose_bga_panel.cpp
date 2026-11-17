@@ -74,7 +74,7 @@ void import_picked(wormedit::ui::workspace_action_t& action, const wormedit::ui:
         return;
     }
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)) return;
-    action.compose_import_paths = std::move(paths);
+    action.resource.import_paths = std::move(paths);
 }
 auto thumbnail(const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_bga_row_view_t& row) -> SDL_Texture* {
     if (!renderer || row.rgba_pixels.empty() || !row.image_width || !row.image_height ||
@@ -102,8 +102,8 @@ auto thumbnail(const wormedit::ui::compose_view_t& view, const wormedit::ui::com
 }
 void reveal_bga_lane(wormedit::ui::workspace_action_t& action, std::uint8_t kind) {
     append_compose_input(&action, WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL);
-    if (action.compose_inputs.size() == 0) return;
-    auto& output = action.compose_inputs[action.compose_inputs.size() - 1];
+    if (action.input.compose_inputs.size() == 0) return;
+    auto& output = action.input.compose_inputs[action.input.compose_inputs.size() - 1];
     output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(kind);
     output.bga_lane_kind_valid = true;
 }
@@ -166,10 +166,10 @@ void toolbar(nk_context* context, const wormedit::ui::compose_view_t& view, worm
 void raise_bga_renumber(const wormedit::ui::compose_view_t& view, worm_ui_nuklear_compose_state_t& state,
                         wormedit::ui::workspace_action_t& action, bool all) {
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
-    if (!all) action.set_sound_resources(state.bga_catalog.bga_renumber_resources);
+    if (!all) action.resource.set_sound_resources(state.bga_catalog.bga_renumber_resources);
 
-    action.compose_renumber_all = all;
-    action.compose_renumber_bga = true;
+    action.resource.renumber_all = all;
+    action.resource.renumber_bga = true;
     wormedit::ui::nuklear::close_catalog_confirmation(
         wormedit::ui::nuklear::catalog_confirmation(state, true));
 }
@@ -250,7 +250,7 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, worm_ui_
     const bool deleted = DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}.render(context);
     if (!available || value.use_count != 0) nk_widget_disable_end(context);
     if (deleted && available && value.use_count == 0 && raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
-        action.compose_sound_resource_ids = {wormedit::resource_id_t{value.resource_id.value}};
+        action.resource.sound_resource_ids = {wormedit::resource_id_t{value.resource_id.value}};
     }
     nk_layout_row_end(context);
 }
@@ -464,8 +464,8 @@ static bool draw_bga_stack_row(nk_context* context, const wormedit::ui::compose_
     const auto clicked = wormedit::ui::chrome::button_label(context, label);
     if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return false;
-    if (action.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
-        auto& input = action.compose_inputs.emplace_back();
+    if (action.input.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+        auto& input = action.input.compose_inputs.emplace_back();
         input = {};
         input.kind = WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK;
         input.object_id.value = event.event_id.value;

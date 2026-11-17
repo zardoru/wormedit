@@ -80,9 +80,9 @@ TEST_CASE("Area menu creates an export cut with the captured source selection", 
     cut_fixture_t fixture;
     fixture.open_area_menu();
     const auto emitted = fixture.command("Create export cut", WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION);
-    CHECK(emitted.get().compose_input_project_id.value == 3);
-    CHECK(emitted.get().compose_input_chart_id.value == 7);
-    CHECK(emitted.get().compose_input_document_revision == 12);
+    CHECK(emitted.get().stamp.project_id.value == 3);
+    CHECK(emitted.get().stamp.chart_id.value == 7);
+    CHECK(emitted.get().stamp.document_revision == 12);
 }
 
 TEST_CASE("Markers export-cut list selects the song cut and captures owned edit strings", "[event-harness][export-cut]") {
@@ -96,21 +96,21 @@ TEST_CASE("Markers export-cut list selects the song cut and captures owned edit 
     (void)fixture.harness.frame();
     const auto emitted = fixture.command("Apply cut", WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT);
     std::snprintf(editor.label.data(), editor.label.size(), "%s", "Changed buffer");
-    CHECK(emitted.get().compose_export_cut_id == object_id_t{31});
-    CHECK(emitted.get().compose_marker_label == "Owned cut");
-    CHECK(emitted.get().compose_marker_audio_begin == "525");
-    CHECK(emitted.get().compose_marker_audio_end == "1425");
-    CHECK(emitted.get().compose_input_document_revision == 12);
+    CHECK(emitted.get().marker.export_cut_id == object_id_t{31});
+    CHECK(emitted.get().marker.label == "Owned cut");
+    CHECK(emitted.get().marker.audio_begin == "525");
+    CHECK(emitted.get().marker.audio_end == "1425");
+    CHECK(emitted.get().stamp.document_revision == 12);
 }
 
 TEST_CASE("Markers export-cut deletion keeps its selected song identity", "[event-harness][export-cut]") {
     cut_fixture_t fixture;
     fixture.select_intro();
     const auto emitted = fixture.command("Delete cut", WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT);
-    CHECK(emitted.get().compose_export_cut_id == object_id_t{31});
-    CHECK(emitted.get().compose_input_project_id.value == 3);
-    CHECK(emitted.get().compose_input_chart_id.value == 7);
-    CHECK(emitted.get().compose_input_document_revision == 12);
+    CHECK(emitted.get().marker.export_cut_id == object_id_t{31});
+    CHECK(emitted.get().stamp.project_id.value == 3);
+    CHECK(emitted.get().stamp.chart_id.value == 7);
+    CHECK(emitted.get().stamp.document_revision == 12);
 }
 
 TEST_CASE("Export-cut creation requires a materialized selection and an editable scene", "[event-harness][export-cut]") {
@@ -133,8 +133,8 @@ TEST_CASE("Markers export-cut creation emits the shared action from a valid sele
     fixture.harness.view().compose.preview_audio_range = ui::preview_audio_range_view_t::from(0, 2);
     fixture.open_editor();
     const auto emitted = fixture.command("Create from selection", WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION);
-    CHECK(emitted.get().compose_input_project_id.value == 3);
-    CHECK(emitted.get().compose_input_document_revision == 12);
+    CHECK(emitted.get().stamp.project_id.value == 3);
+    CHECK(emitted.get().stamp.document_revision == 12);
 }
 
 TEST_CASE("Removing a selected export cut retires its editor target before a late click", "[event-harness][export-cut]") {

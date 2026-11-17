@@ -134,10 +134,10 @@ auto bgm_bar_measure_marks(const wormedit::measure_index_t& measures,
     return marks;
 }
 
-auto consume_bgm_bar_inputs(wormedit::ui::workspace_action_t& action, bgm_bar_range_t& range,
+auto consume_bgm_bar_inputs(wormedit::ui::frame_input_t& frame, bgm_bar_range_t& range,
                             std::optional<bgm_bar_pan_override_t>& pan_override,
                             const bgm_bar_input_context_t& context) -> bool {
-    if (action.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return false;
+    if (frame.compose_inputs.size() > wormedit::ui::compose_input_admission_limit) return false;
     const auto minimum_span = bgm_bar_minimum_span(context.total_frames);
     const auto visible_center = std::midpoint(context.visible_begin_fraction,
                                               context.visible_end_fraction);
@@ -147,8 +147,8 @@ auto consume_bgm_bar_inputs(wormedit::ui::workspace_action_t& action, bgm_bar_ra
         pan_override.reset();
     bool consumed = false;
     std::size_t kept = 0;
-    for (std::size_t index = 0; index < action.compose_inputs.size(); ++index) {
-        const auto& input = action.compose_inputs[index];
+    for (std::size_t index = 0; index < frame.compose_inputs.size(); ++index) {
+        const auto& input = frame.compose_inputs[index];
         switch (input.kind) {
         case WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM:
             range = bgm_bar_zoom_centered(pan_override ? pan_override->range : range,
@@ -178,10 +178,10 @@ auto consume_bgm_bar_inputs(wormedit::ui::workspace_action_t& action, bgm_bar_ra
             consumed = true;
             break;
         default:
-            action.compose_inputs[kept++] = input;
+            frame.compose_inputs[kept++] = input;
         }
     }
-    action.compose_inputs.resize(kept);
+    frame.compose_inputs.resize(kept);
     return consumed;
 }
 

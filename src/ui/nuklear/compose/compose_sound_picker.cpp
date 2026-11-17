@@ -14,15 +14,13 @@ void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_
     const auto& result = view.sound_picker;
     if (!result.ready || index >= result.rows.size() || result.rows[index].missing ||
         std::strcmp(picker.query.data(), result.query.c_str()) != 0 ||
-        action.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
+        action.input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
     const auto id = result.rows[index].resource_id.value;
     if (!id) return;
     compose.keysound_catalog.keysound_selection.selected = {id};
     compose.keysound_catalog.keysound_selection.primary = compose.keysound_catalog.keysound_selection.anchor = id;
     set_armed_resource(compose, id, compose_resource_origin_t::sounds);
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     worm_ui_nuklear_pick_draw_source(compose, action, 1, id);
     cancel_compose_sound_picker(picker);
 }

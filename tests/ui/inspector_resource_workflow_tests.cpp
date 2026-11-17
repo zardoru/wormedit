@@ -43,9 +43,9 @@ auto note_paint_begin(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames) {
         const auto& action = frame.get();
-        for (std::size_t index = 0; index < action.compose_inputs.size(); ++index) {
-            if (action.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN)
-                return &action.compose_inputs[index];
+        for (std::size_t index = 0; index < action.input.compose_inputs.size(); ++index) {
+            if (action.input.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN)
+                return &action.input.compose_inputs[index];
         }
     }
     return nullptr;

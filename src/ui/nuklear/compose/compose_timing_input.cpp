@@ -58,14 +58,14 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         state.timing_drag.timing_stage_drag_active = false;
         state.timing_drag.timing_stage_capture.cancel();
     } else if (continuation.moved && nk_input_is_mouse_moved(&input.context->input) &&
-               action.timing_stage_action == wormedit::ui::timing_stage_action_t::none) {
-        action.timing_stage_action = wormedit::ui::timing_stage_action_t::move;
-        action.timing_chart_id.value = state.timing_drag.timing_stage_capture.chart;
-        action.timing_document_revision = state.timing_drag.timing_stage_capture.revision;
-        action.timing_object_id.value = timing.stage_existing_object_id.value;
-        action.timing_lane = timing.stage_lane;
-        action.timing_has_target_y = true;
-        action.timing_target = compose_timing_target(view, input.pointer_y);
+               action.timing.stage_action == wormedit::ui::timing_stage_action_t::none) {
+        action.timing.stage_action = wormedit::ui::timing_stage_action_t::move;
+        action.timing.chart_id.value = state.timing_drag.timing_stage_capture.chart;
+        action.timing.document_revision = state.timing_drag.timing_stage_capture.revision;
+        action.timing.object_id.value = timing.stage_existing_object_id.value;
+        action.timing.lane = timing.stage_lane;
+        action.timing.has_target_y = true;
+        action.timing.target = compose_timing_target(view, input.pointer_y);
     }
 }
 
@@ -172,8 +172,8 @@ static void commit_kiai_drag(const ComposePointerEventContext& input) {
                          false,
                          state.timing_drag.kiai_drag_speed ? wormedit::timing_lane_kind_t::speed : wormedit::timing_lane_kind_t::kiai,
                          state.timing_drag.span_capture.chart, state.timing_drag.span_capture.revision);
-    if (input.action->compose_inputs.size() == 0) return;
-    auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+    if (input.action->input.compose_inputs.size() == 0) return;
+    auto& queued = input.action->input.compose_inputs[input.action->input.compose_inputs.size() - 1];
     queued.span_edge = state.timing_drag.kiai_drag_edge;
     queued.span_anchor_y_pixels = state.timing_drag.kiai_drag_anchor_y;
 }
@@ -379,8 +379,8 @@ static void commit_recipe_drag(const ComposePointerEventContext& input) {
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.timing_drag.recipe_drag_id, 0, false,
                          wormedit::timing_lane_kind_t::scroll, state.timing_drag.recipe_capture.chart,
                          state.timing_drag.recipe_capture.revision);
-    if (input.action->compose_inputs.size() == 0) return;
-    auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+    if (input.action->input.compose_inputs.size() == 0) return;
+    auto& queued = input.action->input.compose_inputs[input.action->input.compose_inputs.size() - 1];
     queued.span_edge = state.timing_drag.recipe_drag_edge;
     queued.span_anchor_y_pixels = state.timing_drag.recipe_drag_anchor_y;
 }

@@ -164,26 +164,26 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
     const auto note_action = click_action(click_text(harness, "Measure 3 · row 12"),
                                           WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(note_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(note_action.sound_usage_song_id.value == harness.view().project_id.value);
-    check_sound_usage_ui(note_action.sound_usage_document_revision ==
+    check_sound_usage_ui(note_action.stamp.project_id.value == harness.view().project_id.value);
+    check_sound_usage_ui(note_action.stamp.document_revision ==
                          harness.view().document_revision);
-    check_sound_usage_ui(note_action.sound_usage_resource_id.value == 101);
-    check_sound_usage_ui(note_action.sound_usage_chart_id.value == 7);
-    check_sound_usage_ui(note_action.sound_usage_measure_id.value == 8);
-    check_sound_usage_ui(note_action.sound_usage_row == 12);
-    check_sound_usage_ui(note_action.sound_usage_object_id.value == 99);
-    check_sound_usage_ui(note_action.sound_usage_position_valid);
+    check_sound_usage_ui(note_action.sound_usage.resource_id.value == 101);
+    check_sound_usage_ui(note_action.sound_usage.chart_id.value == 7);
+    check_sound_usage_ui(note_action.sound_usage.measure_id.value == 8);
+    check_sound_usage_ui(note_action.sound_usage.row == 12);
+    check_sound_usage_ui(note_action.sound_usage.object_id.value == 99);
+    check_sound_usage_ui(note_action.sound_usage.position_valid);
 
     (void)harness.frame();
     (void)click_text(harness, "Chart B");
     const auto source_action = click_action(click_text(harness, "Source clip"),
                                             WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(source_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(source_action.sound_usage_chart_id.value == 9);
-    check_sound_usage_ui(source_action.sound_usage_channel_id.value == 50);
-    check_sound_usage_ui(source_action.sound_usage_clip_id.value == 51);
-    check_sound_usage_ui(!source_action.sound_usage_position_valid);
-    check_sound_usage_ui(source_action.sound_usage_measure_id.value == 0);
+    check_sound_usage_ui(source_action.sound_usage.chart_id.value == 9);
+    check_sound_usage_ui(source_action.sound_usage.channel_id.value == 50);
+    check_sound_usage_ui(source_action.sound_usage.clip_id.value == 51);
+    check_sound_usage_ui(!source_action.sound_usage.position_valid);
+    check_sound_usage_ui(source_action.sound_usage.measure_id.value == 0);
     const auto& state = worm_ui_nuklear_audio_state();
     check_sound_usage_ui(state.selected_channel_id == 0);
     check_sound_usage_ui(state.selected_clip_id == 0);
@@ -214,11 +214,11 @@ TEST_CASE("Find uses activation keeps the resource asset when transport shows an
     const auto action = click_action(click_text(harness, "Measure 2 · row 3"),
                                      WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(action.sound_usage_resource_id.value == 201);
-    check_sound_usage_ui(action.sound_usage_asset_id.value == 0);
-    check_sound_usage_ui(action.sound_usage_chart_id.value == 7);
-    check_sound_usage_ui(action.sound_usage_object_id.value == 200);
-    check_sound_usage_ui(action.sound_usage_position_valid);
+    check_sound_usage_ui(action.sound_usage.resource_id.value == 201);
+    check_sound_usage_ui(action.sound_usage.asset_id.value == 0);
+    check_sound_usage_ui(action.sound_usage.chart_id.value == 7);
+    check_sound_usage_ui(action.sound_usage.object_id.value == 200);
+    check_sound_usage_ui(action.sound_usage.position_valid);
 }
 
 TEST_CASE("verified source selection setter retains exact channel and clip identity",

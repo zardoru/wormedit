@@ -40,7 +40,7 @@ beat_section_edit_t make_beat_section_insertion(compose_action_context_t& contex
     return {.edit =
                 wormedit::insert_edit_t<wormedit::section_edit_value_t>{
                     .chart = context.state.chart,
-                    .value = {.label = context.action.compose_marker_label,
+                    .value = {.label = context.action.marker.label,
                               .anchor = marker_anchor_t::beat,
                               .beat_span = span,
                               .audio_millisecond_span = std::nullopt}},
@@ -51,10 +51,10 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
                                      const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string> {
     using namespace wormedit;
-    if (!context.action.compose_section_id.value)
+    if (!context.action.marker.section_id.value)
         return "Choose a beat-anchored section before editing it.";
     const auto section = std::ranges::find(
-        chart.sections, context.action.compose_section_id, &section_t::id);
+        chart.sections, context.action.marker.section_id, &section_t::id);
     if (section == chart.sections.end() || section->anchor != marker_anchor_t::beat ||
         !section->beat_span)
         return "That beat-anchored section is no longer available.";
@@ -64,7 +64,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
     auto span = *section->beat_span;
     auto label = section->label;
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL)
-        label = context.action.compose_marker_label;
+        label = context.action.marker.label;
     else if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN)
         span.begin = context.state.cursor;
     else
@@ -144,20 +144,20 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK;
     const auto milliseconds = deleting
                                   ? std::optional<std::int64_t>{}
-                                  : parse_integer<std::int64_t>(context.action.compose_marker_audio_begin.c_str());
+                                  : parse_integer<std::int64_t>(context.action.marker.audio_begin.c_str());
     if (!deleting && !milliseconds)
         return "Enter the audio bookmark position as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK)
         return marker_edit_action_t{wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
             .chart = context.state.chart,
-            .value = {.label = context.action.compose_marker_label,
+            .value = {.label = context.action.marker.label,
                       .anchor = marker_anchor_t::audio_time,
                       .position = std::nullopt,
                       .audio_milliseconds = milliseconds}}};
-    if (!context.action.compose_bookmark_id.value)
+    if (!context.action.marker.bookmark_id.value)
         return "Choose an audio-time bookmark before editing it.";
     const auto found = std::ranges::find(
-        chart.bookmarks, context.action.compose_bookmark_id, &bookmark_t::id);
+        chart.bookmarks, context.action.marker.bookmark_id, &bookmark_t::id);
     if (found == chart.bookmarks.end() || found->anchor != marker_anchor_t::audio_time ||
         !found->audio_milliseconds || found->position)
         return "That audio-time bookmark is no longer available.";
@@ -167,7 +167,7 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
     return marker_edit_action_t{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
         .chart = context.state.chart,
         .id = found->id,
-        .value = {.label = context.action.compose_marker_label,
+        .value = {.label = context.action.marker.label,
                   .anchor = marker_anchor_t::audio_time,
                   .position = std::nullopt,
                   .audio_milliseconds = milliseconds}}};
@@ -215,22 +215,22 @@ auto make_audio_section_edit(compose_action_context_t& context,
     const auto deleting =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION;
     const auto begin = deleting ? std::optional<std::int64_t>{}
-                                : parse_integer<std::int64_t>(context.action.compose_marker_audio_begin.c_str());
+                                : parse_integer<std::int64_t>(context.action.marker.audio_begin.c_str());
     const auto end = deleting ? std::optional<std::int64_t>{}
-                              : parse_integer<std::int64_t>(context.action.compose_marker_audio_end.c_str());
+                              : parse_integer<std::int64_t>(context.action.marker.audio_end.c_str());
     if (!deleting && (!begin || !end))
         return "Enter both audio section bounds as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION)
         return marker_edit_action_t{wormedit::insert_edit_t<wormedit::section_edit_value_t>{
             .chart = context.state.chart,
-            .value = {.label = context.action.compose_marker_label,
+            .value = {.label = context.action.marker.label,
                       .anchor = marker_anchor_t::audio_time,
                       .beat_span = std::nullopt,
                       .audio_millisecond_span = std::pair{*begin, *end}}}};
-    if (!context.action.compose_section_id.value)
+    if (!context.action.marker.section_id.value)
         return "Choose an audio-time section before editing it.";
     const auto found = std::ranges::find(
-        chart.sections, context.action.compose_section_id, &section_t::id);
+        chart.sections, context.action.marker.section_id, &section_t::id);
     if (found == chart.sections.end() || found->anchor != marker_anchor_t::audio_time ||
         !found->audio_millisecond_span || found->beat_span)
         return "That audio-time section is no longer available.";
@@ -240,7 +240,7 @@ auto make_audio_section_edit(compose_action_context_t& context,
     return marker_edit_action_t{wormedit::update_edit_t<wormedit::section_edit_value_t>{
         .chart = context.state.chart,
         .id = found->id,
-        .value = {.label = context.action.compose_marker_label,
+        .value = {.label = context.action.marker.label,
                   .anchor = marker_anchor_t::audio_time,
                   .beat_span = std::nullopt,
                   .audio_millisecond_span = std::pair{*begin, *end}}}};
@@ -286,10 +286,10 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
     -> std::variant<wormedit::marker_edit_action_t, std::string> {
     using namespace wormedit;
     const auto operation = context.action.compose_action;
-    if (!context.action.compose_bookmark_id.value)
+    if (!context.action.marker.bookmark_id.value)
         return "Choose a beat-anchored bookmark before editing it.";
     const auto found = std::ranges::find(
-        chart.bookmarks, context.action.compose_bookmark_id, &bookmark_t::id);
+        chart.bookmarks, context.action.marker.bookmark_id, &bookmark_t::id);
     if (found == chart.bookmarks.end() || found->anchor != marker_anchor_t::beat ||
         !found->position)
         return "That beat-anchored bookmark is no longer available.";
@@ -300,7 +300,7 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
     return marker_edit_action_t{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
         .chart = context.state.chart,
         .id = found->id,
-        .value = {.label = rename ? context.action.compose_marker_label : found->label,
+        .value = {.label = rename ? context.action.marker.label : found->label,
                   .anchor = marker_anchor_t::beat,
                   .position = rename ? found->position : std::optional{context.state.cursor},
                   .audio_milliseconds = std::nullopt}}};
@@ -401,12 +401,12 @@ auto preview_milliseconds_at(const wormedit::chart_indices_t& indices, wormedit:
     return row ? wormedit::song_preview_milliseconds_at(*indices.timing.value, *row) : std::nullopt;
 }
 
-auto typed_song_preview(const wormedit::ui::workspace_action_t& action) -> song_preview_choice_t {
-    const auto start = parse_integer<std::int64_t>(action.compose_marker_audio_begin.c_str());
+auto typed_song_preview(const wormedit::ui::compose_marker_request_t& request) -> song_preview_choice_t {
+    const auto start = parse_integer<std::int64_t>(request.audio_begin.c_str());
     if (!start || *start < 0) return "Enter the preview start as whole milliseconds.";
     wormedit::song_preview_t preview{.start_milliseconds = *start};
-    if (action.compose_marker_audio_end.empty()) return preview;
-    const auto end = parse_integer<std::int64_t>(action.compose_marker_audio_end.c_str());
+    if (request.audio_end.empty()) return preview;
+    const auto end = parse_integer<std::int64_t>(request.audio_end.c_str());
     if (!end || *end <= *start) return "Enter a preview end after its start, or leave it empty.";
     preview.length_milliseconds = *end - *start;
     return preview;
@@ -435,7 +435,7 @@ auto cursor_song_preview(const compose_action_context_t& context, const wormedit
 auto placed_song_preview(const compose_action_context_t& context, const wormedit::chart_document_t& chart)
     -> song_preview_choice_t {
     const auto& history = context.environment.document.history;
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW) return typed_song_preview(context.action);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW) return typed_song_preview(context.action.marker);
     const auto* indices = history.indices(chart.id);
     if (!indices) return "The chart timing cannot place a preview.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION)

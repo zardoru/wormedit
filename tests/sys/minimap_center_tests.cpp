@@ -139,7 +139,7 @@ TEST_CASE("minimap playback and zoom transitions preserve the field position",
     const auto field_scroll = fixture.interaction.viewport_scroll_pixels;
     const auto center = midpoint(fixture.flattened.view.compose);
     wormedit::ui::workspace_action_t action{};
-    auto& input = action.compose_inputs.emplace_back();
+    auto& input = action.input.compose_inputs.emplace_back();
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM;
     input.x_pixels = 2.0;
     std::optional<bgm_bar_pan_override_t> pan;
@@ -148,7 +148,7 @@ TEST_CASE("minimap playback and zoom transitions preserve the field position",
         .visible_end_fraction = fixture.flattened.view.compose.waveform_overview_visible_end_fraction,
         .project = song_id_t{1}, .chart = chart_id_t{7}, .document_revision = 5,
         .asset = asset_id_t{12}};
-    require_minimap(consume_bgm_bar_inputs(action, fixture.range, pan, context));
+    require_minimap(consume_bgm_bar_inputs(action.input, fixture.range, pan, context));
     check_minimap(!pan.has_value());
     check_minimap((fixture.range.begin + fixture.range.end) * 0.5 == Catch::Approx(center));
     check_minimap(fixture.interaction.viewport_scroll_pixels == field_scroll);
@@ -166,14 +166,14 @@ TEST_CASE("explicit minimap pan persists only while its stamped visible span is 
     auto range = bgm_bar_range_t{0.3, 0.7};
     std::optional<bgm_bar_pan_override_t> pan;
     wormedit::ui::workspace_action_t action{};
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN;
-    action.compose_inputs[0].x_pixels = 0.1;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN;
+    action.input.compose_inputs[0].x_pixels = 0.1;
     const bgm_bar_input_context_t same{.total_frames = 768'000,
         .visible_begin_fraction = 0.4, .visible_end_fraction = 0.6,
         .project = song_id_t{1}, .chart = chart_id_t{7}, .document_revision = 5,
         .asset = asset_id_t{12}};
-    require_minimap(consume_bgm_bar_inputs(action, range, pan, same));
+    require_minimap(consume_bgm_bar_inputs(action.input, range, pan, same));
     require_minimap(pan.has_value());
     check_minimap(bgm_bar_pan_override_matches(*pan, 0.4, 0.6, song_id_t{1}, chart_id_t{7}, 5,
                                                asset_id_t{12}));
@@ -182,7 +182,7 @@ TEST_CASE("explicit minimap pan persists only while its stamped visible span is 
     changed.visible_begin_fraction = 0.45;
     changed.visible_end_fraction = 0.65;
     wormedit::ui::workspace_action_t idle{};
-    check_minimap(!consume_bgm_bar_inputs(idle, range, pan, changed));
+    check_minimap(!consume_bgm_bar_inputs(idle.input, range, pan, changed));
     check_minimap(!pan.has_value());
     check_minimap(bgm_bar_center_on_visible_span(range, changed.visible_begin_fraction,
         changed.visible_end_fraction, 0.01).begin == Catch::Approx(0.35));
@@ -252,9 +252,9 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     editor_navigation_input_controller_t navigation;
     const auto toggle = [&](bool currently_visible) {
         wormedit::ui::workspace_action_t action{};
-        action.compose_inputs.resize(1);
-        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
-        action.compose_inputs[0].overview_primary = currently_visible;
+        action.input.compose_inputs.resize(1);
+        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
+        action.input.compose_inputs[0].overview_primary = currently_visible;
         (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,
             viewport, navigation, application, cache, 0.0);
     };

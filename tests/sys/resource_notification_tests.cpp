@@ -61,11 +61,11 @@ struct resource_notification_fixture_t {
     }
     auto inspect_action() const -> wormedit::ui::workspace_action_t {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = 1;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_resource_asset_id.value = 1;
-        action.metadata_inspect_import = true;
-        action.compose_import_path = source.c_str();
+        action.stamp.chart_id.value = 1;
+        action.stamp.document_revision = history.document.revision;
+        action.resource.asset_id.value = 1;
+        action.metadata.inspect_import = true;
+        action.resource.import_path = source.c_str();
         return action;
     }
     auto wait_for_import() -> std::optional<std::string> {
@@ -231,7 +231,7 @@ TEST_CASE("metadata copy inspection rejection is explicit and does not mutate do
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.compose_input_document_revision++;
+    action.stamp.document_revision++;
     const auto revision = fixture.history.document.revision;
     const auto message = fixture.assets.start_copy_preview(action, fixture.history,
                                                            fixture.workspace, fixture.project);
@@ -254,7 +254,7 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
     std::filesystem::copy_file(std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" / "audio" / "keysound-c4.ogg",
                                fixture.source);
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
+    action.metadata.import_copy_project = true;
     (void)fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
@@ -276,8 +276,8 @@ TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
           "[unit][sys][resource-notification][metadata-copy-stamp]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
-    ++action.compose_input_document_revision;
+    action.metadata.import_copy_project = true;
+    ++action.stamp.document_revision;
     const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     test::check_stale_action_message(message, "Metadata import-copy");
@@ -291,7 +291,7 @@ TEST_CASE("metadata import decode failure posts once and never links invalid aud
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    action.metadata_import_copy_project = true;
+    action.metadata.import_copy_project = true;
     const auto revision = fixture.history.document.revision;
     const auto started = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);

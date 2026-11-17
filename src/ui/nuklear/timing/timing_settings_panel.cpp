@@ -30,9 +30,9 @@ static void render_timing_lane_visibility(nk_context* context, const wormedit::u
             if (disabled) nk_widget_disable_begin(context);
             const auto clicked = wormedit::ui::chrome::button_label(context, label);
             if (disabled) nk_widget_disable_end(context);
-            if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->recipe.timing_lane = descriptor.id;
-                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
+            if (clicked && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose.recipe.timing_lane = descriptor.id;
+                action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
             }
         }
         nk_layout_row_end(context);

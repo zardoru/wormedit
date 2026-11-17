@@ -502,12 +502,12 @@ void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state
             state.inline_offset.inline_offset_focus_pending = true;
             return;
         }
-        if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET;
+        if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET;
         action.stamp.chart_id.value = state.inline_offset.inline_offset_chart_id;
         action.stamp.document_revision = state.inline_offset.inline_offset_revision;
-        action.chart.audio_offset_numerator = value->numerator;
-        action.chart.audio_offset_denominator = value->denominator;
+        action.compose.chart.audio_offset_numerator = value->numerator;
+        action.compose.chart.audio_offset_denominator = value->denominator;
         worm_ui_nuklear_cancel_inline_offset(state);
     } else if (deactivated) worm_ui_nuklear_cancel_inline_offset(state);
 }

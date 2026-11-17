@@ -65,8 +65,8 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined ob
     REQUIRE(row.has_value());
     const auto clicked = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(clicked.empty());
-    CHECK(clicked.back().get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-    CHECK(clicked.back().get().layer.id.value == 7);
+    CHECK(clicked.back().get().compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+    CHECK(clicked.back().get().compose.layer.id.value == 7);
 }
 
 TEST_CASE("Layer painting can begin over a BGM event in its pane",
@@ -178,8 +178,8 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     require_layer_brush(row.has_value());
     const auto frames = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(frames.empty());
-    check_layer_brush(frames.back().get().compose_action == WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER);
-    check_layer_brush(frames.back().get().layer.id.value == 7);
+    check_layer_brush(frames.back().get().compose.kind == WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER);
+    check_layer_brush(frames.back().get().compose.layer.id.value == 7);
 }
 
 namespace {
@@ -325,7 +325,7 @@ TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an
     const auto revealed = harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     check_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) && state.pointer_capture.layer_chip_reveal_id == 0);
-    check_layer_brush(revealed.get().layer.first_row > 8);
+    check_layer_brush(revealed.get().compose.layer.first_row > 8);
     state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     view.semantic_layer_target = {.name = "Pick a layer"};
     check_chip_inputs_empty(click_chip(harness, "Pick a layer"));

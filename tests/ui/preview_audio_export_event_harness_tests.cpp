@@ -97,6 +97,6 @@ TEST_CASE("The area menu sets the song preview from the selection", "[frontend-s
     REQUIRE(entry);
     const auto actions = wormedit::test::click_at(harness, entry->first, entry->second);
     CHECK(std::ranges::any_of(actions, [](const auto& action) {
-        return action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION;
+        return action.get().compose.kind == WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION;
     }));
 }

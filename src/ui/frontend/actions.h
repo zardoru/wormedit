@@ -484,6 +484,22 @@ struct frame_input_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+/* The Compose request raised this frame. `kind` selects it; the payload struct of its family is
+   read by sys/compose. menu_command marks a command invoked from a Compose popup. */
+struct compose_request_t {
+    WormUiComposeActionKind kind;
+    bool menu_command;
+    compose_area_request_t area;
+    compose_measure_request_t measure;
+    compose_chart_request_t chart;
+    compose_timing_region_request_t timing_region;
+    compose_quantize_request_t quantize;
+    compose_resource_request_t resource;
+    compose_bmson_request_t bmson;
+    compose_marker_request_t marker;
+    compose_layer_request_t layer;
+    compose_recipe_request_t recipe;
+};
 /* Playback transport: seek target and rate. */
 struct transport_request_t {
     uint64_t seek_frame;
@@ -531,15 +547,19 @@ struct project_open_request_t {
 };
 /* Assets chosen in the audio and visual selectors. */
 struct asset_selection_request_t {
+    wormedit::asset_id_t audio_asset_id;
+    wormedit::resource_id_t audio_resource_id;
+    wormedit::asset_id_t visual_asset_id;
 };
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct workspace_action_t {
     timing_link_action_t timing_link;
+    // Everything Compose can request this frame: the kind, and the payload of its family.
+    compose_request_t compose;
     wormedit::ui::file_jobs_action_t file_jobs;
     std::string menu_command_id;
-    bool compose_menu_command;
     WormUiClipboardAction clipboard;
     wormedit::ui::notification_action_t notifications;
     wormedit::ui::options_action_t options;
@@ -570,21 +590,10 @@ struct workspace_action_t {
     metadata_edit_request_t metadata;
     // Input sampled this frame (keyboard, pointer, hover); not requests.
     frame_input_t input;
-    WormUiComposeActionKind compose_action;
-    wormedit::ui::compose_area_request_t area;
-    wormedit::ui::compose_measure_request_t measure;
-    wormedit::ui::compose_chart_request_t chart;
-    wormedit::ui::compose_timing_region_request_t timing_region;
     wormedit::ui::request_stamp_t stamp;
-    wormedit::ui::compose_quantize_request_t quantize;
-    wormedit::ui::compose_resource_request_t resource;
-    wormedit::ui::compose_bmson_request_t bmson;
-    wormedit::ui::compose_marker_request_t marker;
-    wormedit::ui::compose_layer_request_t layer;
     wormedit::ui::sound_properties_request_t sound_properties;
     std::optional<wormedit::ui::preview_audio_export_action_t> preview_audio_export;
     wormedit::ui::sound_import_request_t sound_import;
-    wormedit::ui::compose_recipe_request_t recipe;
     bms_program_action_t bms_program;
 
     wormedit::ui::timing_edit_request_t timing;

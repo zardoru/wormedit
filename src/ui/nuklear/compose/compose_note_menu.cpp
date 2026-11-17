@@ -37,11 +37,11 @@ bool current(const wormedit::ui::compose_view_t& view) {
 
 bool raise(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    action.compose_action = kind;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return false;
+    action.compose.kind = kind;
     action.stamp = wormedit::ui::request_stamp_t::of(view);
-    action.marker.note_context_id.value = menu.note;
-    action.layer.id.value = layer;
+    action.compose.marker.note_context_id.value = menu.note;
+    action.compose.layer.id.value = layer;
     return true;
 }
 
@@ -156,8 +156,8 @@ void render_submenu(nk_context* context, const wormedit::ui::compose_view_t& vie
     if (menu.popup.open && view.note_menu_layer_total_count &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size()) &&
         raise(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW)) {
-        action.layer.first_row = first;
-        action.layer.row_count = std::max<std::size_t>(1, requested);
+        action.compose.layer.first_row = first;
+        action.compose.layer.row_count = std::max<std::size_t>(1, requested);
     }
 }
 
@@ -276,7 +276,7 @@ void render(nk_context* context, const wormedit::ui::compose_view_t& view, worme
         if (chrome::context_menu_button(context, "Replace sound with current source",
                 can_replace ? nullptr : "Choose a sound source first") &&
             raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
-            action.resource.id.value = source.pointer_capture.draw_source_id;
+            action.compose.resource.id.value = source.pointer_capture.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
         nk_layout_row_dynamic(context, row_height, 1);

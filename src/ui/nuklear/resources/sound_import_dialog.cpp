@@ -358,7 +358,7 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedi
                          bool& release_pending) {
     const auto assignments = reviewed_assignments(state);
     if (!assignments.empty()) {
-        action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
         action.stamp.chart_id.value = view.chart_id.value;
         action.stamp.document_revision = view.document_revision;
         for (const auto& assignment : assignments) {
@@ -367,10 +367,10 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedi
                 .name = assignment.name};
             for (const auto id : assignment.sound_ids)
                 payload.sound_ids.push_back(wormedit::resource_id_t{id});
-            action.resource.sound_group_assignments.push_back(std::move(payload));
+            action.compose.resource.sound_group_assignments.push_back(std::move(payload));
         }
 
-        action.resource.sound_group_keep_ids_together = state.keep_ids_together;
+        action.compose.resource.sound_group_keep_ids_together = state.keep_ids_together;
         state.open = false;
         release_pending = true;
     } else if (!state.manual && state.message.empty()) {
@@ -397,7 +397,7 @@ void render_group_review_footer(nk_context* context, const wormedit::ui::compose
         release_pending = true;
     }
     if (chrome::dialog_button(dialog, context, "Confirm", chrome::DialogButtonRole::primary) && !stale &&
-        action.compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
         submit_group_review(action, view, state, release_pending);
 }
 

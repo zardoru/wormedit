@@ -99,6 +99,6 @@ TEST_CASE("a BGM-only selection enables quantize",
     motion.motion.y = center->second;
     const auto pressed = harness.frame(std::array{motion, down});
     const auto applied = harness.frame(std::array{motion, up});
-    CHECK((pressed.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE ||
-           applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE));
+    CHECK((pressed.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE ||
+           applied.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE));
 }

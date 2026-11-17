@@ -83,14 +83,14 @@ TEST_CASE("Sounds keyboard selection and audition use resource identity and capt
     expect(result.get().asset_selection.audio_resource_id.value==102);
     expect(worm_ui_nuklear_audio_state().selected_resource_id==102);
     result=fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE);
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().resource.id.value==102);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    expect(result.get().compose.resource.id.value==102);
     expect(fixture.release_shortcuts==0);
     expect(fixture.release_compose_inputs==0);
     expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
     result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
     expect(result.get().asset_selection.audio_resource_id.value==103);
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Sounds waveform zoom retains pointer anchor and asset change resets view",
@@ -223,8 +223,8 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
     expect(result.get().asset_selection.audio_resource_id.value==102);
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().resource.id.value==102);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    expect(result.get().compose.resource.id.value==102);
     expect(result.get().stamp.project_id.value==fixture.harness.view().project_id.value);
     expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
 }
@@ -236,12 +236,12 @@ TEST_CASE("Sounds audition yields to properties text and IME editing",
     const auto name=fixture.harness.drawn_text_center("Kick"); expect(name);
     (void)fixture.click(name->first,name->second);
     expect(!worm_ui_nuklear_audio_state().sound_list_focused);
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
     fixture.focus_list();
     SDL_Event composition{}; composition.type=SDL_EVENT_TEXT_EDITING;
     composition.edit.text="composing"; composition.edit.start=0; composition.edit.length=9;
     (void)fixture.harness.frame({&composition,1});
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Sounds double click cannot audition through Options",
@@ -255,7 +255,7 @@ TEST_CASE("Sounds double click cannot audition through Options",
     (void)fixture.harness.frame({&motion,1});
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
     expect(result.get().asset_selection.audio_resource_id.value==0);
 }
 

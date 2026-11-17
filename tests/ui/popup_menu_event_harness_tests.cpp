@@ -104,7 +104,7 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     seed_note_menu(harness, hold, layers);
 
     const auto opened = right_click(harness, 300, 300);
-    check_popup(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    check_popup(opened.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     check_popup(compose_note_menu_open());
     const auto submenu = harness.drawn_text_center("Layer");
     require_popup(submenu.has_value());
@@ -131,7 +131,7 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     check_popup(!compose_note_menu_open());
     std::size_t close_actions = 0;
     for (const auto& frame : outside) {
-        const auto action = frame.get().compose_action;
+        const auto action = frame.get().compose.kind;
         check_popup(action == WORM_UI_COMPOSE_ACTION_NONE ||
                     action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
         close_actions += action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU ? 1U : 0U;
@@ -144,7 +144,7 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     check_popup(compose_note_menu_open());
     const auto coalesced = coalesced_click(harness, 1100, 820);
     check_popup(!compose_note_menu_open());
-    check_popup(coalesced.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
+    check_popup(coalesced.get().compose.kind == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
     check_popup(coalesced.get().input.compose_inputs.size() == 0);
     check_popup(coalesced.get().input.compose_viewport_inputs.size() == 0);
 }
@@ -245,16 +245,16 @@ TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
     harness.view().compose.selected_note_count = 2;
     harness.view().compose.hold_bodies.clear();
     const auto opened = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
-    check_popup(opened.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
-    check_popup(opened.get().marker.note_context_id.value == 42);
+    check_popup(opened.get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    check_popup(opened.get().compose.marker.note_context_id.value == 42);
     check_popup(opened.get().input.shortcuts.events.size() == 0 && opened.get().input.compose_inputs.size() == 0);
     check_popup(compose_note_menu_open());
     const auto closed = press_context_key(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
-    check_popup(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
+    check_popup(closed.get().compose.kind == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
     check_popup(!compose_note_menu_open());
     (void)harness.frame();
     const auto shifted = press_context_key(harness, SDLK_F10, SDL_SCANCODE_F10, SDL_KMOD_LSHIFT);
-    check_popup(shifted.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    check_popup(shifted.get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
 }
 
 TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing key capture",
@@ -274,12 +274,12 @@ TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing ke
     (void)press_context_key(harness, SDLK_END, SDL_SCANCODE_END);
     const auto space = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE);
     const auto assigned = harness.frame(std::span{&space, 1});
-    check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().layer.id.value == 7);
+    check_popup(assigned.get().compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
+    check_popup(assigned.get().compose.layer.id.value == 7);
     check_popup(assigned.get().input.shortcuts.events.size() == 0 && assigned.get().input.compose_inputs.size() == 0);
     const auto repeat = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, true, SDL_KMOD_NONE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
-    check_popup(repeated.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_popup(repeated.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_popup(repeated.get().input.shortcuts.events.size() == 0 && repeated.get().input.compose_inputs.size() == 0);
     const auto release = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, false);
     const auto released = harness.frame(std::span{&release, 1});
@@ -339,7 +339,7 @@ TEST_CASE("Opening project modals retires context menus and keeps closing keys c
     check_popup(released.get().input.shortcuts.events.size() == 0 && released.get().input.compose_inputs.size() == 0);
     const auto reopening = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(!compose_note_menu_open());
-    check_popup(reopening.get().compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    check_popup(reopening.get().compose.kind != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
 }
 
 TEST_CASE("Context menu row focus clears across project tab and focus changes",
@@ -420,8 +420,8 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     (void)press_context_key(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
     const auto request = press_context_key(harness, SDLK_END, SDL_SCANCODE_END);
-    check_popup(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
-    const auto first = request.get().layer.first_row;
+    check_popup(request.get().compose.kind == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
+    const auto first = request.get().compose.layer.first_row;
     require_popup(first > wormedit::ui::note_layer_window_limit && first < 200);
     std::vector<wormedit::ui::compose_semantic_layer_view_t> window(200 - first);
     for (std::size_t index = 0; index < window.size(); ++index)
@@ -432,6 +432,6 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     view.note_menu_layers.resize(window.size());
     (void)harness.frame();
     const auto assigned = press_context_key(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
-    check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().layer.id.value == 199);
+    check_popup(assigned.get().compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
+    check_popup(assigned.get().compose.layer.id.value == 199);
 }

@@ -63,9 +63,9 @@ struct resource_notification_fixture_t {
         wormedit::ui::workspace_action_t action{};
         action.stamp.chart_id.value = 1;
         action.stamp.document_revision = history.document.revision;
-        action.resource.asset_id.value = 1;
+        action.compose.resource.asset_id.value = 1;
         action.metadata.inspect_import = true;
-        action.resource.import_path = source.c_str();
+        action.compose.resource.import_path = source.c_str();
         return action;
     }
     auto wait_for_import() -> std::optional<std::string> {

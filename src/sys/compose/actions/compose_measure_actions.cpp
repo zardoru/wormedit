@@ -62,7 +62,7 @@ auto set_measures_meter_action_t::perform(compose_action_context_t& context) con
     -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
-    const auto& ids = context.action.measure.ids;
+    const auto& ids = context.action.compose.measure.ids;
     auto status = apply_measures_meter(context.environment.document.history, context.state, ids,
                                        context.action.timing.meter_numerator_text,
                                        context.action.timing.meter_denominator_text, &severity);
@@ -82,8 +82,8 @@ auto set_measures_length_action_t::validate(compose_action_context_t& context) c
 
 auto set_measures_length_action_t::perform(compose_action_context_t& context) const -> compose_action_outcome_t {
     return compose_action_outcome_t::from(apply_measures_length(context.environment.document.history, context.state.chart,
-        context.action.measure.ids, context.action.measure.length_numerator_text,
-        context.action.measure.length_denominator_text),
+        context.action.compose.measure.ids, context.action.compose.measure.length_numerator_text,
+        context.action.compose.measure.length_denominator_text),
         compose_action_description_t{.rebind_failure = "Measure lengths edited, but workspace rebinding failed.",
             .source = notification_source_t::edit});
 }
@@ -93,7 +93,7 @@ auto move_compose_bar_line_action_t::validate(compose_action_context_t& context)
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing measures."))
         return std::move(*blocked);
-    if (context.action.measure.ids.size() != 1)
+    if (context.action.compose.measure.ids.size() != 1)
         return compose_action_outcome_t::blocked(
             "Bar line move ignored because the document changed.");
     return std::nullopt;
@@ -105,11 +105,11 @@ auto move_compose_bar_line_action_t::perform(compose_action_context_t& context) 
     auto severity = notification_severity_t::warning;
     const auto& action = context.action;
     auto status = apply_bar_line_move(
-        context.environment.document.history, context.state, action.measure.ids[0],
+        context.environment.document.history, context.state, action.compose.measure.ids[0],
         {static_cast<std::uint32_t>(std::strtoul(action.timing.meter_numerator_text.c_str(), nullptr, 10)),
          static_cast<std::uint32_t>(
              std::strtoul(action.timing.meter_denominator_text.c_str(), nullptr, 10))},
-        {action.measure.second_meter_numerator, action.measure.second_meter_denominator},
+        {action.compose.measure.second_meter_numerator, action.compose.measure.second_meter_denominator},
         &severity);
     const auto mutated = revision != context.environment.document.history.document.revision;
     auto outcome = compose_action_outcome_t::from(

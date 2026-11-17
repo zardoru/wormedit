@@ -130,7 +130,7 @@ void preview(const ComposeBeatFitInput& input) {
 }
 
 void commit(const ComposeBeatFitInput& input) {
-    if (!state.measure_resize.measure_resize_valid || input.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (!state.measure_resize.measure_resize_valid || input.action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     const auto& view = *input.view;
     const auto original = wormedit::reduce_fraction(wormedit::rational_t{
         state.measure_resize.measure_resize_old_numerator, state.measure_resize.measure_resize_old_denominator});
@@ -138,13 +138,13 @@ void commit(const ComposeBeatFitInput& input) {
         state.measure_resize.measure_resize_numerator, state.measure_resize.measure_resize_denominator});
     if (original == resized) return;
     auto& action = *input.action;
-    action.compose_action = state.measure_resize.measure_resize_move_line ? WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE
+    action.compose.kind = state.measure_resize.measure_resize_move_line ? WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE
                                                            : WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
-    action.measure.second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
-    action.measure.second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
+    action.compose.measure.second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
+    action.compose.measure.second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
-    action.measure.ids = {state.measure_resize.measure_resize_measure_id};
+    action.compose.measure.ids = {state.measure_resize.measure_resize_measure_id};
     action.timing.meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
     action.timing.meter_denominator_text = std::to_string(state.measure_resize.measure_resize_denominator);
 }

@@ -199,7 +199,7 @@ TEST_CASE("Workspace frame cache clears when the same document is reopened", "[s
 namespace {
 auto range_pause_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE;
     action.stamp.project_id.value = fixture.history.document.id.value;
     action.stamp.chart_id.value = fixture.interaction->chart.value;
     action.stamp.document_revision = fixture.history.document.revision;

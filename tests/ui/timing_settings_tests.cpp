@@ -34,7 +34,7 @@ auto click_text(nuklear_event_harness_t& harness, std::string_view label)
         pressed.get().tap_timing.choose_bpm || pressed.get().timing_settings.toggle ||
         pressed.get().timing_settings.close || pressed.get().timing_settings.change_enable ||
         pressed.get().timing_settings.change_volume || pressed.get().timing_settings.change_count_in ||
-        pressed.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE) return pressed;
+        pressed.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return pressed;
     return released;
 }
 
@@ -103,11 +103,11 @@ TEST_CASE("Timing modeless panel blank body and disabled controls own pointer in
     view.timing.stage_lane = wormedit::timing_lane_kind_t::bpm;
     const auto focus = worm_ui_nuklear_compose_state().input_queue.keyboard_focus;
     (void)harness.frame();
-    CHECK_FALSE(click_text(harness, "BPM: On").get().compose_action ==
+    CHECK_FALSE(click_text(harness, "BPM: On").get().compose.kind ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
     CHECK(click_position(harness, 500, 450).get().input.compose_inputs.size() == 0);
     view.compose.scene_available = false;
-    CHECK_FALSE(click_text(harness, "ANC: On").get().compose_action ==
+    CHECK_FALSE(click_text(harness, "ANC: On").get().compose.kind ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
     CHECK(worm_ui_nuklear_compose_state().input_queue.keyboard_focus == focus);
 }
@@ -191,7 +191,7 @@ TEST_CASE("Timing Settings opens from the menu and timing inspector without edit
     (void)click_text(harness, "View");
     const auto menu = click_text(harness, "Timing settings…");
     CHECK(menu.get().timing_settings.toggle);
-    CHECK(menu.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(menu.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     harness.view().compose.timing_focus = false;
     (void)harness.frame();
     for (int step = 0; step < 12 && !harness.drawn_text_center("Timing settings…"); ++step) {
@@ -208,7 +208,7 @@ TEST_CASE("Timing Settings opens from the menu and timing inspector without edit
     }
     const auto inspector = click_text(harness, "Timing settings…");
     CHECK(inspector.get().timing_settings.toggle);
-    CHECK(inspector.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(inspector.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Timing Settings moves all timing lane controls into a modeless panel",
@@ -223,8 +223,8 @@ TEST_CASE("Timing Settings moves all timing lane controls into a modeless panel"
                                 "DLY: On", "WRP: On", "KIA: On", "ANC: On"};
     for (std::size_t lane = 0; lane < labels.size(); ++lane) {
         const auto action = click_text(harness, labels[lane]);
-        CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-        CHECK(static_cast<std::uint8_t>(action.get().recipe.timing_lane) == lane);
+        CHECK(action.get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+        CHECK(static_cast<std::uint8_t>(action.get().compose.recipe.timing_lane) == lane);
     }
     view.timing_settings_visible = false;
     (void)harness.frame();
@@ -246,11 +246,11 @@ TEST_CASE("Volume and sample-set columns toggle independently in Timing Settings
     (void)harness.frame();
     const auto enabled = click_text(harness, sample_set ? "SET: Off" : "VOL: Off");
     const auto lane = sample_set ? wormedit::timing_lane_kind_t::sample_set : wormedit::timing_lane_kind_t::volume;
-    CHECK(enabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(enabled.get().recipe.timing_lane == lane);
+    CHECK(enabled.get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    CHECK(enabled.get().compose.recipe.timing_lane == lane);
     view.compose.timing_lane_visibility_mask |= 1U << static_cast<unsigned>(lane);
     (void)harness.frame();
     const auto disabled = click_text(harness, sample_set ? "SET: On" : "VOL: On");
-    CHECK(disabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(disabled.get().recipe.timing_lane == lane);
+    CHECK(disabled.get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    CHECK(disabled.get().compose.recipe.timing_lane == lane);
 }

@@ -303,7 +303,7 @@ auto prepare_initial_profile_picker(nuklear_event_harness_t& harness)
 auto open_initial_profile_picker(nuklear_event_harness_t& harness)
     -> std::optional<std::pair<float, float>> {
     const auto initial = harness.frame();
-    check_bga(initial.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(initial.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     const auto section = harness.drawn_text_center("Quantize / Snap");
     REQUIRE(section);
     (void)click(harness, section->first, section->second);
@@ -318,11 +318,11 @@ void check_profile_action(const std::array<workspace_action_snapshot_t, 2>& sele
                           std::uint32_t target_index) {
     const auto& pressed = selected[0].get();
     const auto& released = selected[1].get();
-    check_bga(pressed.compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
-    check_bga(pressed.chart.lane_profile_index == target_index);
+    check_bga(pressed.compose.kind == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    check_bga(pressed.compose.chart.lane_profile_index == target_index);
     check_bga(pressed.stamp.chart_id.value == 7);
     check_bga(pressed.stamp.document_revision == 11);
-    check_bga(released.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(released.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 }
 
@@ -1533,9 +1533,9 @@ TEST_CASE("Toolbar BGA visibility is actionable while no lane is projected",
     harness.view().compose.bga_lane_count = 0;
     (void)harness.frame();
     const auto actions = harness.click_widget("Show BGA event lane");
-    check_bga(actions.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY);
+    check_bga(actions.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY);
     check_bga(actions.front().get().input.compose_inputs.size() == 0);
-    check_bga(actions.back().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(actions.back().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible profile choice",
@@ -1641,13 +1641,13 @@ TEST_CASE("Offset editor commits one exact stamped action from either timing sur
     const auto typed = f.harness.frame(std::array{text});
     check_bga(typed.get().input.compose_inputs.size() == 0);
     const auto committed = f.harness.frame(std::array{timing_control_key(SDLK_RETURN, SDL_SCANCODE_RETURN)});
-    check_bga(committed.get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
-    check_bga(committed.get().chart.audio_offset_numerator == -1);
-    check_bga(committed.get().chart.audio_offset_denominator == 8);
+    check_bga(committed.get().compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
+    check_bga(committed.get().compose.chart.audio_offset_numerator == -1);
+    check_bga(committed.get().compose.chart.audio_offset_denominator == 8);
     check_bga(committed.get().stamp.chart_id.value == 1);
     check_bga(committed.get().stamp.document_revision == 1);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
-    check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(f.harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Hiding an offset editor owner cancels its draft",
@@ -1655,13 +1655,13 @@ TEST_CASE("Hiding an offset editor owner cancels its draft",
     timing_controls_fixture_t f;
     f.edit_offset();
     worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
-    check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(f.harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     f.harness.view().compose.timing_focus = true;
     f.edit_offset();
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_in_inspector);
     f.harness.view().compose.timing_focus = false;
-    check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(f.harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
 }
 
@@ -1700,7 +1700,7 @@ TEST_CASE("Collapsing Timing cancels an inspector offset draft",
     REQUIRE(header);
     const auto collapsed = click(f.harness, header->first, header->second);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
-    check_bga(collapsed.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(collapsed.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(!f.harness.drawn_text_center("BPM snap"));
 }
 
@@ -1711,7 +1711,7 @@ TEST_CASE("Switching into timing focus cancels the hidden inspector offset draft
     f.harness.view().compose.timing_focus = true;
     const auto changed = f.harness.frame();
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
-    check_bga(changed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(changed.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(f.harness.drawn_text_center("+0.000 s").has_value());
 }
 
@@ -1726,7 +1726,7 @@ TEST_CASE("Inspector BPM snap choice is shared with the timing-focus toolbar",
     REQUIRE(half);
     const auto selected = click(f.harness, half->first, half->second);
     check_bga(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == 2);
-    check_bga(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(selected.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(selected.front().get().input.compose_inputs.size() == 0);
     check_bga(selected.front().get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     f.harness.view().compose.timing_focus = true;
@@ -1754,21 +1754,21 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     REQUIRE(row);
     const auto assist=harness.widget_center("Enable layer assist ticks");
     const auto toggled=click(harness,assist.first,assist.second);
-    check_bga(toggled.front().get().compose_action==WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
-    check_bga(toggled.front().get().layer.id.value==7);
+    check_bga(toggled.front().get().compose.kind==WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
+    check_bga(toggled.front().get().compose.layer.id.value==7);
     check_bga(toggled.front().get().stamp.project_id.value==1);
     check_bga(toggled.front().get().stamp.chart_id.value==1);
     check_bga(toggled.front().get().stamp.document_revision==1);
     check_bga(toggled.front().get().input.compose_inputs.size()==0);
-    check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(toggled.back().get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layers[0].assist_tick_enabled=true;
     (void)harness.frame(std::array{mouse_motion(assist.first,assist.second)});
     check_bga(harness.drawn_text().find("Disable layer assist ticks")!=std::string::npos);
     view.semantic_layer_assist_available=false;
     (void)harness.frame();
-    check_bga(click(harness,assist.first,assist.second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(click(harness,assist.first,assist.second).front().get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layer_assist_available=true;
     harness.view().close_confirmation.visible=true;
     (void)harness.frame();
-    check_bga(click(harness,assist.first,assist.second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(click(harness,assist.first,assist.second).front().get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
 }

@@ -141,11 +141,11 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
     check_native_toolbar(action.input.compose_inputs.size() == (available ? 1 : 0));
     if (available)
         check_native_toolbar(action.input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
-    check_native_toolbar(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_native_toolbar(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_native_toolbar(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
     const std::array up{mouse_button(false, x, y)};
     const auto released = harness.frame(up);
-    check_native_toolbar(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_native_toolbar(released.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     for (std::size_t index = 0; index < released.get().input.compose_inputs.size(); ++index)
         check_native_toolbar(released.get().input.compose_inputs[index].kind != WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
 }

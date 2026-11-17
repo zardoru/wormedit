@@ -4,13 +4,11 @@
 #include <algorithm>
 
 namespace wormedit::sys {
-auto dispatch_bga_usage_action(const ui::workspace_action_t& action,
+auto dispatch_bga_usage_action(const ui::bga_usage_activation_t& use,
     const ui::bga_dock_request_t& request, document_history_t& history,
     workspace_controller_t& workspace, std::optional<editor_interaction_state_t>& interaction)
     -> std::optional<std::string> {
-    const auto& use = action.bga_usage;
-    if (action.kind != WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE ||
-        workspace.active_tab != workspace_tab_t::compose || !request.visible ||
+    if (workspace.active_tab != workspace_tab_t::compose || !request.visible ||
         !request.find_uses_open || request.selected_project != history.document.id ||
         request.selected_resource != use.resource || use.song != history.document.id ||
         use.revision != history.document.revision)

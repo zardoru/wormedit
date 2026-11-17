@@ -285,7 +285,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     static_cast<void>(fixture.cache.timing.proposed_offset_timing_index.get_or_build(signed_rational_t{1, 10},
         [] { return std::optional<timing_index_t>{}; }));
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
     action.stamp.chart_id.value = 1;
     action.stamp.project_id = fixture.history.document.id;
     action.stamp.document_revision = fixture.history.document.revision;

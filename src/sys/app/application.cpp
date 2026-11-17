@@ -827,8 +827,8 @@ void refresh_sound_selection_context(const wormedit::ui::workspace_action_t& act
     application_command_state_t& sound_context) {
     sound_context.project.sound_selection.sound_selection_chart = action.stamp.chart_id;
     sound_context.project.sound_selection.sound_selection_revision = action.stamp.document_revision;
-    sound_context.project.sound_selection.sound_selection_hover = action.resource.sound_hover_object_id.value
-        ? std::optional{action.resource.sound_hover_object_id} : std::nullopt;
+    sound_context.project.sound_selection.sound_selection_hover = action.compose.resource.sound_hover_object_id.value
+        ? std::optional{action.compose.resource.sound_hover_object_id} : std::nullopt;
     wormedit::ui::keysound_dock_request_t sound_dock{};
     worm_ui_frontend_keysound_dock_request(&sound_dock);
     sound_context.project.sound_selection.sound_selection_dock.clear();
@@ -1012,8 +1012,8 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     wormedit::sys::application_command_state_t& application,
     const std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> bool {
-    const bool request = action.compose_action == WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH;
-    const bool confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+    const bool request = action.compose.kind == WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH;
+    const bool confirm = action.compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
     if (!request && !confirm) return false;
     std::string feedback;
     wormedit::ui::keysound_dock_request_t dock{};
@@ -1029,10 +1029,10 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     }
     if (request) {
         std::vector<std::string> paths;
-        for (std::size_t i = 0; !action.resource.import_paths.empty() && i < action.resource.import_paths.size(); ++i)
-            paths.emplace_back(action.resource.import_paths[i]);
+        for (std::size_t i = 0; !action.compose.resource.import_paths.empty() && i < action.compose.resource.import_paths.size(); ++i)
+            paths.emplace_back(action.compose.resource.import_paths[i]);
         feedback = wormedit::sys::finish_compose_action(notifications,
-            wormedit::sys::stage_sound_slot_batch(history.document, chart, action.resource.sound_slot, paths, history.read_chart(chart))).message;
+            wormedit::sys::stage_sound_slot_batch(history.document, chart, action.compose.resource.sound_slot, paths, history.read_chart(chart))).message;
         return true;
     }
     if (interaction && interaction->is_pending()) {
@@ -1054,8 +1054,8 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     wormedit::sys::application_command_state_t& application,
     const std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> bool {
-    const auto request = action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
-    const auto confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    const auto request = action.compose.kind == WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+    const auto confirm = action.compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     if (!request && !confirm) return false;
     std::string feedback;
     const auto chart = action.stamp.chart_id;
@@ -1067,9 +1067,9 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     }
     if (request) {
         std::vector<std::string> paths;
-        for (std::size_t index = 0; !action.resource.import_paths.empty() &&
-                                   index < action.resource.import_paths.size(); ++index)
-            if (!action.resource.import_paths[index].empty()) paths.emplace_back(action.resource.import_paths[index]);
+        for (std::size_t index = 0; !action.compose.resource.import_paths.empty() &&
+                                   index < action.compose.resource.import_paths.size(); ++index)
+            if (!action.compose.resource.import_paths[index].empty()) paths.emplace_back(action.compose.resource.import_paths[index]);
         feedback = wormedit::sys::finish_compose_action(notifications,
             wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import.kind,
                 workspace.selected_chart ? history.read_chart(*workspace.selected_chart) : nullptr)).message;
@@ -1119,27 +1119,28 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
     return setup.state;
 }
 
-void dispatch_bga_usage_jump(const wormedit::ui::workspace_action_t& action,
+void dispatch_bga_usage_jump(const wormedit::ui::bga_usage_activation_t& use,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) {
     wormedit::ui::bga_dock_request_t request{};
     worm_ui_frontend_bga_dock_request(&request);
     const auto error = wormedit::sys::dispatch_bga_usage_action(
-        action, request, history, workspace, interaction);
+        use, request, history, workspace, interaction);
     post_callback_feedback(notifications,
         error ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::hint,
         wormedit::notification_source_t::input, error ? *error : "Moved to BGA usage.");
 }
 
-auto dispatch_sound_usage_jump(const wormedit::ui::workspace_action_t& action,
+auto dispatch_sound_usage_jump(const wormedit::ui::request_stamp_t& stamp,
+    const wormedit::ui::sound_usage_locate_request_t& usage,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> std::string {
     wormedit::ui::sound_usage_request_t request{};
     worm_ui_frontend_sound_usage_request(&request);
     const auto result = wormedit::sys::dispatch_sound_usage_action(
-        action, request, history, workspace, interaction);
+        stamp, usage, request, history, workspace, interaction);
     if (result.source_selection) {
         const auto& source = *result.source_selection;
         worm_ui_frontend_select_sound_usage_source(source.project_id, source.resource_id,
@@ -1206,7 +1207,7 @@ auto dispatch_audio_sound_audition(const wormedit::ui::workspace_action_t& actio
     wormedit::sys::application_command_state_t& application,
     wormedit::notification_sink_t& notifications) -> bool {
     if (workspace.active_tab != wormedit::workspace_tab_t::audio_slices ||
-        action.compose_action != WORM_UI_COMPOSE_ACTION_AUDITION_SOUND) return false;
+        action.compose.kind != WORM_UI_COMPOSE_ACTION_AUDITION_SOUND) return false;
     if (!workspace.selected_chart || action.stamp.project_id.value != history.document.id.value ||
         action.stamp.chart_id.value != workspace.selected_chart->value ||
         action.stamp.document_revision != history.document.revision) {
@@ -2446,7 +2447,7 @@ struct application_t::implementation_t {
     auto validate_audio_offset_drag_context(const AudioOffsetDragContext& context)
         -> std::optional<std::string> {
         return wormedit::sys::validate_audio_offset_drag_binding(
-            context.action, session.history.document, session.workspace, context.selected_sample_rate);
+            context.action.audio_offset_drag, session.history.document, session.workspace, context.selected_sample_rate);
     }
 
     auto replace_project_session(wormedit::song_document_t document,
@@ -2726,7 +2727,7 @@ struct application_t::implementation_t {
                        action, session.history, session.workspace, commands,
                        views.project.compose_interaction_state, platform.notification_sink)) {
             // Properties and reviewed imports share a revision-checked sound edit boundary.
-        } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
+        } else if (action.compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
             dispatch_audio_offset_lock_feedback(action);
         } else if (action.audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
             static_cast<void>(dispatch_audio_offset_drag_action(
@@ -2736,11 +2737,11 @@ struct application_t::implementation_t {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
             dispatch_bga_usage_jump(
-                action, session.history, session.workspace, views.project.compose_interaction_state,
+                action.bga_usage, session.history, session.workspace, views.project.compose_interaction_state,
                 platform.notification_sink);
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             static_cast<void>(dispatch_sound_usage_jump(
-                action, session.history, session.workspace, views.project.compose_interaction_state,
+                action.stamp, action.sound_usage, session.history, session.workspace, views.project.compose_interaction_state,
                 platform.notification_sink));
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
             static_cast<void>(dispatch_compare_diagnostic_jump(
@@ -3298,7 +3299,7 @@ struct application_t::implementation_t {
             consume_menu_shortcut(action, command_registry);
         auto focus = application_command_focus(action, session.workspace);
         // Activation closes the palette; its own search field must not consume the command.
-        if (action.command_menu_invoked || action.compose_menu_command)
+        if (action.command_menu_invoked || action.compose.menu_command)
             focus.text_entry_active = false;
         const auto result = invoke_current_command({command_id}, focus);
         if (!result.diagnostics.empty())
@@ -3745,7 +3746,7 @@ struct application_t::implementation_t {
         action.input.shortcuts.events.resize(0);
         action.input.compose_inputs.resize(0);
         action.input.compose_viewport_inputs.resize(0);
-        action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_NONE;
         action.clipboard = WORM_UI_CLIPBOARD_NONE;
         action.menu_command_id.clear();
         action.command_menu_command_id.clear();

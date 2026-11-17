@@ -81,7 +81,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         check_menu(action.input.compose_inputs.size() == 0);
         check_menu(action.project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         check_menu(action.clipboard == WORM_UI_CLIPBOARD_NONE);
-        check_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_menu(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         const auto dispatched = wormedit::invoke_command(registry, {action.menu_command_id},
             {.workspace_active = true, .active_tab = static_cast<wormedit::workspace_tab_t>(tab),
              .visible_tabs = {static_cast<wormedit::workspace_tab_t>(tab)}});

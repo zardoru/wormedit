@@ -492,10 +492,10 @@ void select_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit:
 
 void audition_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& row,
                     wormedit::ui::workspace_action_t& action) {
-    if (row.missing || row.asset_id.value == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (row.missing || row.asset_id.value == 0 || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
-    action.resource.id.value = row.resource_id.value;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
+    action.compose.resource.id.value = row.resource_id.value;
     action.stamp.project_id.value = view.usage_song_id.value;
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
@@ -690,12 +690,12 @@ void render_sound_source_copy_button(struct nk_context* context, const wormedit:
     const auto clicked = wormedit::ui::chrome::button_label(context, "Copy source into project");
     if (!can_copy)
         nk_widget_disable_end(context);
-    if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (!clicked || !can_copy || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.resource.asset_id.value = sound.asset_id.value;
+    action.compose.resource.asset_id.value = sound.asset_id.value;
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
 }
 
 void reset_sound_properties(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound) {

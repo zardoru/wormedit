@@ -111,7 +111,7 @@ struct import_bga_action_t {
         -> std::optional<compose_action_outcome_t> {
         const auto& action = context.action;
 
-        if (action.resource.import_paths.size() > wormedit::ui::sound_drop_resource_limit)
+        if (action.compose.resource.import_paths.size() > wormedit::ui::sound_drop_resource_limit)
             return compose_action_outcome_t::blocked("Image import batch is too large.",
                                                      notification_source_t::import_);
         return std::nullopt;
@@ -120,9 +120,9 @@ struct import_bga_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
         std::vector<std::string> paths;
-        for (std::size_t index = 0; index < action.resource.import_paths.size(); ++index)
-            if (!action.resource.import_paths[index].empty())
-                paths.emplace_back(action.resource.import_paths[index]);
+        for (std::size_t index = 0; index < action.compose.resource.import_paths.size(); ++index)
+            if (!action.compose.resource.import_paths[index].empty())
+                paths.emplace_back(action.compose.resource.import_paths[index]);
         auto outcome =
             import_bga_feedback(history, context.chart, paths);
         outcome.source = notification_source_t::import_;
@@ -181,7 +181,7 @@ auto dispatch_compose_bga_action(const wormedit::ui::workspace_action_t& action,
     const document_edit_inputs_t document{history, workspace, notifications};
     const resource_action_context_t context{action, document, chart};
     const auto* route = compose_action_detail::compose_action_route_t::find(
-        action.compose_action, compose_action_detail::compose_bga_routes);
+        action.compose.kind, compose_action_detail::compose_bga_routes);
     if (!route)
         return std::nullopt;
     auto finished =

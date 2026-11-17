@@ -27,12 +27,12 @@ auto current_row(const bookmark_chooser_state_t& state,
 auto activate_row(const wormedit::ui::bookmark_chooser_view_t& view, const wormedit::ui::bookmark_chooser_row_view_t& row,
                   wormedit::ui::workspace_action_t& action, nk_context* context,
                   bookmark_chooser_state_t& state) -> bool {
-    if (!row.navigation_available || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+    if (!row.navigation_available || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) {
         set_status(state, "Bookmark is unavailable at this position.");
         return false;
     }
-    action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
-    action.marker.bookmark_id.value = row.bookmark_id.value;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
+    action.compose.marker.bookmark_id.value = row.bookmark_id.value;
     action.stamp = wormedit::ui::request_stamp_t::of(view);
     worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;
@@ -81,10 +81,10 @@ void render_page_controls(nk_context* context, const wormedit::ui::bookmark_choo
 void emit_reorder(const wormedit::ui::bookmark_chooser_view_t& view,
                   wormedit::object_id_t bookmark, wormedit::object_id_t target, bool after,
                   wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
-    if (!bookmark || !target || bookmark == target || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (!bookmark || !target || bookmark == target || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
-    action.marker.bookmark_reorder = {.bookmark = bookmark, .target = target,
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
+    action.compose.marker.bookmark_reorder = {.bookmark = bookmark, .target = target,
         .place_after = after, .sort = view.sort, .descending = view.descending};
     action.stamp = wormedit::ui::request_stamp_t::of(view);
     state.sort = wormedit::bookmark_sort_t::custom;

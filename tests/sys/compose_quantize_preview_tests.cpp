@@ -66,13 +66,13 @@ auto area_quantize_action(const document_history_t& history, std::uint64_t divis
                           quantization_tie_t tie, quantization_hold_t holds)
     -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
     action.stamp.chart_id.value = history.document.charts.front().id.value;
     action.stamp.document_revision = history.document.revision;
-    action.quantize.divisions = divisions;
-    action.quantize.space = space;
-    action.quantize.tie = tie;
-    action.quantize.holds = holds;
+    action.compose.quantize.divisions = divisions;
+    action.compose.quantize.space = space;
+    action.compose.quantize.tie = tie;
+    action.compose.quantize.holds = holds;
     return action;
 }
 

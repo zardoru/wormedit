@@ -25,10 +25,10 @@ struct generator_editor_t {
 } editor;
 void queue(const ComposeInspectorContext& inspector, WormUiComposeActionKind kind) {
     auto& action = *inspector.action;
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose_action = kind;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose.kind = kind;
     action.stamp = wormedit::ui::request_stamp_t::of(*inspector.view);
-    action.recipe.generator_form = editor.form;
+    action.compose.recipe.generator_form = editor.form;
 }
 namespace chrome = wormedit::ui::chrome;
 namespace metrics = wormedit::ui::metrics;

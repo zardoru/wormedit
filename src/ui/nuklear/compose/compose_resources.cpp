@@ -94,8 +94,8 @@ void stamp_action(const wormedit::ui::compose_view_t& view, wormedit::ui::worksp
 
 auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.input.compose_inputs.size() == 0 &&
-        (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
-         action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
+        (action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE ||
+         action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
 }
 
 void close_export(worm_ui_nuklear_compose_state_t& state);
@@ -117,9 +117,9 @@ auto existing_files_label(WormUiExistingFilesChoice policy) -> const char* {
 void publish_export_action(const ResourcePanel& panel, const wormedit::ui::compose_output_group_view_t& selected,
                            WormUiExistingFilesChoice policy) {
     stamp_action(*panel.view, *panel.action);
-    panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
-    panel.action->resource.output_group_index = selected.document_index;
-    panel.action->resource.existing_files = policy;
+    panel.action->compose.kind = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+    panel.action->compose.resource.output_group_index = selected.document_index;
+    panel.action->compose.resource.existing_files = policy;
     close_export(*panel.state);
 }
 
@@ -200,17 +200,17 @@ void render_export_confirmation(const ResourcePanel& panel) {
         if (chrome::dialog_button(dialog, panel.context, "Replace",
                                   chrome::DialogButtonRole::destructive)) {
             stamp_action(*panel.view, *panel.action);
-            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT;
+            panel.action->compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT;
         }
         if (chrome::dialog_button(dialog, panel.context, "Cancel",
                                   chrome::DialogButtonRole::secondary)) {
             stamp_action(*panel.view, *panel.action);
-            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
+            panel.action->compose.kind = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
         }
     }
     if (chrome::dialog_end(dialog, panel.context) == chrome::DialogResult::cancel) {
         stamp_action(*panel.view, *panel.action);
-        panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
+        panel.action->compose.kind = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
     }
 }
 
@@ -241,8 +241,8 @@ void render_layer_creation(const ResourcePanel& panel) {
         if (chrome::dialog_button(dialog, panel.context, "Create", chrome::DialogButtonRole::primary,
                                  valid && action_available(*panel.action))) {
             stamp_action(view, *panel.action);
-            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-            panel.action->layer.name = state.layer_editor.layer_creation_name.data();
+            panel.action->compose.kind = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
+            panel.action->compose.layer.name = state.layer_editor.layer_creation_name.data();
             state.layer_editor.layer_creation_context.reset();
         }
     }

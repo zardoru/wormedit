@@ -93,11 +93,11 @@ TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documen
     state.keysound_slots.sound_layer_confirmation_revision = view.document_revision;
     state.keysound_slots.sound_layer_confirmation_layer = 7;
     state.keysound_slots.sound_layer_confirmation_resources = {1};
-    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(harness.drawn_text().find("Keep existing layers") != std::string::npos);
     CHECK(harness.drawn_text().find("Overwrite") != std::string::npos);
     ++view.document_revision;
-    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK_FALSE(state.keysound_slots.sound_layer_confirmation_open);
 }
 
@@ -214,12 +214,12 @@ void check_sound_layer_confirmation_choice(bool overwrite) {
     REQUIRE(choice.has_value());
     const auto frames = click_at(harness, choice->first, choice->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
     });
     REQUIRE(found != frames.end());
-    CHECK(found->get().resource.sound_overwrite_note_layers == overwrite);
-    CHECK(found->get().layer.id.value == 7);
-    CHECK(found->get().resource.sound_resource_ids.size() == 2);
+    CHECK(found->get().compose.resource.sound_overwrite_note_layers == overwrite);
+    CHECK(found->get().compose.layer.id.value == 7);
+    CHECK(found->get().compose.resource.sound_resource_ids.size() == 2);
 
     CHECK_FALSE(state.keysound_slots.sound_layer_confirmation_open);
 }
@@ -227,7 +227,7 @@ void check_sound_layer_confirmation_choice(bool overwrite) {
 auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapshot_t>& frames)
     -> void {
     for (const auto& snapshot : frames)
-        CHECK(snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        CHECK(snapshot.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 auto delete_shortcut_has_compose_context(const wormedit::ui::workspace_action_t& action) -> bool {
@@ -800,8 +800,8 @@ void check_layer_row_action(const workspace_action_snapshot_t& snapshot,
                             const std::source_location location =
                                 std::source_location::current()) {
     INFO("assertion caller line " << location.line());
-    REQUIRE(snapshot.get().compose_action == kind);
-    CHECK(snapshot.get().layer.id.value == layer);
+    REQUIRE(snapshot.get().compose.kind == kind);
+    CHECK(snapshot.get().compose.layer.id.value == layer);
 }
 } // namespace
 
@@ -885,10 +885,10 @@ void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>&
                                      std::source_location::current()) {
     for (const auto& frame : frames) {
         INFO("assertion caller line " << location.line() << ", compose action "
-             << frame.get().compose_action << ", compose inputs "
+             << frame.get().compose.kind << ", compose inputs "
              << frame.get().input.compose_inputs.size() << ", viewport inputs "
              << frame.get().input.compose_viewport_inputs.size());
-        CHECK(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        CHECK(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         CHECK(frame.get().input.compose_inputs.size() == 0);
         CHECK(frame.get().input.compose_viewport_inputs.size() == 0);
     }
@@ -985,7 +985,7 @@ TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without 
     const std::array undo{key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z)};
     const auto suppressed = fixture.harness.frame(undo, SDL_KMOD_CTRL);
     check_layer_menu(suppressed.get().input.shortcuts.text_entry_active);
-    check_layer_menu(suppressed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(suppressed.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_Z, SDL_SCANCODE_Z)};
     (void)fixture.harness.frame(release);
     SDL_Event plus{};
@@ -993,12 +993,12 @@ TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without 
     plus.text.text = "+";
     const std::array text{plus};
     const auto blocked_text = fixture.harness.frame(text);
-    check_layer_menu(blocked_text.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(blocked_text.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     const auto closed = fixture.harness.frame(escape);
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
     check_layer_menu(closed.get().input.shortcuts.text_entry_active);
-    check_layer_menu(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(closed.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_layer_menu(closed.get().input.compose_inputs.size() == 0);
 }
 
@@ -1088,7 +1088,7 @@ TEST_CASE("Layer row Rename editor keeps its captured ID after target and window
     REQUIRE(apply_center);
     const auto applied = click_at(fixture.harness, apply_center->first, apply_center->second);
     check_layer_row_action(applied.front(), WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER, 7);
-    check_layer_menu(std::string{applied.front().get().layer.name} == "Renamed");
+    check_layer_menu(std::string{applied.front().get().compose.layer.name} == "Renamed");
     check_layer_menu(!state.layer_editor.semantic_layer_name_editor_visible);
 }
 
@@ -1119,8 +1119,8 @@ struct note_menu_fixture_t {
     }
     void open() {
         const auto clicks = right_click_at(harness, 300, 300);
-        check_layer_menu(clicks.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
-        check_layer_menu(clicks.front().get().marker.note_context_id.value == 42);
+        check_layer_menu(clicks.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+        check_layer_menu(clicks.front().get().compose.marker.note_context_id.value == 42);
         check_layer_menu(compose_note_menu_open());
         (void)click_at(harness, 350, 315);
         (void)harness.frame();
@@ -1153,7 +1153,7 @@ void t422_check_note_hint_fits_view(const nuklear_event_harness_t& harness,
 void t422_click_hint_without_action(note_menu_fixture_t& fixture,
                                     std::pair<float, float> center) {
     const auto clicked = click_at(fixture.harness, center.first, center.second);
-    CHECK(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(clicked.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(compose_note_menu_open());
     const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     (void)fixture.harness.frame(std::span{&escape, 1});
@@ -1171,7 +1171,7 @@ TEST_CASE("Note actions expose a nonclickable Shift lane-key move hint",
         worm_ui_nuklear_compose_state().dock_layout.layout, {}).reserved_width;
     const auto opened = right_click_at(fixture.harness,
         viewport->x + viewport->width - strip - 20, viewport->y + viewport->height - 3);
-    CHECK(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    CHECK(opened.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     CHECK(compose_note_menu_open());
     constexpr std::string_view hint{"Shift + lane key moves one, then deselects"};
     CHECK(fixture.harness.drawn_text().find(hint) != std::string::npos);
@@ -1187,7 +1187,7 @@ TEST_CASE("Note right click opens Layer submenu and assigns its captured selecti
     fixture.open();
     const auto chosen = click_at(fixture.harness, 490, 347);
     check_layer_row_action(chosen.front(), WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, 7);
-    check_layer_menu(chosen.front().get().marker.note_context_id.value == 42);
+    check_layer_menu(chosen.front().get().compose.marker.note_context_id.value == 42);
     check_layer_menu(!compose_note_menu_open());
     check_layer_menu(chosen.back().get().input.compose_inputs.size() == 0);
 }
@@ -1197,7 +1197,7 @@ TEST_CASE("Note Layer submenu clears through No layer and disables locked rows",
     note_menu_fixture_t fixture;
     fixture.open();
     const auto locked = click_at(fixture.harness, 490, 375);
-    check_layer_menu(locked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(locked.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_layer_menu(compose_note_menu_open());
     const auto clear = click_at(fixture.harness, 490, 320);
     check_layer_row_action(clear.front(), WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, 0);
@@ -1229,7 +1229,7 @@ TEST_CASE("Empty area band keeps its right click menu when no note was hit",
     const auto clicked = right_click_at(fixture.harness, 900, 400);
     check_layer_menu(!compose_note_menu_open());
     check_layer_menu(compose_area_capture_active());
-    check_layer_menu(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(clicked.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Area menu Add SV recipe emits the edit and opens its inspector",
@@ -1250,7 +1250,7 @@ TEST_CASE("Area menu Add SV recipe emits the edit and opens its inspector",
     REQUIRE(target);
     const auto clicked = click_at(fixture.harness, target->first, target->second);
     const auto emitted = std::ranges::find_if(clicked, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
     });
     REQUIRE(emitted != clicked.end());
     CHECK(emitted->get().stamp.chart_id == view.chart_id);
@@ -1306,9 +1306,9 @@ TEST_CASE("Note submenu requests a bounded scrolling window independent of hidde
     const std::array events{mouse_motion(490, 500), wheel};
     (void)fixture.harness.frame(events);
     const auto request = fixture.harness.frame();
-    check_layer_menu(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
-    check_layer_menu(request.get().layer.first_row > 0);
-    check_layer_menu(request.get().layer.row_count <= wormedit::ui::note_layer_window_limit);
+    check_layer_menu(request.get().compose.kind == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
+    check_layer_menu(request.get().compose.layer.first_row > 0);
+    check_layer_menu(request.get().compose.layer.row_count <= wormedit::ui::note_layer_window_limit);
     check_layer_menu(view.semantic_layer_first_row == 12);
 }
 
@@ -1488,7 +1488,7 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
     REQUIRE(kick_row);
     const auto actions = click_at(harness, kick_row->first, kick_row->second, true);
     CHECK_FALSE(std::ranges::any_of(actions, [](const auto& action) {
-        return action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+        return action.get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }));
     CHECK(state.resource_picker.armed_resource_id == 1400);
     check_draw_source(state.pointer_capture.draw_source_kind == 1);
@@ -1563,8 +1563,8 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     const auto jump = click_at(harness, second->first, second->second);
     CHECK(state.measures_dock.measure_selection.primary == 12);
     CHECK(std::ranges::any_of(jump, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE &&
-               frame.get().measure.number == 2;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE &&
+               frame.get().compose.measure.number == 2;
     }));
     (void)harness.frame();
     const auto all = harness.drawn_text_center("Select all");
@@ -1578,10 +1578,10 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     REQUIRE(apply);
     const auto applied = click_at(harness, apply->first, apply->second);
     const auto found = std::ranges::find_if(applied, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
     });
     REQUIRE(found != applied.end());
-    CHECK(found->get().measure.ids.size() == 3);
+    CHECK(found->get().compose.measure.ids.size() == 3);
     CHECK(std::string(found->get().timing.meter_numerator_text) == "6");
     CHECK(std::string(found->get().timing.meter_denominator_text) == "8");
 }
@@ -1594,12 +1594,12 @@ void check_sound_renumber(bool value, std::string_view description) {
 }
 auto has_sound_renumber_action(const std::vector<workspace_action_snapshot_t>& frames) -> bool {
     return std::ranges::any_of(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
 }
 auto has_sound_audition_action(const std::vector<workspace_action_snapshot_t>& frames) -> bool {
     return std::ranges::any_of(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
     });
 }
 } // namespace
@@ -1633,15 +1633,15 @@ TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[front
     REQUIRE(choice.has_value());
     const auto frames = click_at(harness, choice->first, choice->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
     require_sound_renumber(found != frames.end());
-    check_sound_renumber(found->get().resource.sound_resource_ids.size() == 1, "one selected resource");
+    check_sound_renumber(found->get().compose.resource.sound_resource_ids.size() == 1, "one selected resource");
 
-    require_sound_renumber(found->get().resource.sound_resource_ids.size() != 0);
-    check_sound_renumber(found->get().resource.sound_resource_ids[0].value == 50, "selected resource ID");
-    check_sound_renumber(!found->get().resource.renumber_all, "selection mode");
-    check_sound_renumber(!found->get().resource.renumber_bga, "WAV namespace");
+    require_sound_renumber(found->get().compose.resource.sound_resource_ids.size() != 0);
+    check_sound_renumber(found->get().compose.resource.sound_resource_ids[0].value == 50, "selected resource ID");
+    check_sound_renumber(!found->get().compose.resource.renumber_all, "selection mode");
+    check_sound_renumber(!found->get().compose.resource.renumber_bga, "WAV namespace");
     check_sound_renumber(!state.keysound_slots.keysound_renumber_confirmation_open, "confirmation closes");
 }
 
@@ -1722,10 +1722,10 @@ TEST_CASE("Sounds dock renumber release does not audition the covered row",
     check_sound_renumber(has_sound_renumber_action(frames), "all sounds action dispatched");
     check_sound_renumber(!has_sound_audition_action(frames), "press and release do not audition row");
     const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
     require_sound_renumber(renumber != frames.end());
-    check_sound_renumber(renumber->get().resource.renumber_all, "all sounds mode");
+    check_sound_renumber(renumber->get().compose.resource.renumber_all, "all sounds mode");
 }
 
 TEST_CASE("BGA renumber release does not select the covered image",
@@ -1757,11 +1757,11 @@ TEST_CASE("BGA renumber release does not select the covered image",
     const auto frames = click_at(harness, all_bga->first, all_bga->second);
     check_sound_renumber(has_sound_renumber_action(frames), "all BGA action dispatched");
     const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
     require_sound_renumber(renumber != frames.end());
-    check_sound_renumber(renumber->get().resource.renumber_all, "all images mode");
-    check_sound_renumber(renumber->get().resource.renumber_bga, "BMP namespace");
+    check_sound_renumber(renumber->get().compose.resource.renumber_all, "all images mode");
+    check_sound_renumber(renumber->get().compose.resource.renumber_bga, "BMP namespace");
     check_sound_renumber(state.bga_catalog.bga_selection.primary == 0, "covered image stays unselected");
     check_sound_renumber(state.bga_catalog.bga_selection.selected.empty(), "covered image absent from selection");
 }
@@ -2056,7 +2056,7 @@ void stage_sound_slot(nuklear_event_harness_t& harness, std::uint16_t slot = 2) 
 auto find_sound_slot_action(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::workspace_action_t* {
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT;
     });
     return found == frames.end() ? nullptr : &found->get();
 }
@@ -2092,18 +2092,18 @@ TEST_CASE("Empty slot file assignment sends its exact ID once without automatic 
     stage_sound_slot(harness, 1);
     const auto snapshot = harness.frame();
     const auto& action = snapshot.get();
-    check_sound_slots(action.compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
-    check_sound_slots(action.resource.sound_slot == 1);
-    check_sound_slots(!action.resource.sound_slot_confirmed);
-    require_sound_slots(action.resource.import_paths.size() == 1 && !action.resource.import_paths.empty());
+    check_sound_slots(action.compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
+    check_sound_slots(action.compose.resource.sound_slot == 1);
+    check_sound_slots(!action.compose.resource.sound_slot_confirmed);
+    require_sound_slots(action.compose.resource.import_paths.size() == 1 && !action.compose.resource.import_paths.empty());
 
-    check_sound_slots(std::string_view{action.resource.import_paths[0]} == "/tmp/slot-picked.wav");
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_sound_slots(std::string_view{snapshot.get().resource.import_paths[0]} == "/tmp/slot-picked.wav");
+    check_sound_slots(std::string_view{action.compose.resource.import_paths[0]} == "/tmp/slot-picked.wav");
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(std::string_view{snapshot.get().compose.resource.import_paths[0]} == "/tmp/slot-picked.wav");
     const auto& view = harness.view().compose;
     check_sound_slots(worm_ui_frontend_stage_sound_slot_file(
         view.project_id.value, view.chart_id.value, view.document_revision, "/tmp/one.wav", 2));
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_feedback.empty());
 }
 
@@ -2120,7 +2120,7 @@ TEST_CASE("Occupied slot selection arms its sound and replacement requires expli
     check_sound_slots(state.resource_picker.armed_resource_id == 501);
     check_sound_slots(state.keysound_catalog.keysound_selection.primary == 501);
     stage_sound_slot(harness);
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(state.keysound_slots.keysound_slot_confirmation_open);
     check_sound_slots(harness.drawn_text().find("Replace occupied WAV slot 02") != std::string::npos);
     const auto choice = harness.drawn_text_center("Replace");
@@ -2128,9 +2128,9 @@ TEST_CASE("Occupied slot selection arms its sound and replacement requires expli
     const auto frames = click_at(harness, choice->first, choice->second);
     const auto* action = find_sound_slot_action(frames);
     require_sound_slots(action != nullptr);
-    check_sound_slots(action->resource.sound_slot == 2);
-    check_sound_slots(action->resource.sound_slot_confirmed);
-    check_sound_slots(action->resource.import_paths.size() == 1);
+    check_sound_slots(action->compose.resource.sound_slot == 2);
+    check_sound_slots(action->compose.resource.sound_slot_confirmed);
+    check_sound_slots(action->compose.resource.import_paths.size() == 1);
 
     check_sound_slots(!state.keysound_slots.keysound_slot_confirmation_open);
     check_sound_slots(!has_sound_audition_action(frames));
@@ -2153,9 +2153,9 @@ TEST_CASE("Slot replacement Escape cancels and does not play or assign audio",
     const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto action = harness.frame(std::span{&escape, 1});
     check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_confirmation_open);
-    check_sound_slots(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(action.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(action.get().kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE);
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Slot replacement rejects stale revisions and a mode change without fallback",
@@ -2166,11 +2166,11 @@ TEST_CASE("Slot replacement rejects stale revisions and a mode change without fa
     stage_sound_slot(harness);
     (void)harness.frame();
     ++harness.view().compose.document_revision;
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_confirmation_open);
     stage_sound_slot(harness, 1);
     worm_ui_nuklear_compose_state().keysound_filters.keysound_slots_mode = false;
-    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slots.keysound_pending_file);
 }
 
@@ -2298,7 +2298,7 @@ TEST_CASE("Sound group import review captures shortcuts and Escape cancels witho
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
     CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().input.shortcuts.events.size() == 0);
     const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
-    CHECK(harness.frame(std::span{&escape, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.frame(std::span{&escape, 1}).get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
 }
 
@@ -2340,7 +2340,7 @@ TEST_CASE("Sound import failure retains group edits and changing projects discar
     worm_ui_frontend_sound_import_result(false, "No contiguous WAV run is available.");
     check_retained_import_after_failure();
     ++harness.view().project_id.value;
-    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
 }
 
@@ -2893,7 +2893,7 @@ void t422_open_note_actions(t422_fixture_t& fixture) {
     REQUIRE(center.has_value());
     const auto opened = right_click_at(fixture.harness, center->first, center->second);
     REQUIRE(opened.size() == 2);
-    REQUIRE(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    REQUIRE(opened.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     REQUIRE(compose_note_menu_open());
 }
 } // namespace
@@ -3268,7 +3268,7 @@ void section_review_submits_fixed_kind(wormedit::ui::sound_import_kind_t kind, b
     section_import_require(confirm.has_value());
     const auto actions = click_at(harness, confirm->first, confirm->second);
     const auto found = std::ranges::find_if(actions, [](const auto& a) {
-        return a.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+        return a.get().compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     });
     section_import_require(found != actions.end());
     section_import_check(found->get().sound_import.kind == kind);
@@ -3303,7 +3303,7 @@ TEST_CASE("sound_import section controls stay BMSON only and fixed review cancel
         view.selected_chart_id.value, view.document_revision, &item, 1, nullptr, 0, false, ""));
     ++view.selected_chart_id.value;
     const auto action = harness.frame();
-    section_import_check(action.get().compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+    section_import_check(action.get().compose.kind != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     section_import_check(!worm_ui_nuklear_sound_import_active());
 }
 
@@ -3436,8 +3436,8 @@ TEST_CASE("Draw opens the note menu on right click but erases only after right d
     (void)fixture.harness.frame();
     const auto click = right_click_at(fixture.harness, 300, 300);
     expect_draw(click.size() == 2);
-    expect_draw(click[0].get().compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
-    expect_draw(click[1].get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(click[0].get().compose.kind != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(click[1].get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     expect_draw(find_compose_input(click, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
     expect_draw(compose_note_menu_open());
 
@@ -3471,7 +3471,7 @@ TEST_CASE("Right drag threshold uses screen pixels with fractional scene dimensi
                                    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
     const auto release = draw_right_event(false, 302.5f, 300);
     const auto clicked = fixture.harness.frame(std::span{&release, 1});
-    expect_draw(clicked.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(clicked.get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
 }
 
 TEST_CASE("Draw rejects Timing focus and cancels a stroke on focus, tab, or occlusion changes",
@@ -3536,7 +3536,7 @@ TEST_CASE("Batched right press motion and release erases from the original press
     const auto frame = fixture.harness.frame(events);
     const auto& action = frame.get();
     const std::vector frames{frame};
-    expect_draw(action.compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(action.compose.kind != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     expect_draw(has_draw_input(frames,
         WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 2));
     expect_draw(has_draw_input(frames,
@@ -3591,7 +3591,7 @@ auto tool_route_matches(const wormedit::ui::workspace_action_t& action, SDL_Scan
     return harness_tool_chord(action, scancode) &&
            dispatched.value.status == wormedit::command_dispatch_status_t::invoked &&
            dispatched.value.command == wormedit::command_id_t{std::string(expected)} &&
-           action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
+           action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE &&
            action.input.compose_inputs.size() == 0;
 }
 
@@ -3646,7 +3646,7 @@ auto click_quantize_label(nuklear_event_harness_t& harness, std::string_view lab
     REQUIRE(center.has_value());
     const auto frames = click_at(harness, center->first, center->second);
     for (const auto& frame : frames)
-        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        if (frame.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
             return frame;
     return frames.back();
 }
@@ -3669,10 +3669,10 @@ void seed_quantize_controls(nuklear_event_harness_t& harness) {
 
 void check_quantize_settings(const wormedit::ui::workspace_action_t& action, std::uint64_t grid,
                              std::uint8_t space, std::uint8_t tie) {
-    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
-    CHECK(action.quantize.divisions == grid);
-    CHECK(action.quantize.space == static_cast<wormedit::quantization_space_t>(space));
-    CHECK(action.quantize.tie == static_cast<wormedit::quantization_tie_t>(tie));
+    CHECK(action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
+    CHECK(action.compose.quantize.divisions == grid);
+    CHECK(action.compose.quantize.space == static_cast<wormedit::quantization_space_t>(space));
+    CHECK(action.compose.quantize.tie == static_cast<wormedit::quantization_tie_t>(tie));
     CHECK(action.stamp.chart_id.value == 419);
     CHECK(action.stamp.document_revision == 7);
 }
@@ -3714,7 +3714,7 @@ void replace_quantize_popup_field(nuklear_event_harness_t& harness, std::string_
 void check_quantize_input_blocked(const std::vector<workspace_action_snapshot_t>& frames) {
     for (const auto& frame : frames) {
         CHECK(frame.get().input.compose_inputs.size() == 0);
-        CHECK(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        CHECK(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     }
 }
 
@@ -3739,10 +3739,10 @@ void seed_quantize_presets(nuklear_event_harness_t& harness) {
 
 void check_quantize_preset_action(const wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind,
                                   const char* name = nullptr) {
-    CHECK(action.compose_action == kind);
-    CHECK(action.quantize.preset_index == 0);
+    CHECK(action.compose.kind == kind);
+    CHECK(action.compose.quantize.preset_index == 0);
     if (name)
-        CHECK(std::string_view(action.quantize.preset_name) == name);
+        CHECK(std::string_view(action.compose.quantize.preset_name) == name);
 }
 
 void check_quantize_ghost_initial_state(nuklear_event_harness_t& harness) {
@@ -3875,10 +3875,10 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     check_quantize_settings(later.get(), 16, 1, 1);
     view.quantize_tie = static_cast<wormedit::quantization_tie_t>(1);
     const auto applied = click_quantize_label(harness, "Quantize");
-    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
-    CHECK(applied.get().quantize.divisions == 16);
-    CHECK(applied.get().quantize.space == wormedit::quantization_space_t::authored_measure);
-    CHECK(applied.get().quantize.tie == wormedit::quantization_tie_t::later);
+    CHECK(applied.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    CHECK(applied.get().compose.quantize.divisions == 16);
+    CHECK(applied.get().compose.quantize.space == wormedit::quantization_space_t::authored_measure);
+    CHECK(applied.get().compose.quantize.tie == wormedit::quantization_tie_t::later);
     CHECK(harness.drawn_text().find("Presets and settings") == std::string::npos);
 }
 
@@ -3925,7 +3925,7 @@ TEST_CASE("Quantize headings retain counts and only advertise an actual Q bindin
     CHECK(harness.drawn_text().find("Quantize (Q)") != std::string::npos);
     harness.view().compose.quantize_preview_blocked = 1;
     const auto applied = click_quantize_label(harness, "Quantize (Q)");
-    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(applied.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Quantize custom grid rejects zero and overflow then applies corrected input",
@@ -3936,11 +3936,11 @@ TEST_CASE("Quantize custom grid rejects zero and overflow then applies corrected
     replace_quantize_popup_field(harness, "Grid divisions", "0", "4");
     const auto invalid = click_quantize_label(harness, "Apply custom grid");
     INFO(harness.drawn_text());
-    CHECK(invalid.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(invalid.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(compose_quantize_owns_input());
     CHECK(harness.drawn_text().find("Grid must be a positive whole number") != std::string::npos);
     replace_quantize_popup_field(harness, "Grid divisions", "18446744073709551616", "0");
-    CHECK(click_quantize_label(harness, "Apply custom grid").get().compose_action ==
+    CHECK(click_quantize_label(harness, "Apply custom grid").get().compose.kind ==
           WORM_UI_COMPOSE_ACTION_NONE);
     replace_quantize_popup_field(harness, "Grid divisions", "12", "18446744073709551616");
     const auto applied = click_quantize_label(harness, "Apply custom grid");
@@ -3971,15 +3971,15 @@ TEST_CASE("Quantize plus chip saves a unique named preset with unchanged setting
     seed_quantize_presets(harness);
     (void)click_quantize_label(harness, "+");
     replace_quantize_popup_field(harness, "Preset name", "Default");
-    CHECK(click_quantize_label(harness, "Save preset").get().compose_action ==
+    CHECK(click_quantize_label(harness, "Save preset").get().compose.kind ==
           WORM_UI_COMPOSE_ACTION_NONE);
     replace_quantize_popup_field(harness, "Preset name", "New preset", "Default");
     const auto saved = click_quantize_label(harness, "Save preset");
-    CHECK(saved.get().compose_action == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET);
-    CHECK(std::string_view(saved.get().quantize.preset_name) == "New preset");
-    CHECK(saved.get().quantize.divisions == 4);
-    CHECK(saved.get().quantize.space == wormedit::quantization_space_t::standard_measure);
-    CHECK(saved.get().quantize.tie == wormedit::quantization_tie_t::earlier);
+    CHECK(saved.get().compose.kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET);
+    CHECK(std::string_view(saved.get().compose.quantize.preset_name) == "New preset");
+    CHECK(saved.get().compose.quantize.divisions == 4);
+    CHECK(saved.get().compose.quantize.space == wormedit::quantization_space_t::standard_measure);
+    CHECK(saved.get().compose.quantize.tie == wormedit::quantization_tie_t::earlier);
 }
 
 TEST_CASE("Quantize popups consume outside dismissal releases and global shortcuts",
@@ -4024,7 +4024,7 @@ TEST_CASE("Quantize popups reject stale revision chart and preset identity",
         ++changed[0].divisions;
         view.quantize_presets.assign(changed.begin(), changed.end());
     }
-    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(harness.drawn_text_center("Rename") == std::nullopt);
     (void)harness.frame();
     CHECK_FALSE(compose_quantize_owns_input());
@@ -4071,7 +4071,7 @@ TEST_CASE("Cancelling an invalid custom quantize draft restores current settings
     seed_quantize_controls(harness);
     (void)click_quantize_label(harness, "custom…");
     replace_quantize_popup_field(harness, "Grid divisions", "0", "4");
-    REQUIRE(click_quantize_label(harness, "Apply custom grid").get().compose_action ==
+    REQUIRE(click_quantize_label(harness, "Apply custom grid").get().compose.kind ==
             WORM_UI_COMPOSE_ACTION_NONE);
     REQUIRE(harness.drawn_text().find("Grid must be a positive whole number") != std::string::npos);
     SECTION("outside dismissal") {
@@ -4086,8 +4086,8 @@ TEST_CASE("Cancelling an invalid custom quantize draft restores current settings
     (void)harness.frame();
     CHECK_FALSE(compose_quantize_owns_input());
     const auto applied = click_quantize_label(harness, "Quantize");
-    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
-    CHECK(applied.get().quantize.divisions == 4);
+    CHECK(applied.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    CHECK(applied.get().compose.quantize.divisions == 4);
 }
 
 TEST_CASE("Quantize popup owns right clicks over underlying preset chips through dismissal",
@@ -4676,11 +4676,11 @@ TEST_CASE("Same sound hover travels with the remappable add shortcut", "[fronten
     move_event_fixture_t fixture;
     const std::array motion{mouse_motion(300, 400)};
     const auto hovered = fixture.harness.frame(motion);
-    expect_lane_key(hovered.get().resource.sound_hover_object_id.value == 101);
+    expect_lane_key(hovered.get().compose.resource.sound_hover_object_id.value == 101);
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
-    expect_lane_key(frame.get().resource.sound_hover_object_id.value == 101);
+    expect_lane_key(frame.get().compose.resource.sound_hover_object_id.value == 101);
     expect_lane_key(frame.get().input.shortcuts.events.size() == 1);
     expect_lane_key(frame.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(wormedit::shortcut_key_t::a)));
 }
@@ -4772,7 +4772,7 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().input.shortcuts.events.size() == 1);
-    expect_lane_key(frame.get().resource.sound_hover_object_id.value == 0);
+    expect_lane_key(frame.get().compose.resource.sound_hover_object_id.value == 0);
     wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     expect_lane_key(dock.selected_resource_ids.size() == 1 && dock.selected_resource_ids[0].value == 2);
@@ -4884,7 +4884,7 @@ TEST_CASE("Area menu loops a committed selection and rejects virtual or unavaila
         emitted = true;
         check_layer_menu(action.stamp.chart_id.value == view.chart_id.value);
         check_layer_menu(action.stamp.document_revision == view.document_revision);
-        check_layer_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_layer_menu(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     }
     check_layer_menu(emitted == (output_available && !virtual_range));
 }
@@ -5356,7 +5356,7 @@ TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no h
         (void)harness.frame();
         const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
         const auto action = harness.frame(std::span{&enter, 1});
-        CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+        CHECK(action.get().compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     }
 }
 
@@ -6119,14 +6119,14 @@ TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", 
     REQUIRE(candidate);
     const auto actions = click_at(harness, candidate->first, candidate->second);
     const auto action = std::ranges::find_if(actions, [](const auto& snapshot) {
-        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+        return snapshot.get().compose.kind == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
     });
     REQUIRE(action != actions.end());
     CHECK(action->get().stamp.project_id.value == 991);
     CHECK(action->get().stamp.chart_id.value == 77);
     CHECK(action->get().stamp.document_revision == 23);
-    CHECK(action->get().resource.id.value == 1400);
-    CHECK(action->get().resource.fallback_candidate == 1);
+    CHECK(action->get().compose.resource.id.value == 1400);
+    CHECK(action->get().compose.resource.fallback_candidate == 1);
 }
 
 TEST_CASE("Quantize preview control emits a revision checked toggle without Apply", "[frontend-state][event-harness][quantize-intent]") {
@@ -6135,7 +6135,7 @@ TEST_CASE("Quantize preview control emits a revision checked toggle without Appl
     (void)harness.frame();
     expect_draw(!harness.view().compose.quantize_preview_enabled);
     const auto toggled = click_quantize_label(harness, "Preview");
-    expect_draw(toggled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW);
+    expect_draw(toggled.get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW);
     expect_draw(toggled.get().stamp.chart_id.value == 419);
     expect_draw(toggled.get().stamp.document_revision == 7);
 }
@@ -6176,7 +6176,7 @@ TEST_CASE("Area conversion menu offers both pause sides and explicit measure pol
     const auto target = fixture.harness.drawn_text_center(labels[kind - WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP]);
     REQUIRE(target.has_value());
     const auto clicked = click_at(fixture.harness, target->first, target->second);
-    const auto emitted = std::ranges::find_if(clicked, [kind](const auto& snapshot) { return snapshot.get().compose_action == kind; });
+    const auto emitted = std::ranges::find_if(clicked, [kind](const auto& snapshot) { return snapshot.get().compose.kind == kind; });
     REQUIRE(emitted != clicked.end());
     check_layer_menu(emitted->get().stamp.project_id.value == view.project_id.value);
     check_layer_menu(emitted->get().stamp.chart_id.value == view.chart_id.value);
@@ -6202,7 +6202,7 @@ TEST_CASE("Area pause conversion is disabled while locked or virtual and retires
     if (guard == 2) { ++view.document_revision; (void)fixture.harness.frame(); }
     const auto actions = click_at(fixture.harness, target->first, target->second);
     check_layer_menu(std::ranges::none_of(actions, [](const auto& snapshot) {
-        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP;
+        return snapshot.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP;
     }));
 }
 
@@ -6360,11 +6360,11 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     require_project_access(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
     });
     require_project_access(found != frames.end());
     const auto& action = found->get();
-    check_layer_menu(action.resource.output_group_index == 7);
+    check_layer_menu(action.compose.resource.output_group_index == 7);
     check_layer_menu(action.stamp.project_id.value == view.project_id.value);
     check_layer_menu(action.stamp.chart_id.value == view.selected_chart_id.value);
     check_layer_menu(action.stamp.document_revision == view.document_revision);
@@ -6397,7 +6397,7 @@ TEST_CASE("Ask conflict confirmation dispatches replace or cancel without changi
     require_project_access(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);
     require_project_access(std::ranges::any_of(
-        frames, [&](const auto& frame) { return frame.get().compose_action == choice.second; }));
+        frames, [&](const auto& frame) { return frame.get().compose.kind == choice.second; }));
 }
 
 TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio offset unchanged",
@@ -6535,7 +6535,7 @@ TEST_CASE("Project Export all button emits a stamped batch export action",
     output_group_fixture_t f{true};
     const auto frames = f.click("Export all");
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS;
     });
     require_project_access(found != frames.end());
     const auto& action = found->get();
@@ -6700,23 +6700,23 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
         f.harness.drawn_text_center("A complete conversion warning").has_value());
     const auto exported = f.click("Export");
     const auto found = std::ranges::find_if(exported, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
     });
     require_project_access(found != exported.end());
     const auto& action = found->get();
-    require_project_access(action.resource.output_group_index == 3);
+    require_project_access(action.compose.resource.output_group_index == 3);
     require_project_access(action.stamp.project_id.value == f.harness.view().project_id.value);
     require_project_access(action.stamp.document_revision == f.harness.view().document_revision);
     require_project_access(action.stamp.chart_id.value == 10);
-    require_project_access(action.resource.existing_files == WORM_UI_EXISTING_FILES_SAVED);
+    require_project_access(action.compose.resource.existing_files == WORM_UI_EXISTING_FILES_SAVED);
 
     (void)f.harness.frame();
     (void)f.click("⋯");
     (void)f.harness.frame();
     const auto replaced = f.click("Export · Replace existing");
     require_project_access(std::ranges::any_of(replaced, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP &&
-               frame.get().resource.existing_files == WORM_UI_EXISTING_FILES_REPLACE;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP &&
+               frame.get().compose.resource.existing_files == WORM_UI_EXISTING_FILES_REPLACE;
     }));
 
     (void)f.harness.frame();
@@ -7079,7 +7079,7 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     section_import_require(target.has_value());
     const auto actions = click_at(fixture.harness, target->first, target->second);
     const auto emitted = std::ranges::find_if(actions, [](const auto& snapshot) {
-        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+        return snapshot.get().compose.kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     });
     expect_draw((emitted != actions.end()) == !timing);
     if (emitted == actions.end()) return;
@@ -7110,7 +7110,7 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
             const auto binding = wormedit::workspace_controller_t::from(history);
             auto workspace = *binding.value;
             workspace.active_tab = wormedit::workspace_tab_t::compose;
-            check_layer_menu(action.compose_menu_command);
+            check_layer_menu(action.compose.menu_command);
             check_layer_menu(wormedit::sys::compose_menu_command_is_current(action, history, workspace));
             ++history.document.revision;
             check_layer_menu(!wormedit::sys::compose_menu_command_is_current(action, history, workspace));
@@ -7838,12 +7838,12 @@ TEST_CASE("Context replacement shares pointer resource-role rejection",
     expect_t422(replace.has_value());
     bool emitted = false;
     for (const auto& frame : click_at(f.harness, replace->first, replace->second)) {
-        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION) continue;
+        if (frame.get().compose.kind != WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION) continue;
         emitted = true;
         const auto& emitted_action = frame.get();
         const auto applied = apply_resource_assignment(f.history,
             {.chart = emitted_action.stamp.chart_id,
-             .resource = emitted_action.resource.id,
+             .resource = emitted_action.compose.resource.id,
              .objects = f.interaction->selected_objects});
         expect_t422(applied.applied == !bgm_only);
         expect_t422(applied.diagnostics.empty() == !bgm_only);
@@ -8327,10 +8327,10 @@ TEST_CASE("Production Go to measure modal shares playing position navigation",
     (void)f.harness.frame(std::span{&text, 1});
     const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto frame = f.harness.frame(std::span{&enter, 1});
-    expect_t422(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE);
-    expect_t422(frame.get().measure.number == 2);
+    expect_t422(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE);
+    expect_t422(frame.get().compose.measure.number == 2);
     const auto outcome = navigate_compose_measure(f.history, *f.interaction, f.application,
-                                                 frame.get().measure.number);
+                                                 frame.get().compose.measure.number);
     expect_t422(outcome.accepted == (mode != 3));
     expect_t422(seeks == (mode == 2 ? 1 : 0));
     expect_t422((f.interaction->cursor == previous) == (mode >= 2));
@@ -8352,7 +8352,7 @@ TEST_CASE("Production Reset editor view menu keeps cursor synchronized with its 
     expect_t422(reset.has_value());
     const auto frames = click_at(f.harness, reset->first, reset->second);
     expect_t422(std::ranges::any_of(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RESET_VIEW;
     }));
     const auto result = reset_compose_navigation_view(f.history, *f.interaction);
     expect_t422(result.accepted);
@@ -8884,8 +8884,8 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
     expect_t422(choice.has_value());
     const auto frames = click_at(f.harness, choice->first, choice->second);
     const auto emitted = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT ||
-               frame.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT ||
+               frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
     });
     expect_t422(emitted != frames.end());
     if (stale) {
@@ -9020,17 +9020,17 @@ TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
         ++view.project_id.value;
         const auto retired = harness.frame();
         expect_t422(!(bga ? state.bga_catalog.bga_renumber_confirmation_open : state.keysound_slots.keysound_renumber_confirmation_open));
-        expect_t422(retired.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        expect_t422(retired.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         return;
     }
     const auto button = harness.drawn_text_center(bga ? "All BGA" : "All sounds");
     expect_t422(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);
     const auto emitted = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
     expect_t422(emitted != frames.end());
-    expect_t422(emitted->get().resource.renumber_bga == bga && emitted->get().resource.renumber_all);
+    expect_t422(emitted->get().compose.resource.renumber_bga == bga && emitted->get().compose.resource.renumber_all);
     expect_t422(emitted->get().stamp.project_id.value == view.project_id.value);
 }
 
@@ -9124,7 +9124,7 @@ TEST_CASE("BGM count Enter retains ownership through held and released frames",
     expect_t422(draft.input_owned);
     const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto finish = harness.frame(std::span{&enter, 1});
-    expect_t422(finish.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT);
+    expect_t422(finish.get().compose.kind == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT);
     expect_t422(draft.release_pending && draft.input_owned);
     (void)harness.frame();
     expect_t422(draft.release_pending && draft.input_owned);
@@ -9158,7 +9158,7 @@ TEST_CASE("Draw right capture has one reset on interruption and late release",
     const auto release = draw_right_event(false, 310, 340);
     const auto late = fixture.harness.frame(std::span{&release, 1});
     expect_t422(!find_compose_input(std::vector<workspace_action_snapshot_t>{late}, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
-    expect_t422(late.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_t422(late.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Project session transitions discard sound import requests without repeated unloaded resets",
@@ -9450,12 +9450,12 @@ TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propa
     REQUIRE(harness.ready());
     (void)harness.frame();
     const auto lane = harness.click_widget("Show measure lane: select, place and move bar lines");
-    check_measure_lane(lane.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
+    check_measure_lane(lane.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
     harness.view().compose.measure_lane.visible = true;
     (void)harness.frame();
     const auto time = harness.click_widget(
         "Moved bar lines keep other objects in place (click to carry later content)");
-    check_measure_lane(time.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
+    check_measure_lane(time.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }
 
 TEST_CASE("Opening progress exposes Cancel on loaded and empty workspaces",
@@ -9869,7 +9869,7 @@ TEST_CASE("Unsaved export targets offer Save without publishing an export",
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
     }));
     for (const auto& frame : frames) {
-        require_project_access(frame.get().compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+        require_project_access(frame.get().compose.kind != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
         require_project_access(frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_NONE);
     }
 }

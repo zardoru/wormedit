@@ -383,9 +383,9 @@ struct metadata_text_fixture_t {
         wormedit::ui::workspace_action_t action{};
         action.stamp.chart_id.value = 1;
         action.stamp.document_revision = history.document.revision;
-        action.resource.asset_id.value = 8;
+        action.compose.resource.asset_id.value = 8;
         action.metadata.inspect_import = true;
-        action.resource.import_path = "/tmp/arena-copy-preview-source.wav";
+        action.compose.resource.import_path = "/tmp/arena-copy-preview-source.wav";
         const auto status = runtime.start_copy_preview(action, history, workspace, base);
         INFO(status);
         REQUIRE(runtime.copy_preview_key());

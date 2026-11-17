@@ -121,7 +121,7 @@ auto prompt_text(inline_label_kind_t kind) -> prompt_text_t {
 
 void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                   const inline_label_editor_t& editor) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
         stage_note_label_inline(action, view, editor);
         return;
@@ -130,12 +130,12 @@ void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::
         stage_section_label_inline(action, view, editor);
         return;
     }
-    action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
-    action.marker.bookmark_id.value = editor.bookmark_id;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
+    action.compose.marker.bookmark_id.value = editor.bookmark_id;
     action.stamp.project_id.value = view.project_id.value;
     action.stamp.chart_id.value = editor.chart_id;
     action.stamp.document_revision = editor.document_revision;
-    action.marker.label = editor.label;
+    action.compose.marker.label = editor.label;
 
 }
 

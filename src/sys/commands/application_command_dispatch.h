@@ -59,7 +59,7 @@ auto reject_application_command(
 // Stamped Compose activations must be checked before refreshing/invoking the registry.
 inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action_t& action,
     const document_history_t& history, const workspace_controller_t& workspace) -> bool {
-    return !action.compose_menu_command ||
+    return !action.compose.menu_command ||
         (action.input.shortcuts.window_focused && !action.input.shortcuts.ime_composition_active &&
          workspace.active_tab == workspace_tab_t::compose &&
          action.stamp.project_id == history.document.id &&

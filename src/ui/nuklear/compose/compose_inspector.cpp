@@ -73,9 +73,9 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
         context, names.data(), static_cast<int>(count + offset), current, 24,
         nk_vec2(220.0f, 120.0f));
     if (selected != current && (!selecting_initial || selected > 0) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
-        action->chart.lane_profile_index = static_cast<uint32_t>(
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
+        action->compose.chart.lane_profile_index = static_cast<uint32_t>(
             selected - (selecting_initial ? 1 : 0));
         action->stamp.chart_id.value = view->chart_id.value;
         action->stamp.document_revision = view->document_revision;
@@ -131,18 +131,18 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     (void)snprintf(button, sizeof(button), "%s layout at measure %u",
                    view->lane_layout_edit_is_update ? "Update" : "Insert",
                    view->lane_layout_edit_measure_number);
-    const auto disabled = action->compose_action != WORM_UI_COMPOSE_ACTION_NONE;
+    const auto disabled = action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE;
     if (disabled) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
     const auto clicked = wormedit::ui::chrome::Button{button, wormedit::ui::chrome::ButtonKind::primary,
         nullptr, !disabled}.render(context);
     if (disabled) nk_widget_disable_end(context);
     if (clicked && !disabled) {
-        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
         action->stamp.chart_id.value = view->chart_id.value;
         action->stamp.document_revision = view->document_revision;
-        action->measure.number = view->lane_layout_edit_measure_number;
-        action->chart.lane_layout_profile_id = view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)];
+        action->compose.measure.number = view->lane_layout_edit_measure_number;
+        action->compose.chart.lane_layout_profile_id = view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)];
     }
     wormedit::ui::chrome::section_pop(context);
 }
@@ -219,10 +219,10 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     const auto submit = [&](const char* title, WormUiComposeActionKind kind,
                             wormedit::ui::chrome::ButtonKind look = wormedit::ui::chrome::ButtonKind::secondary) {
         if (!wormedit::ui::chrome::Button{title, look, nullptr, !disabled}.render(context) ||
-            action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
             return;
-        action->marker.note_label = state.note_label.label_search.data();
-        action->compose_action = kind;
+        action->compose.marker.note_label = state.note_label.label_search.data();
+        action->compose.kind = kind;
         action->stamp.chart_id.value = view->chart_id.value;
         action->stamp.document_revision = view->document_revision;
     };
@@ -269,8 +269,8 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
                           item.denominator);
         }
     }
-    if (!apply || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
+    if (!apply || action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action->compose.kind = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
     action->stamp.chart_id.value = view->chart_id.value;
     action->stamp.document_revision = view->document_revision;
     action->timing.meter_numerator_text = state.recipe_editor.meter_numerator.data();
@@ -327,9 +327,9 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     const auto confirmed = wormedit::ui::chrome::button_label(context, "Confirm removal");
     if (blocked) nk_widget_disable_end(context);
     if (wormedit::ui::chrome::button_label(context, "Cancel")) confirmation.open = false;
-    if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (!confirmed || blocked || action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     confirmation.open = false;
-    action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
+    action->compose.kind = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
     action->stamp.chart_id.value = view->chart_id.value;
     action->stamp.document_revision = view->document_revision;
 }
@@ -341,7 +341,7 @@ void render_measure_removal_control(const ComposeInspectorContext& inspector) {
     auto* action = inspector.action;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     if (!wormedit::ui::chrome::Button{"Remove measure", wormedit::ui::chrome::ButtonKind::destructive}.render(context) ||
-        action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     if (view->measure_removal_has_contents) {
         measure_removal_confirmation = {.open = true,
@@ -363,7 +363,7 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     const auto entry = [&](const char* title, const char* command) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
         if (!wormedit::ui::chrome::Button{title}.render(context) ||
-            action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
             return;
         emit_compose_menu_command(*action, *view, command);
     };
@@ -386,9 +386,9 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
     const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
         if (!wormedit::ui::chrome::button_label(context, title) ||
-            action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
             return;
-        action->compose_action = kind;
+        action->compose.kind = kind;
         action->stamp.chart_id.value = view->chart_id.value;
         action->stamp.document_revision = view->document_revision;
     };
@@ -466,17 +466,17 @@ void set_quantize_action(const ComposeInspectorContext& inspector, WormUiCompose
                          std::uint8_t holds, bool preset_selected = false,
                          std::size_t preset_index = 0) {
     auto* action = inspector.action;
-    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action->compose_action = kind;
+    action->compose.kind = kind;
     action->stamp.chart_id.value = inspector.view->chart_id.value;
     action->stamp.document_revision = inspector.view->document_revision;
-    action->quantize.divisions = divisions;
-    action->quantize.space = static_cast<wormedit::quantization_space_t>(space);
-    action->quantize.tie = static_cast<wormedit::quantization_tie_t>(tie);
-    action->quantize.holds = static_cast<wormedit::quantization_hold_t>(holds);
-    action->quantize.preset_selected = preset_selected;
-    action->quantize.preset_index = preset_index;
+    action->compose.quantize.divisions = divisions;
+    action->compose.quantize.space = static_cast<wormedit::quantization_space_t>(space);
+    action->compose.quantize.tie = static_cast<wormedit::quantization_tie_t>(tie);
+    action->compose.quantize.holds = static_cast<wormedit::quantization_hold_t>(holds);
+    action->compose.quantize.preset_selected = preset_selected;
+    action->compose.quantize.preset_index = preset_index;
 }
 
 void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
@@ -705,7 +705,7 @@ void render_quantize_name_popup(const ComposeInspectorContext& i) {
                                             : WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
                             v.quantize_divisions, static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie),
                             static_cast<uint8_t>(v.quantize_holds), quantize_rename, quantize_menu_preset);
-        i.action->quantize.preset_name = quantize_preset_name.data();
+        i.action->compose.quantize.preset_name = quantize_preset_name.data();
     }
 }
 void render_quantize_preset_actions(const ComposeInspectorContext& i) {
@@ -872,7 +872,7 @@ void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
     const auto changed = wormedit::ui::chrome::checkbox_label(context, "Preview", &preview);
     if (compose_quantize_owns_input()) nk_widget_disable_end(context);
     if (changed && !compose_quantize_owns_input() &&
-        inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        inspector.action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
         set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW,
             inspector.view->quantize_divisions, static_cast<uint8_t>(inspector.view->quantize_space),
             static_cast<uint8_t>(inspector.view->quantize_tie), static_cast<uint8_t>(inspector.view->quantize_holds));
@@ -901,7 +901,7 @@ void render_quantize_action_row(const ComposeInspectorContext& inspector) {
             context, view->quantize_preview_blocked
                          ? view->quantize_preview_message.c_str()
                          : "Select notes or BGM that would move and finish editing a valid grid.");
-    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+    if (clicked && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
         set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
                             view->quantize_divisions, static_cast<uint8_t>(view->quantize_space), static_cast<uint8_t>(view->quantize_tie),
                             static_cast<uint8_t>(view->quantize_holds), view->quantize_selected_preset_valid,

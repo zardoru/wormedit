@@ -20,7 +20,7 @@ struct usage_fixture_t {
         action.bga_usage = {view.song, view.revision, view.resource, view.asset, view.rows.back().target};
     }
     auto activate() -> std::optional<std::string> {
-        return dispatch_bga_usage_action(action, request, history, workspace, interaction);
+        return dispatch_bga_usage_action(action.bga_usage, request, history, workspace, interaction);
     }
 };
 }

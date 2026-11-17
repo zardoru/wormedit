@@ -7,7 +7,7 @@
 #include <string>
 namespace wormedit::sys {
 // A failure message leaves the workspace and interaction untouched.
-[[nodiscard]] auto dispatch_bga_usage_action(const ui::workspace_action_t& action,
+[[nodiscard]] auto dispatch_bga_usage_action(const ui::bga_usage_activation_t& use,
     const ui::bga_dock_request_t& request, document_history_t& history,
     workspace_controller_t& workspace, std::optional<editor_interaction_state_t>& interaction)
     -> std::optional<std::string>;

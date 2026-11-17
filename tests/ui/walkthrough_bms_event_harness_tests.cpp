@@ -162,7 +162,7 @@ auto import_review(walkthrough_t& flow) -> resource_id_t {
     (void)flow.harness.frame();
     const auto confirmed = click_text(flow.harness, "Confirm import");
     for (const auto& snapshot : confirmed) {
-        if (snapshot.get().compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT) continue;
+        if (snapshot.get().compose.kind != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT) continue;
         const auto result = dispatch_compose_sound_action(snapshot.get(), flow.history,
             *flow.workspace.value, chart, flow.application);
         require_step(result);
@@ -224,10 +224,10 @@ void add_bgm_column(walkthrough_t& flow) {
                                        plus->y + plus->height / 2);
     bool emitted = false;
     for (const auto& snapshot : clicked) {
-        if (snapshot.get().compose_action != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) continue;
+        if (snapshot.get().compose.kind != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) continue;
         emitted = true;
         require_step(apply_bgm_column_count(flow.history, flow.interaction->chart,
-                                            snapshot.get().chart.bgm_column_count).applied);
+                                            snapshot.get().compose.chart.bgm_column_count).applied);
     }
     require_step(emitted);
     require_step(flow.chart().bgm_source_lanes.size() == 1);
@@ -486,10 +486,10 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     check_step(preview.front().get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW);
     (void)harness.frame();
     const auto direct = click_text(harness, "Export");
-    check_step(direct.front().get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
-    check_step(direct.front().get().resource.existing_files == WORM_UI_EXISTING_FILES_SAVED);
+    check_step(direct.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+    check_step(direct.front().get().compose.resource.existing_files == WORM_UI_EXISTING_FILES_SAVED);
     const auto all = click_text(harness, "Export all");
-    check_step(all.front().get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS);
+    check_step(all.front().get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS);
 }
 
 namespace {
@@ -541,7 +541,7 @@ void confirm_sound_review(walkthrough_t& flow, bool slots) {
                             : WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     const auto frames = click_text(flow.harness, slots ? "Assign files" : "Confirm import");
     const auto found = std::ranges::find_if(frames, [kind](const auto& frame) {
-        return frame.get().compose_action == kind;
+        return frame.get().compose.kind == kind;
     });
     require_step(found != frames.end());
     apply_sound_action(flow, found->get());
@@ -552,11 +552,12 @@ void confirm_sound_review(walkthrough_t& flow, bool slots) {
 
 auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id_t {
     const auto path = slot_import_paths().front();
-    const wormedit::ui::workspace_action_t action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+    const wormedit::ui::workspace_action_t action{
+        .compose = {.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+                    .resource = {.import_paths = {path}, .sound_slot = slot}},
         .stamp = {.chart_id = {flow.workspace.value->selected_chart->value},
                   .project_id = flow.history.document.id,
-                  .document_revision = flow.history.document.revision},
-        .resource = {.import_paths = {path}, .sound_slot = slot}};
+                  .document_revision = flow.history.document.revision}};
     apply_sound_action(flow, action);
     const auto rows = sound_slots_view_t::from(flow.history.document, {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1}, &flow.chart());
     require_step(rows.rows.size() == 1);
@@ -649,7 +650,7 @@ TEST_CASE("BMS walkthrough explicitly selected drop ranges retain occupied-slot 
     (void)flow.harness.frame();
     const auto refused = click_text(flow.harness, "Assign files");
     check_step(std::ranges::none_of(refused, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
     }));
     (void)click_text(flow.harness, "Replace");
     confirm_sound_review(flow, true);
@@ -709,8 +710,8 @@ TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target"
         .paths = {slot_import_paths().front()}};
     require_step(stage_dropped_sound_import(flow.history.document, batch).accepted);
     const auto assigned = flow.harness.frame();
-    require_step(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
-    check_step(assigned.get().resource.sound_slot == 10);
+    require_step(assigned.get().compose.kind == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
+    check_step(assigned.get().compose.resource.sound_slot == 10);
     apply_sound_action(flow, assigned.get());
     const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 1}, &flow.chart());
     check_step(static_cast<bool>(slots.rows.front().resource));

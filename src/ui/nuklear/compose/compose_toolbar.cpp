@@ -103,23 +103,23 @@ static void render_scroll_direction_toggle(const ComposeToolbarContext& toolbar)
         .glyph = glyph,
         .tooltip = view.downscroll ? "Downscroll · switch to upscroll" : "Upscroll · switch to downscroll",
         .selected = view.downscroll, .enabled = view.scene_available}.render(toolbar.context);
-    if (clicked && toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION;
+    if (clicked && toolbar.action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        toolbar.action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION;
 }
 
 static void render_navigation_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     auto* action = toolbar.action;
     if (wormedit::ui::chrome::IconButton{Glyph::zoom_out, "Zoom out"}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
     if (wormedit::ui::chrome::IconButton{Glyph::zoom_in, "Zoom in"}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
     update_compose_pointer_navigation(action, std::nullopt);
     if (wormedit::ui::chrome::IconButton{Glyph::maximize, "Reset view"}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
     render_scroll_direction_toggle(toolbar);
 }
 
@@ -133,8 +133,8 @@ static void render_layer_tool(const ComposeToolbarContext& toolbar, bool paint_d
     if (wormedit::ui::chrome::IconButton{Glyph::layers,
             disabled ? "Pick a layer in the Layers dock" : "Layer (Alt+3): add; Alt+drag removes",
             view->semantic_layer_paint_mode_active}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
     if (disabled && !paint_disabled) nk_widget_disable_end(context);
 }
 
@@ -143,7 +143,7 @@ static void render_measure_lane_toggles(const ComposeToolbarContext& toolbar) {
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     const auto request = [action](WormUiComposeActionKind kind) {
-        if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) action->compose_action = kind;
+        if (action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) action->compose.kind = kind;
     };
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_lane,
             view->measure_lane.visible ? "Hide measure lane"
@@ -172,8 +172,8 @@ static void render_resource_brush_tool(const ComposeToolbarContext& toolbar) {
     if (!view->resource_paint_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::music_2,
             "Paint keysounds / osu! hitsounds", view->resource_paint_mode_active}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;
     if (!view->resource_paint_available) nk_widget_disable_end(context);
 }
 
@@ -185,12 +185,12 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
     if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
             "Select (Alt+1)", !view->note_paint_mode_active && !view->semantic_layer_paint_mode_active && !view->resource_paint_mode_active}.render(context) &&
-        (view->note_paint_mode_active || view->semantic_layer_paint_mode_active || view->resource_paint_mode_active) && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
+        (view->note_paint_mode_active || view->semantic_layer_paint_mode_active || view->resource_paint_mode_active) && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, paint_disabled ? "Draw unavailable: choose an editable chart outside Timing focus" : "Draw (Alt+2): place current source; right-drag erases",
             view->note_paint_mode_active}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
     render_layer_tool(toolbar, paint_disabled);
     render_resource_brush_tool(toolbar);
     if (paint_disabled) nk_widget_disable_end(context);
@@ -199,23 +199,23 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
             view->edit_snap_enabled ? "Snap on: edits land on the grid (click to turn off)"
                                    : "Snap off: edits use the finest row (click to turn on)",
             view->edit_snap_enabled}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::y_lock,
             view->y_lock ? "Y-lock on: dragged notes keep their rows (click to turn off)"
                          : "Y-lock off: lock dragged notes to their rows (click to turn on)",
             view->y_lock}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::timer,
             "Timing focus: edit timing only", view->timing_focus}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
     if (wormedit::ui::chrome::IconButton{Glyph::eye,
             view->bga_lane_visible ? "Hide BGA event lane" : "Show BGA event lane",
             view->bga_lane_visible}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY;
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY;
     render_measure_lane_toggles(toolbar);
     if (!view->scene_available) nk_widget_disable_end(context);
     render_loop_selection_button(toolbar);
@@ -319,9 +319,9 @@ static auto parse_bgm_column_count(const char* text) -> std::optional<std::uint3
 static auto request_bgm_column_count(const ComposeToolbarContext& toolbar, uint32_t count)
     -> bool {
     auto* action = toolbar.action;
-    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
-    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
-    action->chart.bgm_column_count = count;
+    if (action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return false;
+    action->compose.kind = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
+    action->compose.chart.bgm_column_count = count;
     action->stamp.chart_id.value = toolbar.view->chart_id.value;
     action->stamp.document_revision = toolbar.view->document_revision;
     bgm_column_count_draft(*toolbar.view).commit_pending = true;
@@ -461,7 +461,7 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
     const auto bounds = nk_widget_bounds(context);
     const bool locked = toolbar.view->audio_offset_locked;
     if (wormedit::ui::chrome::button_label(context, "")) {
-        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
+        toolbar.action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
         toolbar.action->stamp.chart_id.value = toolbar.view->chart_id.value;
         toolbar.action->stamp.document_revision = toolbar.view->document_revision;
     }
@@ -540,7 +540,7 @@ constexpr auto& hitsound_set_labels = wormedit::osu_sample_set_names;
 void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_field_t field,
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
-    action.resource.hitsound = {.field = field, .value = value};
+    action.compose.resource.hitsound = {.field = field, .value = value};
     action.stamp = wormedit::ui::request_stamp_t::of(*toolbar.view);
 }
 
@@ -649,8 +649,8 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
             "Select (Alt+1)", !toolbar.view->note_paint_mode_active &&
                 !toolbar.view->semantic_layer_paint_mode_active && !toolbar.view->resource_paint_mode_active}
             .render(toolbar.context) &&
-        toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
+        toolbar.action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        toolbar.action->compose.kind = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     const auto count = toolbar.view->note_kind_palette_visible ? toolbar.view->note_palette.entries.size() : 0;
     for (std::size_t index = 0; index < count; ++index) {
         const auto& descriptor = toolbar.view->note_palette.entries[index];
@@ -665,8 +665,8 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
                 .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = static_cast<wormedit::note_kind_t>(kind)};
             // Picking a note kind selects the paint tool, mirroring Select above.
             if (!toolbar.view->note_paint_mode_active &&
-                toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-                toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+                toolbar.action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+                toolbar.action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
         }
     }
     render_hitsound_tiles(toolbar);

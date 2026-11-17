@@ -271,11 +271,11 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
     expect(wormedit::test::scroll_to_text(harness, "Use as song audio", 640, 500, -1, 60));
     const auto linked = click_label(harness, "Use as song audio");
     const auto found = std::ranges::find_if(linked, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     });
     expect(found != linked.end());
-    expect(found->get().resource.role == wormedit::resource_role_t::music);
-    expect(std::string_view{found->get().resource.import_path} == "/music/song.ogg");
+    expect(found->get().compose.resource.role == wormedit::resource_role_t::music);
+    expect(std::string_view{found->get().compose.resource.import_path} == "/music/song.ogg");
 }
 
 TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds through production input",
@@ -581,7 +581,7 @@ void export_tutorial_from_compose(charting_t& flow, const std::filesystem::path&
     const auto confirm = key(SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto chosen = flow.harness.frame({&confirm, 1});
     INFO(flow.harness.drawn_text());
-    expect(chosen.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+    expect(chosen.get().compose.kind == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
     runtime::output_group_export_t exporter;
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t copy{scheduler};

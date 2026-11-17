@@ -74,7 +74,7 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit
     // A plain or Shift click also moves the cursor, so the field follows the list.
     if (value.measure_index == state.measures_dock.measure_selection.primary &&
         raise(action, view, WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE))
-        action.measure.number = value.number;
+        action.compose.measure.number = value.number;
 }
 
 struct measure_definition_row_t {
@@ -109,7 +109,7 @@ void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& vie
         .denominator = state.measures_dock.measures_meter_denominator, .button = "Apply"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
         !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
-    action.measure.ids = state.measures_dock.measure_selection.selected;
+    action.compose.measure.ids = state.measures_dock.measure_selection.selected;
     action.timing.meter_numerator_text = row.numerator.data();
     action.timing.meter_denominator_text = row.denominator.data();
 }
@@ -120,9 +120,9 @@ void length_controls(nk_context* context, const wormedit::ui::compose_view_t& vi
         .denominator = state.measures_dock.measures_length_denominator, .button = "Set"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
         !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH)) return;
-    action.measure.ids = state.measures_dock.measure_selection.selected;
-    action.measure.length_numerator_text = row.numerator.data();
-    action.measure.length_denominator_text = row.denominator.data();
+    action.compose.measure.ids = state.measures_dock.measure_selection.selected;
+    action.compose.measure.length_numerator_text = row.numerator.data();
+    action.compose.measure.length_denominator_text = row.denominator.data();
 }
 } // namespace
 

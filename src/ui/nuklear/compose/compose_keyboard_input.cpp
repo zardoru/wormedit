@@ -265,8 +265,8 @@ static bool process_compose_escape(const auto& key_event,
     // Escape belongs to the transport first; the next non-repeated press cancels.
     if (state.range_selection.space_range_latched && view->inline_playback_active) return true;
     const auto pending = has_compose_gesture_capture();
-    if (!pending && view->resource_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
+    if (!pending && view->resource_paint_mode_active && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose.kind = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     cancel_compose_gestures(action);
     state.bga_interaction.bga_stack_open = false;
     state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
@@ -302,9 +302,9 @@ static void process_compose_lane_key(const auto& key_event, const wormedit::ui::
 static auto compose_pointer_paint_mode_active(const wormedit::ui::compose_view_t* view,
                                               const wormedit::ui::workspace_action_t* action) -> bool {
     return view->note_paint_mode_active ||
-           action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE ||
+           action->compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE ||
            view->semantic_layer_paint_mode_active ||
-           action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
+           action->compose.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
 }
 
 static void cancel_holds_for_pointer_paint(bool pointer_paint_mode_active,

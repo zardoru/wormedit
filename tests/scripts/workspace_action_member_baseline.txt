@@ -1,8 +1,8 @@
 # flat workspace_action_t members; may only go down (see check_workspace_action_members.py)
 timing_link
+compose
 file_jobs
 menu_command_id
-compose_menu_command
 clipboard
 notifications
 options
@@ -30,21 +30,10 @@ sound_usage
 player_preview_skin
 metadata
 input
-compose_action
-area
-measure
-chart
-timing_region
 stamp
-quantize
-resource
-bmson
-marker
-layer
 sound_properties
 preview_audio_export
 sound_import
-recipe
 bms_program
 timing
 command_menu_invoked

@@ -62,7 +62,7 @@ auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose
 }
 void import_picked(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                    worm_ui_nuklear_compose_state_t&) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     wormedit::ui::chrome::PopupContextStamp origin;
     std::vector<std::string> paths;
     { std::lock_guard lock{picker.mutex};
@@ -74,7 +74,7 @@ void import_picked(wormedit::ui::workspace_action_t& action, const wormedit::ui:
         return;
     }
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)) return;
-    action.resource.import_paths = std::move(paths);
+    action.compose.resource.import_paths = std::move(paths);
 }
 auto thumbnail(const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_bga_row_view_t& row) -> SDL_Texture* {
     if (!renderer || row.rgba_pixels.empty() || !row.image_width || !row.image_height ||
@@ -166,10 +166,10 @@ void toolbar(nk_context* context, const wormedit::ui::compose_view_t& view, worm
 void raise_bga_renumber(const wormedit::ui::compose_view_t& view, worm_ui_nuklear_compose_state_t& state,
                         wormedit::ui::workspace_action_t& action, bool all) {
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
-    if (!all) action.resource.set_sound_resources(state.bga_catalog.bga_renumber_resources);
+    if (!all) action.compose.resource.set_sound_resources(state.bga_catalog.bga_renumber_resources);
 
-    action.resource.renumber_all = all;
-    action.resource.renumber_bga = true;
+    action.compose.resource.renumber_all = all;
+    action.compose.resource.renumber_bga = true;
     wormedit::ui::nuklear::close_catalog_confirmation(
         wormedit::ui::nuklear::catalog_confirmation(state, true));
 }
@@ -250,7 +250,7 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, worm_ui_
     const bool deleted = DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}.render(context);
     if (!available || value.use_count != 0) nk_widget_disable_end(context);
     if (deleted && available && value.use_count == 0 && raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
-        action.resource.sound_resource_ids = {wormedit::resource_id_t{value.resource_id.value}};
+        action.compose.resource.sound_resource_ids = {wormedit::resource_id_t{value.resource_id.value}};
     }
     nk_layout_row_end(context);
 }

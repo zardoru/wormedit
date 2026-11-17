@@ -59,7 +59,7 @@ void open_editor(nuklear_event_harness_t& harness, const char* label) {
     (void)harness.frame();
     request_editor(harness, label);
     const auto flagged = harness.frame().get();
-    require_label(flagged.marker.note_label_focus_consumed);
+    require_label(flagged.compose.marker.note_label_focus_consumed);
     harness.view().compose.focus_note_label_editor = false;
     (void)harness.frame();
     require_label(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
@@ -80,16 +80,16 @@ TEST_CASE("note double-click opens a prefilled inline label editor and Enter app
     const auto typed = harness.frame(std::array{text_input("2")}).get();
     check_label(typed.input.compose_inputs.size() == 0);
     const auto enter = harness.frame(std::array{key_down(SDLK_RETURN, SDL_SCANCODE_RETURN)}).get();
-    check_label(enter.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL);
+    check_label(enter.compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL);
     // The field opens with its text selected, so typing replaces the prefilled label.
-    check_label(std::string_view{enter.marker.note_label} == "2");
+    check_label(std::string_view{enter.compose.marker.note_label} == "2");
     check_label(enter.stamp.chart_id.value == 7);
     check_label(enter.stamp.document_revision == 12);
     check_label(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 
     // The commit happens once.
     const auto after = harness.frame().get();
-    check_label(after.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_label(after.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("an empty inline note label clears the label",
@@ -98,7 +98,7 @@ TEST_CASE("an empty inline note label clears the label",
     require_label(harness.ready());
     open_editor(harness, "");
     const auto enter = harness.frame(std::array{key_down(SDLK_RETURN, SDL_SCANCODE_RETURN)}).get();
-    check_label(enter.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL);
+    check_label(enter.compose.kind == WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL);
 }
 
 TEST_CASE("Escape leaves the note label unchanged",
@@ -108,7 +108,7 @@ TEST_CASE("Escape leaves the note label unchanged",
     open_editor(harness, "Kick");
     (void)harness.frame(std::array{text_input("x")});
     const auto escape = harness.frame(std::array{key_down(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)}).get();
-    check_label(escape.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_label(escape.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_label(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 
@@ -119,7 +119,7 @@ TEST_CASE("a stale document revision closes the inline note label editor without
     open_editor(harness, "Kick");
     harness.view().compose.document_revision += 1;
     const auto stale = harness.frame().get();
-    check_label(stale.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_label(stale.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_label(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
 

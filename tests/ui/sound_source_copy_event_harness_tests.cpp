@@ -49,8 +49,8 @@ void set_audio_fixture(nuklear_event_harness_t& harness,
 }
 
 void check_copy_action(const wormedit::ui::workspace_action_t& action) {
-    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT);
-    CHECK(action.resource.asset_id.value == 42);
+    CHECK(action.compose.kind == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT);
+    CHECK(action.compose.resource.asset_id.value == 42);
     CHECK(action.stamp.chart_id.value == 7);
     CHECK(action.stamp.document_revision == 91);
 }
@@ -71,7 +71,7 @@ TEST_CASE("Sounds copy action carries the selected asset and current chart revis
     REQUIRE(button);
     const auto frames = click_at(harness, button->first, button->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
     });
     REQUIRE(found != frames.end());
     check_copy_action(found->get());
@@ -90,5 +90,5 @@ TEST_CASE("Sounds copy action stays inert when the selected source is missing",
     const auto button = harness.drawn_text_center("Copy source into project");
     REQUIRE(button);
     const auto frames = click_at(harness, button->first, button->second);
-    CHECK(frames.back().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(frames.back().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }

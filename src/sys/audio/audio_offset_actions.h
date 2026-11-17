@@ -10,18 +10,18 @@
 
 namespace wormedit::sys {
 
-inline auto validate_audio_offset_drag_binding(const wormedit::ui::workspace_action_t& action,
+inline auto validate_audio_offset_drag_binding(const wormedit::ui::audio_offset_drag_request_t& drag,
     const song_document_t& document, const workspace_controller_t& workspace,
     std::optional<std::uint32_t> selected_sample_rate) -> std::optional<std::string> {
     const auto supported_tab = workspace.active_tab == workspace_tab_t::audio_slices ||
                                workspace.active_tab == workspace_tab_t::metadata ||
                                workspace.active_tab == workspace_tab_t::compose;
     if (!supported_tab || !workspace.selected_chart || !selected_sample_rate ||
-        *selected_sample_rate != action.audio_offset_drag.sample_rate)
+        *selected_sample_rate != drag.sample_rate)
         return "Audio offset drag expired after its chart or waveform changed.";
     const chart_stamp_t stamp{
-        .document = {.project = document.id, .revision = action.audio_offset_drag.document_revision},
-        .chart = action.audio_offset_drag.chart_id};
+        .document = {.project = document.id, .revision = drag.document_revision},
+        .chart = drag.chart_id};
     if (!stamp.is_current(document, *workspace.selected_chart))
         return stale_action_message("Audio offset drag");
     return std::nullopt;

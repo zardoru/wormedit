@@ -8,10 +8,10 @@
 namespace {
 auto click_hitsound(nuklear_event_harness_t& harness, int x, int y) -> wormedit::hitsound_change_t {
     const auto actions = wormedit::test::click_at(harness, x, y);
-    const auto found = std::ranges::find_if(actions, [](const auto& a) { return a.get().resource.hitsound.has_value(); });
+    const auto found = std::ranges::find_if(actions, [](const auto& a) { return a.get().compose.resource.hitsound.has_value(); });
     REQUIRE(found != actions.end());
     CHECK(found->get().stamp.chart_id.value == harness.view().compose.chart_id.value);
-    return *found->get().resource.hitsound;
+    return *found->get().compose.resource.hitsound;
 }
 void open_sample_set_menu(nuklear_event_harness_t& harness) {
     const auto target = harness.widget_center("Normal sample set: Soft; click cycles, right-click chooses");

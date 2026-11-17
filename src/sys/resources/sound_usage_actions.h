@@ -27,7 +27,8 @@ struct sound_usage_action_result_t {
 // Validates a projected row against the current document and applies its navigation
 // transactionally. Source rows return a UI selection payload without moving the cursor.
 [[nodiscard]] auto dispatch_sound_usage_action(
-    const wormedit::ui::workspace_action_t& action, const wormedit::ui::sound_usage_request_t& request,
+    const wormedit::ui::request_stamp_t& stamp, const wormedit::ui::sound_usage_locate_request_t& usage,
+    const wormedit::ui::sound_usage_request_t& request,
     document_history_t& history, workspace_controller_t& workspace,
     std::optional<editor_interaction_state_t>& interaction) -> sound_usage_action_result_t;
 

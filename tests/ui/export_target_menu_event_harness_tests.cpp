@@ -94,7 +94,7 @@ TEST_CASE("Export target menu rows do not click the card underneath",
     const auto row = f.first_center("Preview", true);
     REQUIRE(std::abs(row.second - second_export_y) < 14.0f);
     const auto frames = wormedit::test::click_at(f.harness, export_x, row.second);
-    for (const auto& frame : frames) CHECK(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    for (const auto& frame : frames) CHECK(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(std::ranges::any_of(frames, [](const auto& frame) {
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW;
     }));

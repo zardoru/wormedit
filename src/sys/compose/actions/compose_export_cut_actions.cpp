@@ -27,8 +27,8 @@ auto selected_cut_value(compose_action_context_t& context)
         ? export_cut_interval_t::from_rows(*indices->timing.value, *snapped_begin, *snapped_end)
         : std::nullopt;
     if (!span) return std::unexpected("The selected area does not resolve to a positive source-song interval.");
-    return export_cut_edit_value_t{.label = context.action.marker.label.empty()
-            ? std::nullopt : std::optional{context.action.marker.label},
+    return export_cut_edit_value_t{.label = context.action.compose.marker.label.empty()
+            ? std::nullopt : std::optional{context.action.compose.marker.label},
         .begin_milliseconds = span->begin_milliseconds, .end_milliseconds = span->end_milliseconds};
 }
 
@@ -45,15 +45,15 @@ auto typed_cut_value(const wormedit::ui::compose_marker_request_t& request)
 
 auto build_export_cut_edit(compose_action_context_t& context)
     -> result_t<export_cut_edit_action_t, std::string> {
-    const auto kind = context.action.compose_action;
+    const auto kind = context.action.compose.kind;
     if (kind == WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT)
-        return delete_edit_t<export_cut_edit_value_t>{.id = context.action.marker.export_cut_id};
+        return delete_edit_t<export_cut_edit_value_t>{.id = context.action.compose.marker.export_cut_id};
     auto value = kind == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION
-        ? selected_cut_value(context) : typed_cut_value(context.action.marker);
+        ? selected_cut_value(context) : typed_cut_value(context.action.compose.marker);
     if (!value) return std::unexpected(std::move(value.error()));
     if (kind == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION)
         return insert_edit_t<export_cut_edit_value_t>{.value = std::move(*value)};
-    return update_edit_t<export_cut_edit_value_t>{.id = context.action.marker.export_cut_id,
+    return update_edit_t<export_cut_edit_value_t>{.id = context.action.compose.marker.export_cut_id,
         .value = std::move(*value)};
 }
 } // namespace

@@ -34,8 +34,8 @@ auto scope_warning_color() -> nk_color {
 
 void emit_scope_action(wormedit::ui::workspace_action_t& action, const scope_view_t& view,
     scope_operation_t operation, wormedit::branch_id_t node = {}, std::string text = {}) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM;
     action.bms_program = {.project = view.project, .difficulty = view.difficulty, .revision = view.revision,
         .selected = view.selected, .operation = operation, .node = node, .text = std::move(text)};
 }

@@ -13,9 +13,9 @@ inline auto raise_compose_action(wormedit::ui::workspace_action_t& action, const
                                  WormUiComposeActionKind kind,
                                  compose_project_stamp_t project = compose_project_stamp_t::include)
     -> bool {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return false;
-    action.compose_action = kind;
+    action.compose.kind = kind;
     stamp_compose_input(action, view, project);
     return true;
 }

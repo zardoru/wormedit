@@ -36,10 +36,10 @@ auto click_label(nuklear_event_harness_t& harness, std::string_view text)
 void check_emitted(const std::array<workspace_action_snapshot_t, 2>& frames,
                    WormUiComposeActionKind kind, uint64_t channel, uint64_t resource = 0) {
     const auto found = std::ranges::find_if(frames,
-        [kind](const auto& frame) { return frame.get().compose_action == kind; });
+        [kind](const auto& frame) { return frame.get().compose.kind == kind; });
     require_ui(found != frames.end());
-    check_ui(found->get().bmson.channel_id.value == channel);
-    check_ui(found->get().resource.id.value == resource);
+    check_ui(found->get().compose.bmson.channel_id.value == channel);
+    check_ui(found->get().compose.resource.id.value == resource);
     check_ui(found->get().input.compose_inputs.size() == 0);
 }
 void audio_fixture(nuklear_event_harness_t& harness, wormedit::ui::sound_row_view_t& row) {
@@ -76,12 +76,12 @@ TEST_CASE("BMSON lane_mode menus convert packed events and stem headers", "[fron
     require_ui(compose_note_menu_open());
     const auto frames = click_label(harness, stem ? "Pack into columns" : "Make stem");
     if (stem && continues) {
-        for (const auto& frame : frames) check_ui(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        for (const auto& frame : frames) check_ui(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         (void)harness.frame();
         check_ui(harness.drawn_text().find("continuation points need a stem lane") != std::string::npos);
         const auto cancelled = click_label(harness, "Cancel");
         for (const auto& frame : cancelled) {
-            check_ui(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+            check_ui(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
             check_ui(frame.get().input.compose_inputs.size() == 0);
         }
         return;
@@ -107,12 +107,12 @@ TEST_CASE("BMSON lane_mode restart conversion waits for confirmation and rejects
     audio_fixture(harness, row);
     (void)harness.frame();
     const auto requested = click_label(harness, "Kind: Keysound (pack into columns)");
-    for (const auto& frame : requested) check_ui(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    for (const auto& frame : requested) check_ui(frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     (void)harness.frame();
     check_ui(harness.drawn_text().find("continuation points need a stem lane") != std::string::npos);
     if (stale) {
         ++harness.view().audio_slices.document_revision;
-        check_ui(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_ui(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         (void)harness.frame();
         check_ui(!bmson_lane_mode_confirmation_owns_input(true));
         return;

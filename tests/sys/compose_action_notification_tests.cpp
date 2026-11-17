@@ -1662,7 +1662,7 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     fixture.state.chart = fixture.history.document.charts.front().id;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL);
-    action.resource.bmson_channel_id.value = fixture.history.document.charts.front().sound_channels.front().id.value;
+    action.bmson.channel_id.value = fixture.history.document.charts.front().sound_channels.front().id.value;
     const auto revision = fixture.history.document.revision;
     check_action(fixture.dispatch(action) == "continuation points need a stem lane");
     check_action(fixture.history.document.revision == revision && fixture.history.undo.empty());
@@ -2619,7 +2619,7 @@ TEST_CASE("Standalone sound-import confirmation shares stale feedback",
     action_notification_fixture_t fixture;
     const auto kind = GENERATE(0, 1, 2);
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
-    action.sound_import.project_id = song_id_t{fixture.history.document.id.value + (kind == 0 ? 1 : 0)};
+    action.stamp.project_id = song_id_t{fixture.history.document.id.value + (kind == 0 ? 1 : 0)};
     if (kind == 1) ++action.stamp.chart_id.value;
     if (kind == 2) --action.stamp.document_revision;
     const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,

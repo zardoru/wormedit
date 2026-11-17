@@ -541,9 +541,7 @@ void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_fiel
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
     action.resource.hitsound = {.field = field, .value = value};
-    action.stamp.project_id.value = toolbar.view->project_id.value;
-    action.stamp.chart_id.value = toolbar.view->chart_id.value;
-    action.stamp.document_revision = toolbar.view->document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(*toolbar.view);
 }
 
 void draw_hitsound_check(nk_context* context, struct nk_rect bounds, std::optional<int> value,

@@ -32,14 +32,14 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     view.compose.selected_audio_asset_id.value = 12;
 
     const auto first = hover(harness, 640, 88);
-    REQUIRE(first.get().input.hover_source_frame_valid);
+    REQUIRE(first.get().input.hover_source.frame_valid);
     CHECK(first.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
-    CHECK(first.get().input.hover_source_total_frames == view.transport_end_frame);
-    CHECK(first.get().input.hover_source_sample_rate == view.transport_sample_rate);
+    CHECK(first.get().input.hover_source.total_frames == view.transport_end_frame);
+    CHECK(first.get().input.hover_source.sample_rate == view.transport_sample_rate);
 
     auto& timing = view.compose;
     timing.hover_timing_valid = true;
-    timing.hover_timing_source_frame = first.get().input.hover_source_frame;
+    timing.hover_timing_source_frame = first.get().input.hover_source.frame;
     timing.hover_timing_total_frames = view.transport_end_frame;
     timing.hover_timing_sample_rate = view.transport_sample_rate;
     timing.hover_timing_label = "Measure 12 · beat 3 · 1:23.456";
@@ -48,14 +48,14 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     const std::array down{mouse_motion(640, 88), mouse_button(true, 640, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == first.get().input.hover_source_frame);
+    CHECK(clicked.get().transport_seek_frame == first.get().input.hover_source.frame);
 
     timing.hover_timing_source_frame += 1;
     (void)hover(harness, 640, 88);
     CHECK(harness.drawn_text().find("Measure 12 · beat 3 · 1:23.456") == std::string::npos);
     CHECK(matched.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     const auto outside = hover(harness, 10, 500);
-    CHECK_FALSE(outside.get().input.hover_source_frame_valid);
+    CHECK_FALSE(outside.get().input.hover_source.frame_valid);
 }
 
 TEST_CASE("Overview hover uses the click frame and rejects labels from another audio context",
@@ -75,13 +75,13 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
     compose.waveform_overview_sample_rate = 48'000;
 
     const auto first = hover(harness, 351, 120);
-    REQUIRE(first.get().input.hover_source_frame_valid);
+    REQUIRE(first.get().input.hover_source.frame_valid);
     CHECK(first.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
-    CHECK(first.get().input.hover_source_total_frames == compose.waveform_overview_total_frames);
-    CHECK(first.get().input.hover_source_sample_rate == compose.waveform_overview_sample_rate);
+    CHECK(first.get().input.hover_source.total_frames == compose.waveform_overview_total_frames);
+    CHECK(first.get().input.hover_source.sample_rate == compose.waveform_overview_sample_rate);
 
     compose.hover_timing_valid = true;
-    compose.hover_timing_source_frame = first.get().input.hover_source_frame;
+    compose.hover_timing_source_frame = first.get().input.hover_source.frame;
     compose.hover_timing_total_frames = compose.waveform_overview_total_frames;
     compose.hover_timing_sample_rate = compose.waveform_overview_sample_rate;
     compose.hover_timing_label = "Measure 2 · beat 4 · 0:08.000";
@@ -94,7 +94,7 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
 
     compose.selected_audio_asset_id.value = 0;
     const auto no_audio = hover(harness, 351, 120);
-    CHECK_FALSE(no_audio.get().input.hover_source_frame_valid);
+    CHECK_FALSE(no_audio.get().input.hover_source.frame_valid);
     CHECK(harness.drawn_text().find("Measure 2 · beat 4 · 0:08.000") == std::string::npos);
 }
 
@@ -109,11 +109,11 @@ TEST_CASE("Seek bar hover uses Nuklear's padded one-third click position",
     view.compose.selected_audio_asset_id.value = 12;
     constexpr float x = 430.0f;
     const auto hovered = hover(harness, x, 88);
-    REQUIRE(hovered.get().input.hover_source_frame_valid);
+    REQUIRE(hovered.get().input.hover_source.frame_valid);
     const std::array down{mouse_motion(x, 88), mouse_button(true, x, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == hovered.get().input.hover_source_frame);
+    CHECK(clicked.get().transport_seek_frame == hovered.get().input.hover_source.frame);
 }
 
 namespace {

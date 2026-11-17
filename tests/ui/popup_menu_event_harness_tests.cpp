@@ -247,7 +247,7 @@ TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
     const auto opened = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(opened.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     check_popup(opened.get().marker.note_context_id.value == 42);
-    check_popup(opened.get().input.shortcut_events.size() == 0 && opened.get().input.compose_inputs.size() == 0);
+    check_popup(opened.get().input.shortcuts.events.size() == 0 && opened.get().input.compose_inputs.size() == 0);
     check_popup(compose_note_menu_open());
     const auto closed = press_context_key(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     check_popup(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
@@ -276,14 +276,14 @@ TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing ke
     const auto assigned = harness.frame(std::span{&space, 1});
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
     check_popup(assigned.get().layer.id.value == 7);
-    check_popup(assigned.get().input.shortcut_events.size() == 0 && assigned.get().input.compose_inputs.size() == 0);
+    check_popup(assigned.get().input.shortcuts.events.size() == 0 && assigned.get().input.compose_inputs.size() == 0);
     const auto repeat = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, true, SDL_KMOD_NONE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
     check_popup(repeated.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_popup(repeated.get().input.shortcut_events.size() == 0 && repeated.get().input.compose_inputs.size() == 0);
+    check_popup(repeated.get().input.shortcuts.events.size() == 0 && repeated.get().input.compose_inputs.size() == 0);
     const auto release = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, false);
     const auto released = harness.frame(std::span{&release, 1});
-    check_popup(released.get().input.shortcut_events.size() == 0 && released.get().input.compose_inputs.size() == 0);
+    check_popup(released.get().input.shortcuts.events.size() == 0 && released.get().input.compose_inputs.size() == 0);
 }
 
 TEST_CASE("Context invocation rejects IME modals lost focus and stale revisions",
@@ -336,7 +336,7 @@ TEST_CASE("Opening project modals retires context menus and keeps closing keys c
     check_popup(!compose_note_menu_open());
     const auto up = context_key_event(SDLK_DOWN, SDL_SCANCODE_DOWN, false);
     const auto released = harness.frame(std::span{&up, 1});
-    check_popup(released.get().input.shortcut_events.size() == 0 && released.get().input.compose_inputs.size() == 0);
+    check_popup(released.get().input.shortcuts.events.size() == 0 && released.get().input.compose_inputs.size() == 0);
     const auto reopening = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(!compose_note_menu_open());
     check_popup(reopening.get().compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);

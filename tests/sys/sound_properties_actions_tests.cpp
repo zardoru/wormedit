@@ -28,10 +28,10 @@ struct properties_fixture_t {
         workspace.active_tab = workspace_tab_t::audio_slices;
         workspace.selected_chart = chart_id_t{2};
         action.sound_properties.apply = true;
-        action.sound_properties.project_id = song_id_t{1};
-        action.sound_properties.chart_id = chart_id_t{2};
+        action.stamp.project_id = song_id_t{1};
+        action.stamp.chart_id = chart_id_t{2};
         action.sound_properties.resource_id = resource_id_t{4};
-        action.sound_properties.document_revision = history.document.revision;
+        action.stamp.document_revision = history.document.revision;
         action.sound_properties.kind = sound_kind_t::sample;
         action.sound_properties.name = " New voice ";
     }
@@ -58,9 +58,9 @@ TEST_CASE("Sounds property Apply preserves tags and asset bindings in one undo s
 TEST_CASE("Sounds property drafts reject stale target and malformed names atomically",
           "[sys][sound-properties]") {
     properties_fixture_t fixture;
-    SECTION("project") { fixture.action.sound_properties.project_id = song_id_t{8}; }
-    SECTION("chart") { fixture.action.sound_properties.chart_id = chart_id_t{8}; }
-    SECTION("revision") { ++fixture.action.sound_properties.document_revision; }
+    SECTION("project") { fixture.action.stamp.project_id = song_id_t{8}; }
+    SECTION("chart") { fixture.action.stamp.chart_id = chart_id_t{8}; }
+    SECTION("revision") { ++fixture.action.stamp.document_revision; }
     SECTION("tab") { fixture.workspace.active_tab = workspace_tab_t::compose; }
     SECTION("resource") { fixture.action.sound_properties.resource_id = resource_id_t{8}; }
     SECTION("overlong") { fixture.action.sound_properties.name.assign(257, 'x'); }

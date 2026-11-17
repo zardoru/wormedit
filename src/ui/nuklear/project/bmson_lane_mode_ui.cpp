@@ -18,7 +18,7 @@ void emit(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t c
     action.stamp.project_id.value = project;
     action.stamp.chart_id.value = chart;
     action.stamp.document_revision = revision;
-    action.resource.bmson_channel_id.value = channel;
+    action.bmson.channel_id.value = channel;
 }
 }
 

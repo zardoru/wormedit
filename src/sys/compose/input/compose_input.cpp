@@ -789,7 +789,7 @@ void update_compose_viewport_pointer_input(const wormedit::ui::frame_input_t& fr
     if (frame.compose_input_ownership != 0) {
         viewport_input.modal_opened();
         scene_cache.frame.viewport_autoscroll_active = false;
-    } else if (!frame.shortcut_window_focused) {
+    } else if (!frame.shortcuts.window_focused) {
         viewport_input.focus_lost();
         scene_cache.frame.viewport_autoscroll_active = false;
     } else {
@@ -2612,20 +2612,20 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
 }
 
 // A timing-region drag or reset from the handle on its right edge. 0 keeps the automatic width.
-static void apply_compose_timing_region_width(const wormedit::ui::compose_chart_request_t& request,
+static void apply_compose_timing_region_width(const wormedit::ui::compose_timing_region_request_t& request,
                                        application_command_state_t& application) {
     auto& stored = application.project.compose_view.compose_timing_region_width_pixels;
-    if (request.timing_region_width_reset) stored = 0.0;
-    else if (request.timing_region_width_pixels > 0.0)
+    if (request.width_reset) stored = 0.0;
+    else if (request.width_pixels > 0.0)
         stored = wormedit::ui::compose_timing_region_clamp(
-            request.timing_region_width_pixels, effective_compose_timing_lane_mask(application));
+            request.width_pixels, effective_compose_timing_lane_mask(application));
 }
 
 void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application) {
     if (workspace.active_tab == wormedit::workspace_tab_t::compose)
-        apply_compose_timing_region_width(action.chart, application);
+        apply_compose_timing_region_width(action.timing_region, application);
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.stamp.chart_id.value ||
         history.document.revision != action.stamp.document_revision ||
@@ -2709,8 +2709,8 @@ auto dispatch_compose_input_action(wormedit::ui::workspace_action_t& ui_action,
     // View-only BGM bar inputs never reach the editor dispatcher.
     const bgm_bar_input_context_t bgm_bar_context{
         .total_frames = scene_cache.waveform.waveform_overview_total_frames,
-        .visible_begin_fraction = ui_action.input.minimap_visible_begin_fraction,
-        .visible_end_fraction = ui_action.input.minimap_visible_end_fraction,
+        .visible_begin_fraction = ui_action.input.minimap.visible_begin_fraction,
+        .visible_end_fraction = ui_action.input.minimap.visible_end_fraction,
         .project = history.document.id,
         .chart = state.chart,
         .document_revision = history.document.revision,

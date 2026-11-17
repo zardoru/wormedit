@@ -201,7 +201,7 @@ void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
     cancel_compose_navigation(action);
     worm_ui_nuklear_compose_discard_frame_input();
     if (action) {
-        action->input.minimap_window_capture_active = false;
+        action->input.minimap.window_capture_active = false;
         if (pending) append_compose_cancel_once(action);
         state.input_queue.cancel_pending = false;
     } else state.input_queue.cancel_pending = true;

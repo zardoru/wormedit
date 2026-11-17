@@ -41,7 +41,7 @@ void check_source(const wormedit::ui::workspace_action_t& action, std::uint64_t 
     check_picker(action.stamp.project_id.value == 1);
     check_picker(action.stamp.chart_id.value == 1);
     check_picker(action.stamp.document_revision == 1);
-    check_picker(action.input.shortcut_events.size() == 0);
+    check_picker(action.input.shortcuts.events.size() == 0);
 }
 void type(nuklear_event_harness_t& harness, const char* text) {
     SDL_Event event{};
@@ -58,7 +58,7 @@ TEST_CASE("Go to sound keyboard selection arms through Draw source without short
     prepare(harness);
     require_picker(harness.drawn_text().find("Go to sound") != std::string::npos);
     const auto moved = press(harness, SDLK_DOWN, SDL_SCANCODE_DOWN);
-    check_picker(moved.get().input.shortcut_events.size() == 0);
+    check_picker(moved.get().input.shortcuts.events.size() == 0);
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_source(selected.get(), 42);
     const auto& state = worm_ui_nuklear_compose_state();
@@ -68,13 +68,13 @@ TEST_CASE("Go to sound keyboard selection arms through Draw source without short
     check_picker(!(state.sound_picker_ui.sound_picker.open));
     check_picker(state.sound_picker_ui.sound_picker.release_pending);
     const auto held = press(harness, SDLK_SPACE, SDL_SCANCODE_SPACE);
-    check_picker(held.get().input.shortcut_events.size() == 0);
+    check_picker(held.get().input.shortcuts.events.size() == 0);
     const std::array releases{key(SDLK_DOWN, SDL_SCANCODE_DOWN, false),
         key(SDLK_RETURN, SDL_SCANCODE_RETURN, false), key(SDLK_SPACE, SDL_SCANCODE_SPACE, false)};
     static_cast<void>(harness.frame(releases));
     static_cast<void>(harness.frame());
     const auto resumed = press(harness, SDLK_SPACE, SDL_SCANCODE_SPACE);
-    check_picker(resumed.get().input.shortcut_events.size() == 1);
+    check_picker(resumed.get().input.shortcuts.events.size() == 1);
 }
 
 TEST_CASE("Go to sound typing requests full-catalog search and rejects stale query results",
@@ -134,7 +134,7 @@ TEST_CASE("Go to sound Escape and context loss leave the armed source unchanged"
             require_picker(action.get().input.compose_inputs.size() == 1);
             check_picker(action.get().input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
         } else check_picker(action.get().input.compose_inputs.size() == 0);
-        check_picker(action.get().input.shortcut_events.size() == 0);
+        check_picker(action.get().input.shortcuts.events.size() == 0);
     }
 }
 

@@ -89,9 +89,7 @@ void render_export_group_choices(const ResourcePanel& panel) {
 }
 
 void stamp_action(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
 }
 
 auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {

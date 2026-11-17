@@ -39,9 +39,7 @@ bool raise(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     action.marker.note_context_id.value = menu.note;
     action.layer.id.value = layer;
     return true;

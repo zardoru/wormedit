@@ -164,8 +164,8 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
     const auto note_action = click_action(click_text(harness, "Measure 3 · row 12"),
                                           WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(note_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(note_action.sound_usage.song_id.value == harness.view().project_id.value);
-    check_sound_usage_ui(note_action.sound_usage.document_revision ==
+    check_sound_usage_ui(note_action.stamp.project_id.value == harness.view().project_id.value);
+    check_sound_usage_ui(note_action.stamp.document_revision ==
                          harness.view().document_revision);
     check_sound_usage_ui(note_action.sound_usage.resource_id.value == 101);
     check_sound_usage_ui(note_action.sound_usage.chart_id.value == 7);

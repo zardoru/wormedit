@@ -22,10 +22,9 @@ struct sound_import_group_t {
     std::vector<std::size_t> member_indices;
     auto operator==(const sound_import_group_t&) const -> bool = default;
 };
-/* Activation of one sound-usage row: jump to the object or resource it names. */
-struct sound_usage_activation_t {
-    wormedit::song_id_t song_id;
-    uint64_t document_revision;
+/* Jump to the object or resource a sound-usage row names. The song and revision it was read
+   from are in workspace_action_t::stamp; chart_id is the row's chart. */
+struct sound_usage_locate_request_t {
     wormedit::resource_id_t resource_id;
     wormedit::asset_id_t asset_id;
     wormedit::chart_id_t chart_id;
@@ -40,23 +39,19 @@ struct sound_usage_activation_t {
     wormedit::sound_usage_scope_t scope;
     bool position_valid;
 };
-/* Apply of the sound properties editor (name, kind, tags). */
+/* Apply of the sound properties editor (name, kind, tags). Stamped by workspace_action_t::stamp. */
 struct sound_properties_request_t {
     bool apply;
-    wormedit::song_id_t project_id{};
-    wormedit::chart_id_t chart_id{};
     wormedit::resource_id_t resource_id{};
-    uint64_t document_revision;
     std::string name;
     wormedit::sound_kind_t kind{wormedit::sound_kind_t::unspecified};
     // A tag-only edit; name and authored kind remain unchanged when present.
     std::optional<std::vector<std::string>> tags;
 };
-/* Sound import: file picker request and the reviewed import list. */
+/* Sound import: file picker request and the reviewed import list. Stamped by workspace_action_t::stamp. */
 struct sound_import_request_t {
     bool pick_requested;
     wormedit::ui::sound_import_kind_t kind{};
-    wormedit::song_id_t project_id{};
     std::vector<wormedit::ui::sound_import_item_t> items;
     std::vector<wormedit::ui::sound_import_group_t> groups;
 };

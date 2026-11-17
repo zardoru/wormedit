@@ -113,8 +113,8 @@ struct charting_t {
     }
     auto shortcut(const workspace_action_snapshot_t& snapshot) -> command_dispatch_outcome_t {
         const auto& action = snapshot.get();
-        expect(action.input.shortcut_events.size() == 1);
-        const auto& input = action.input.shortcut_events[0];
+        expect(action.input.shortcuts.events.size() == 1);
+        const auto& input = action.input.shortcuts.events[0];
         return dispatch_shortcut(registry,
             {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
                        .modifiers = input.modifiers}, .auto_repeat = input.repeat},
@@ -465,8 +465,8 @@ TEST_CASE("Osu StepMania walkthrough Save copies linked song audio and repeat Sa
     charting_t flow;
     const auto save_key = key(SDLK_S, SDL_SCANCODE_S);
     const auto action = flow.harness.frame({&save_key, 1}, SDL_KMOD_CTRL);
-    expect(action.get().input.shortcut_events.size() == 1);
-    expect(action.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
+    expect(action.get().input.shortcuts.events.size() == 1);
+    expect(action.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t runtime{scheduler};
     const auto destination = directory.path / "song.wormedit";

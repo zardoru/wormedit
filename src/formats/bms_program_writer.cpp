@@ -1,4 +1,5 @@
 #include "bms_writer_internal.h"
+#include <wormedit/core/bms36.h>
 #include "bms_program_import_internal.h"
 #include "bms_timing_directive.h"
 #include "bms_channel.h"
@@ -150,7 +151,7 @@ template<class Value> void program_emission_t::reserve_identifiers(const Value& 
 }
 
 auto program_emission_t::allocate_identifier(std::set<std::string>& used) -> std::string {
-    for (std::size_t index = 1; index < 1296; ++index) {
+    for (std::size_t index = 1; index < bms_slot_count; ++index) {
         auto name = base36_id(index);
         if (used.insert(name).second) return name;
     }

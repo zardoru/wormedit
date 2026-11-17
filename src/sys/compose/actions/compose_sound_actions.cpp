@@ -1,4 +1,5 @@
 #include "sys/resources/bms_catalog_bindings.h"
+#include <wormedit/core/bms36.h>
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_action_outcome.h"
@@ -328,12 +329,9 @@ struct assign_sound_slot_action_t {
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
-        if (!chart_stamp_t{.document = {.project = history.document.id,
-                                        .revision = action.stamp.document_revision},
-                           .chart = action.stamp.chart_id}
-                 .is_current(history.document, chart_id))
+        if (!action.stamp.is_current(history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= 1296)
+        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
         if (action.resource.import_paths.size() != 1 || action.resource.import_paths[0].empty())
             return compose_action_outcome_t::blocked(
@@ -387,12 +385,9 @@ struct assign_sound_slot_batch_action_t {
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
-        if (!chart_stamp_t{.document = {.project = history.document.id,
-                                        .revision = action.stamp.document_revision},
-                           .chart = action.stamp.chart_id}
-                 .is_current(history.document, chart_id))
+        if (!action.stamp.is_current(history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= 1296)
+        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
         if (action.sound_import.items.empty() ||
             action.sound_import.items.size() > maximum_bulk_sound_import)
@@ -794,10 +789,7 @@ struct confirm_compose_sound_import_action_t {
         auto& history = context.document.history;
         const auto chart = context.chart;
 
-        const chart_stamp_t stamp{.document = {.project = action.sound_import.project_id,
-                                               .revision = action.stamp.document_revision},
-                                  .chart = action.stamp.chart_id};
-        if (!stamp.is_current(history.document, chart))
+        if (!action.stamp.is_current(history.document, chart))
             return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
         target = history.read_chart(chart);
         if (target == nullptr)
@@ -886,12 +878,12 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     const auto bindings = bms_catalog_bindings_t(document, target);
     if (target == nullptr || target->source_family != format_family_t::bms)
         set_first_error(prepared.reason, "Direct sound slots are available only for a BMS chart.");
-    if (first_slot == 0 || first_slot > 1295)
+    if (first_slot == 0 || first_slot > bms_max_slot)
         set_first_error(prepared.reason, "Choose a sound slot from 01 through ZZ.");
-    if (first_slot > 0 && first_slot <= 1295 && !paths.empty() &&
-        paths.size() > static_cast<std::size_t>(1296 - first_slot)) {
+    if (first_slot > 0 && first_slot <= bms_max_slot && !paths.empty() &&
+        paths.size() > static_cast<std::size_t>(bms_slot_count - first_slot)) {
         set_first_error(prepared.reason,
-            "Remaining WAV slots through ZZ: " + std::to_string(1296 - first_slot) +
+            "Remaining WAV slots through ZZ: " + std::to_string(bms_slot_count - first_slot) +
             ". Choose fewer files or an earlier starting slot.");
         return prepared;
     }
@@ -919,9 +911,7 @@ struct edit_sound_properties_action_t {
         auto& history = context.document.history;
         const auto& workspace = context.document.workspace;
         if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
-            action.sound_properties.project_id != history.document.id ||
-            action.sound_properties.chart_id != *workspace.selected_chart ||
-            action.sound_properties.document_revision != history.document.revision) {
+            !action.stamp.is_current(history.document, *workspace.selected_chart)) {
             return compose_action_outcome_t::blocked(stale_action_message("Sound properties"));
         }
         const auto resource = std::ranges::find(history.document.resources,

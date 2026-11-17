@@ -60,7 +60,7 @@ struct lane_keys_fixture_t {
         const auto& action = snapshot.get();
         check_lane_keys(action.input.compose_inputs.size() == 0);
         check_lane_keys(action.input.compose_viewport_inputs.size() == 0);
-        runtime.capture(action.input.shortcut_events);
+        runtime.capture(action.input.shortcuts.events);
         (void)runtime.dispatch(action.lane_keys, program);
         event.type = SDL_EVENT_KEY_UP;
         event.key.down = false;

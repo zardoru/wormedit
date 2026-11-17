@@ -22,9 +22,7 @@ void retire_sound_layer_window(wormedit::ui::workspace_action_t& action) {
     if (!sound_layers) return;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action.compose_action = WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU;
-        action.stamp.project_id.value = menu.stamp.project_id;
-        action.stamp.chart_id.value = menu.stamp.chart_id;
-        action.stamp.document_revision = menu.stamp.revision;
+        action.stamp = menu.stamp.request_stamp();
     }
     sound_layers = false;
 }
@@ -39,9 +37,7 @@ void menu_entry(nk_context* context, const char* title, const char* disabled_rea
                 WormUiComposeActionKind kind, wormedit::ui::workspace_action_t& action) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason)) {
         action.compose_action = kind;
-        action.stamp.project_id.value = menu.stamp.project_id;
-        action.stamp.chart_id.value = menu.stamp.chart_id;
-        action.stamp.document_revision = menu.stamp.revision;
+        action.stamp = menu.stamp.request_stamp();
         consumed = true;
     }
 }
@@ -54,9 +50,7 @@ void raise_sound_layer_action(const wormedit::ui::compose_view_t& view, wormedit
                              WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
 }
 
 void render_sound_layer_entry(nk_context* context, const wormedit::ui::compose_view_t& view,

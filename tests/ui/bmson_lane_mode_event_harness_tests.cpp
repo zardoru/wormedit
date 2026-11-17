@@ -38,7 +38,7 @@ void check_emitted(const std::array<workspace_action_snapshot_t, 2>& frames,
     const auto found = std::ranges::find_if(frames,
         [kind](const auto& frame) { return frame.get().compose_action == kind; });
     require_ui(found != frames.end());
-    check_ui(found->get().resource.bmson_channel_id.value == channel);
+    check_ui(found->get().bmson.channel_id.value == channel);
     check_ui(found->get().resource.id.value == resource);
     check_ui(found->get().input.compose_inputs.size() == 0);
 }

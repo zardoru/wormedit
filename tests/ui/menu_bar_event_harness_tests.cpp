@@ -257,7 +257,7 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     key.key.down = true;
     const auto blocked = harness.frame(std::span{&key, 1});
     check_menu(blocked.get().input.compose_inputs.size() == 0);
-    check_menu(blocked.get().input.shortcut_events.size() == 0);
+    check_menu(blocked.get().input.shortcuts.events.size() == 0);
     key.type = SDL_EVENT_KEY_UP;
     key.key.down = false;
     (void)harness.frame(std::span{&key, 1});

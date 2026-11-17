@@ -1,4 +1,5 @@
 #include "ui/nuklear/chrome/catalog_chrome.h"
+#include <wormedit/core/bms36.h>
 #include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/compose_draw_source_labels.h"
 #include "ui/nuklear/chrome/content_layout.h"
@@ -56,7 +57,7 @@ void render_sound_group_context_menu(const SoundsPanel& panel);
 
 auto bms_slot_label(std::uint16_t number) -> std::string {
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    if (number == 0 || number >= 1296) return "??";
+    if (number == 0 || number >= wormedit::bms_slot_count) return "??";
     std::string result;
     result.push_back(digits[number / 36]);
     result.push_back(digits[number % 36]);
@@ -95,7 +96,7 @@ void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uin
     auto& state = *panel.state;
     if (!state.keysound_filters.keysound_slots_mode || !panel.view->sound_slots_mode ||
         panel.view->project_id.value != project || panel.view->chart_id.value != chart ||
-        panel.view->document_revision != revision || slot == 0 || slot > 1295) {
+        panel.view->document_revision != revision || slot == 0 || slot > wormedit::bms_max_slot) {
         state.keysound_slots.keysound_slot_feedback = "The WAV slot target changed; choose the file again.";
         return;
     }
@@ -322,7 +323,7 @@ auto parse_slot_number(std::string_view identifier) -> std::uint16_t {
     const auto low = digits.find(wormedit::text_util::ascii_lowercase(identifier[1]));
     if (high == digits.npos || low == digits.npos) return 0;
     const auto number = high * 36 + low;
-    return number > 1295 ? 0 : static_cast<std::uint16_t>(number);
+    return number > wormedit::bms_max_slot ? 0 : static_cast<std::uint16_t>(number);
 }
 
 void refresh_selected_slot_resource(const SoundsPanel& panel) {

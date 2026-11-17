@@ -666,8 +666,8 @@ void worm_ui_nuklear_render_compose_minimap(
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
-    action->input.minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
-    action->input.minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->input.minimap.visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
         view->scene_available && view->waveform_overview_rows.size() != 0 &&
         bounds.w > 1.0f && bounds.h > 1.0f;
@@ -882,10 +882,10 @@ void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::co
         return;
     }
     const auto source_frame = static_cast<std::int64_t>(frame_value);
-    action->input.hover_source_frame = source_frame;
-    action->input.hover_source_frame_valid = true;
-    action->input.hover_source_total_frames = view->waveform_overview_total_frames;
-    action->input.hover_source_sample_rate = view->waveform_overview_sample_rate;
+    action->input.hover_source.frame = source_frame;
+    action->input.hover_source.frame_valid = true;
+    action->input.hover_source.total_frames = view->waveform_overview_total_frames;
+    action->input.hover_source.sample_rate = view->waveform_overview_sample_rate;
     if (!view->hover_timing_valid || view->hover_timing_source_frame != source_frame ||
         view->hover_timing_total_frames != view->waveform_overview_total_frames ||
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
@@ -902,8 +902,8 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
-    action->input.minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
-    action->input.minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->input.minimap.visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
         view->scene_available && view->bgm_bar_rows.size() != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
@@ -932,11 +932,11 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     process_compose_overview_input({context, view, action, bounds, available, pressed,
         window_focused && available, state.waveform_drag.waveform_beat_zero_drag_active,
         view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction, true});
-    action->input.minimap_window_capture_active = state.waveform_drag.waveform_overview_drag_active &&
+    action->input.minimap.window_capture_active = state.waveform_drag.waveform_overview_drag_active &&
         state.waveform_drag.waveform_overview_capture.window_capture;
-    action->input.minimap_window_capture_begin_fraction =
+    action->input.minimap.window_capture_begin_fraction =
         state.waveform_drag.waveform_overview_capture.window_begin;
-    action->input.minimap_window_capture_end_fraction = state.waveform_drag.waveform_overview_capture.window_end;
+    action->input.minimap.window_capture_end_fraction = state.waveform_drag.waveform_overview_capture.window_end;
 }
 
 struct ComposePanelRenderContext {

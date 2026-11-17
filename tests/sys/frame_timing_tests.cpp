@@ -3178,6 +3178,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
     action.stamp.chart_id.value = 1;
+    action.stamp.project_id = fixture.history.document.id;
     action.stamp.document_revision = fixture.history.document.revision;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
     (void)toggle_compose_audio_offset_lock(action.stamp, fixture.history, *fixture.binding.value,
@@ -4074,7 +4075,7 @@ namespace {
 auto pinch_dispatch_action(compose_test_fixture_t& fixture, double factor,
                            double anchor) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.stamp.chart_id.value = fixture.interaction->chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
     action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -4605,7 +4606,7 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
     expect_compose_test(fixture.flattened.view.compose.note_endpoints.size() > 0);
     const auto before = fixture.interaction->viewport_scroll_pixels;
     wormedit::ui::workspace_action_t action{};
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.stamp.chart_id.value = fixture.interaction->chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
     action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -4633,7 +4634,7 @@ auto cursor_placement_song() -> song_document_t {
 
 auto cursor_placement_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.stamp.chart_id.value = fixture.interaction->chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
     action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -5171,7 +5172,7 @@ void check_click_audition_preference(bool enabled) {
     expect_compose_test(fixture.flattened.view.compose.note_endpoints.size() > 0);
     const auto& bounds = fixture.flattened.view.compose.note_endpoints[0].bounds;
     wormedit::ui::workspace_action_t action{};
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.stamp.chart_id.value = fixture.interaction->chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
     action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -6167,7 +6168,7 @@ auto resizable_stem_song() -> song_document_t {
 }
 void scroll_resized_bgm(compose_test_fixture_t& fixture, double delta) {
     auto action = cursor_placement_action(fixture);
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.input.compose_viewport_inputs.resize(1);
     action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_x = delta,

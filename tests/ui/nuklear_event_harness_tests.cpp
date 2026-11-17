@@ -231,11 +231,11 @@ auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapsh
 }
 
 auto delete_shortcut_has_compose_context(const wormedit::ui::workspace_action_t& action) -> bool {
-    return action.input.shortcut_events.size() == 1 &&
-           action.input.shortcut_events[0].hid_usage ==
+    return action.input.shortcuts.events.size() == 1 &&
+           action.input.shortcuts.events[0].hid_usage ==
                static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(SDL_SCANCODE_DELETE)) &&
-           !action.input.shortcut_events[0].repeat && action.input.shortcut_window_focused &&
-           !action.input.shortcut_text_entry_active && !action.input.shortcut_ime_composition_active;
+           !action.input.shortcuts.events[0].repeat && action.input.shortcuts.window_focused &&
+           !action.input.shortcuts.text_entry_active && !action.input.shortcuts.ime_composition_active;
 }
 
 } // namespace
@@ -295,10 +295,10 @@ TEST_CASE("Headless frontend captures Ctrl+S as a registered shortcut",
     (void)harness.frame();
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
     const auto pressed = harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL);
-    REQUIRE(pressed.get().input.shortcut_events.size() == 1);
-    CHECK(pressed.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
-    CHECK(pressed.get().input.shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_CONTROL);
-    CHECK_FALSE(pressed.get().input.shortcut_events[0].repeat);
+    REQUIRE(pressed.get().input.shortcuts.events.size() == 1);
+    CHECK(pressed.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
+    CHECK(pressed.get().input.shortcuts.events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_CONTROL);
+    CHECK_FALSE(pressed.get().input.shortcuts.events[0].repeat);
 }
 
 TEST_CASE("Headless frontend marks repeated Ctrl+S for registry suppression",
@@ -307,8 +307,8 @@ TEST_CASE("Headless frontend marks repeated Ctrl+S for registry suppression",
     (void)harness.frame();
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S, true);
     const auto repeated = harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL);
-    REQUIRE(repeated.get().input.shortcut_events.size() == 1);
-    CHECK(repeated.get().input.shortcut_events[0].repeat);
+    REQUIRE(repeated.get().input.shortcuts.events.size() == 1);
+    CHECK(repeated.get().input.shortcuts.events[0].repeat);
 }
 
 TEST_CASE("Queued Save reuses File Save and fires only once",
@@ -354,9 +354,9 @@ TEST_CASE("Headless frontend routes Alt digit to Compose while Select remains ac
     (void)harness.frame();
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
-    REQUIRE(action.get().input.shortcut_events.size() == 1);
-    CHECK(action.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_2));
-    CHECK_FALSE(action.get().input.shortcut_text_entry_active);
+    REQUIRE(action.get().input.shortcuts.events.size() == 1);
+    CHECK(action.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_2));
+    CHECK_FALSE(action.get().input.shortcuts.text_entry_active);
     CHECK_FALSE(harness.view().compose.note_paint_mode_active);
 }
 
@@ -366,15 +366,15 @@ TEST_CASE("Headless frontend routes Alt1 after the Hold shortcut", "[frontend-st
     (void)harness.frame();
     const auto hold = key_event(SDL_EVENT_KEY_DOWN, SDLK_3, SDL_SCANCODE_3);
     const auto painting = harness.frame(std::span{&hold, 1}, SDL_KMOD_LALT);
-    REQUIRE(painting.get().input.shortcut_events.size() == 1);
-    CHECK(painting.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_3));
+    REQUIRE(painting.get().input.shortcuts.events.size() == 1);
+    CHECK(painting.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_3));
     harness.view().compose.note_paint_mode_active = true;
     (void)harness.frame();
     const auto select = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
     const auto selecting = harness.frame(std::span{&select, 1}, SDL_KMOD_LALT);
-    REQUIRE(selecting.get().input.shortcut_events.size() == 1);
-    CHECK(selecting.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_1));
-    CHECK_FALSE(selecting.get().input.shortcut_text_entry_active);
+    REQUIRE(selecting.get().input.shortcuts.events.size() == 1);
+    CHECK(selecting.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_1));
+    CHECK_FALSE(selecting.get().input.shortcuts.text_entry_active);
 }
 
 TEST_CASE("Headless frontend ignores Delete shortcut release",
@@ -384,7 +384,7 @@ TEST_CASE("Headless frontend ignores Delete shortcut release",
     static_cast<void>(harness.frame());
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto released = harness.frame(std::span{&release, 1});
-    CHECK(released.get().input.shortcut_events.size() == 0);
+    CHECK(released.get().input.shortcuts.events.size() == 0);
 }
 
 TEST_CASE("Headless frontend marks repeated Delete shortcut press",
@@ -394,8 +394,8 @@ TEST_CASE("Headless frontend marks repeated Delete shortcut press",
     static_cast<void>(harness.frame());
     const auto repeat = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
-    REQUIRE(repeated.get().input.shortcut_events.size() == 1);
-    CHECK(repeated.get().input.shortcut_events[0].repeat);
+    REQUIRE(repeated.get().input.shortcuts.events.size() == 1);
+    CHECK(repeated.get().input.shortcuts.events[0].repeat);
 }
 
 TEST_CASE("Headless frontend tab click emits a workspace tab action",
@@ -428,7 +428,7 @@ TEST_CASE("Headless frontend suppresses Delete shortcut while new-project wizard
     static_cast<void>(harness.frame());
     const auto delete_key = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto modal_key_action = harness.frame(std::span{&delete_key, 1});
-    CHECK(modal_key_action.get().input.shortcut_events.size() == 0);
+    CHECK(modal_key_action.get().input.shortcuts.events.size() == 0);
 }
 
 TEST_CASE("Headless frontend new-project wizard cancel closes and permits reopening",
@@ -984,7 +984,7 @@ TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without 
     fixture.open();
     const std::array undo{key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z)};
     const auto suppressed = fixture.harness.frame(undo, SDL_KMOD_CTRL);
-    check_layer_menu(suppressed.get().input.shortcut_text_entry_active);
+    check_layer_menu(suppressed.get().input.shortcuts.text_entry_active);
     check_layer_menu(suppressed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_Z, SDL_SCANCODE_Z)};
     (void)fixture.harness.frame(release);
@@ -997,7 +997,7 @@ TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without 
     const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     const auto closed = fixture.harness.frame(escape);
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
-    check_layer_menu(closed.get().input.shortcut_text_entry_active);
+    check_layer_menu(closed.get().input.shortcuts.text_entry_active);
     check_layer_menu(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_layer_menu(closed.get().input.compose_inputs.size() == 0);
 }
@@ -1209,7 +1209,7 @@ TEST_CASE("Note menu captures shortcuts and retires stale revisions",
     fixture.open();
     const std::array undo{key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z)};
     const auto suppressed = fixture.harness.frame(undo, SDL_KMOD_CTRL);
-    check_layer_menu(suppressed.get().input.shortcut_text_entry_active);
+    check_layer_menu(suppressed.get().input.shortcuts.text_entry_active);
     check_layer_menu(suppressed.get().input.compose_inputs.size() == 0);
     ++fixture.harness.view().compose.document_revision;
     (void)fixture.harness.frame();
@@ -1320,7 +1320,7 @@ TEST_CASE("Note menu closes on Escape and focus loss without leaking canvas inpu
     const auto closed = fixture.harness.frame(escape);
     check_layer_menu(!compose_note_menu_open());
     check_layer_menu(closed.get().input.compose_inputs.size() == 0);
-    check_layer_menu(closed.get().input.shortcut_text_entry_active);
+    check_layer_menu(closed.get().input.shortcuts.text_entry_active);
     const std::array released{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     (void)fixture.harness.frame(released);
     (void)fixture.harness.frame();
@@ -2147,7 +2147,7 @@ TEST_CASE("Slot replacement Escape cancels and does not play or assign audio",
     const auto blocked = harness.frame(std::span{&space, 1});
     check_sound_slots(blocked.get().kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE);
     check_sound_slots(blocked.get().input.compose_inputs.size() == 0);
-    check_sound_slots(blocked.get().input.shortcut_events.size() == 0);
+    check_sound_slots(blocked.get().input.shortcuts.events.size() == 0);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_SPACE, SDL_SCANCODE_SPACE);
     (void)harness.frame(std::span{&release, 1});
     const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
@@ -2296,7 +2296,7 @@ TEST_CASE("Sound group import review captures shortcuts and Escape cancels witho
     CHECK(harness.drawn_text().find("Groups") != std::string::npos);
     CHECK(harness.drawn_text().find("kick") != std::string::npos);
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
-    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().input.shortcut_events.size() == 0);
+    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().input.shortcuts.events.size() == 0);
     const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     CHECK(harness.frame(std::span{&escape, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
@@ -2676,8 +2676,8 @@ auto t422_lane_press(t422_fixture_t& fixture, SDL_Keymod modifiers) -> std::stri
             fixture.harness.view().compose.input_occluded,
             fixture.harness.view().compose.lane_key_bindings.size(),
             fixture.harness.view().compose.selected_note_count,
-            fixture.harness.view().active_tab, down.get().input.shortcut_window_focused,
-            down.get().input.shortcut_text_entry_active, down.get().input.shortcut_ime_composition_active);
+            fixture.harness.view().active_tab, down.get().input.shortcuts.window_focused,
+            down.get().input.shortcuts.text_entry_active, down.get().input.shortcuts.ime_composition_active);
     expect_t422(down.get().input.compose_inputs.size() == 1);
     expect_t422(down.get().input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
     expect_t422(down.get().input.compose_inputs[0].lane_id.value == 2);
@@ -3097,7 +3097,7 @@ void t422_suppress_actual_text_editor() {
     worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)fixture.harness.frame();
     t422_focus_label_search_field(fixture.harness);
-    CHECK(fixture.harness.frame().get().input.shortcut_text_entry_active);
+    CHECK(fixture.harness.frame().get().input.shortcuts.text_entry_active);
     CHECK_FALSE(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
     const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     t422_check_suppressed_event(
@@ -3230,8 +3230,8 @@ TEST_CASE("Key presses during a shortcut capture reach the frame's shortcut even
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_K, SDL_SCANCODE_K);
     const std::array<SDL_Event, 1> events{press};
     const auto snapshot = harness.frame(events);
-    REQUIRE(snapshot.get().input.shortcut_events.size() == 1);
-    CHECK(snapshot.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(0x0e));
+    REQUIRE(snapshot.get().input.shortcuts.events.size() == 1);
+    CHECK(snapshot.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(0x0e));
 }
 
 namespace {
@@ -3557,14 +3557,14 @@ namespace {
 auto route_harness_shortcut(const wormedit::ui::workspace_action_t& action,
                             const wormedit::command_registry_t& registry)
     -> wormedit::command_dispatch_outcome_t {
-    if (action.input.shortcut_events.size() != 1) {
+    if (action.input.shortcuts.events.size() != 1) {
         return {};
     }
-    const auto& source = action.input.shortcut_events[0];
+    const auto& source = action.input.shortcuts.events[0];
     auto focus = wormedit::command_focus_t{
-        .text_entry_active = action.input.shortcut_text_entry_active,
-        .ime_composition_active = action.input.shortcut_ime_composition_active,
-        .workspace_active = action.input.shortcut_window_focused,
+        .text_entry_active = action.input.shortcuts.text_entry_active,
+        .ime_composition_active = action.input.shortcuts.ime_composition_active,
+        .workspace_active = action.input.shortcuts.window_focused,
         .active_tab = wormedit::workspace_tab_t::compose,
         .visible_tabs = {wormedit::workspace_tab_t::compose},
     };
@@ -3577,11 +3577,11 @@ auto route_harness_shortcut(const wormedit::ui::workspace_action_t& action,
 }
 
 auto harness_tool_chord(const wormedit::ui::workspace_action_t& action, SDL_Scancode scancode) -> bool {
-    return action.input.shortcut_events.size() == 1 &&
-           action.input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(scancode)) &&
-           action.input.shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_ALT &&
-           !action.input.shortcut_events[0].repeat && action.input.shortcut_window_focused &&
-           !action.input.shortcut_text_entry_active && !action.input.shortcut_ime_composition_active;
+    return action.input.shortcuts.events.size() == 1 &&
+           action.input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(scancode)) &&
+           action.input.shortcuts.events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_ALT &&
+           !action.input.shortcuts.events[0].repeat && action.input.shortcuts.window_focused &&
+           !action.input.shortcuts.text_entry_active && !action.input.shortcuts.ime_composition_active;
 }
 
 auto tool_route_matches(const wormedit::ui::workspace_action_t& action, SDL_Scancode scancode,
@@ -3989,7 +3989,7 @@ TEST_CASE("Quantize popups consume outside dismissal releases and global shortcu
     open_quantize_preset_menu(harness);
     const auto key = key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z);
     const auto keyboard = harness.frame(std::span{&key, 1}, SDL_KMOD_CTRL);
-    CHECK(keyboard.get().input.shortcut_text_entry_active);
+    CHECK(keyboard.get().input.shortcuts.text_entry_active);
     CHECK(keyboard.get().input.compose_inputs.size() == 0);
     check_quantize_input_blocked(click_at(harness, 500, 500));
     (void)harness.frame();
@@ -4681,8 +4681,8 @@ TEST_CASE("Same sound hover travels with the remappable add shortcut", "[fronten
     const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().resource.sound_hover_object_id.value == 101);
-    expect_lane_key(frame.get().input.shortcut_events.size() == 1);
-    expect_lane_key(frame.get().input.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(wormedit::shortcut_key_t::a)));
+    expect_lane_key(frame.get().input.shortcuts.events.size() == 1);
+    expect_lane_key(frame.get().input.shortcuts.events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(wormedit::shortcut_key_t::a)));
 }
 
 TEST_CASE("Note menu sends same sound scope and stable source ID", "[frontend-state][event-harness][select-same-sound]") {
@@ -4771,7 +4771,7 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
-    expect_lane_key(frame.get().input.shortcut_events.size() == 1);
+    expect_lane_key(frame.get().input.shortcuts.events.size() == 1);
     expect_lane_key(frame.get().resource.sound_hover_object_id.value == 0);
     wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
@@ -5615,7 +5615,7 @@ TEST_CASE("Project charts use compact row menus and a cancellable delete dialog"
     CHECK_FALSE(worm_ui_frontend_request_new_project());
     CHECK_FALSE(worm_ui_frontend_request_save_project(harness.view().project_id.value));
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
-    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().input.shortcut_events.size() == 0);
+    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().input.shortcuts.events.size() == 0);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_S, SDL_SCANCODE_S);
     (void)harness.frame(std::span{&release, 1});
     const auto cancel = harness.drawn_text_center("Cancel");
@@ -7115,7 +7115,7 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
             ++history.document.revision;
             check_layer_menu(!wormedit::sys::compose_menu_command_is_current(action, history, workspace));
             --history.document.revision;
-            action.input.shortcut_ime_composition_active = true;
+            action.input.shortcuts.ime_composition_active = true;
             check_layer_menu(!wormedit::sys::compose_menu_command_is_current(action, history, workspace));
         }
     check_layer_menu(emitted);
@@ -8610,7 +8610,7 @@ TEST_CASE("Production latched range follows playback and Escape stops before can
     expect_t422(f.tail() == 1080);
     const auto endpoint = capture_cursor_pose(*f.editor.interaction);
     const auto stopped = f.key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE, false, true);
-    expect_t422(stopped.get().input.shortcut_events.size() == 1);
+    expect_t422(stopped.get().input.shortcuts.events.size() == 1);
     expect_t422(stopped.get().input.compose_inputs.empty());
     expect_t422(!(f.playing));
     expect_t422(f.stops == 1);
@@ -9545,8 +9545,8 @@ TEST_CASE("Owned shortcut batches retain the admission limit and discard overflo
     const std::vector events(wormedit::ui::shortcut_event_admission_limit + (overflow ? 1 : 0),
         key_event(SDL_EVENT_KEY_DOWN, SDLK_F12, SDL_SCANCODE_F12));
     const auto output = harness.frame(events);
-    CHECK(output.get().input.shortcut_overflowed == overflow);
-    CHECK(output.get().input.shortcut_events.size() == (overflow ? 0 : wormedit::ui::shortcut_event_admission_limit));
+    CHECK(output.get().input.shortcuts.overflowed == overflow);
+    CHECK(output.get().input.shortcuts.events.size() == (overflow ? 0 : wormedit::ui::shortcut_event_admission_limit));
 }
 
 namespace {
@@ -9820,12 +9820,12 @@ TEST_CASE("Options dismissal consumes Escape without clearing the canvas selecti
     const auto down = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto closed = harness.frame(std::span{&down, 1});
     CHECK(closed.get().options.kind == WORM_UI_OPTIONS_CLOSE);
-    CHECK(closed.get().input.shortcut_events.empty());
+    CHECK(closed.get().input.shortcuts.events.empty());
     CHECK(closed.get().input.compose_inputs.empty());
     harness.view().options.visible = false;
     const auto up = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto released = harness.frame(std::span{&up, 1});
-    CHECK(released.get().input.shortcut_events.empty());
+    CHECK(released.get().input.shortcuts.events.empty());
     CHECK(released.get().input.compose_inputs.empty());
 }
 
@@ -9901,8 +9901,8 @@ TEST_CASE("Escape cancels shortcut capture before dismissing Options",
     (void)harness.frame();
     const auto down = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto captured = harness.frame(std::span{&down, 1});
-    require_project_access(captured.get().input.shortcut_events.size() == 1);
-    require_project_access(captured.get().input.shortcut_events[0].hid_usage == wormedit::shortcut_key_t::escape);
+    require_project_access(captured.get().input.shortcuts.events.size() == 1);
+    require_project_access(captured.get().input.shortcuts.events[0].hid_usage == wormedit::shortcut_key_t::escape);
     require_project_access(captured.get().options.kind == WORM_UI_OPTIONS_NONE);
     harness.view().options.shortcut_capturing = false;
     const auto repeated = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE, true);
@@ -9910,6 +9910,6 @@ TEST_CASE("Escape cancels shortcut capture before dismissing Options",
     require_project_access(held.get().options.kind == WORM_UI_OPTIONS_NONE);
     const auto up = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto released = harness.frame(std::span{&up, 1});
-    require_project_access(released.get().input.shortcut_events.empty());
+    require_project_access(released.get().input.shortcuts.events.empty());
     require_project_access(released.get().options.kind == WORM_UI_OPTIONS_NONE);
 }

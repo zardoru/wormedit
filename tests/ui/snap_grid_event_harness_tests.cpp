@@ -53,7 +53,7 @@ void check_snap(const wormedit::ui::workspace_action_t& action, std::uint64_t de
     check_grid(action.stamp.chart_id.value == 1);
     check_grid(action.stamp.document_revision == 1);
     check_grid(action.input.compose_inputs.size() == 0);
-    check_grid(action.input.shortcut_events.size() == 0);
+    check_grid(action.input.shortcuts.events.size() == 0);
 }
 }
 
@@ -62,7 +62,7 @@ TEST_CASE("Snap fraction badge opens supported grids and applies keyboard choice
     prepare(harness);
     check_grid(harness.drawn_text().find("Editing grid") != std::string::npos);
     check_grid(harness.drawn_text().find("Snap 1/") == std::string::npos);
-    check_grid(press(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT).get().input.shortcut_events.size() == 0);
+    check_grid(press(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT).get().input.shortcuts.events.size() == 0);
     check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
     check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_choice == 1);
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);

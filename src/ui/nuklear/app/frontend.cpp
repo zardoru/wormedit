@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose/compose_generator_form.h"
+#include <wormedit/core/bms36.h>
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
 #include "ui/nuklear/compose/compose_gesture_registry.h"
@@ -559,16 +560,16 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     if (!action) {
         return;
     }
-    action->input.shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input()
+    action->input.shortcuts.events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input()
                                        ? 0 : g_shortcut_event_count);
-    for (size_t index = 0; index < action->input.shortcut_events.size(); ++index) {
-        action->input.shortcut_events[index] = g_shortcut_events[index];
+    for (size_t index = 0; index < action->input.shortcuts.events.size(); ++index) {
+        action->input.shortcuts.events[index] = g_shortcut_events[index];
     }
-    action->input.shortcut_overflowed = g_shortcut_events_overflowed;
-    action->input.shortcut_window_focused = g_window_focused;
-    action->input.shortcut_notification_history_focused = notification_history_focused();
+    action->input.shortcuts.overflowed = g_shortcut_events_overflowed;
+    action->input.shortcuts.window_focused = g_window_focused;
+    action->input.shortcuts.notification_history_focused = notification_history_focused();
     auto& compose_state = worm_ui_nuklear_compose_state();
-    action->input.shortcut_text_entry_active = command_menu_owns_input() || nuklear_text_entry_active() ||
+    action->input.shortcuts.text_entry_active = command_menu_owns_input() || nuklear_text_entry_active() ||
                                          compose_state.inline_timing.inline_timing_input_consumed ||
                                          compose_state.inline_offset.inline_offset_input_consumed ||
                                          compose_state.layer_editor.layers_menu_input_consumed ||
@@ -577,9 +578,9 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     compose_state.inline_timing.inline_timing_input_consumed = false;
     compose_state.inline_offset.inline_offset_input_consumed = false;
     compose_state.layer_editor.layers_menu_input_consumed = false;
-    action->input.shortcut_ime_composition_active = g_ime_composition_active;
-    action->input.shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
-    action->input.shortcut_focused_lane_id.value = action->input.shortcut_compose_lane_focused ? focused_lane_id : 0;
+    action->input.shortcuts.ime_composition_active = g_ime_composition_active;
+    action->input.shortcuts.compose_lane_focused = compose_lane_focused && g_window_focused;
+    action->input.shortcuts.focused_lane_id.value = action->input.shortcuts.compose_lane_focused ? focused_lane_id : 0;
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -984,7 +985,7 @@ bool worm_ui_frontend_stage_sound_slot_file_at(uint64_t project, uint64_t chart,
         state.keysound_slots.keysound_slot_feedback = "Finish the current WAV slot review before choosing another file.";
         return false;
     }
-    if (!path || slot == 0 || slot > 1295 || state.keysound_catalog.keysound_slots_project != project ||
+    if (!path || slot == 0 || slot > wormedit::bms_max_slot || state.keysound_catalog.keysound_slots_project != project ||
         state.keysound_catalog.keysound_slots_chart != chart || state.keysound_catalog.keysound_slots_revision != revision) {
         state.keysound_slots.keysound_slot_feedback = "The selected WAV slot is no longer available.";
         return true;
@@ -1011,7 +1012,7 @@ bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, ui
     if (state.keysound_catalog.keysound_slots_project != project ||
         state.keysound_catalog.keysound_slots_chart != chart || state.keysound_catalog.keysound_slots_revision != revision ||
         state.keysound_catalog.keysound_selected_slot == 0 ||
-        state.keysound_catalog.keysound_selected_slot > 1295 || !state.keysound_catalog.keysound_selected_slot_resource_known) {
+        state.keysound_catalog.keysound_selected_slot > wormedit::bms_max_slot || !state.keysound_catalog.keysound_selected_slot_resource_known) {
         state.keysound_slots.keysound_slot_feedback = "The selected WAV slot is no longer available.";
         return true;
     }
@@ -1279,7 +1280,7 @@ size_t worm_ui_frontend_free_slot_search_start(bool bmp) {
 bool worm_ui_frontend_reveal_free_slot(worm_ui_compose_target_t target, bool bmp, size_t slot) {
     // Same gate and document-context target as the dock actions; the slot range is this action's own input.
     if (!targeted_gate_open(dock_gate) || !targeted_source_matches(target_source_t::document_context, target) ||
-        slot == 0 || slot > 1295) return false;
+        slot == 0 || slot > wormedit::bms_max_slot) return false;
     auto& compose = worm_ui_nuklear_compose_state();
     if (bmp) {
         compose.bga_catalog.free_slot_cursor = slot;
@@ -2968,12 +2969,12 @@ static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& vi
         (view.transport_end_frame / seek_steps) * pointer_step +
         ((view.transport_end_frame % seek_steps) * pointer_step) / seek_steps;
     if (source_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return;
-    action.input.hover_source_frame = static_cast<std::int64_t>(source_frame);
-    action.input.hover_source_frame_valid = true;
-    action.input.hover_source_total_frames = view.transport_end_frame;
-    action.input.hover_source_sample_rate = view.transport_sample_rate;
+    action.input.hover_source.frame = static_cast<std::int64_t>(source_frame);
+    action.input.hover_source.frame_valid = true;
+    action.input.hover_source.total_frames = view.transport_end_frame;
+    action.input.hover_source.sample_rate = view.transport_sample_rate;
     const auto& compose = view.compose;
-    if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.input.hover_source_frame &&
+    if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.input.hover_source.frame &&
         compose.hover_timing_total_frames == view.transport_end_frame &&
         compose.hover_timing_sample_rate == view.transport_sample_rate &&
         wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
@@ -4048,7 +4049,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
                           compose_lane_focused ? view->compose.cursor->lane_id.value : 0);
     if (view->active_tab == WORM_UI_WORKSPACE_TAB_SETUP && !context_invocation_blocked() &&
         !command_menu_owns_input() && !worm_ui_nuklear_setup_popup_owns_input())
-        std::erase_if(action.input.shortcut_events, [&](const auto& key) {
+        std::erase_if(action.input.shortcuts.events, [&](const auto& key) {
             return worm_ui_nuklear_project_chart_shortcut(view->setup, key, action);
         });
     g_audio.offset_escape_pending = false;

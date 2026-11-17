@@ -136,9 +136,7 @@ void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
            WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     action.recipe.recipe_id.value = view.recipe_form.recipe_id.value;
     action.recipe.form = state.recipe_editor.recipe_edit_form;
 }

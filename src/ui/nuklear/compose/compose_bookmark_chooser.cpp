@@ -33,9 +33,7 @@ auto activate_row(const wormedit::ui::bookmark_chooser_view_t& view, const worme
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
     action.marker.bookmark_id.value = row.bookmark_id.value;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;
 }
@@ -88,9 +86,7 @@ void emit_reorder(const wormedit::ui::bookmark_chooser_view_t& view,
     action.compose_action = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
     action.marker.bookmark_reorder = {.bookmark = bookmark, .target = target,
         .place_after = after, .sort = view.sort, .descending = view.descending};
-    action.stamp.project_id = view.project_id;
-    action.stamp.chart_id = view.chart_id;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     state.sort = wormedit::bookmark_sort_t::custom;
     state.descending = false;
     state.dragged_bookmark = {};

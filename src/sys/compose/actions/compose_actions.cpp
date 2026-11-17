@@ -784,7 +784,7 @@ auto assign_bmson_selection_action_t::validate(compose_action_context_t& context
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
-    event = context.action.resource.bmson_bgm_event_id;
+    event = context.action.bmson.bgm_event_id;
     const auto kind = to_lane ? editor_selection_object_kind_t::bgm_event
                               : editor_selection_object_kind_t::note;
     if (state.selected_objects.size() != 1 || state.selected_objects.front().kind != kind ||
@@ -852,7 +852,7 @@ static_assert(compose_action<set_bmson_selection_restart_action_t, compose_actio
 auto set_bmson_selection_restart_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    event = context.action.resource.bmson_bgm_event_id;
+    event = context.action.bmson.bgm_event_id;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing a BMSON slice.")) {
         blocked->source = notification_source_t::edit;
@@ -909,7 +909,7 @@ static_assert(compose_action<move_bmson_selection_to_cursor_action_t, compose_ac
 auto move_bmson_selection_to_cursor_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    event = context.action.resource.bmson_bgm_event_id;
+    event = context.action.bmson.bgm_event_id;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before moving a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -957,7 +957,7 @@ static_assert(compose_action<insert_bmson_marker_at_cursor_action_t, compose_act
 auto insert_bmson_marker_at_cursor_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    event = context.action.resource.bmson_bgm_event_id;
+    event = context.action.bmson.bgm_event_id;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before inserting a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -1017,7 +1017,7 @@ auto stage_bmson_marker_at_cursor_action_t::perform(compose_action_context_t& co
     auto message = propose_bmson_bgm_marker(
         context.environment.document.history, context.state,
         context.environment.editor.commands,
-        context.action.resource.bmson_bgm_event_id, context.state.cursor,
+        context.action.bmson.bgm_event_id, context.state.cursor,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR,
         &severity);
     return compose_action_outcome_t::from(std::move(message), severity,
@@ -1094,7 +1094,7 @@ static_assert(compose_action<delete_bmson_selected_marker_action_t, compose_acti
 auto delete_bmson_selected_marker_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    event = context.action.resource.bmson_bgm_event_id;
+    event = context.action.bmson.bgm_event_id;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before deleting a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -1143,7 +1143,7 @@ auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::obj
         if (binding != bindings.end() && !binding->ambiguous && binding->channel) return *binding->channel;
         return {};
     }
-    return context.action.resource.bmson_channel_id;
+    return context.action.bmson.channel_id;
 }
 
 struct change_bmson_lane_mode_action_t {

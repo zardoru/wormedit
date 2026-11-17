@@ -548,7 +548,7 @@ auto compose_snap_preferences(const application_command_state_t& state, wormedit
     -> std::array<std::uint64_t, chart_snap_preferences.size() + 1>;
 
 
-auto toggle_compose_audio_offset_lock(const wormedit::ui::compose_document_stamp_t& request,
+auto toggle_compose_audio_offset_lock(const wormedit::ui::request_stamp_t& request,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
     std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,

@@ -63,7 +63,7 @@ struct fixture_t {
     auto press(SDL_Keycode code, SDL_Scancode scan) -> workspace_action_snapshot_t {
         const auto down=key(code,scan,true); auto result=harness.frame({&down,1});
         const auto up=key(code,scan,false); const auto released=harness.frame({&up,1});
-        release_shortcuts=released.get().input.shortcut_events.size();
+        release_shortcuts=released.get().input.shortcuts.events.size();
         release_compose_inputs=released.get().input.compose_inputs.size();
         return result;
     }
@@ -127,7 +127,7 @@ TEST_CASE("Sounds properties are staged, revertible and stamped before Apply",
     const auto result=fixture.click(apply->first,apply->second);
     expect(result.get().sound_properties.apply);
     expect(result.get().sound_properties.resource_id.value==101);
-    expect(result.get().sound_properties.document_revision==fixture.harness.view().document_revision);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
     expect(std::string_view{result.get().sound_properties.name}=="New kick");
     ++fixture.harness.view().audio_slices.document_revision;
     (void)fixture.harness.frame();

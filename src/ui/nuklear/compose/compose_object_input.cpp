@@ -177,7 +177,7 @@ static auto update_timing_region_resize(const ComposePointerEventContext& input)
     // A press without movement leaves the automatic width alone.
     region.moved = step.moved;
     if (region.moved)
-        input.action->chart.timing_region_width_pixels = std::max(
+        input.action->timing_region.width_pixels = std::max(
             wormedit::ui::compose_edge_handle_dragged_value(region.anchor_width, region.capture.anchor_x, input.pointer_x),
             wormedit::ui::compose_timing_lane_minimum_width);
     if (input.left_released) {
@@ -203,7 +203,7 @@ auto process_timing_region_resize(const ComposePointerEventContext& input,
     auto& region = state.timing_region;
     region.hovered = false;
     if (region.restore_pending) {
-        input.action->chart.timing_region_width_pixels = region.anchor_width;
+        input.action->timing_region.width_pixels = region.anchor_width;
         region.restore_pending = false;
     }
     if (update_timing_region_resize(input)) return true;
@@ -212,7 +212,7 @@ auto process_timing_region_resize(const ComposePointerEventContext& input,
         return false;
     // Double-click returns to the automatic width.
     if (timing_region_double_clicked(input, double_clicks, double_click_count)) {
-        input.action->chart.timing_region_width_reset = true;
+        input.action->timing_region.width_reset = true;
         region.hovered = true;
         return true;
     }

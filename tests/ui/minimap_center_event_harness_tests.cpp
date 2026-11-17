@@ -81,9 +81,9 @@ TEST_CASE("minimap capture freezes its displayed window and navigation mapping",
 
     const std::array press{pointer_motion(x, y), left_button_down(x, y)};
     const auto captured = harness.frame(press);
-    require_minimap_event(captured.get().input.minimap_window_capture_active);
-    check_minimap_event(captured.get().input.minimap_window_capture_begin_fraction == 0.2);
-    check_minimap_event(captured.get().input.minimap_window_capture_end_fraction == 0.6);
+    require_minimap_event(captured.get().input.minimap.window_capture_active);
+    check_minimap_event(captured.get().input.minimap.window_capture_begin_fraction == 0.2);
+    check_minimap_event(captured.get().input.minimap.window_capture_end_fraction == 0.6);
 
     auto& compose = harness.view().compose;
     compose.bgm_bar_begin_fraction = 0.05;
@@ -91,8 +91,8 @@ TEST_CASE("minimap capture freezes its displayed window and navigation mapping",
     compose.waveform_overview_visible_begin_fraction = 0.7;
     compose.waveform_overview_visible_end_fraction = 0.8;
     const auto frozen = worm_ui_nuklear_overview_window_for_capture(
-        {.window_begin = captured.get().input.minimap_window_capture_begin_fraction,
-         .window_end = captured.get().input.minimap_window_capture_end_fraction,
+        {.window_begin = captured.get().input.minimap.window_capture_begin_fraction,
+         .window_end = captured.get().input.minimap.window_capture_end_fraction,
          .window_capture = true}, true, compose.bgm_bar_begin_fraction,
         compose.bgm_bar_end_fraction);
     check_minimap_event(frozen.begin == 0.2);
@@ -104,7 +104,7 @@ TEST_CASE("minimap capture freezes its displayed window and navigation mapping",
     check_minimap_event(seek.get().input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
     check_minimap_event(seek.get().input.compose_inputs[0].audio_fraction > 0.2);
     check_minimap_event(seek.get().input.compose_inputs[0].audio_fraction < 0.6);
-    check_minimap_event(seek.get().input.minimap_window_capture_active);
+    check_minimap_event(seek.get().input.minimap.window_capture_active);
 }
 
 TEST_CASE("minimap capture matching invalidates project, chart, revision, asset, and geometry changes",

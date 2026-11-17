@@ -94,7 +94,7 @@ TEST_CASE("Tap tempo Escape closes without leaking a workspace command", "[tap-t
     escape.key.down = true; escape.key.key = SDLK_ESCAPE; escape.key.scancode = SDL_SCANCODE_ESCAPE;
     const auto action = harness.frame({&escape, 1});
     expect_tap(action.get().tap_timing.close);
-    expect_tap(action.get().input.shortcut_events.size() == 0);
+    expect_tap(action.get().input.shortcuts.events.size() == 0);
     expect_tap(action.get().input.compose_inputs.size() == 0);
 }
 

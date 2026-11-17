@@ -47,8 +47,8 @@ auto usage_action(const document_history_t& history, bool source_row = false)
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
     if (found == usage.rows.end())
         return action;
-    action.sound_usage.song_id.value = usage.song.value;
-    action.sound_usage.document_revision = usage.revision;
+    action.stamp.project_id.value = usage.song.value;
+    action.stamp.document_revision = usage.revision;
     action.sound_usage.resource_id.value = usage.resource.value;
     action.sound_usage.asset_id.value = usage.asset.value;
     action.sound_usage.chart_id.value = found->chart.value;
@@ -220,10 +220,10 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
                                   *interaction, original_workspace, original_interaction);
     };
     SECTION("stale song") {
-        reject([](auto& a) { a.sound_usage.song_id = song_id_t{9}; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { a.stamp.project_id = song_id_t{9}; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale revision") {
-        reject([](auto& a) { ++a.sound_usage.document_revision; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.stamp.document_revision; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale selected resource") {
         reject([](auto&) {}, [](auto& r) { r.selected_resource_id = resource_id_t{99}; }, [](auto&) {});

@@ -1380,11 +1380,11 @@ auto allocate_resource_identifier(const resource_entry_t& resource, std::string_
         return *identifier;
     const bool had_identifier = identifier.has_value();
     auto& next = next_ids[std::string(name_space)];
-    while (next < 1296 &&
+    while (next < bms_slot_count &&
            (assigned_ids[std::string(name_space)].contains(base36_id(next)) ||
             tree.branch_resource_ids.contains({std::string(name_space), base36_id(next)})))
         ++next;
-    if (next >= 1296)
+    if (next >= bms_slot_count)
         fail(bms_write_diagnostic_code_t::resource_limit,
              "BMS resource namespace exceeds 1295 nonzero two-digit identifiers", "$.resources");
     auto allocated = base36_id(next++);
@@ -1857,7 +1857,7 @@ auto timing_identifier(timing_identifier_registry_t& registry, signed_rational_t
                                                     return entry.first == value;
                                                 });
     if (existing != registry.identifiers.end()) return existing->second;
-    if (registry.next >= 1296)
+    if (registry.next >= bms_slot_count)
         fail(bms_write_diagnostic_code_t::resource_limit,
              "BMS timing exceeds 1295 " + registry.path, registry.path);
     const auto id = base36_id(registry.next++);

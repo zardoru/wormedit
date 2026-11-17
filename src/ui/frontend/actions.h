@@ -433,17 +433,37 @@ typedef enum WormUiClipboardAction {
 
 namespace wormedit::ui {
 /* Input the frontend sampled this frame. Read by the shortcut and Compose input dispatch; not a request. */
+/* The shell's keyboard state this frame: events and what currently owns text input. */
+struct shortcut_input_t {
+    std::vector<wormedit::ui::shortcut_event_t> events;
+    bool overflowed;
+    bool window_focused;
+    bool notification_history_focused;
+    bool text_entry_active;
+    bool ime_composition_active;
+    bool compose_lane_focused;
+    wormedit::lane_id_t focused_lane_id;
+};
+/* The seek/minimap bar: current field span, stamped onto BGM-bar view inputs for centered zoom/pan retention. */
+struct minimap_input_t {
+    double visible_begin_fraction;
+    double visible_end_fraction;
+    bool window_capture_active;
+    double window_capture_begin_fraction;
+    double window_capture_end_fraction;
+};
+/* Source frame under the pointer, for hover read-outs and audition. */
+struct hover_source_input_t {
+    int64_t frame;
+    bool frame_valid;
+    uint64_t total_frames;
+    uint32_t sample_rate;
+};
+/* Input the frontend sampled this frame. Read by the shortcut and Compose input dispatch; not a request. */
 struct frame_input_t {
-    // Current field span, stamped onto BGM-bar view inputs for centered zoom/pan retention.
-    double minimap_visible_begin_fraction;
-    double minimap_visible_end_fraction;
-    bool minimap_window_capture_active;
-    double minimap_window_capture_begin_fraction;
-    double minimap_window_capture_end_fraction;
-    int64_t hover_source_frame;
-    bool hover_source_frame_valid;
-    uint64_t hover_source_total_frames;
-    uint32_t hover_source_sample_rate;
+    shortcut_input_t shortcuts;
+    minimap_input_t minimap;
+    hover_source_input_t hover_source;
     double compose_input_viewport_width_pixels;
     // Uncovered editor right edge in the same source coordinates as the viewport.
     double compose_input_editor_right_pixels;
@@ -458,16 +478,8 @@ struct frame_input_t {
     double compose_viewport_middle_click_y_pixels;
     std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
     std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
-    std::vector<wormedit::ui::shortcut_event_t> shortcut_events;
-    bool shortcut_overflowed;
-    bool shortcut_window_focused;
-    bool shortcut_notification_history_focused;
-    bool shortcut_text_entry_active;
     // Compose ownership transition: 1 = modal, 2 = text/IME.
     uint8_t compose_input_ownership;
-    bool shortcut_ime_composition_active;
-    bool shortcut_compose_lane_focused;
-    wormedit::lane_id_t shortcut_focused_lane_id;
 };
 } // namespace wormedit::ui
 
@@ -510,7 +522,7 @@ struct workspace_action_t {
     wormedit::asset_id_t audio_asset_id;
     wormedit::resource_id_t audio_resource_id;
     wormedit::ui::bga_usage_activation_t bga_usage;
-    wormedit::ui::sound_usage_activation_t sound_usage;
+    wormedit::ui::sound_usage_locate_request_t sound_usage;
     wormedit::asset_id_t visual_asset_id;
     wormedit::player_preview_skin_t player_preview_skin;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
@@ -534,9 +546,11 @@ struct workspace_action_t {
     wormedit::ui::compose_area_request_t area;
     wormedit::ui::compose_measure_request_t measure;
     wormedit::ui::compose_chart_request_t chart;
-    wormedit::ui::compose_document_stamp_t stamp;
+    wormedit::ui::compose_timing_region_request_t timing_region;
+    wormedit::ui::request_stamp_t stamp;
     wormedit::ui::compose_quantize_request_t quantize;
     wormedit::ui::compose_resource_request_t resource;
+    wormedit::ui::compose_bmson_request_t bmson;
     wormedit::ui::compose_marker_request_t marker;
     wormedit::ui::compose_layer_request_t layer;
     wormedit::ui::sound_properties_request_t sound_properties;

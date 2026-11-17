@@ -554,6 +554,7 @@ auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id
     const auto path = slot_import_paths().front();
     const wormedit::ui::workspace_action_t action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
         .stamp = {.chart_id = {flow.workspace.value->selected_chart->value},
+                  .project_id = flow.history.document.id,
                   .document_revision = flow.history.document.revision},
         .resource = {.import_paths = {path}, .sound_slot = slot}};
     apply_sound_action(flow, action);

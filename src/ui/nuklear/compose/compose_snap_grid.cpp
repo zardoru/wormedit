@@ -12,9 +12,7 @@ void emit_snap(nk_context* context, const wormedit::ui::compose_view_t& view,
                wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
     action.quantize.snap_denominator = denominator;
     context_menu_close(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, context);
 }

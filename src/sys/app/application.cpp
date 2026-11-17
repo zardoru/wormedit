@@ -448,9 +448,9 @@ void consume_shortcut_capture(shortcut_editor_runtime_t& editor, wormedit::ui::w
     wormedit::command_registry_t& registry, const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::notification_sink_t& notifications) {
     if (!editor.capture) return;
-    const auto captured = wormedit::sys::capture_shortcut_batch(action.input.shortcut_events);
+    const auto captured = wormedit::sys::capture_shortcut_batch(action.input.shortcuts.events);
     if (!captured.cancel && !captured.chord) return;
-    action.input.shortcut_events.resize(0);
+    action.input.shortcuts.events.resize(0);
     const auto id = *editor.capture;
     editor.capture.reset();
     if (captured.cancel) {
@@ -614,18 +614,18 @@ auto application_command_focus(const wormedit::ui::workspace_action_t& action,
     -> wormedit::command_focus_t {
     using namespace wormedit;
     command_focus_t focus{
-        .text_entry_active = action.input.shortcut_text_entry_active,
-        .ime_composition_active = action.input.shortcut_ime_composition_active,
-        .workspace_active = action.input.shortcut_window_focused,
-        .active_tab = action.input.shortcut_notification_history_focused
+        .text_entry_active = action.input.shortcuts.text_entry_active,
+        .ime_composition_active = action.input.shortcuts.ime_composition_active,
+        .workspace_active = action.input.shortcuts.window_focused,
+        .active_tab = action.input.shortcuts.notification_history_focused
             ? std::optional<workspace_tab_t>{} : std::optional{workspace.active_tab},
         .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata,
                          workspace_tab_t::compose, workspace_tab_t::storyboard,
                          workspace_tab_t::audio_slices, workspace_tab_t::compare_validate},
     };
-    if (!action.input.shortcut_notification_history_focused &&
-        action.input.shortcut_compose_lane_focused && action.input.shortcut_focused_lane_id.value != 0) {
-        focus.focused_lane = action.input.shortcut_focused_lane_id;
+    if (!action.input.shortcuts.notification_history_focused &&
+        action.input.shortcuts.compose_lane_focused && action.input.shortcuts.focused_lane_id.value != 0) {
+        focus.focused_lane = action.input.shortcuts.focused_lane_id;
     }
     return focus;
 }
@@ -665,12 +665,12 @@ void consume_menu_shortcut(wormedit::ui::workspace_action_t& action,
 #endif
     }
     std::size_t retained = 0;
-    for (std::size_t i = 0; i < action.input.shortcut_events.size(); ++i) {
-        const auto& event = action.input.shortcut_events[i];
+    for (std::size_t i = 0; i < action.input.shortcuts.events.size(); ++i) {
+        const auto& event = action.input.shortcuts.events[i];
         if (event.hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(chord.key)) && event.modifiers == modifiers) continue;
-        action.input.shortcut_events[retained++] = event;
+        action.input.shortcuts.events[retained++] = event;
     }
-    action.input.shortcut_events.resize(retained);
+    action.input.shortcuts.events.resize(retained);
 }
 
 void build_command_menu_view(const wormedit::command_registry_t& registry,
@@ -835,11 +835,8 @@ void refresh_sound_selection_context(const wormedit::ui::workspace_action_t& act
         sound_context.project.sound_selection.sound_selection_dock.push_back(sound_dock.selected_resource_ids[i]);
 }
 
-auto has_fresh_shortcut_key(const wormedit::ui::frame_input_t& frame) -> bool {
-    const auto count = std::min(frame.shortcut_events.size(), std::size(frame.shortcut_events));
-    for (std::size_t index = 0; index < count; ++index)
-        if (!frame.shortcut_events[index].repeat) return true;
-    return false;
+auto has_fresh_shortcut_key(const wormedit::ui::shortcut_input_t& shortcuts) -> bool {
+    return std::ranges::any_of(shortcuts.events, [](const auto& event) { return !event.repeat; });
 }
 
 
@@ -1021,10 +1018,9 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     const auto chart = action.stamp.chart_id;
-    if (!dock.slots_mode || action.sound_import.project_id != history.document.id ||
-        !workspace.selected_chart || chart != *workspace.selected_chart ||
+    if (!dock.slots_mode || !workspace.selected_chart ||
         workspace.active_tab != wormedit::workspace_tab_t::compose ||
-        action.stamp.document_revision != history.document.revision) {
+        !action.stamp.is_current(history.document, *workspace.selected_chart)) {
         feedback = "The WAV slots target changed. Choose the files again.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         if (confirm) worm_ui_frontend_sound_slot_batch_result(false, feedback.c_str());
@@ -1062,9 +1058,7 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     if (!request && !confirm) return false;
     std::string feedback;
     const auto chart = action.stamp.chart_id;
-    if ((action.sound_import.project_id.value && action.sound_import.project_id != history.document.id) ||
-        !workspace.selected_chart || chart != *workspace.selected_chart ||
-        action.stamp.document_revision != history.document.revision) {
+    if (!workspace.selected_chart || !action.stamp.is_current(history.document, *workspace.selected_chart)) {
         feedback = "The import target changed. Cancel and choose the files again.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         if (confirm) worm_ui_frontend_sound_import_result(false, feedback.c_str());
@@ -1623,37 +1617,37 @@ void retain_compose_hover_timing(
     wormedit::sys::compose_scene_cache_t& cache, const wormedit::ui::workspace_view_t& view,
     const wormedit::ui::workspace_action_t& action) {
     auto& hover = cache.waveform.hover_timing;
-    hover.valid = action.input.hover_source_frame_valid && view.project_id.value != 0 &&
+    hover.valid = action.input.hover_source.frame_valid && view.project_id.value != 0 &&
         view.selected_chart_id.value != 0 && view.compose.selected_audio_asset_id.value != 0 &&
-        action.input.hover_source_total_frames != 0 && action.input.hover_source_sample_rate != 0;
+        action.input.hover_source.total_frames != 0 && action.input.hover_source.sample_rate != 0;
     if (!hover.valid) return;
-    hover.source_frame = action.input.hover_source_frame;
+    hover.source_frame = action.input.hover_source.frame;
     hover.project_id = view.project_id.value;
     hover.chart_id = view.selected_chart_id.value;
     hover.document_revision = view.document_revision;
     hover.audio_asset_id = view.compose.selected_audio_asset_id.value;
-    hover.total_frames = action.input.hover_source_total_frames;
-    hover.sample_rate = action.input.hover_source_sample_rate;
+    hover.total_frames = action.input.hover_source.total_frames;
+    hover.sample_rate = action.input.hover_source.sample_rate;
 }
 
 void retain_compose_bgm_window_capture(
     wormedit::sys::application_command_state_t& application, const wormedit::ui::workspace_view_t& view,
     const wormedit::ui::workspace_action_t& action) {
     application.project.bgm.bgm_bar_window_capture.reset();
-    if (!action.input.minimap_window_capture_active || view.project_id.value == 0 ||
+    if (!action.input.minimap.window_capture_active || view.project_id.value == 0 ||
         view.selected_chart_id.value == 0 ||
         view.compose.selected_audio_asset_id.value == 0 ||
         view.compose.waveform_overview_total_frames == 0 ||
         view.compose.waveform_overview_sample_rate == 0 ||
-        !std::isfinite(action.input.minimap_window_capture_begin_fraction) ||
-        !std::isfinite(action.input.minimap_window_capture_end_fraction) ||
-        action.input.minimap_window_capture_begin_fraction < 0.0 ||
-        action.input.minimap_window_capture_begin_fraction >= action.input.minimap_window_capture_end_fraction ||
-        action.input.minimap_window_capture_end_fraction > 1.0)
+        !std::isfinite(action.input.minimap.window_capture_begin_fraction) ||
+        !std::isfinite(action.input.minimap.window_capture_end_fraction) ||
+        action.input.minimap.window_capture_begin_fraction < 0.0 ||
+        action.input.minimap.window_capture_begin_fraction >= action.input.minimap.window_capture_end_fraction ||
+        action.input.minimap.window_capture_end_fraction > 1.0)
         return;
     application.project.bgm.bgm_bar_window_capture = wormedit::sys::bgm_bar_window_capture_t{
-        .range = {action.input.minimap_window_capture_begin_fraction,
-                  action.input.minimap_window_capture_end_fraction},
+        .range = {action.input.minimap.window_capture_begin_fraction,
+                  action.input.minimap.window_capture_end_fraction},
         .project = wormedit::song_id_t{view.project_id.value},
         .chart = wormedit::chart_id_t{view.selected_chart_id.value},
         .document_revision = view.document_revision,
@@ -2347,8 +2341,8 @@ struct application_t::implementation_t {
                                         bool& preserves_editor_gesture) -> bool {
         using namespace wormedit;
         preserves_editor_gesture = true;
-        if (action.input.shortcut_overflowed ||
-            action.input.shortcut_events.size() > wormedit::ui::shortcut_event_admission_limit) {
+        if (action.input.shortcuts.overflowed ||
+            action.input.shortcuts.events.size() > wormedit::ui::shortcut_event_admission_limit) {
             platform.notification_sink.post(
                 notification_severity_t::warning, notification_source_t::input,
                 "Shortcut input exceeded its per-frame capacity and was discarded.");
@@ -2356,7 +2350,7 @@ struct application_t::implementation_t {
             return true;
         }
         bool handled{};
-        for (std::size_t index = 0; index < action.input.shortcut_events.size(); ++index) {
+        for (std::size_t index = 0; index < action.input.shortcuts.events.size(); ++index) {
             auto diagnostics = refresh_command_states();
             if (!diagnostics.empty()) {
                 post_shortcut_rejection(platform.notification_sink, command_registry,
@@ -2365,7 +2359,7 @@ struct application_t::implementation_t {
                 preserves_editor_gesture = false;
                 return true;
             }
-            const auto& input = action.input.shortcut_events[index];
+            const auto& input = action.input.shortcuts.events[index];
             tap_event_ns = input.timestamp_ns;
             const auto dispatched =
                 input.tap_timing_space
@@ -2962,7 +2956,7 @@ struct application_t::implementation_t {
         if (tap_applied && tap_applied->applied)
             return true;
         // Complete a prior measure move before a new keyboard command can edit its destination.
-        if (has_fresh_shortcut_key(action.input))
+        if (has_fresh_shortcut_key(action.input.shortcuts))
             finish_compose_navigation_travel();
         bool preserves_editor_gesture{};
         const bool shortcut_handled =
@@ -3287,7 +3281,7 @@ struct application_t::implementation_t {
         if (!command_id[0])
             return;
         if (action.command_menu_invoked &&
-            (!action.input.shortcut_window_focused || action.input.shortcut_ime_composition_active ||
+            (!action.input.shortcuts.window_focused || action.input.shortcuts.ime_composition_active ||
              action.stamp.project_id.value != session.history.document.id.value ||
              action.stamp.chart_id.value !=
                  (session.workspace.selected_chart ? session.workspace.selected_chart->value : 0) ||
@@ -3746,8 +3740,8 @@ struct application_t::implementation_t {
         if (action.lane_keys.kind == ui::lane_keys_action_kind_t::open) (void)open_lane_keys();
         preferences.lane_keys.refresh(session.history.document);
         if (!preferences.lane_keys.view().visible) return;
-        preferences.lane_keys.capture(action.input.shortcut_events);
-        action.input.shortcut_events.resize(0);
+        preferences.lane_keys.capture(action.input.shortcuts.events);
+        action.input.shortcuts.events.resize(0);
         action.input.compose_inputs.resize(0);
         action.input.compose_viewport_inputs.resize(0);
         action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;

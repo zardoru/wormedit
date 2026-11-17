@@ -2,6 +2,7 @@
 #include "compose.h"
 #include "generator.h"
 #include "project.h"
+#include "request_stamp.h"
 #include <wormedit/core/osu_hitsample.h>
 #include <wormedit/core/vocabulary.h>
 #include <cstddef>
@@ -49,16 +50,18 @@ struct compose_measure_request_t {
     std::string length_numerator_text;
     std::string length_denominator_text;
 };
-/* Chart-level settings changed from Compose: lane profile, BGM columns, audio offset, timing region width. */
+/* Chart-level settings changed from Compose: lane profile, BGM columns, audio offset. */
 struct compose_chart_request_t {
     uint32_t bgm_column_count{};
     uint32_t lane_profile_index;
     std::string lane_layout_profile_id;
     int64_t audio_offset_numerator;
     uint64_t audio_offset_denominator;
-    // Drag of the timing region's edge handle: the width asked for (0 = none) or a reset to automatic.
-    double timing_region_width_pixels;
-    bool timing_region_width_reset;
+};
+/* Drag of the timing region's edge handle: the width asked for (0 = none) or a reset to automatic. */
+struct compose_timing_region_request_t {
+    double width_pixels;
+    bool width_reset;
 };
 /* Semantic layer being created, renamed or recolored. */
 struct compose_layer_request_t {
@@ -84,12 +87,16 @@ struct compose_marker_request_t {
     std::string audio_end;
     wormedit::object_id_t note_context_id;
 };
+/* BMSON BGM events and stem channels edited from the BMSON tab. */
+struct compose_bmson_request_t {
+    wormedit::object_id_t bgm_event_id;
+    wormedit::object_id_t channel_id;
+};
 /* Resource, sound slot, import and renumber inputs. */
 struct compose_resource_request_t {
     wormedit::object_id_t sound_hover_object_id;
     wormedit::resource_id_t id;
     uint32_t fallback_candidate;
-    wormedit::object_id_t bmson_bgm_event_id;
     wormedit::asset_id_t asset_id;
     std::vector<wormedit::resource_id_t> sound_resource_ids;
     std::vector<wormedit::ui::sound_group_assignment_t> sound_group_assignments;
@@ -101,7 +108,6 @@ struct compose_resource_request_t {
     std::vector<std::string> import_paths;
     std::optional<wormedit::hitsound_change_t> hitsound;
     uint16_t sound_slot;
-    wormedit::object_id_t bmson_channel_id;
     bool sound_slot_confirmed;
     size_t output_group_index;
     WormUiExistingFilesChoice existing_files;
@@ -119,11 +125,5 @@ struct compose_recipe_request_t {
     wormedit::ui::timing_recipe_form_t form;
     wormedit::ui::generator_form_t generator_form;
     wormedit::recipe_id_t recipe_id;
-};
-/* Chart, project and document revision a Compose request was built against. */
-struct compose_document_stamp_t {
-    wormedit::chart_id_t chart_id;
-    wormedit::song_id_t project_id;
-    uint64_t document_revision;
 };
 } // namespace wormedit::ui

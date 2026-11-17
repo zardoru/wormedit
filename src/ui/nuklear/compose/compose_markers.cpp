@@ -263,9 +263,7 @@ constexpr std::uint64_t key_section = 2ULL << 62U;
 constexpr std::uint64_t key_audio_bookmark = 3ULL << 62U;
 
 void stamp_action(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view) {
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = view.chart_id.value;
-    action.stamp.document_revision = view.document_revision;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
 }
 
 auto raise_compose(wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) -> bool {

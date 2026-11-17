@@ -344,7 +344,7 @@ struct SoundImportDispatchFixture {
         -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-        action.sound_import.project_id = history.document.id;
+        action.stamp.project_id = history.document.id;
         action.stamp.chart_id.value = chart.value;
         action.stamp.document_revision = history.document.revision;
         if (items) action.sound_import.items.assign(items, items + item_count);
@@ -381,7 +381,7 @@ struct SoundSlotBatchDispatchFixture {
                   std::uint64_t revision = 0) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-        action.sound_import.project_id = history.document.id;
+        action.stamp.project_id = history.document.id;
         action.stamp.chart_id.value = chart.value;
         action.stamp.document_revision = revision == 0 ? history.document.revision : revision;
         action.resource.sound_slot = slot;
@@ -656,7 +656,7 @@ TEST_CASE("sound_import fixed section confirmation rejects stale revision atomic
     const wormedit::ui::sound_import_item_t item{path.c_str(), "Section stem", wormedit::sound_kind_t::stem, true};
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-    action.sound_import.project_id = fixture.history.document.id;
+    action.stamp.project_id = fixture.history.document.id;
     action.stamp.chart_id.value = fixture.chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
     action.sound_import.items = {item};
@@ -2794,7 +2794,7 @@ void check_placement_audition(bool enabled) {
     const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(view), position);
     REQUIRE(y.has_value());
     wormedit::ui::workspace_action_t action{};
-    action.input.shortcut_window_focused = true;
+    action.input.shortcuts.window_focused = true;
     action.stamp.chart_id.value = interaction->chart.value;
     action.stamp.document_revision = history.document.revision;
     action.input.compose_input_viewport_width_pixels = compose.viewport_width_pixels;

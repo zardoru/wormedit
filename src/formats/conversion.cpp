@@ -1,4 +1,5 @@
 #include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/bms36.h>
 #include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
 #include <wormedit/core/rational.h>
@@ -543,7 +544,7 @@ auto prepare_bms_slice_resources(conversion_context_t& context, song_document_t&
     const auto count = std::ranges::count_if(song.resources, [&](const auto& resource) {
         return song.find_audio_asset(resource.asset) != nullptr;
     });
-    constexpr std::size_t capacity = 1295;
+    constexpr std::size_t capacity = bms_max_slot;
     if (static_cast<std::size_t>(count) <= capacity) return true;
     add_diagnostic(context.result, diagnostic_severity_t::error,
                    conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,

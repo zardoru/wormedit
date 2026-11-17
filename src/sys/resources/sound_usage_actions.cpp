@@ -10,7 +10,7 @@
 namespace wormedit::sys {
 namespace {
 
-auto row_matches(const wormedit::ui::sound_usage_activation_t& usage, const sound_usage_row_t& row) -> bool {
+auto row_matches(const wormedit::ui::sound_usage_locate_request_t& usage, const sound_usage_row_t& row) -> bool {
     const auto& position = row.position;
     return usage.chart_id.value == row.chart.value &&
            usage.kind == row.kind &&
@@ -40,8 +40,7 @@ auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
         workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
         request.selected_project_id != history.document.id ||
         request.selected_resource_id != action.sound_usage.resource_id ||
-        action.sound_usage.song_id.value != history.document.id.value ||
-        action.sound_usage.document_revision != history.document.revision)
+        !action.stamp.is_document_current(history.document))
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =

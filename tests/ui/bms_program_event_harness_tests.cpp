@@ -100,7 +100,7 @@ auto click_label(nuklear_event_harness_t& harness, std::string_view text) -> ui:
     REQUIRE(center);
     const auto clicks = test::click_at(harness, center->first, center->second);
     for (const auto& click : clicks)
-        if (click.get().compose.kind == WORM_UI_COMPOSE_ACTION_BMS_PROGRAM) return click.get().bms_program;
+        if (click.get().compose.kind == WORM_UI_COMPOSE_ACTION_BMS_PROGRAM) return click.get().compose.bms_program;
     FAIL("scope widget emitted no action");
     return {};
 }
@@ -266,8 +266,8 @@ TEST_CASE("Scope parameter text capture does not emit chart keyboard input", "[b
     SDL_Event text{}; text.type = SDL_EVENT_TEXT_INPUT; text.text.text = "4";
     const std::array events{key, text};
     const auto typed = harness.frame(events);
-    CHECK(typed.get().bms_program.operation == operation_t::draft_parameter);
-    CHECK(typed.get().bms_program.text.find('4') != std::string::npos);
+    CHECK(typed.get().compose.bms_program.operation == operation_t::draft_parameter);
+    CHECK(typed.get().compose.bms_program.text.find('4') != std::string::npos);
     CHECK(typed.get().input.compose_inputs.empty());
 }
 TEST_CASE("Saving Text keeps content editing unavailable for that selected node", "[bms-scope]") {

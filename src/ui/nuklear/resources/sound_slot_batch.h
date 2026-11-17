@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "ui/frontend.h"
+#include "ui/frontend/compose_request.h"
+#include "ui/frontend/sound_requests.h"
 
 struct nk_context;
 struct worm_ui_sound_slot_batch_item_t {
@@ -42,5 +43,5 @@ void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool app
 void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
                                             worm_ui_sound_slot_batch_t& state,
                                             const wormedit::ui::compose_view_t& view,
-                                            wormedit::ui::workspace_action_t& action,
+                                            wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, wormedit::ui::sound_import_request_t& sound_import,
                                             int window_width, int window_height);

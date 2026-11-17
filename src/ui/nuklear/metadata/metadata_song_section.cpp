@@ -35,19 +35,19 @@ static int metadata_song_changed(const wormedit::ui::metadata_view_t* metadata) 
     return 0;
 }
 
-static void set_metadata_song_action(wormedit::ui::workspace_action_t* action,
+static void set_metadata_song_action(wormedit::ui::metadata_edit_request_t* action,
                                      const wormedit::ui::metadata_view_t* metadata) {
-    if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
+    if (!action || !metadata || action->kind != WORM_UI_METADATA_EDIT_NONE ||
         !state.tag_buffers_valid ||
         state.search_tags.size() > wormedit::default_metadata_edit_limits.maximum_search_tags) {
         return;
     }
-    action->metadata.kind = WORM_UI_METADATA_EDIT_SONG;
-    action->metadata.document_revision = metadata->document_revision;
-    action->metadata.title = state.title.data();
-    action->metadata.artist = state.artist.data();
+    action->kind = WORM_UI_METADATA_EDIT_SONG;
+    action->document_revision = metadata->document_revision;
+    action->title = state.title.data();
+    action->artist = state.artist.data();
     for (const auto& tag : state.search_tags)
-        action->metadata.search_tags.emplace_back(tag.data());
+        action->search_tags.emplace_back(tag.data());
 }
 
 void reset_song_draft(const wormedit::ui::metadata_view_t& metadata) {
@@ -198,6 +198,6 @@ void render_song_section(const MetadataPanel& panel) {
     render_footer_buttons(context, changed && can_edit, changed && can_edit, "Revert", "Apply",
                           revert, apply);
     if (revert) reset_song_draft(metadata);
-    if (apply) set_metadata_song_action(panel.action, &metadata);
+    if (apply) set_metadata_song_action(panel.edit, &metadata);
     wormedit::ui::chrome::section_pop(context);
 }

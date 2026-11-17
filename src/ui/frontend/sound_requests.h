@@ -9,6 +9,14 @@
 /* Frame requests of the sound tabs and keysound dock. Each is a plain payload held by one
    workspace_action_t member, so a dispatcher can take just its own request. */
 namespace wormedit::ui {
+struct sound_slot_import_item_t {
+    std::string path;
+    std::string name;
+    resource_id_t occupied_resource_id{};
+    std::string occupied_name;
+    bool ambiguous{};
+    auto operator==(const sound_slot_import_item_t&) const -> bool = default;
+};
 struct sound_import_item_t {
     std::string path;
     std::string name;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/frontend/timing_edit.h"
 
 struct nk_context;
 
@@ -12,7 +12,7 @@ struct nk_context;
 // cancel and delete) that the Compose inspector shows for a pending lane event.
 void worm_ui_nuklear_render_timing_stage_editor(struct nk_context* context,
                                                 const wormedit::ui::timing_view_t* view,
-                                                wormedit::ui::workspace_action_t* action);
+                                                wormedit::ui::timing_edit_request_t* action);
 
 void worm_ui_nuklear_render_timing_anchoring(nk_context*, const wormedit::ui::timing_view_t&,
-    wormedit::ui::workspace_action_t&);
+    wormedit::ui::timing_edit_request_t&);

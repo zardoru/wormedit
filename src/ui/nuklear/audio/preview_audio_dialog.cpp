@@ -29,7 +29,7 @@ void preview_audio_dialog_t::begin_from_preview(const wormedit::ui::compose_view
 }
 
 void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                   wormedit::ui::workspace_action_t& action) {
+                                   std::optional<wormedit::ui::preview_audio_export_action_t>& export_request) {
     if (!open) return;
     if (draft.project != view.project_id.value || draft.chart != view.chart_id.value || draft.revision != view.document_revision) {
         open = false;
@@ -61,7 +61,7 @@ void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::com
     case chrome::DialogResult::primary:
         draft.filename = filename.data(); draft.duration_seconds = duration;
         draft.fade_out_ms = static_cast<std::uint32_t>(fade_out_ms); draft.replace_existing = replace_existing != 0;
-        action.preview_audio_export = draft; open = false; break;
+        export_request = draft; open = false; break;
     case chrome::DialogResult::cancel:
     case chrome::DialogResult::secondary: open = false; break;
     default: break;

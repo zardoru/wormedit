@@ -268,42 +268,42 @@ static void initialize_format_target_buffers(const wormedit::ui::metadata_view_t
     state.format_buffers_valid = 1;
 }
 
-static void set_metadata_format_action(wormedit::ui::workspace_action_t* action,
+static void set_metadata_format_action(wormedit::ui::metadata_edit_request_t* action,
                                        const wormedit::ui::metadata_view_t* metadata,
                                        WormUiMetadataEditKind kind) {
     const int needs_text = kind != WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD;
-    if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
+    if (!action || !metadata || action->kind != WORM_UI_METADATA_EDIT_NONE ||
         !state.format_target_valid || (needs_text && !state.format_buffers_valid) ||
         state.format_target_family > 6 ||
         (state.format_target_chart_scoped && !metadata->has_chart)) {
         return;
     }
-    action->metadata.kind = kind;
-    action->metadata.document_revision = metadata->document_revision;
-    action->metadata.chart_id = state.format_target_chart_scoped ? metadata->chart_id : wormedit::chart_id_t{};
-    action->metadata.format_chart_scoped = state.format_target_chart_scoped;
-    action->metadata.format_family = static_cast<wormedit::format_family_t>(state.format_target_family);
-    action->metadata.format_index = state.format_target_index;
-    action->metadata.format_name = needs_text ? std::optional<std::string>{state.format_name.data()} : std::nullopt;
-    action->metadata.format_value = needs_text ? std::optional<std::string>{state.format_value.data()} : std::nullopt;
+    action->kind = kind;
+    action->document_revision = metadata->document_revision;
+    action->chart_id = state.format_target_chart_scoped ? metadata->chart_id : wormedit::chart_id_t{};
+    action->format_chart_scoped = state.format_target_chart_scoped;
+    action->format_family = static_cast<wormedit::format_family_t>(state.format_target_family);
+    action->format_index = state.format_target_index;
+    action->format_name = needs_text ? std::optional<std::string>{state.format_name.data()} : std::nullopt;
+    action->format_value = needs_text ? std::optional<std::string>{state.format_value.data()} : std::nullopt;
 }
 
 static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t family,
                                      std::size_t field_index, std::size_t insert_index,
                                      const char* name, const char* value, bool exists, bool clear,
                                      bool chart_scoped = false) {
-    auto* action = panel.action;
+    auto* action = panel.edit;
     const auto& metadata = *panel.metadata;
-    action->metadata.kind = clear ? WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD
+    action->kind = clear ? WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD
         : exists ? WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD
                  : WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD;
-    action->metadata.document_revision = metadata.document_revision;
-    action->metadata.chart_id = chart_scoped ? metadata.chart_id : wormedit::chart_id_t{};
-    action->metadata.format_chart_scoped = chart_scoped;
-    action->metadata.format_family = static_cast<wormedit::format_family_t>(family);
-    action->metadata.format_index = exists ? field_index : insert_index;
-    action->metadata.format_name = name;
-    action->metadata.format_value = value;
+    action->document_revision = metadata.document_revision;
+    action->chart_id = chart_scoped ? metadata.chart_id : wormedit::chart_id_t{};
+    action->format_chart_scoped = chart_scoped;
+    action->format_family = static_cast<wormedit::format_family_t>(family);
+    action->format_index = exists ? field_index : insert_index;
+    action->format_name = name;
+    action->format_value = value;
 }
 
 static void render_bms_field_buttons(const MetadataPanel& panel,
@@ -312,7 +312,7 @@ static void render_bms_field_buttons(const MetadataPanel& panel,
                                      bool editable, bool numeric_valid) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
-    auto* action = panel.action;
+    auto* action = panel.edit;
     const auto field_index = state.bms_field_indices[typed];
     const auto exists = field_index != std::numeric_limits<size_t>::max();
     auto& buffer = state.bms_fields[typed];
@@ -320,14 +320,14 @@ static void render_bms_field_buttons(const MetadataPanel& panel,
                          std::strcmp(source->value.c_str(), buffer.data()) != 0;
     const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     const auto can_apply = editable && numeric_valid &&
-        action->metadata.kind == WORM_UI_METADATA_EDIT_NONE &&
+        action->kind == WORM_UI_METADATA_EDIT_NONE &&
         (exists ? changed : buffer[0] != '\0' && room);
     nk_layout_row_push(context, 0.17f);
     if (!can_apply) nk_widget_disable_begin(context);
     const auto apply = wormedit::ui::chrome::button_label(context, exists ? "Apply" : "Add");
     if (!can_apply) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.15f);
-    const auto can_clear = exists && action->metadata.kind == WORM_UI_METADATA_EDIT_NONE;
+    const auto can_clear = exists && action->kind == WORM_UI_METADATA_EDIT_NONE;
     if (!can_clear) nk_widget_disable_begin(context);
     const auto clear = wormedit::ui::chrome::button_label(context, "Clear");
     if (!can_clear) nk_widget_disable_end(context);
@@ -380,8 +380,8 @@ static void render_bms_field(const MetadataPanel& panel,
 }
 
 static void render_bms_fields(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
-                              wormedit::ui::workspace_action_t* action) {
-    const MetadataPanel panel{context, metadata, action, false};
+                              wormedit::ui::metadata_edit_request_t* action) {
+    const MetadataPanel panel{context, metadata, action, nullptr, nullptr, false};
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bms_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bms_format_family));
@@ -420,7 +420,7 @@ static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
                                       const std::optional<std::string>& encoded) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
-    auto* action = panel.action;
+    auto* action = panel.edit;
     auto& buffer = state.bmson_fields[typed];
     const auto index = state.bmson_field_indices[typed];
     const auto exists = index != std::numeric_limits<size_t>::max();
@@ -430,9 +430,9 @@ static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
     const auto has_value = buffer[0] != '\0' || typed == 1;
     const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     const auto can_apply = editable && encoded &&
-        action->metadata.kind == WORM_UI_METADATA_EDIT_NONE &&
+        action->kind == WORM_UI_METADATA_EDIT_NONE &&
         (exists ? changed : has_value && room);
-    const auto can_clear = exists && action->metadata.kind == WORM_UI_METADATA_EDIT_NONE;
+    const auto can_clear = exists && action->kind == WORM_UI_METADATA_EDIT_NONE;
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
     nk_layout_row_push(context, 0.5f);
     if (!can_apply) nk_widget_disable_begin(context);
@@ -483,8 +483,8 @@ static void render_bmson_field(const MetadataPanel& panel,
 }
 
 static void render_bmson_fields(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
-                                wormedit::ui::workspace_action_t* action) {
-    const MetadataPanel panel{context, metadata, action, false};
+                                wormedit::ui::metadata_edit_request_t* action) {
+    const MetadataPanel panel{context, metadata, action, nullptr, nullptr, false};
     if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bmson_format_family || !metadata->has_chart)
         return;
     const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bmson_format_family));
@@ -589,7 +589,7 @@ static void render_typed_field_buttons(const MetadataPanel& panel, std::size_t s
                                        const wormedit::ui::metadata_format_target_view_t& target,
                                        bool editable, bool valid) {
     auto* context = panel.context;
-    auto* action = panel.action;
+    auto* action = panel.edit;
     const auto family = static_cast<std::uint8_t>(panel.metadata->selected_chart_source_family);
     const auto index = state.typed_field_indices[slot];
     const auto exists = index != std::numeric_limits<size_t>::max();
@@ -599,7 +599,7 @@ static void render_typed_field_buttons(const MetadataPanel& panel, std::size_t s
     const auto& buffer = state.typed_fields[slot];
     const auto changed = source && source->value.c_str() && std::strcmp(source->value.c_str(), buffer.data()) != 0;
     const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
-    const auto idle = action->metadata.kind == WORM_UI_METADATA_EDIT_NONE;
+    const auto idle = action->kind == WORM_UI_METADATA_EDIT_NONE;
     const auto can_apply = editable && valid && idle &&
         (exists ? changed : buffer[0] != '\0' && room);
     nk_layout_row_push(context, 0.17f);
@@ -761,8 +761,8 @@ void render_format_editor_unavailable(const MetadataPanel& panel,
     if (!field || !field->first_group_for_family) return;
     nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
     if (wormedit::ui::chrome::button_label(panel.context, "Delete field") &&
-        panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE)
-        set_metadata_format_action(panel.action, panel.metadata,
+        panel.edit->kind == WORM_UI_METADATA_EDIT_NONE)
+        set_metadata_format_action(panel.edit, panel.metadata,
                                    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
 }
 
@@ -772,25 +772,25 @@ void render_format_editor_actions(const MetadataPanel& panel,
         nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_compact, 1);
         if (wormedit::ui::chrome::button_label(panel.context, "Add field") &&
             state.format_target_field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group &&
-            panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE)
-            set_metadata_format_action(panel.action, panel.metadata,
+            panel.edit->kind == WORM_UI_METADATA_EDIT_NONE)
+            set_metadata_format_action(panel.edit, panel.metadata,
                                        WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD);
         return;
     }
     nk_layout_row_begin(panel.context, NK_DYNAMIC, wormedit::ui::metrics::control_compact, 3);
     nk_layout_row_push(panel.context, 0.34f);
     if (wormedit::ui::chrome::button_label(panel.context, "Replace field") && field &&
-        panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE)
-        set_metadata_format_action(panel.action, panel.metadata,
+        panel.edit->kind == WORM_UI_METADATA_EDIT_NONE)
+        set_metadata_format_action(panel.edit, panel.metadata,
                                    WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD);
     nk_layout_row_push(panel.context, 0.33f);
     if (wormedit::ui::chrome::button_label(panel.context, "Delete field") && field &&
-        panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE)
-        set_metadata_format_action(panel.action, panel.metadata,
+        panel.edit->kind == WORM_UI_METADATA_EDIT_NONE)
+        set_metadata_format_action(panel.edit, panel.metadata,
                                    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
     nk_layout_row_push(panel.context, 0.33f);
     if (wormedit::ui::chrome::button_label(panel.context, "Prepare new field") && field &&
-        panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE) {
+        panel.edit->kind == WORM_UI_METADATA_EDIT_NONE) {
         state.format_target_index = field->group_field_count;
         initialize_format_buffers(field, 1);
     }
@@ -816,8 +816,8 @@ void render_format_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     if (!metadata_tree_push(context, NK_TREE_TAB, "Format-specific fields", NK_MINIMIZED, 1896))
         return;
-    render_bms_fields(context, panel.metadata, panel.action);
-    render_bmson_fields(context, panel.metadata, panel.action);
+    render_bms_fields(context, panel.metadata, panel.edit);
+    render_bmson_fields(context, panel.metadata, panel.edit);
     render_typed_fields(panel);
     render_format_field_rows(panel);
     render_format_target_selector(panel);

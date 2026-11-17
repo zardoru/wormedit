@@ -19,7 +19,9 @@ struct workspace_controller_t;
 class task_scheduler_t;
 }
 
-namespace wormedit::ui { struct workspace_action_t; }
+namespace wormedit::ui {
+struct timing_link_action_t; struct metadata_edit_request_t; struct compose_resource_request_t; struct request_stamp_t;
+}
 
 namespace wormedit::sys {
 
@@ -30,7 +32,10 @@ namespace wormedit::sys {
 
 // Returns text only when a metadata action was handled. Edit outcomes post here;
 // copy/import start and completion outcomes are owned by the configured runtime.
-auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_metadata_action(const wormedit::ui::timing_link_action_t& links,
+                              const wormedit::ui::metadata_edit_request_t& edit,
+                              const wormedit::ui::compose_resource_request_t& resource,
+                              const wormedit::ui::request_stamp_t& stamp,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool file_jobs_busy,
                               bool post_notifications = true) -> std::optional<std::string>;

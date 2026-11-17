@@ -386,7 +386,7 @@ struct metadata_text_fixture_t {
         action.compose.resource.asset_id.value = 8;
         action.metadata.inspect_import = true;
         action.compose.resource.import_path = "/tmp/arena-copy-preview-source.wav";
-        const auto status = runtime.start_copy_preview(action, history, workspace, base);
+        const auto status = runtime.start_copy_preview(action.metadata, action.compose.resource, action.stamp, history, workspace, base);
         INFO(status);
         REQUIRE(runtime.copy_preview_key());
     }

@@ -46,9 +46,9 @@ static int metadata_chart_changed(const wormedit::ui::metadata_view_t* metadata)
     return text_changed || rating_changed;
 }
 
-static void set_metadata_chart_action(wormedit::ui::workspace_action_t* action,
+static void set_metadata_chart_action(wormedit::ui::metadata_edit_request_t* action,
                                       const wormedit::ui::metadata_view_t* metadata, int unset_rating) {
-    if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
+    if (!action || !metadata || action->kind != WORM_UI_METADATA_EDIT_NONE ||
         !metadata->has_chart || !state.chart_buffers_valid) {
         return;
     }
@@ -56,16 +56,16 @@ static void set_metadata_chart_action(wormedit::ui::workspace_action_t* action,
                                      : metadata_chart_rating_value(metadata);
     if (!unset_rating && !rating)
         return;
-    action->metadata.kind = WORM_UI_METADATA_EDIT_CHART;
-    action->metadata.document_revision = metadata->document_revision;
-    action->metadata.chart_id = metadata->chart_id;
-    action->metadata.chart_name = state.chart_name.data();
-    action->metadata.chart_author = state.chart_author.data();
-    action->metadata.has_chart_rating = !unset_rating && rating->has_rating;
-    if (action->metadata.has_chart_rating) {
+    action->kind = WORM_UI_METADATA_EDIT_CHART;
+    action->document_revision = metadata->document_revision;
+    action->chart_id = metadata->chart_id;
+    action->chart_name = state.chart_name.data();
+    action->chart_author = state.chart_author.data();
+    action->has_chart_rating = !unset_rating && rating->has_rating;
+    if (action->has_chart_rating) {
         const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
-        action->metadata.chart_rating_numerator_text = wire.numerator;
-        action->metadata.chart_rating_denominator_text = wire.denominator;
+        action->chart_rating_numerator_text = wire.numerator;
+        action->chart_rating_denominator_text = wire.denominator;
     }
 }
 
@@ -80,18 +80,18 @@ static auto parse_resolution_text(const char* text) -> std::optional<std::uint64
     return value;
 }
 
-static void set_metadata_redivision_action(wormedit::ui::workspace_action_t* action,
+static void set_metadata_redivision_action(wormedit::ui::metadata_edit_request_t* action,
                                            const wormedit::ui::metadata_view_t* metadata) {
-    if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
+    if (!action || !metadata || action->kind != WORM_UI_METADATA_EDIT_NONE ||
         !metadata->has_chart)
         return;
     const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
     if (!resolution)
         return;
-    action->metadata.kind = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
-    action->metadata.document_revision = metadata->document_revision;
-    action->metadata.chart_id = metadata->chart_id;
-    action->metadata.redivision_resolution = *resolution;
+    action->kind = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
+    action->document_revision = metadata->document_revision;
+    action->chart_id = metadata->chart_id;
+    action->redivision_resolution = *resolution;
 }
 
 void reset_difficulty_draft(const wormedit::ui::metadata_view_t& metadata) {
@@ -150,7 +150,7 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
     if (!redivide_enabled) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "Divisions per standard measure. Redivide moves every position exactly, or changes nothing.");
-    if (redivide) set_metadata_redivision_action(panel.action, &metadata);
+    if (redivide) set_metadata_redivision_action(panel.edit, &metadata);
 }
 
 // Reloads the channel-map text from the view when the document or the layout segment changed.
@@ -195,29 +195,29 @@ static void render_channel_map_lane_row(nk_context* context, const wormedit::ui:
     nk_layout_row_end(context);
 }
 
-static void set_channel_map_preview_action(wormedit::ui::workspace_action_t* action,
+static void set_channel_map_preview_action(wormedit::ui::metadata_edit_request_t* action,
                                            const wormedit::ui::metadata_view_t& metadata) {
-    if (action->metadata.kind != WORM_UI_METADATA_EDIT_NONE) return;
-    action->metadata.kind = WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP;
-    action->metadata.document_revision = metadata.document_revision;
-    action->metadata.chart_id = metadata.chart_id;
-    action->metadata.channel_map_layout_segment_id = metadata.channel_map_layout_segment_id;
+    if (action->kind != WORM_UI_METADATA_EDIT_NONE) return;
+    action->kind = WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP;
+    action->document_revision = metadata.document_revision;
+    action->chart_id = metadata.chart_id;
+    action->channel_map_layout_segment_id = metadata.channel_map_layout_segment_id;
     for (std::size_t index = 0; index < state.channel_map_lane_ids.size(); ++index) {
         const auto& text = state.channel_map_texts[index];
-        action->metadata.channel_map_lanes.push_back({
+        action->channel_map_lanes.push_back({
             .lane = wormedit::lane_id_t{state.channel_map_lane_ids[index]},
             .visible = text[0].data(), .invisible = text[1].data(),
             .long_note = text[2].data(), .mine = text[3].data()});
     }
 }
 
-static void set_lane_profile_action(wormedit::ui::workspace_action_t* action, const wormedit::ui::metadata_view_t& metadata,
+static void set_lane_profile_action(wormedit::ui::metadata_edit_request_t* action, const wormedit::ui::metadata_view_t& metadata,
                                     WormUiMetadataEditKind kind, std::size_t index) {
-    if (!action || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE) return;
-    action->metadata.kind = kind;
-    action->metadata.document_revision = metadata.document_revision;
-    action->metadata.chart_id = metadata.chart_id;
-    action->metadata.lane_profile_index = index;
+    if (!action || action->kind != WORM_UI_METADATA_EDIT_NONE) return;
+    action->kind = kind;
+    action->document_revision = metadata.document_revision;
+    action->chart_id = metadata.chart_id;
+    action->lane_profile_index = index;
 }
 
 // Key-count selector over the chart's family plus Custom. Preview and Apply go through the sealed
@@ -276,9 +276,9 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     render_lane_profile_preview_message(context, metadata);
-    if (preview) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
+    if (preview) set_lane_profile_action(panel.edit, metadata, WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
                                          state.lane_profile_selected);
-    if (apply) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
+    if (apply) set_lane_profile_action(panel.edit, metadata, WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
                                        state.lane_profile_selected);
     wormedit::ui::chrome::section_pop(context);
 }
@@ -318,11 +318,11 @@ static void render_channel_map_section(const MetadataPanel& panel) {
             nk_label_colored(context, message, NK_TEXT_LEFT,
                              wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
-    if (preview) set_channel_map_preview_action(panel.action, metadata);
-    if (apply && panel.action->metadata.kind == WORM_UI_METADATA_EDIT_NONE) {
-        panel.action->metadata.kind = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
-        panel.action->metadata.document_revision = metadata.document_revision;
-        panel.action->metadata.chart_id = metadata.chart_id;
+    if (preview) set_channel_map_preview_action(panel.edit, metadata);
+    if (apply && panel.edit->kind == WORM_UI_METADATA_EDIT_NONE) {
+        panel.edit->kind = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+        panel.edit->document_revision = metadata.document_revision;
+        panel.edit->chart_id = metadata.chart_id;
     }
     wormedit::ui::chrome::section_pop(context);
 }
@@ -348,24 +348,24 @@ static void prune_batch_selection(const wormedit::ui::metadata_view_t& metadata)
 }
 
 static void set_batch_chart_action(const MetadataPanel& panel, bool rating_edit) {
-    auto* action = panel.action;
+    auto* action = panel.edit;
     const auto& metadata = *panel.metadata;
-    if (action->metadata.kind != WORM_UI_METADATA_EDIT_NONE || state.batch_selected_charts.empty())
+    if (action->kind != WORM_UI_METADATA_EDIT_NONE || state.batch_selected_charts.empty())
         return;
     const auto rating = metadata_chart_rating_value(&metadata);
     if (rating_edit && !rating) return;
-    action->metadata.kind = WORM_UI_METADATA_EDIT_BATCH_CHART;
-    action->metadata.document_revision = metadata.document_revision;
+    action->kind = WORM_UI_METADATA_EDIT_BATCH_CHART;
+    action->document_revision = metadata.document_revision;
     for (const auto id : state.batch_selected_charts)
-        action->metadata.batch_chart_ids.push_back(wormedit::chart_id_t{id});
-    action->metadata.batch_edit_author = !rating_edit;
-    action->metadata.batch_edit_rating = rating_edit;
-    action->metadata.chart_author = state.chart_author.data();
-    action->metadata.has_chart_rating = rating_edit && rating->has_rating;
-    if (!action->metadata.has_chart_rating) return;
+        action->batch_chart_ids.push_back(wormedit::chart_id_t{id});
+    action->batch_edit_author = !rating_edit;
+    action->batch_edit_rating = rating_edit;
+    action->chart_author = state.chart_author.data();
+    action->has_chart_rating = rating_edit && rating->has_rating;
+    if (!action->has_chart_rating) return;
     const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
-    action->metadata.chart_rating_numerator_text = wire.numerator;
-    action->metadata.chart_rating_denominator_text = wire.denominator;
+    action->chart_rating_numerator_text = wire.numerator;
+    action->chart_rating_denominator_text = wire.denominator;
 }
 
 // Checkbox per difficulty plus buttons that write the Mapper or Rating draft to all checked ones.
@@ -444,10 +444,10 @@ void render_difficulty_section(const MetadataPanel& panel) {
                           revert, apply);
     if (clear && metadata.has_chart_rating) {
         state.chart_rating_text.fill('\0');
-        set_metadata_chart_action(panel.action, &metadata, 1);
+        set_metadata_chart_action(panel.edit, &metadata, 1);
     }
     if (revert) reset_difficulty_draft(metadata);
-    if (apply) set_metadata_chart_action(panel.action, &metadata, 0);
+    if (apply) set_metadata_chart_action(panel.edit, &metadata, 0);
     render_batch_section(panel, editable);
     render_lane_profile_section(panel);
     render_channel_map_section(panel);

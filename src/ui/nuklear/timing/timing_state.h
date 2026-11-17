@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/frontend/timing_edit.h"
 
 #include <array>
 #include <cstddef>

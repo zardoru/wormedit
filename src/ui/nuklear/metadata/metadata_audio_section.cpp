@@ -337,7 +337,7 @@ metadata_external_copy_button(struct nk_context* context, const wormedit::ui::me
     if (!source_path || !source_path[0] || !metadata->project_directory.c_str() ||
         !metadata->project_directory.c_str()[0] ||
         (export_group && !export_group->relative_asset_directory[0])) return;
-    const MetadataPanel panel{context, metadata, action, false};
+    const MetadataPanel panel{context, metadata, &action->metadata, &action->timing_link, action, false};
     const auto source = std::filesystem::path{source_path};
     const bool export_copy = export_group != nullptr;
     const auto can_copy = external_copy_allowed(panel, source_path, export_group);

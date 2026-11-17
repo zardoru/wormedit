@@ -215,7 +215,7 @@ void render_channel_menu(nk_context* context, const wormedit::ui::compose_view_t
             nk_vec2(340, chrome::context_menu_height(1)))) return;
     const auto label = menu.stem ? "Pack into columns" : "Make stem";
     if (chrome::context_menu_item(menu.popup, context, label, nullptr)) {
-        request_bmson_lane_mode(action, view.project_id.value, view.chart_id.value, view.document_revision,
+        request_bmson_lane_mode(action.compose, action.stamp, view.project_id.value, view.chart_id.value, view.document_revision,
             menu.channel, !menu.stem, menu.continues, false, menu.resource);
         menu.consumed = true;
     }
@@ -369,7 +369,7 @@ void process_compose_note_menu(nk_context* context, const wormedit::ui::compose_
                                double input_right, bool focused) {
     (void)chrome::context_menu_update(menu.popup, context);
     if (!view.scene_available || !focused || view.input_occluded) {
-        render_bmson_lane_mode_confirmation(context, action, view.project_id.value, view.chart_id.value,
+        render_bmson_lane_mode_confirmation(context, action.compose, action.stamp, view.project_id.value, view.chart_id.value,
                                             view.document_revision, false);
         return;
     }
@@ -380,6 +380,6 @@ void process_compose_note_menu(nk_context* context, const wormedit::ui::compose_
     if (menu.bgm) render_channel_menu(context, view, action);
     else render(context, view, action);
     if (!menu.popup.open)
-        render_bmson_lane_mode_confirmation(context, action, view.project_id.value, view.chart_id.value,
+        render_bmson_lane_mode_confirmation(context, action.compose, action.stamp, view.project_id.value, view.chart_id.value,
                                             view.document_revision, focused);
 }

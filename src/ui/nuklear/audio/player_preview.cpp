@@ -209,7 +209,7 @@ struct PreviewCanvas {
 
 void render_preview_skin_buttons(struct nk_context* context,
                                  const wormedit::ui::player_preview_view_t* view,
-                                 wormedit::ui::workspace_action_t* action) {
+                                 WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 4);
     const struct {
         const char* label;
@@ -218,15 +218,15 @@ void render_preview_skin_buttons(struct nk_context* context,
                  {"Mania", wormedit::player_preview_skin_t::mania},
                  {"Arrows", wormedit::player_preview_skin_t::arrows}};
     for (const auto& skin : skins) {
-        if (wormedit::ui::chrome::button_label(context, skin.label) && view->skin != skin.skin && action &&
-            action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-            action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN;
-            action->player_preview_skin = skin.skin;
+        if (wormedit::ui::chrome::button_label(context, skin.label) && view->skin != skin.skin && kind &&
+            *kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+            *kind = WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN;
+            *skin_request = skin.skin;
         }
     }
-    if (wormedit::ui::chrome::button_label(context, "Hide") && action &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    if (wormedit::ui::chrome::button_label(context, "Hide") && kind &&
+        *kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        *kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
 }
 
 const char* preview_visual_label(wormedit::visual_event_kind_t kind) {
@@ -407,8 +407,8 @@ void draw_preview_canvas(struct nk_context* context, struct SDL_Renderer* render
 
 void render_preview_window_content(struct nk_context* context, struct SDL_Renderer* renderer,
                                    const wormedit::ui::player_preview_view_t* view,
-                                   wormedit::ui::workspace_action_t* action, float panel_height) {
-    render_preview_skin_buttons(context, view, action);
+                                   WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request, float panel_height) {
+    render_preview_skin_buttons(context, view, kind, skin_request);
     render_preview_status(context, view);
     struct nk_rect viewport{};
     nk_layout_row_dynamic(context, preview_viewport_height(*view, panel_height), 1);
@@ -421,7 +421,7 @@ void render_preview_window_content(struct nk_context* context, struct SDL_Render
 void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            struct SDL_Renderer* renderer,
                                            const wormedit::ui::player_preview_view_t* view,
-                                           wormedit::ui::workspace_action_t* action, int window_width,
+                                           WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request, int window_width,
                                            int window_height) {
     if (!context || !view || !view->visible) return;
     const auto panel_width = std::min(360.0f, std::max(260.0f, window_width * 0.32f));
@@ -430,7 +430,7 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                  nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f,
                          panel_width, panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE))
-        render_preview_window_content(context, renderer, view, action, panel_height);
+        render_preview_window_content(context, renderer, view, kind, skin_request, panel_height);
     nk_end(context);
 }
 

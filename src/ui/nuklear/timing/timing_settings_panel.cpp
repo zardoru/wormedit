@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 
-static void render_timing_lane_visibility(nk_context* context, const wormedit::ui::workspace_view_t& workspace, wormedit::ui::workspace_action_t* action) {
+static void render_timing_lane_visibility(nk_context* context, const wormedit::ui::workspace_view_t& workspace, wormedit::ui::compose_request_t& compose) {
     const auto* view = &workspace.compose;
     const auto* timing_view = &workspace.timing;
     nk_layout_row_dynamic(context, 15, 1);
@@ -30,9 +30,9 @@ static void render_timing_lane_visibility(nk_context* context, const wormedit::u
             if (disabled) nk_widget_disable_begin(context);
             const auto clicked = wormedit::ui::chrome::button_label(context, label);
             if (disabled) nk_widget_disable_end(context);
-            if (clicked && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose.recipe.timing_lane = descriptor.id;
-                action->compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
+            if (clicked && compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+                compose.recipe.timing_lane = descriptor.id;
+                compose.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
             }
         }
         nk_layout_row_end(context);
@@ -41,24 +41,24 @@ static void render_timing_lane_visibility(nk_context* context, const wormedit::u
 }
 
 static void render_metronome_controls(nk_context* context, const wormedit::ui::workspace_view_t& view,
-                                      wormedit::ui::workspace_action_t& action) {
+                                      wormedit::ui::timing_settings_action_t& settings) {
     constexpr auto row = wormedit::ui::metrics::control_default;
     nk_layout_row_dynamic(context, row, 1);
     nk_bool enabled = view.transport_metronome_enabled;
     if (!view.transport_metronome_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::checkbox_label(context, "Metronome", &enabled)) {
-        action.timing_settings.change_enable = true;
-        action.timing_settings.enabled = enabled;
+        settings.change_enable = true;
+        settings.enabled = enabled;
     }
     nk_layout_row_dynamic(context, row, 3);
     nk_labelf(context, NK_TEXT_LEFT, "Volume: %u%%", view.metronome_volume);
     if (wormedit::ui::chrome::button_label(context, "Lower volume")) {
-        action.timing_settings.change_volume = true;
-        action.timing_settings.volume = view.metronome_volume > 5 ? view.metronome_volume - 5 : 0;
+        settings.change_volume = true;
+        settings.volume = view.metronome_volume > 5 ? view.metronome_volume - 5 : 0;
     }
     if (wormedit::ui::chrome::button_label(context, "Raise volume")) {
-        action.timing_settings.change_volume = true;
-        action.timing_settings.volume = view.metronome_volume < 95 ? view.metronome_volume + 5 : 100;
+        settings.change_volume = true;
+        settings.volume = view.metronome_volume < 95 ? view.metronome_volume + 5 : 100;
     }
     const auto count_in_label = nk_widget_bounds(context);
     nk_labelf(context, NK_TEXT_LEFT, "Count-in: %u", view.metronome_count_in);
@@ -67,26 +67,27 @@ static void render_metronome_controls(nk_context* context, const wormedit::ui::w
             "The count-in applies on the next start. Clicks before audio frame zero are omitted, "
             "so a chart with no preroll can have no count-in clicks.");
     if (wormedit::ui::chrome::button_label(context, "Less count-in")) {
-        action.timing_settings.change_count_in = true;
-        action.timing_settings.count_in = view.metronome_count_in ? view.metronome_count_in - 1 : 0;
+        settings.change_count_in = true;
+        settings.count_in = view.metronome_count_in ? view.metronome_count_in - 1 : 0;
     }
     if (wormedit::ui::chrome::button_label(context, "More count-in")) {
-        action.timing_settings.change_count_in = true;
-        action.timing_settings.count_in = view.metronome_count_in < 4 ? view.metronome_count_in + 1 : 4;
+        settings.change_count_in = true;
+        settings.count_in = view.metronome_count_in < 4 ? view.metronome_count_in + 1 : 4;
     }
     if (!view.transport_metronome_available) nk_widget_disable_end(context);
 }
 
 void worm_ui_nuklear_render_timing_settings_panel(nk_context* context,
-    const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
+    const wormedit::ui::workspace_view_t& view, wormedit::ui::timing_settings_action_t& settings,
+    wormedit::ui::compose_request_t& compose) {
     namespace chrome = wormedit::ui::chrome;
     if (!context || !view.timing_settings_visible) return;
     static chrome::Dialog dialog;
     if (chrome::dialog_begin(dialog, context, "Timing Settings", "Timing Settings",
                              {.modal = false, .closable = true, .width = 420.0f})) {
-        render_metronome_controls(context, view, action);
-        render_timing_lane_visibility(context, view, &action);
+        render_metronome_controls(context, view, settings);
+        render_timing_lane_visibility(context, view, compose);
     }
     if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
-        action.timing_settings.close = true;
+        settings.close = true;
 }

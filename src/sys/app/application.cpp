@@ -2754,7 +2754,8 @@ struct application_t::implementation_t {
                        action, session.history, session.workspace, platform.notification_sink)) {
             static_cast<void>(selection_status);
         } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
-                       action, metadata_inputs(),
+                       action.timing_link, action.metadata, action.compose.resource, action.stamp,
+                       metadata_inputs(),
                        commands.audio_offset_edits_locked(),
                        jobs.is_file_job_busy(), true)) {
             static_cast<void>(metadata_status);

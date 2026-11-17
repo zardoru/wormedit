@@ -139,7 +139,8 @@ inline auto dispatch_metadata_action(
         {history, workspace, sink},
         {metadata_drop, metadata_asset_runtime, resource_copy_scheduler},
         defaults.project_identity.asset_base, 0};
-    return dispatch_metadata_action(action, environment, timing_locked,
+    return dispatch_metadata_action(action.timing_link, action.metadata, action.compose.resource, action.stamp,
+                                    environment, timing_locked,
                                     resource_copy_busy || export_busy, true);
 }
 } // namespace wormedit::sys

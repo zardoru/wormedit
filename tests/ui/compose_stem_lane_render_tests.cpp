@@ -1182,7 +1182,7 @@ void draw_compare_work_frame(field_submission_fixture_t& fixture,const wormedit:
     compare.first_difficulty=compare.second_difficulty="Test chart";
     compare.first_pane=compare.second_pane=&pane;
     wormedit::ui::workspace_action_t action;
-    worm_ui_nuklear_render_compare_panel(fixture.context,&compare,&action);
+    worm_ui_nuklear_render_compare_panel(fixture.context,&compare,&action.compare,&action.kind);
     nk_end(fixture.context);
 }
 }

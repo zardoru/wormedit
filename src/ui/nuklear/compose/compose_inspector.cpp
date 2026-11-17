@@ -180,7 +180,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
             inspector.action->timing.stage_action == wormedit::ui::timing_stage_action_t::none &&
             chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED, true)) {
             worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
-                                                       inspector.action);
+                                                       &inspector.action->timing);
             chrome::section_pop(inspector.context);
         }
         if (chrome::section_push(inspector.context, NK_TREE_NODE, "Audio offset · seconds", NK_MAXIMIZED, true)) {

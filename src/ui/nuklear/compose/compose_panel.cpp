@@ -959,7 +959,7 @@ static auto is_inline_audio_timing(wormedit::timing_lane_kind_t lane) -> bool {
 static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
     bool committed, bool changed) {
     const auto& timing = *panel.timing_view;
-    worm_ui_nuklear_render_timing_anchoring(panel.context, timing, *panel.action);
+    worm_ui_nuklear_render_timing_anchoring(panel.context, timing, panel.action->timing);
     nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
     const bool apply = wormedit::ui::chrome::button_label(panel.context, "Apply timing edit") != 0;
     if (committed || apply) {
@@ -1498,7 +1498,7 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_markers(panel.context, panel.view, panel.action);
 }
 void render_dock_mixer(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, panel.action);
+    worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, &panel.action->preview_mix);
 }
 void render_dock_generator(const ComposePanelRenderContext& panel) {
     const ComposeInspectorContext inspector{panel.context, panel.view, panel.timing_view, panel.action};
@@ -1595,7 +1595,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
             "BMS branches", NK_WINDOW_BORDER,
             [&] {
                 wormedit::ui::chrome::panel_header(context, "BMS branches");
-                worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+                worm_ui_nuklear_render_bms_branch_panel(context, view, &action->compose);
             });
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));

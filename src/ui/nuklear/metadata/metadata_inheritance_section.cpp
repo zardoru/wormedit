@@ -29,12 +29,12 @@ void render_inheritance_row(const MetadataPanel& panel,
         wormedit::ui::nuklear::tooltip::text(context, "This source value exceeds the editable metadata limit.");
 }
 void apply_inheritance(const MetadataPanel& panel) {
-    auto& action = *panel.action;
-    if (action.metadata.kind != WORM_UI_METADATA_EDIT_NONE) return;
-    action.metadata.kind = WORM_UI_METADATA_EDIT_INHERITANCE;
-    action.metadata.document_revision = panel.metadata->document_revision;
-    action.metadata.chart_id = panel.metadata->chart_id;
-    action.metadata.overrides = state.inheritance.overrides();
+    auto& action = *panel.edit;
+    if (action.kind != WORM_UI_METADATA_EDIT_NONE) return;
+    action.kind = WORM_UI_METADATA_EDIT_INHERITANCE;
+    action.document_revision = panel.metadata->document_revision;
+    action.chart_id = panel.metadata->chart_id;
+    action.overrides = state.inheritance.overrides();
 }
 }
 void render_metadata_inheritance_section(const MetadataPanel& panel) {

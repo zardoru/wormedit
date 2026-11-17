@@ -2308,14 +2308,14 @@ struct edit_compose_bms_program_action_t {
     auto operator==(const edit_compose_bms_program_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
         const auto& workspace = context.environment.document.workspace;
-        if (workspace.active_tab != workspace_tab_t::compose || workspace.selected_chart != context.action.bms_program.difficulty)
+        if (workspace.active_tab != workspace_tab_t::compose || workspace.selected_chart != context.action.compose.bms_program.difficulty)
             return compose_action_outcome_t::blocked(stale_action_message("BMS scope action"), notification_source_t::format);
         return context.require_no_gesture("Finish or cancel the active gesture before editing BMS scopes.");
     }
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         auto& history = context.environment.document.history;
         auto& runtime = context.environment.editor.commands.project.bms_program;
-        auto result = runtime.apply(history, context.state, context.action.bms_program);
+        auto result = runtime.apply(history, context.state, context.action.compose.bms_program);
         return compose_action_outcome_t::from(std::move(result), compose_action_description_t{
             .success = "BMS scope updated.", .unchanged = "", .rebind_failure = "BMS scope changed, but workspace rebinding failed.",
             .source = notification_source_t::format});

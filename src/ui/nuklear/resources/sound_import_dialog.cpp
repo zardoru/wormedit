@@ -353,24 +353,24 @@ auto reviewed_assignments(worm_ui_keysound_group_review_t& state)
     return worm_ui_keysound_group_review_confirm(state);
 }
 
-void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
+void submit_group_review(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, const wormedit::ui::compose_view_t& view,
                          worm_ui_keysound_group_review_t& state,
                          bool& release_pending) {
     const auto assignments = reviewed_assignments(state);
     if (!assignments.empty()) {
-        action.compose.kind = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
-        action.stamp.chart_id.value = view.chart_id.value;
-        action.stamp.document_revision = view.document_revision;
+        compose.kind = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
+        stamp.chart_id.value = view.chart_id.value;
+        stamp.document_revision = view.document_revision;
         for (const auto& assignment : assignments) {
             auto payload = wormedit::ui::sound_group_assignment_t{
                 .group_id = wormedit::sound_group_id_t{assignment.existing_group_id},
                 .name = assignment.name};
             for (const auto id : assignment.sound_ids)
                 payload.sound_ids.push_back(wormedit::resource_id_t{id});
-            action.compose.resource.sound_group_assignments.push_back(std::move(payload));
+            compose.resource.sound_group_assignments.push_back(std::move(payload));
         }
 
-        action.compose.resource.sound_group_keep_ids_together = state.keep_ids_together;
+        compose.resource.sound_group_keep_ids_together = state.keep_ids_together;
         state.open = false;
         release_pending = true;
     } else if (!state.manual && state.message.empty()) {
@@ -380,7 +380,7 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedi
 }
 
 void render_group_review_footer(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                wormedit::ui::workspace_action_t& action,
+                                wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
                                 worm_ui_keysound_group_review_t& state,
                                 bool& release_pending, bool stale) {
     namespace chrome = wormedit::ui::chrome;
@@ -397,12 +397,12 @@ void render_group_review_footer(nk_context* context, const wormedit::ui::compose
         release_pending = true;
     }
     if (chrome::dialog_button(dialog, context, "Confirm", chrome::DialogButtonRole::primary) && !stale &&
-        action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
-        submit_group_review(action, view, state, release_pending);
+        compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        submit_group_review(compose, stamp, view, state, release_pending);
 }
 
 void worm_ui_nuklear_render_keysound_group_review(
-    nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+    nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
     worm_ui_keysound_group_review_t& state, bool& release_pending,
     int window_width, int window_height) {
     namespace chrome = wormedit::ui::chrome;
@@ -421,7 +421,7 @@ void worm_ui_nuklear_render_keysound_group_review(
         } else {
             render_keysound_group_rows(context, state);
         }
-        render_group_review_footer(context, view, action, state, release_pending, stale);
+        render_group_review_footer(context, view, compose, stamp, state, release_pending, stale);
     }
     // Escape cancels like the Cancel button.
     if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel && state.open) {

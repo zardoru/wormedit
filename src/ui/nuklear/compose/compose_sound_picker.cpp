@@ -8,7 +8,7 @@
 #include <cstring>
 
 namespace {
-void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
               worm_ui_nuklear_compose_state_t& compose, std::size_t index) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& result = view.sound_picker;
@@ -50,7 +50,7 @@ void render_keyboard_hint(nk_context* context) {
 }
 
 void render_results(nk_context* context, const wormedit::ui::compose_view_t& view,
-                    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose) {
+                    wormedit::ui::compose_ui_window_t& action, worm_ui_nuklear_compose_state_t& compose) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
@@ -106,7 +106,7 @@ auto compose_sound_picker_owns_input(const sound_picker_state_t& state) -> bool 
     return state.owns_input();
 }
 void render_compose_sound_picker(nk_context* context, const wormedit::ui::compose_view_t& view,
-    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose, bool focused) {
+    wormedit::ui::compose_ui_window_t& action, worm_ui_nuklear_compose_state_t& compose, bool focused) {
     auto& state = compose.sound_picker_ui.sound_picker;
     if (!context) return;
     if (!state.open && !state.close_pending) {

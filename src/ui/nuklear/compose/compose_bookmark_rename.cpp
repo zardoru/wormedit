@@ -119,7 +119,7 @@ auto prompt_text(inline_label_kind_t kind) -> prompt_text_t {
     return {"Rename bookmark", "Bookmark name…", "Enter to apply · Esc to cancel"};
 }
 
-void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
+void stage_rename(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view,
                   const inline_label_editor_t& editor) {
     if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
@@ -187,7 +187,7 @@ auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
 }
 
 void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                    wormedit::ui::workspace_action_t& action,
+                                    wormedit::ui::compose_ui_window_t& action,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {
     (void)wormedit::ui::chrome::popup_update_release_pending(

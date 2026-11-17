@@ -2499,7 +2499,7 @@ auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
     return changed;
 }
 
-auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_action,
+auto dispatch_compose_input_action_impl(wormedit::ui::compose_input_window_t& ui_action,
                                         const compose_input_inputs_t& environment,
                                         wormedit::editor_interaction_state_t& state,
                                         double viewport_delta_seconds,
@@ -2621,7 +2621,7 @@ static void apply_compose_timing_region_width(const wormedit::ui::compose_timing
             request.width_pixels, effective_compose_timing_lane_mask(application));
 }
 
-void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action,
+void refresh_compose_editor_width(const wormedit::ui::compose_input_window_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application) {
     if (workspace.active_tab == wormedit::workspace_tab_t::compose)
@@ -2637,7 +2637,7 @@ void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action
 
 namespace compose_input_detail {
 auto dispatch_bgm_mix_toggle(const wormedit::ui::compose_input_action_t& input,
-    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_window_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, application_command_state_t& application,
     bool& accepted) -> std::string {
     const auto* chart = selected_chart(history, workspace);
@@ -2665,7 +2665,7 @@ auto dispatch_bgm_mix_toggle(const wormedit::ui::compose_input_action_t& input,
 }
 } // namespace compose_input_detail
 
-auto dispatch_compose_bgm_mix_inputs(wormedit::ui::workspace_action_t& action,
+auto dispatch_compose_bgm_mix_inputs(wormedit::ui::compose_input_window_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, const wormedit::notification_sink_t* notifications)
     -> std::string {
@@ -2689,7 +2689,7 @@ auto dispatch_compose_bgm_mix_inputs(wormedit::ui::workspace_action_t& action,
     return status;
 }
 
-auto dispatch_compose_input_action(wormedit::ui::workspace_action_t& ui_action,
+auto dispatch_compose_input_action(wormedit::ui::compose_input_window_t& ui_action,
                                    const compose_input_inputs_t& environment,
                                    wormedit::editor_interaction_state_t& state,
                                    double viewport_delta_seconds, bool post_notifications)

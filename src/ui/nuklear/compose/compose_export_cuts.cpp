@@ -63,7 +63,7 @@ auto compose_export_cut_handle_t::at(const compose_view_t& view, double x, doubl
 namespace {
 using editor_t = worm_ui_nuklear_compose_state_t::export_cut_editor_t;
 
-auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
+auto raise(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind, const editor_t& editor) -> bool {
     if (!wormedit::ui::raise_compose_action(action, view, kind,
             wormedit::ui::compose_project_stamp_t::preserve)) return false;
@@ -132,7 +132,7 @@ void editor_t::synchronize(const wormedit::ui::compose_view_t& view) {
 }
 
 void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
-    const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
+    const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action) {
     auto& editor = worm_ui_nuklear_compose_state().export_cut_editor;
     editor.synchronize(view);
     if (!nk_tree_push(context, NK_TREE_TAB, "Export cuts", NK_MINIMIZED)) return;

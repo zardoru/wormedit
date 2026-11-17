@@ -273,8 +273,8 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     action->compose.kind = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
     action->stamp.chart_id.value = view->chart_id.value;
     action->stamp.document_revision = view->document_revision;
-    action->timing.meter_numerator_text = state.recipe_editor.meter_numerator.data();
-    action->timing.meter_denominator_text = state.recipe_editor.meter_denominator.data();
+    action->compose.measure.meter_numerator_text = state.recipe_editor.meter_numerator.data();
+    action->compose.measure.meter_denominator_text = state.recipe_editor.meter_denominator.data();
 }
 
 // The confirmation belongs to one measure at one document revision; a move or edit closes it.

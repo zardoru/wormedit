@@ -9,7 +9,7 @@
 namespace {
 using namespace wormedit::ui::chrome;
 void emit_snap(nk_context* context, const wormedit::ui::compose_view_t& view,
-               wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
+               wormedit::ui::compose_ui_window_t& action, std::uint64_t denominator) {
     if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose.kind = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
     action.stamp = wormedit::ui::request_stamp_t::of(view);
@@ -25,7 +25,7 @@ void move_choice(nk_context* context, int count, int& selected) {
     selected = std::clamp(selected + delta, 0, count - 1);
 }
 void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& view,
-                       wormedit::ui::workspace_action_t& action, bool available) {
+                       wormedit::ui::compose_ui_window_t& action, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
     auto& menu = state.snap_grid.snap_grid_menu;
     const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominators.size(), 32));
@@ -60,7 +60,7 @@ void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& 
 }
 
 void render_compose_snap_badge(nk_context* context, const wormedit::ui::compose_view_t& view,
-                               wormedit::ui::workspace_action_t& action, bool available) {
+                               wormedit::ui::compose_ui_window_t& action, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
     auto& menu = state.snap_grid.snap_grid_menu;
     (void)context_menu_update(menu, context);

@@ -1,5 +1,6 @@
 #pragma once
 #include "sys/preferences/preferences_runtime.h"
+#include "compose_window_overloads.h"
 // Compatibility of existing fixture setup only; no old dispatcher signatures remain in production.
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/app/application_edit_inputs.h"

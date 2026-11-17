@@ -145,8 +145,8 @@ void commit(const ComposeBeatFitInput& input) {
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
     action.compose.measure.ids = {state.measure_resize.measure_resize_measure_id};
-    action.timing.meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
-    action.timing.meter_denominator_text = std::to_string(state.measure_resize.measure_resize_denominator);
+    action.compose.measure.meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
+    action.compose.measure.meter_denominator_text = std::to_string(state.measure_resize.measure_resize_denominator);
 }
 
 void update_active(const ComposeBeatFitInput& input) {

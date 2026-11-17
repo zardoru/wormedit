@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/compose/compose_ui_window.h"
 #include "ui/nuklear/dock.h"
 #include "ui/nuklear/chrome/file_dialog_slot.h"
 
@@ -881,7 +882,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
 // can create a note (lane key, paint, Alt-hold, click) captures it the same way at press time.
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
                                                   const wormedit::ui::compose_view_t& view,
-                                                  wormedit::ui::workspace_action_t& action);
+                                                  wormedit::ui::compose_ui_window_t& action);
 
 void worm_ui_nuklear_reset_compose_state();
 
@@ -889,23 +890,23 @@ void worm_ui_nuklear_reset_compose_state();
                                                         const wormedit::ui::compose_view_t& view) -> bool;
 void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
-                                          const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+                                          const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
                                           bool committed, bool deactivated);
 
 void worm_ui_nuklear_inline_timing_initial_text(const wormedit::ui::timing_view_t& view, char* destination,
                                                 std::size_t capacity);
 [[nodiscard]] auto worm_ui_nuklear_inline_timing_review_new_stage(
     worm_ui_nuklear_compose_state_t& state, const wormedit::ui::timing_view_t& view,
-    const wormedit::ui::workspace_action_t& action, float anchor_x, float anchor_y) -> bool;
+    const wormedit::ui::compose_ui_window_t& action, float anchor_x, float anchor_y) -> bool;
 void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
-                                         wormedit::ui::workspace_action_t& action);
+                                         wormedit::ui::compose_ui_window_t& action);
 void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,
                                          const wormedit::ui::timing_view_t& view,
-                                         wormedit::ui::workspace_action_t& action,
+                                         wormedit::ui::compose_ui_window_t& action,
                                          bool committed, bool deactivated);
 [[nodiscard]] auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& view,
                                                          const char* text,
-                                                         wormedit::ui::workspace_action_t& action) -> bool;
+                                                         wormedit::ui::timing_edit_request_t& timing) -> bool;
 
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_begin()
     -> std::optional<std::uint64_t>;
@@ -930,7 +931,7 @@ auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t released_key) -> bool;
 
-void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, wormedit::ui::workspace_action_t&, uint8_t kind, uint64_t id);
+void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, wormedit::ui::compose_ui_window_t&, uint8_t kind, uint64_t id);
 
 struct nk_context;
 bool worm_ui_nuklear_compose_context_click(const nk_context*, const wormedit::ui::compose_view_t&);

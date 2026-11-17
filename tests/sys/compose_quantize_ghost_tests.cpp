@@ -1,5 +1,6 @@
 // BGA stroke admission, quantize ghost geometry and BGA move previews.
 #include "frame_timing_fixtures.h"
+#include "compose_window_overloads.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>
@@ -39,12 +40,13 @@ TEST_CASE("BGA family rejects absent or mismatched admitted payloads without con
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     ui::workspace_action_t action{};
+    auto action_window = ui::compose_input_window_of(action);
     const compose_input_inputs_t environment{
         .document = {.history = fixture.history, .workspace = *fixture.binding.value,
             .notifications = sink},
         .commands = fixture.application,
         .controls = {.cache = fixture.cache, .viewport = viewport, .navigation = navigation}};
-    compose_input_context_t context{.environment = environment, .ui_action = action,
+    compose_input_context_t context{.environment = environment, .ui_action = action_window,
         .state = *fixture.interaction, .input_chart = fixture.history.read_chart(chart_id_t{1})};
     if (wrong_type) context.admitted_selector = admitted_note_paint_t{};
     const auto before = write_native_project(fixture.history.document);

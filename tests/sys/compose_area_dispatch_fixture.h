@@ -40,8 +40,9 @@ dispatch_compose_area_action(const wormedit::ui::workspace_action_t& action, doc
     std::optional<editor_interaction_state_t> retained;
     const compose_action_inputs_t environment{
         {history, workspace, notifications}, {commands, retained}, {}};
+    const auto window = wormedit::ui::compose_window_of(action);
     compose_action_detail::compose_action_context_t context{
-        environment, action, state, 0.0, false, editor_field_scroll_direction_t::up, notifications};
+        environment, window, state, 0.0, false, editor_field_scroll_direction_t::up, notifications};
     if (auto blocked = compose_action_detail::process_compose_area_boundary(context))
         return compose_action_detail::finish_compose_action(context, std::move(*blocked));
     if (!route)

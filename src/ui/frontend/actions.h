@@ -8,6 +8,7 @@
 #include "timing_edit.h"
 #include "sound_requests.h"
 #include "compose_request.h"
+#include "compose_window.h"
 #include "frame_input.h"
 #include "session_requests.h"
 #include "audio_slicer.h"
@@ -81,6 +82,13 @@ struct workspace_action_t {
     bool command_menu_invoked;
     std::string command_menu_command_id;
 };
+/* The slice of a frame that sys/compose dispatches. */
+[[nodiscard]] inline auto compose_window_of(const workspace_action_t& action) -> compose_window_t {
+    return {action.compose, action.stamp, action.sound_import, action.sound_properties};
+}
+[[nodiscard]] inline auto compose_input_window_of(workspace_action_t& action) -> compose_input_window_t {
+    return {action.input, action.compose, action.stamp, action.audio_offset_drag};
+}
 } // namespace wormedit::ui
 
 // Private application/frontend boundary. Implementations own all widget

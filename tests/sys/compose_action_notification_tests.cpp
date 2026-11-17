@@ -1,4 +1,5 @@
 #include "sys/compose/actions/compose_audition_requests.h"
+#include "compose_window_overloads.h"
 #include "sys/app/application_defaults.h"
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose/actions/compose_sound_actions.h"
@@ -16,7 +17,6 @@
 #include "sys/compose/views/recipe_form.h"
 #include <cstdio>
 #include <cstring>
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/formats/bmson.h>
@@ -332,8 +332,8 @@ TEST_CASE("Compose edits reject a stale boundary before reaching synchronous han
                                WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM,
                                WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP);
     auto action = fixture.action(kind);
-    action.timing.meter_numerator_text = "3";
-    action.timing.meter_denominator_text = "4";
+    action.compose.measure.meter_numerator_text = "3";
+    action.compose.measure.meter_denominator_text = "4";
     const std::uint64_t measure = 1;
     action.compose.measure.ids = {measure};
     --action.stamp.document_revision;
@@ -2696,8 +2696,8 @@ TEST_CASE("Rejected Compose meter edits keep their validation feedback without r
                                           : WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER);
     const std::array<std::uint64_t, 1> ids{0};
     action.compose.measure.ids.assign(ids.begin(), ids.end());
-    action.timing.meter_numerator_text = "0";
-    action.timing.meter_denominator_text = "4";
+    action.compose.measure.meter_numerator_text = "0";
+    action.compose.measure.meter_denominator_text = "4";
     check_action(fixture.dispatch(action) == "A meter needs a non-zero numerator and denominator.");
     const auto entries = fixture.entries();
     require_action(entries.size() == 1);

@@ -25,7 +25,7 @@
 
 using wormedit::ui::lucide::Glyph;
 
-static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
+static void append_bgm_horizontal_scroll(wormedit::ui::compose_ui_window_t* action,
                                          const wormedit::ui::compose_view_t* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
         action->input.compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit ||
@@ -363,7 +363,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     if (!editable) nk_widget_disable_end(context);
 }
 
-static void request_toolbar_offset_nudge(wormedit::ui::workspace_action_t* action,
+static void request_toolbar_offset_nudge(wormedit::ui::compose_ui_window_t* action,
                                          const wormedit::ui::compose_view_t* view, std::int64_t frames) {
     if (action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
     action->audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_NUDGE;

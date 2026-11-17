@@ -19,8 +19,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY,
     WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE,
     WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE,
-    /* Sets the cursor measure's time signature from timing_meter_numerator_text and
-       timing_meter_denominator_text. */
+    /* Sets the cursor measure's time signature from measure.meter_numerator_text and
+       measure.meter_denominator_text. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
     /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo
        step. */

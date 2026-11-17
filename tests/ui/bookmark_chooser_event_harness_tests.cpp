@@ -1,4 +1,5 @@
 #include "nuklear_event_harness.h"
+#include "compose_ui_window_overloads.h"
 #include "ui/nuklear/compose/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>

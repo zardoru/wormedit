@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/compose/compose_ui_window.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
 
 #include "ui/frontend.h"
@@ -42,9 +43,9 @@ void worm_ui_nuklear_bookmark_chooser_release_delivered(
 // Returns true while the chooser owns keyboard or pointer input.
 [[nodiscard]] auto worm_ui_nuklear_render_compose_bookmark_chooser(
     nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-    wormedit::ui::workspace_action_t* action, bool window_focused,
+    wormedit::ui::compose_ui_window_t* action, bool window_focused,
     bookmark_chooser_state_t* state) -> bool;
 
 // Same bounded search/page/activation controls embedded in the persistent Markers dock.
 void worm_ui_nuklear_render_bookmark_list(nk_context*, const wormedit::ui::bookmark_chooser_view_t&,
-    wormedit::ui::workspace_action_t*, bookmark_chooser_state_t&);
+    wormedit::ui::compose_ui_window_t*, bookmark_chooser_state_t&);

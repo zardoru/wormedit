@@ -1,4 +1,5 @@
 #include "sys/project/workspace_view.h"
+#include "../sys/compose_window_overloads.h"
 #include "nuklear_event_harness.h"
 #include "sys/app/application_defaults.h"
 #include "sys/commands/application_command_dispatch.h"

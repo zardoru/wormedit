@@ -1,5 +1,6 @@
 #define NK_IMPLEMENTATION
 #include "ui/nuklear/compose/compose_state.h"
+#include "compose_ui_window_overloads.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 #include "ui/nuklear/render/theme.h"
@@ -57,7 +58,7 @@ void check_secondary(const wormedit::ui::workspace_action_t& action, const char*
 
 void check_inline_rejected(const wormedit::ui::timing_view_t& view, const char* text,
                            wormedit::ui::workspace_action_t& action, const char* unchanged_numerator) {
-    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, text, action));
+    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, text, action.timing));
     CHECK(action.timing.primary_numerator_text == unchanged_numerator);
 }
 
@@ -358,7 +359,7 @@ TEST_CASE("Inline timing BPM decimal emits exact editor text and stage binding",
     CHECK(std::strcmp(initial, "12.5") == 0);
 
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "123.456", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "123.456", action.timing));
     check_inline_binding(action);
     CHECK(action.timing.bpm_decimal_edited);
     CHECK(action.timing.bpm_decimal_text == "123.456");
@@ -368,7 +369,7 @@ TEST_CASE("Inline timing BPM decimal emits exact editor text and stage binding",
 TEST_CASE("Inline timing BPM fractions retain exact values", "[unit][frontend][compose]") {
     auto view = staged_timing(wormedit::timing_lane_kind_t::bpm);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "7/3", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "7/3", action.timing));
     CHECK_FALSE(action.timing.bpm_decimal_edited);
     check_primary(action, "7", "3");
     char initial[64]{};
@@ -381,17 +382,17 @@ TEST_CASE("Inline timing scalar accepts signed scroll and zero pause exactly",
           "[unit][frontend][compose]") {
     auto view = staged_timing(wormedit::timing_lane_kind_t::scroll);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "-0.125", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "-0.125", action.timing));
     check_primary(action, "-1", "8");
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "0", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "0", action.timing));
     check_primary(action, "0", "1");
 
     view.stage_lane = wormedit::timing_lane_kind_t::delay;
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "0.000", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "0.000", action.timing));
     CHECK(action.timing.pause_unit == wormedit::pause_unit_t::milliseconds);
     check_primary(action, "0", "1");
     view.stage_lane = wormedit::timing_lane_kind_t::stop;
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "3/8", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "3/8", action.timing));
     check_primary(action, "3", "8");
 }
 
@@ -402,14 +403,14 @@ TEST_CASE("Inline timing events accept exact scientific notation",
                             wormedit::timing_lane_kind_t::delay}) {
         auto view = staged_timing(lane);
         wormedit::ui::workspace_action_t action{};
-        expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "1.25E-1", action));
+        expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "1.25E-1", action.timing));
         check_primary(action, "1", "8");
         check_inline_rejected(view, "1e+-2", action, "1");
         check_inline_rejected(view, "1E+99", action, "1");
     }
     auto view = staged_timing(wormedit::timing_lane_kind_t::scroll);
     wormedit::ui::workspace_action_t action{};
-    expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "-1.25e-1", action));
+    expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "-1.25e-1", action.timing));
     check_primary(action, "-1", "8");
     view.stage_lane = wormedit::timing_lane_kind_t::stop;
     check_inline_rejected(view, "-1.25e-1", action, "-1");
@@ -419,7 +420,7 @@ TEST_CASE("Inline timing edit retains secondary fields and rejects invalid input
           "[unit][frontend][compose]") {
     auto view = staged_timing(wormedit::timing_lane_kind_t::speed);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "2.75", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "2.75", action.timing));
     check_primary(action, "11", "4");
     check_secondary(action, "3", "1");
     CHECK(action.timing.transition_is_seconds);
@@ -437,22 +438,22 @@ TEST_CASE("Inline timing warp uses integer secondary fields",
     worm_ui_nuklear_inline_timing_initial_text(view, initial, sizeof(initial));
     CHECK(std::strcmp(initial, "3") == 0);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "42", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "42", action.timing));
     check_secondary(action, "42", "1");
     CHECK(action.timing.primary_numerator_text == "25");
-    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "1.5", action));
+    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "1.5", action.timing));
     CHECK(action.timing.secondary_numerator_text == "42");
 }
 
 TEST_CASE("Inline timing anchor edits preserve lock state", "[unit][frontend][compose]") {
     auto view = staged_timing(wormedit::timing_lane_kind_t::anchor);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "1234", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "1234", action.timing));
     check_primary(action, "1234", "1");
     CHECK(action.timing.toggle_primary);
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "18446744073709551615", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "18446744073709551615", action.timing));
     check_primary(action, "18446744073709551615", "1");
-    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "-1", action));
+    CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "-1", action.timing));
     CHECK(action.timing.primary_numerator_text == "18446744073709551615");
 }
 
@@ -650,7 +651,7 @@ TEST_CASE("Area edge capture restores exact original virtual range and source bi
     auto moved = view;
     moved.area_range_end_row = 12000;
     wormedit::ui::workspace_action_t action{};
-    capture.restore(action);
+    { auto window = wormedit::ui::compose_ui_window_of(action); capture.restore(window); }
     CHECK(action.compose.kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE);
     CHECK(action.compose.area.begin_row == 144);
     CHECK(action.compose.area.end_row == 10000);
@@ -1481,6 +1482,6 @@ TEST_CASE("Inline timing converts exact fractions before narrowing to double",
           "[frontend-state][shared-text]") {
     const auto view = staged_timing(wormedit::timing_lane_kind_t::bpm);
     wormedit::ui::workspace_action_t action{};
-    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "9007199254740995/9007199254740993", action));
+    REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "9007199254740995/9007199254740993", action.timing));
     CHECK(action.timing.value == std::nextafter(1.0, 2.0));
 }

@@ -181,7 +181,7 @@ auto has_compose_gesture_capture() -> bool {
     return pending;
 }
 
-void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
+void cancel_compose_gestures(wormedit::ui::compose_ui_window_t* action) {
     const auto pending = has_compose_gesture_capture();
     // Audio offset is a separate transaction, so preserve its stamp until the deferred cancel.
     state.input_queue.waveform_offset_cancel_pending |= state.waveform_drag.waveform_beat_zero_drag_active;
@@ -207,7 +207,7 @@ void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
     } else state.input_queue.cancel_pending = true;
 }
 
-void set_waveform_offset_drag_action(wormedit::ui::workspace_action_t* action,
+void set_waveform_offset_drag_action(wormedit::ui::compose_ui_window_t* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
     if (!action || action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
@@ -226,7 +226,7 @@ void reset_waveform_offset_drag() {
 }
 
 void append_compose_input(
-    wormedit::ui::workspace_action_t* action, WormUiComposeInputKind kind, double x_pixels,
+    wormedit::ui::compose_ui_window_t* action, WormUiComposeInputKind kind, double x_pixels,
     double y_pixels, uint64_t lane_id, bool successive,
     WormUiComposeSelectionMode selection_mode,
     WormUiComposeNavigationAction navigation_action,
@@ -294,7 +294,7 @@ void append_compose_input(
     };
 }
 
-void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
+void append_beat_fit_input(wormedit::ui::compose_ui_window_t* action,
                                   WormUiComposeInputKind kind, double y,
                                   bool ctrl_held, bool onset_snap_held) {
     append_compose_input(action, kind, 0.0, y);
@@ -308,7 +308,7 @@ void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
     event.beat_fit_snap_step_denominator = beat_fit_snap_steps[index].denominator;
 }
 
-void cancel_beat_fit_drag(wormedit::ui::workspace_action_t* action) {
+void cancel_beat_fit_drag(wormedit::ui::compose_ui_window_t* action) {
     if (state.waveform_drag.beat_fit_drag_active) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
         state.waveform_drag.beat_fit_drag_active = false;
@@ -316,7 +316,7 @@ void cancel_beat_fit_drag(wormedit::ui::workspace_action_t* action) {
     }
 }
 
-void cancel_offset_fit_drag(wormedit::ui::workspace_action_t* action) {
+void cancel_offset_fit_drag(wormedit::ui::compose_ui_window_t* action) {
     if (!state.waveform_drag.offset_fit_drag_active) return;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
     state.waveform_drag.offset_fit_drag_active = false;
@@ -324,7 +324,7 @@ void cancel_offset_fit_drag(wormedit::ui::workspace_action_t* action) {
 }
 
 void
-update_compose_pointer_navigation(wormedit::ui::workspace_action_t* action,
+update_compose_pointer_navigation(wormedit::ui::compose_ui_window_t* action,
                                   std::optional<WormUiComposeNavigationAction> desired_action) {
     if (!action) {
         return;
@@ -349,7 +349,7 @@ update_compose_pointer_navigation(wormedit::ui::workspace_action_t* action,
     }
 }
 
-void cancel_compose_navigation(wormedit::ui::workspace_action_t* action) {
+void cancel_compose_navigation(wormedit::ui::compose_ui_window_t* action) {
     const bool pending = state.keyboard_navigation.tab_navigation_needs_cancel || state.keyboard_navigation.tab_navigation.tab_down ||
                          state.keyboard_navigation.navigation_key_active || state.keyboard_navigation.pointer_navigation_active;
     if (action && pending) {
@@ -364,7 +364,7 @@ void cancel_compose_navigation(wormedit::ui::workspace_action_t* action) {
     state.keyboard_navigation.pointer_navigation_active = false;
 }
 
-bool compose_action_has_cancel(const wormedit::ui::workspace_action_t* action) {
+bool compose_action_has_cancel(const wormedit::ui::compose_ui_window_t* action) {
     if (!action) {
         return false;
     }
@@ -376,7 +376,7 @@ bool compose_action_has_cancel(const wormedit::ui::workspace_action_t* action) {
     return false;
 }
 
-void append_compose_cancel_once(wormedit::ui::workspace_action_t* action) {
+void append_compose_cancel_once(wormedit::ui::compose_ui_window_t* action) {
     if (action && !compose_action_has_cancel(action)) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
     }
@@ -559,7 +559,7 @@ WormUiComposeSelectionMode compose_selection_mode(uint16_t modifiers) {
     return compose_pointer_selection_mode(modifiers);
 }
 
-static void cancel_pending_compose_panel_actions(wormedit::ui::workspace_action_t* action) {
+static void cancel_pending_compose_panel_actions(wormedit::ui::compose_ui_window_t* action) {
     if (state.inline_timing.inline_timing_open) worm_ui_nuklear_inline_timing_cancel(state, *action);
     cancel_compose_gestures(action);
     state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
@@ -567,7 +567,7 @@ static void cancel_pending_compose_panel_actions(wormedit::ui::workspace_action_
     state.inline_timing.inline_timing_open = false;
 }
 
-static void reset_compose_revision_state(bool, wormedit::ui::workspace_action_t* action) {
+static void reset_compose_revision_state(bool, wormedit::ui::compose_ui_window_t* action) {
     cancel_compose_gestures(action);
     state.inline_offset.bgm_column_count_edit = {};
     state.inline_timing.inline_timing_open = false;
@@ -575,7 +575,7 @@ static void reset_compose_revision_state(bool, wormedit::ui::workspace_action_t*
     state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
-static void clear_inactive_compose_panel(wormedit::ui::workspace_action_t* action) {
+static void clear_inactive_compose_panel(wormedit::ui::compose_ui_window_t* action) {
     cancel_compose_gestures(action);
     state.inline_offset.bgm_column_count_edit = {};
     state.input_queue.key_event_count = 0;
@@ -589,7 +589,7 @@ static void clear_inactive_compose_panel(wormedit::ui::workspace_action_t* actio
 
 static void cancel_disabled_compose_paint_modes(const wormedit::ui::compose_view_t* view,
                                                 bool window_focused,
-                                                wormedit::ui::workspace_action_t* action) {
+                                                wormedit::ui::compose_ui_window_t* action) {
     if ((state.pointer_capture.note_paint_pointer_active || state.pointer_capture.draw_erase_pointer_active) &&
         (!window_focused || !view->scene_available || !view->note_paint_mode_active ||
          view->input_occluded || view->timing_focus)) {
@@ -613,7 +613,7 @@ static void retain_compose_core_gesture_presence(const wormedit::ui::compose_vie
     if (view && active && view->visible) state.input_queue.core_gesture_active = view->editor_gesture_active;
 }
 
-static void sync_armed_resource_context(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+static void sync_armed_resource_context(const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
                                         bool project_changed, bool chart_changed) {
     if (project_changed) {
         reset_armed_resource(state, compose_resource_reset_reason_t::project_changed);
@@ -638,7 +638,7 @@ static void sync_pointer_hold_acceptance(const wormedit::ui::compose_view_t& vie
     }
 }
 
-static void stamp_visible_compose_input(const wormedit::ui::compose_view_t* view, wormedit::ui::workspace_action_t& action) {
+static void stamp_visible_compose_input(const wormedit::ui::compose_view_t* view, wormedit::ui::compose_ui_window_t& action) {
     if (!view || !view->visible) return;
     // Modal occlusion cancels captures; cleanup still belongs to the visible chart.
     wormedit::ui::stamp_compose_input(action, *view, wormedit::ui::compose_project_stamp_t::include);
@@ -646,7 +646,7 @@ static void stamp_visible_compose_input(const wormedit::ui::compose_view_t* view
 }
 
 void worm_ui_nuklear_prepare_compose_panel(const wormedit::ui::compose_view_t* view, bool compose_tab_active,
-                                           bool window_focused, wormedit::ui::workspace_action_t* action) {
+                                           bool window_focused, wormedit::ui::compose_ui_window_t* action) {
     state.input_queue.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
     retain_compose_core_gesture_presence(view, compose_tab_active);
     if (!action) {
@@ -778,7 +778,7 @@ static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickCont
                                                          click_y);
 }
 
-static void arm_compose_stem_source(wormedit::ui::workspace_action_t& action, std::uint64_t resource) {
+static void arm_compose_stem_source(wormedit::ui::compose_ui_window_t& action, std::uint64_t resource) {
     set_armed_resource(state, resource, compose_resource_origin_t::sounds);
     worm_ui_nuklear_pick_draw_source(state, action, 1, resource);
 }

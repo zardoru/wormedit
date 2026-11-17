@@ -1,4 +1,5 @@
 #include "sys/compose/actions/compose_audition_requests.h"
+#include "compose_window_overloads.h"
 #include "sys/app/application_defaults.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"

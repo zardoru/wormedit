@@ -1042,7 +1042,7 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
         return true;
     }
     const auto before = history.document.revision;
-    const auto result = wormedit::sys::dispatch_compose_sound_action(action, history, workspace, chart, application, notifications);
+    const auto result = wormedit::sys::dispatch_compose_sound_action(wormedit::ui::compose_window_of(action), history, workspace, chart, application, notifications);
     feedback = result.value_or("The WAV slot import was not handled.");
     if (!result) notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::import_, feedback);
     worm_ui_frontend_sound_slot_batch_result(history.document.revision != before, feedback.c_str());
@@ -1082,7 +1082,7 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
         return true;
     }
     const auto before = history.document.revision;
-    const auto result = wormedit::sys::dispatch_compose_sound_action(action, history, workspace, chart, application, notifications);
+    const auto result = wormedit::sys::dispatch_compose_sound_action(wormedit::ui::compose_window_of(action), history, workspace, chart, application, notifications);
     feedback = result.value_or("The sound import was not handled.");
     if (!result) notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::import_, feedback);
     worm_ui_frontend_sound_import_result(history.document.revision != before, feedback.c_str());
@@ -1218,7 +1218,7 @@ auto dispatch_audio_sound_audition(const wormedit::ui::workspace_action_t& actio
     if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET ||
         action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE)
         static_cast<void>(dispatch_workspace_selection_action(action, history, workspace, notifications));
-    static_cast<void>(wormedit::sys::dispatch_compose_sound_action(action, history, workspace,
+    static_cast<void>(wormedit::sys::dispatch_compose_sound_action(wormedit::ui::compose_window_of(action), history, workspace,
         *workspace.selected_chart, application, notifications));
     return true;
 }
@@ -1229,7 +1229,7 @@ auto dispatch_reviewed_sound_edit(const wormedit::ui::workspace_action_t& action
     const std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> bool {
     return dispatch_audio_sound_audition(action, history, workspace, application, notifications) ||
-        wormedit::sys::dispatch_sound_properties_action(action, history, workspace, notifications) ||
+        wormedit::sys::dispatch_sound_properties_action(wormedit::ui::compose_window_of(action), history, workspace, notifications) ||
         dispatch_reviewed_sound_slot_batch(action, history, workspace, application, interaction, notifications) ||
         dispatch_reviewed_sound_import(action, history, workspace, application, interaction, notifications);
 }
@@ -2762,7 +2762,7 @@ struct application_t::implementation_t {
         } else if (dispatch_timing_workspace_action(action, commands)) {
             // The timing producer publishes feedback and consumes this action.
         } else if (wormedit::sys::dispatch_compose_workspace_action(
-                       action, compose_actions(), compose_viewport_height_pixels,
+                       wormedit::ui::compose_window_of(action), compose_actions(), compose_viewport_height_pixels,
                        jobs.is_file_job_busy(background_jobs_t::file_job_scope_t::compose_dispatch))) {
             // The Compose producer publishes feedback and consumes this action.
         }
@@ -2987,13 +2987,14 @@ struct application_t::implementation_t {
               action.stamp.chart_id.value != 0)) &&
             views.project.compose_interaction_state) {
             auto audition_scope = commands.project.auditions.input_scope(audition_inputs());
-            (void)dispatch_compose_input_action(action, compose_inputs(),
+            auto compose_input_window = wormedit::ui::compose_input_window_of(action);
+            (void)dispatch_compose_input_action(compose_input_window, compose_inputs(),
                                                 *views.project.compose_interaction_state,
                                                 viewport_delta_seconds, true);
         }
         {
             auto audition_scope = commands.project.auditions.catalog_scope(audition_inputs());
-            refresh_compose_editor_width(action, session.history, session.workspace, commands);
+            refresh_compose_editor_width(wormedit::ui::compose_input_window_of(action), session.history, session.workspace, commands);
         }
         if (session.workspace.active_tab != wormedit::workspace_tab_t::compose) {
             commands.project.semantic_layer.note_layer_menu_row_count = 0;
@@ -3166,9 +3167,11 @@ struct application_t::implementation_t {
     }
 
     void dispatch_bgm_mix_frame_action(wormedit::ui::workspace_action_t& action, bool shortcut_handled) {
-        if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT)
-            (void)dispatch_compose_bgm_mix_inputs(action, session.history, session.workspace,
+        if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT) {
+            auto compose_input_window = wormedit::ui::compose_input_window_of(action);
+            (void)dispatch_compose_bgm_mix_inputs(compose_input_window, session.history, session.workspace,
                                                   commands, &platform.notification_sink);
+        }
     }
 
     bool dispatch_project_settings_action(const ui::project_settings_action_t& action) {

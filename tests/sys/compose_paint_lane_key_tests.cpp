@@ -1,5 +1,6 @@
 // Paint ghosts, lane profile switching and lane-key callback dispatch.
 #include "frame_timing_fixtures.h"
+#include "compose_window_overloads.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <catch2/generators/catch_generators.hpp>

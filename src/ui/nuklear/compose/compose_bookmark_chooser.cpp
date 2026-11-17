@@ -25,7 +25,7 @@ auto current_row(const bookmark_chooser_state_t& state,
 }
 
 auto activate_row(const wormedit::ui::bookmark_chooser_view_t& view, const wormedit::ui::bookmark_chooser_row_view_t& row,
-                  wormedit::ui::workspace_action_t& action, nk_context* context,
+                  wormedit::ui::compose_ui_window_t& action, nk_context* context,
                   bookmark_chooser_state_t& state) -> bool {
     if (!row.navigation_available || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) {
         set_status(state, "Bookmark is unavailable at this position.");
@@ -48,7 +48,7 @@ void move_selection(bookmark_chooser_state_t& state, const wormedit::ui::bookmar
 }
 
 void handle_keyboard(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-                     wormedit::ui::workspace_action_t& action,
+                     wormedit::ui::compose_ui_window_t& action,
                      bookmark_chooser_state_t& state) {
     if (nk_input_is_key_pressed(&context->input, NK_KEY_UP)) {
         move_selection(state, view, -1);
@@ -80,7 +80,7 @@ void render_page_controls(nk_context* context, const wormedit::ui::bookmark_choo
 
 void emit_reorder(const wormedit::ui::bookmark_chooser_view_t& view,
                   wormedit::object_id_t bookmark, wormedit::object_id_t target, bool after,
-                  wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
+                  wormedit::ui::compose_ui_window_t& action, bookmark_chooser_state_t& state) {
     if (!bookmark || !target || bookmark == target || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose.kind = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
@@ -96,7 +96,7 @@ void render_reorder_button(nk_context* context,
                           const wormedit::ui::bookmark_chooser_view_t& view,
                           const wormedit::ui::bookmark_chooser_row_view_t& row,
                           bool after,
-                          wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
+                          wormedit::ui::compose_ui_window_t& action, bookmark_chooser_state_t& state) {
     const auto target = after ? row.next_bookmark : row.previous_bookmark;
     char tooltip[96]{};
     std::snprintf(tooltip, sizeof(tooltip), "Move bookmark #%llu %s",
@@ -109,7 +109,7 @@ void render_reorder_button(nk_context* context,
 
 void update_bookmark_drop(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                           const wormedit::ui::bookmark_chooser_row_view_t& row, struct nk_rect bounds,
-                          wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
+                          wormedit::ui::compose_ui_window_t& action, bookmark_chooser_state_t& state) {
     if (!state.dragged_bookmark || state.dragged_bookmark == row.bookmark_id ||
         !nk_input_is_mouse_hovering_rect(&context->input, bounds) ||
         !nk_input_is_mouse_hovering_rect(&context->input, context->current->buffer.clip)) return;
@@ -122,7 +122,7 @@ void update_bookmark_drop(nk_context* context, const wormedit::ui::bookmark_choo
 }
 
 auto render_bookmark_label(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-                           std::size_t index, wormedit::ui::workspace_action_t& action,
+                           std::size_t index, wormedit::ui::compose_ui_window_t& action,
                            bookmark_chooser_state_t& state) -> struct nk_rect {
     const auto& row = view.rows[index];
     const auto bounds = nk_widget_bounds(context);
@@ -146,7 +146,7 @@ auto render_bookmark_label(nk_context* context, const wormedit::ui::bookmark_cho
 }
 
 void render_bookmark_row(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-                         std::size_t index, wormedit::ui::workspace_action_t& action,
+                         std::size_t index, wormedit::ui::compose_ui_window_t& action,
                          bookmark_chooser_state_t& state) {
     const auto& row = view.rows[index];
     nk_layout_row_template_begin(context, 27);
@@ -180,7 +180,7 @@ void render_bookmark_row(nk_context* context, const wormedit::ui::bookmark_choos
 }
 
 void render_rows(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-                 wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
+                 wormedit::ui::compose_ui_window_t& action, bookmark_chooser_state_t& state) {
     if (state.drag_revision != view.document_revision || context->current->widgets_disabled)
         state.dragged_bookmark = {};
     if (view.total_count == 0) {
@@ -284,7 +284,7 @@ void worm_ui_nuklear_bookmark_chooser_release_delivered(nk_context* context,
 
 auto worm_ui_nuklear_render_compose_bookmark_chooser(
     nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
-    wormedit::ui::workspace_action_t* action, bool window_focused,
+    wormedit::ui::compose_ui_window_t* action, bool window_focused,
     bookmark_chooser_state_t* state) -> bool {
     if (!context || !action || !state) return false;
     if (!state->open && !state->close_pending) {
@@ -347,7 +347,7 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
 }
 
 void worm_ui_nuklear_render_bookmark_list(nk_context* context,
-    const wormedit::ui::bookmark_chooser_view_t& view, wormedit::ui::workspace_action_t* action,
+    const wormedit::ui::bookmark_chooser_view_t& view, wormedit::ui::compose_ui_window_t* action,
     bookmark_chooser_state_t& state) {
     if (state.project_id != view.project_id.value || state.chart_id != view.chart_id.value) state = {};
     state.project_id = view.project_id.value;

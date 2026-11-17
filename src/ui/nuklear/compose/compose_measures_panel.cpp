@@ -15,7 +15,7 @@
 namespace {
 constexpr float row_height = 26.0f;
 
-auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
+auto raise(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind) -> bool {
     return wormedit::ui::raise_compose_action(action, view, kind,
                                               wormedit::ui::compose_project_stamp_t::preserve);
@@ -49,7 +49,7 @@ void draw_cells(struct nk_command_buffer* canvas, const nk_user_font* font, stru
     text(bounds.x + inset + number_width + cell_inset + meter_column, length);
 }
 
-void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
          worm_ui_nuklear_compose_state_t& state, std::size_t index) {
     nk_layout_row_dynamic(context, row_height, 1);
     const auto hovered = nk_widget_is_hovered(context);
@@ -104,18 +104,18 @@ struct measure_definition_row_t {
 };
 
 void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
-                    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+                    wormedit::ui::compose_ui_window_t& action, worm_ui_nuklear_compose_state_t& state) {
     const measure_definition_row_t row{.label = "Meter", .numerator = state.measures_dock.measures_meter_numerator,
         .denominator = state.measures_dock.measures_meter_denominator, .button = "Apply"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
         !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
     action.compose.measure.ids = state.measures_dock.measure_selection.selected;
-    action.timing.meter_numerator_text = row.numerator.data();
-    action.timing.meter_denominator_text = row.denominator.data();
+    action.compose.measure.meter_numerator_text = row.numerator.data();
+    action.compose.measure.meter_denominator_text = row.denominator.data();
 }
 
 void length_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
-                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+                     wormedit::ui::compose_ui_window_t& action, worm_ui_nuklear_compose_state_t& state) {
     const measure_definition_row_t row{.label = "Length", .numerator = state.measures_dock.measures_length_numerator,
         .denominator = state.measures_dock.measures_length_denominator, .button = "Set"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
@@ -127,7 +127,7 @@ void length_controls(nk_context* context, const wormedit::ui::compose_view_t& vi
 } // namespace
 
 void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit::ui::compose_view_t* view,
-    wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
+    wormedit::ui::compose_ui_window_t* action, worm_ui_nuklear_compose_state_t* state) {
     char title[64];
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());
     wormedit::ui::chrome::panel_header(context, title);

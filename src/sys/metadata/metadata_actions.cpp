@@ -1,6 +1,7 @@
 #include "sys/metadata/metadata_commands.h"
 #include "sys/commands/document_edit_feedback.h"
 #include "sys/metadata/metadata_actions.h"
+#include "sys/app/action_router.h"
 #include "sys/app/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
 
@@ -16,6 +17,7 @@
 #include <wormedit/core/timing_links.h>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstring>
 #include <optional>
@@ -339,49 +341,107 @@ auto lane_profile_family_targets_impl(const chart_document_t& chart) -> std::vec
     return targets;
 }
 
-auto dispatch_metadata_edit(const wormedit::ui::metadata_edit_request_t& request, document_history_t& history,
-                            workspace_controller_t& workspace, bool timing_locked,
-                            metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
-    switch (request.kind) {
-    case WORM_UI_METADATA_EDIT_SONG:
-        return dispatch_song_edit(request, history, workspace);
-    case WORM_UI_METADATA_EDIT_CHART:
-        return dispatch_chart_edit(request, history, workspace);
-    case WORM_UI_METADATA_EDIT_INHERITANCE:
-        return publish_metadata_edit(apply_metadata_edit(history, request.document_revision,
-            set_chart_metadata_overrides_action_t{.chart = request.chart_id,
-                .overrides = request.overrides}), workspace, history);
-    case WORM_UI_METADATA_EDIT_BATCH_CHART:
-        return dispatch_batch_chart_edit(request, history, workspace);
-    case WORM_UI_METADATA_EDIT_AUDIO_OFFSET:
-        return dispatch_audio_offset_edit(request, history, workspace, timing_locked);
-    case WORM_UI_METADATA_EDIT_OUTPUT_PATH:
-        if (!request.output_path ||
-            request.output_path->size() > wormedit::default_metadata_edit_limits.maximum_output_path_bytes)
-            return {notification_severity_t::warning, "Output path edit payload is incomplete or too long."};
-        return publish_metadata_edit(
-            apply_metadata_edit(history, request.document_revision,
-                                set_output_group_path_action_t{request.output_group_index,
-                                                               *request.output_path}),
-            workspace, history);
-    case WORM_UI_METADATA_EDIT_REDIVIDE_CHART:
-        return dispatch_redivision_edit(request, history, workspace);
-    case WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP:
-        return dispatch_channel_map_preview(request, history, metadata_drop);
-    case WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP:
-        return dispatch_channel_map_apply(history, workspace, metadata_drop);
-    case WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE:
-        return dispatch_lane_profile_preview(request, history, metadata_drop);
-    case WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE:
-        return dispatch_lane_profile_apply(history, workspace, metadata_drop);
-    case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
-    case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
-    case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD:
-        return dispatch_format_edit(request, history, workspace);
-    case WORM_UI_METADATA_EDIT_NONE:
-        break;
+// What one metadata edit runs against. The row's handler takes only the request and this.
+struct metadata_edit_context_t {
+    document_history_t& history;
+    workspace_controller_t& workspace;
+    metadata_drop_state_t& drop;
+    bool timing_locked;
+};
+
+struct metadata_edit_row_t {
+    metadata_edit_feedback_t (*run)(const wormedit::ui::metadata_edit_request_t&, const metadata_edit_context_t&){};
+    bool clears_output_drop{};
+};
+
+struct metadata_edit_entry_t {
+    WormUiMetadataEditKind kind;
+    metadata_edit_row_t row;
+};
+
+constexpr auto metadata_edit_kind_count = static_cast<std::size_t>(WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE) + 1;
+
+// One row per edit kind. A kind listed twice or not at all fails the build, so a new
+// WormUiMetadataEditKind cannot be added without deciding what runs for it.
+template <std::size_t N>
+consteval auto make_metadata_edit_table(const std::array<metadata_edit_entry_t, N>& entries)
+    -> std::array<metadata_edit_row_t, metadata_edit_kind_count> {
+    std::array<metadata_edit_row_t, metadata_edit_kind_count> table{};
+    for (const auto& entry : entries) {
+        auto& row = table[static_cast<std::size_t>(entry.kind)];
+        if (row.run) throw "metadata edit kind listed twice";
+        row = entry.row;
     }
-    return {notification_severity_t::warning, "Invalid metadata edit action."};
+    for (std::size_t kind = 1; kind < table.size(); ++kind)
+        if (!table[kind].run) throw "metadata edit kind has no row";
+    return table;
+}
+
+auto edit_output_path(const wormedit::ui::metadata_edit_request_t& request, const metadata_edit_context_t& context)
+    -> metadata_edit_feedback_t {
+    if (!request.output_path ||
+        request.output_path->size() > wormedit::default_metadata_edit_limits.maximum_output_path_bytes)
+        return {notification_severity_t::warning, "Output path edit payload is incomplete or too long."};
+    return publish_metadata_edit(
+        apply_metadata_edit(context.history, request.document_revision,
+                            set_output_group_path_action_t{request.output_group_index, *request.output_path}),
+        context.workspace, context.history);
+}
+
+constexpr auto metadata_edit_table = make_metadata_edit_table(std::array{
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_SONG, {[](const auto& request, const auto& context) {
+        return dispatch_song_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_CHART, {[](const auto& request, const auto& context) {
+        return dispatch_chart_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_INHERITANCE, {[](const auto& request, const auto& context) {
+        return publish_metadata_edit(apply_metadata_edit(context.history, request.document_revision,
+            set_chart_metadata_overrides_action_t{.chart = request.chart_id, .overrides = request.overrides}),
+            context.workspace, context.history);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_BATCH_CHART, {[](const auto& request, const auto& context) {
+        return dispatch_batch_chart_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_AUDIO_OFFSET, {[](const auto& request, const auto& context) {
+        return dispatch_audio_offset_edit(request, context.history, context.workspace, context.timing_locked);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_OUTPUT_PATH, {edit_output_path, true}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_REDIVIDE_CHART, {[](const auto& request, const auto& context) {
+        return dispatch_redivision_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP, {[](const auto& request, const auto& context) {
+        return dispatch_channel_map_preview(request, context.history, context.drop);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP, {[](const auto&, const auto& context) {
+        return dispatch_channel_map_apply(context.history, context.workspace, context.drop);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE, {[](const auto& request, const auto& context) {
+        return dispatch_lane_profile_preview(request, context.history, context.drop);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE, {[](const auto&, const auto& context) {
+        return dispatch_lane_profile_apply(context.history, context.workspace, context.drop);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD, {[](const auto& request, const auto& context) {
+        return dispatch_format_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD, {[](const auto& request, const auto& context) {
+        return dispatch_format_edit(request, context.history, context.workspace);
+    }}},
+    metadata_edit_entry_t{WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD, {[](const auto& request, const auto& context) {
+        return dispatch_format_edit(request, context.history, context.workspace);
+    }}},
+});
+
+auto dispatch_metadata_edit(const wormedit::ui::metadata_edit_request_t& request,
+                            const metadata_edit_context_t& context) -> metadata_edit_feedback_t {
+    const auto index = static_cast<std::size_t>(request.kind);
+    if (index == 0 || index >= metadata_edit_table.size())
+        return {notification_severity_t::warning, "Invalid metadata edit action."};
+    const auto& row = metadata_edit_table[index];
+    auto feedback = row.run(request, context);
+    if (row.clears_output_drop) context.drop.clear_output();
+    return feedback;
 }
 
 } // namespace
@@ -411,37 +471,95 @@ auto dispatch_timing_link(const ui::timing_link_action_t& action, const metadata
     return std::move(feedback.message);
 }
 }
+namespace {
+// What a metadata route runs against: the frame's inputs plus the flags the caller decided.
+struct metadata_route_environment_t {
+    const metadata_action_inputs_t& inputs;
+    bool timing_locked;
+    bool file_jobs_busy;
+    notification_sink_t notifications;
+    std::optional<std::string>& status;  // text of the handled action, read by the caller
+};
+
+using metadata_router_t = action_router_t<wormedit::ui::workspace_action_t, metadata_route_environment_t>;
+
+auto route_timing_link(const wormedit::ui::workspace_action_t& action, const metadata_route_environment_t& environment)
+    -> route_status_t {
+    if (!action.timing_link.requested) return route_status_t::declined;
+    environment.status = dispatch_timing_link(action.timing_link, environment.inputs, environment.timing_locked,
+                                              environment.notifications);
+    return route_status_t::handled;
+}
+
+auto route_metadata_edit(const wormedit::ui::workspace_action_t& action, const metadata_route_environment_t& environment)
+    -> route_status_t {
+    if (action.metadata.kind == WORM_UI_METADATA_EDIT_NONE) return route_status_t::declined;
+    const auto& inputs = environment.inputs;
+    auto feedback = dispatch_metadata_edit(action.metadata, {.history = inputs.document.history,
+        .workspace = inputs.document.workspace, .drop = inputs.import.drop, .timing_locked = environment.timing_locked});
+    environment.notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
+    environment.status = std::move(feedback.message);
+    return route_status_t::handled;
+}
+
+auto route_import_copy(const wormedit::ui::workspace_action_t& action, const metadata_route_environment_t& environment)
+    -> route_status_t {
+    if (!action.metadata.import_copy_project && !action.metadata.import_copy_export) return route_status_t::declined;
+    const auto& inputs = environment.inputs;
+    environment.status = inputs.import.runtime.start_import_copy(
+        action, inputs.document.history, inputs.document.workspace, inputs.asset_base, inputs.import.scheduler,
+        environment.file_jobs_busy);
+    if (inputs.import.runtime.import_pending()) inputs.import.drop.clear_music();
+    return route_status_t::handled;
+}
+
+auto route_copy_preview(const wormedit::ui::workspace_action_t& action, const metadata_route_environment_t& environment)
+    -> route_status_t {
+    if (!action.metadata.inspect_copy) return route_status_t::declined;
+    const auto& inputs = environment.inputs;
+    environment.status = inputs.import.runtime.start_copy_preview(
+        action, inputs.document.history, inputs.document.workspace, inputs.asset_base);
+    return route_status_t::handled;
+}
+
+// The metadata domain's routes, in the order it wants them tried (same priority: declaration order).
+auto metadata_routes() -> std::vector<metadata_router_t::route_t> {
+    return {
+        {"metadata.timing_link", route_priority_t::domain, {}, route_timing_link},
+        {"metadata.edit", route_priority_t::domain, {}, route_metadata_edit},
+        {"metadata.import_copy", route_priority_t::domain, {}, route_import_copy},
+        {"metadata.copy_preview", route_priority_t::domain, {}, route_copy_preview},
+    };
+}
+
+auto metadata_router() -> const metadata_router_t& {
+    static const auto router = metadata_router_t::from(metadata_routes());
+    return router;
+}
+
+}  // namespace
+
+auto metadata_route_names() -> std::vector<std::string_view> {
+    auto names = std::vector<std::string_view>{};
+    for (const auto& route : metadata_router().routes()) names.push_back(route.name);
+    return names;
+}
+
 auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool file_jobs_busy, bool post_notifications)
     -> std::optional<std::string> {
-    auto& history = environment.document.history;
-    auto& workspace = environment.document.workspace;
-    auto& metadata_drop = environment.import.drop;
-    auto& metadata_asset_runtime = environment.import.runtime;
-    auto& asset_base = environment.asset_base;
-    auto& resource_copy_scheduler = environment.import.scheduler;
-    const notification_sink_t notifications =
-        post_notifications ? environment.document.notifications : notification_sink_t::muted();
-
-    if (action.timing_link.requested) return dispatch_timing_link(action.timing_link, environment, timing_locked, notifications);
-    if (action.metadata.kind != WORM_UI_METADATA_EDIT_NONE) {
-        auto feedback = dispatch_metadata_edit(action.metadata, history, workspace, timing_locked, metadata_drop);
-        notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
-        if (action.metadata.kind == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
-            metadata_drop.clear_output();
-        return std::move(feedback.message);
-    }
-    if (action.metadata.import_copy_project || action.metadata.import_copy_export) {
-        auto status = metadata_asset_runtime.start_import_copy(
-            action, history, workspace, asset_base, resource_copy_scheduler, file_jobs_busy);
-        if (metadata_asset_runtime.import_pending())
-            metadata_drop.clear_music();
-        return status;
-    }
-    if (action.metadata.inspect_copy)
-        return metadata_asset_runtime.start_copy_preview(action, history, workspace, asset_base);
-    return std::nullopt;
+    std::optional<std::string> status;
+    const metadata_route_environment_t route_environment{
+        .inputs = environment,
+        .timing_locked = timing_locked,
+        .file_jobs_busy = file_jobs_busy,
+        .notifications = post_notifications ? environment.document.notifications : notification_sink_t::muted(),
+        .status = status};
+    // Session and shortcut gating belongs to the frame router; this domain is dispatched after both.
+    static_cast<void>(metadata_router().dispatch(action, route_environment,
+        {.session_loaded = true, .shortcut_handled = false}));
+    return status;
 }
 
 } // namespace wormedit::sys

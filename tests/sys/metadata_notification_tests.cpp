@@ -629,3 +629,8 @@ TEST_CASE("Timing link dispatch rejects actions from a previous project session"
     check_metadata_notification(fixture.history.undo.empty());
     check_metadata_notification(!fixture.history.document.charts.front().timing_links.value(timing_category_t::offset));
 }
+
+TEST_CASE("metadata routes are tried in the order the domain declares them", "[unit][sys][metadata-notification]") {
+    CHECK(metadata_route_names() == std::vector<std::string_view>{
+        "metadata.timing_link", "metadata.edit", "metadata.import_copy", "metadata.copy_preview"});
+}

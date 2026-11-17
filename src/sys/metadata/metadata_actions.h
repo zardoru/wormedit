@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
@@ -34,5 +35,8 @@ auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool file_jobs_busy,
                               bool post_notifications = true) -> std::optional<std::string>;
+
+// Names of the metadata routes in the order they are tried, for tests that pin the order.
+[[nodiscard]] auto metadata_route_names() -> std::vector<std::string_view>;
 
 } // namespace wormedit::sys

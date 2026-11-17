@@ -4,6 +4,7 @@
 #include "core/text_util.h"
 #include "sys/resources/catalog_view.h"
 #include "sys/app/application.h"
+#include "sys/app/action_router.h"
 #include "sys/app/application_editor_views.h"
 #include "sys/app/application_edit_inputs.h"
 #include "sys/preferences/external_player_runtime.h"
@@ -2705,65 +2706,168 @@ struct application_t::implementation_t {
         }
     }
 
+    // Facts of the frame a workspace route may need besides the action itself.
+    struct frame_dispatch_t {
+        std::optional<std::uint32_t> sample_rate;
+        int compose_viewport_height_pixels;
+    };
+    using workspace_router_t = wormedit::sys::action_router_t<wormedit::ui::workspace_action_t, frame_dispatch_t>;
+    using workspace_route_t = workspace_router_t::route_t;
+    using route_priority_t = wormedit::sys::route_priority_t;
+    using route_status_t = wormedit::sys::route_status_t;
+
+    static auto handled_if(bool handled) -> route_status_t {
+        return handled ? route_status_t::handled : route_status_t::declined;
+    }
+
+    static auto handled_if(const std::optional<std::string>& status) -> route_status_t {
+        return handled_if(status.has_value());
+    }
+
+    // Routes that work with or without a loaded project and ignore registry shortcuts: they are the
+    // way into and out of a session.
+    auto lifecycle_routes() -> std::vector<workspace_route_t> {
+        constexpr wormedit::sys::route_policy_t any_state{.needs_session = false, .yields_to_shortcut = false};
+        return {
+            {"lifecycle.quit", route_priority_t::lifecycle, any_state,
+             [this](const auto& action, const auto&) {
+                 if (action.kind != WORM_UI_WORKSPACE_ACTION_QUIT) return route_status_t::declined;
+                 running = false;
+                 return route_status_t::handled;
+             }},
+            {"lifecycle.project_session", route_priority_t::lifecycle, any_state,
+             [this](const auto& action, const auto&) { return handled_if(dispatch_project_session_action(action)); }},
+            {"lifecycle.recovery", route_priority_t::lifecycle, any_state,
+             [this](const auto& action, const auto&) { return handled_if(dispatch_recovery_workspace_action(action)); }},
+        };
+    }
+
+    // Routes tried before the domain routes: they may claim an action another domain also reads.
+    auto frame_routes() -> std::vector<workspace_route_t> {
+        return {
+            {"frame.clipboard_menu", route_priority_t::frame, {},
+             [this](const auto& action, const auto&) { return handled_if(dispatch_clipboard_menu(action)); }},
+            {"frame.reviewed_sound_edit", route_priority_t::frame, {},
+             [this](const auto& action, const auto&) {
+                 return handled_if(dispatch_reviewed_sound_edit(
+                     action, session.history, session.workspace, commands,
+                     views.project.compose_interaction_state, platform.notification_sink));
+             }},
+        };
+    }
+
+    auto audio_offset_routes() -> std::vector<workspace_route_t> {
+        return {
+            {"audio_offset.toggle_lock", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 if (action.compose_action != WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK)
+                     return route_status_t::declined;
+                 dispatch_audio_offset_lock_feedback(action);
+                 return route_status_t::handled;
+             }},
+            {"audio_offset.drag", route_priority_t::domain, {},
+             [this](const auto& action, const auto& frame) {
+                 if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE)
+                     return route_status_t::declined;
+                 static_cast<void>(dispatch_audio_offset_drag_action(
+                     action, commands.audio_offset_edits_locked(), frame.sample_rate));
+                 return route_status_t::handled;
+             }},
+        };
+    }
+
+    auto transport_routes() -> std::vector<workspace_route_t> {
+        return {
+            {"transport.player", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 return handled_if(wormedit::sys::dispatch_transport_player_action(
+                     action, commands, platform.notification_sink));
+             }},
+        };
+    }
+
+    auto usage_jump_routes() -> std::vector<workspace_route_t> {
+        return {
+            {"jump.bga_usage", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 if (action.kind != WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) return route_status_t::declined;
+                 dispatch_bga_usage_jump(action, session.history, session.workspace,
+                                         views.project.compose_interaction_state, platform.notification_sink);
+                 return route_status_t::handled;
+             }},
+            {"jump.sound_usage", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 if (action.kind != WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) return route_status_t::declined;
+                 static_cast<void>(dispatch_sound_usage_jump(
+                     action, session.history, session.workspace, views.project.compose_interaction_state,
+                     platform.notification_sink));
+                 return route_status_t::handled;
+             }},
+            {"jump.compare_diagnostic", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 if (action.kind != WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP)
+                     return route_status_t::declined;
+                 static_cast<void>(dispatch_compare_diagnostic_jump(
+                     action, session.history, session.workspace, views.project.compose_interaction_state,
+                     platform.notification_sink));
+                 return route_status_t::handled;
+             }},
+            {"jump.marker_navigation", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 if (action.kind != WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER &&
+                     action.kind != WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER)
+                     return route_status_t::declined;
+                 dispatch_marker_navigation(action);
+                 return route_status_t::handled;
+             }},
+        };
+    }
+
+    auto document_routes() -> std::vector<workspace_route_t> {
+        return {
+            {"selection", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 return handled_if(dispatch_workspace_selection_action(
+                     action, session.history, session.workspace, platform.notification_sink));
+             }},
+            {"metadata", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 return handled_if(wormedit::sys::dispatch_metadata_action(
+                     action, metadata_inputs(), commands.audio_offset_edits_locked(),
+                     jobs.is_file_job_busy(), true));
+             }},
+            {"timing", route_priority_t::domain, {},
+             [this](const auto& action, const auto&) {
+                 return handled_if(dispatch_timing_workspace_action(action, commands));
+             }},
+            {"compose", route_priority_t::domain, {},
+             [this](const auto& action, const auto& frame) {
+                 return handled_if(wormedit::sys::dispatch_compose_workspace_action(
+                     action, compose_actions(), frame.compose_viewport_height_pixels,
+                     jobs.is_file_job_busy(background_jobs_t::file_job_scope_t::compose_dispatch)));
+             }},
+        };
+    }
+
+    // Domains are listed in the order that breaks ties inside a priority band.
+    auto build_workspace_router() -> workspace_router_t {
+        return workspace_router_t::from(lifecycle_routes(), frame_routes(), audio_offset_routes(),
+                                        transport_routes(), usage_jump_routes(), document_routes());
+    }
+
     void dispatch_workspace_frame_action(const wormedit::ui::workspace_action_t& action, bool shortcut_handled,
                                          std::optional<std::uint32_t> sample_rate,
                                          int compose_viewport_height_pixels) {
-        if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
-            running = false;
-        } else if (dispatch_project_session_action(action)) {
-            // Project transitions are handled before editor actions.
-        } else if (dispatch_recovery_workspace_action(action)) {
-            // Recovery can open a document from the empty landing state.
-        } else if (!session.project_identity.session_loaded) {
-            // The landing view only accepts project and recovery actions.
-        } else if (shortcut_handled) {
-            // Registry commands take precedence over widget actions emitted
-            // by the same input frame, preventing duplicate mutations.
-        } else if (dispatch_clipboard_menu(action)) {
-            // Clipboard menu actions use the same typed registry as shortcuts.
-        } else if (dispatch_reviewed_sound_edit(
-                       action, session.history, session.workspace, commands,
-                       views.project.compose_interaction_state, platform.notification_sink)) {
-            // Properties and reviewed imports share a revision-checked sound edit boundary.
-        } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
-            dispatch_audio_offset_lock_feedback(action);
-        } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
-            static_cast<void>(dispatch_audio_offset_drag_action(
-                action, commands.audio_offset_edits_locked(), sample_rate));
-        } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action, commands, platform.notification_sink)) {
-            // Typed producer callbacks already publish this transport outcome.
-        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
-            dispatch_bga_usage_jump(
-                action, session.history, session.workspace, views.project.compose_interaction_state,
-                platform.notification_sink);
-        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
-            static_cast<void>(dispatch_sound_usage_jump(
-                action, session.history, session.workspace, views.project.compose_interaction_state,
-                platform.notification_sink));
-        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
-            static_cast<void>(dispatch_compare_diagnostic_jump(
-                action, session.history, session.workspace, views.project.compose_interaction_state,
-                platform.notification_sink));
-        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
-                   action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
-            dispatch_marker_navigation(action);
-        } else if (const auto selection_status = dispatch_workspace_selection_action(
-                       action, session.history, session.workspace, platform.notification_sink)) {
-            static_cast<void>(selection_status);
-        } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
-                       action, metadata_inputs(),
-                       commands.audio_offset_edits_locked(),
-                       jobs.is_file_job_busy(), true)) {
-            static_cast<void>(metadata_status);
-        } else if (dispatch_timing_workspace_action(action, commands)) {
-            // The timing producer publishes feedback and consumes this action.
-        } else if (wormedit::sys::dispatch_compose_workspace_action(
-                       action, compose_actions(), compose_viewport_height_pixels,
-                       jobs.is_file_job_busy(background_jobs_t::file_job_scope_t::compose_dispatch))) {
-            // The Compose producer publishes feedback and consumes this action.
-        }
+        if (!workspace_router) workspace_router.emplace(build_workspace_router());
+        // A route that fails its policy is skipped: the landing view only accepts lifecycle routes, and
+        // a registry command that consumed the frame blocks widget actions from the same input frame,
+        // preventing duplicate mutations.
+        static_cast<void>(workspace_router->dispatch(
+            action, {.sample_rate = sample_rate, .compose_viewport_height_pixels = compose_viewport_height_pixels},
+            {.session_loaded = session.project_identity.session_loaded, .shortcut_handled = shortcut_handled}));
     }
+
+    std::optional<workspace_router_t> workspace_router;
 
     void copy_notification_details(std::uint64_t id) {
         const auto* entry = wormedit::sys::find_notification(platform.notifications, id);

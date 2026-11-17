@@ -13,3 +13,6 @@ cmake_install.cmake
 CMakeUserPresets.json
 compile_commands.json
 .ccache/
+
+# Agent scratch output and walkthrough test artifacts.
+.agent/

@@ -2,6 +2,7 @@
 #include "../sys/compose_window_overloads_view.h"
 #include "../sys/compose_window_overloads_input.h"
 #include "nuklear_event_harness.h"
+#include "../support/temporary_directory.h"
 #include "sys/app/application_defaults.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/compose/input/compose_input.h"
@@ -320,9 +321,9 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes both groups with song a
         group.charts = {history.document.charts.front().id, *duplicate.payload.chart, *added.payload.chart};
         expect(apply_set_output_group_command(history, index, std::move(group)).applied);
     }
-    const auto root = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/osu-stepmania-publication";
-    std::filesystem::remove_all(root);
-    std::filesystem::create_directories(root);
+    auto directory = wormedit::test::temporary_directory_t::from();
+    expect(directory.has_value());
+    const auto& root = directory->path();
     expect(create_native_project_file(root / "song.wormedit", history.document).value);
     for (std::size_t index = 0; index < history.document.output_groups.size(); ++index) {
         const auto& group = history.document.output_groups[index];
@@ -426,9 +427,9 @@ TEST_CASE("Osu StepMania walkthrough refuses multiple music resources without pu
     auto song = audio_project();
     song.resources.push_back({.id = resource_id_t{100}, .name = "Second music",
         .asset = song.audio_assets.front().id, .roles = {resource_role_t::music}});
-    const auto root = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/osu-stepmania-refusal";
-    std::filesystem::remove_all(root);
-    std::filesystem::create_directories(root);
+    auto directory = wormedit::test::temporary_directory_t::from();
+    expect(directory.has_value());
+    const auto& root = directory->path();
     for (const auto& group : song.output_groups) {
         const auto result = run_output_group_export({.document = song,
             .plan = output_group_export_plan_t::from(song, group), .asset_base = root}, {});

@@ -91,9 +91,11 @@ src/ui/nuklear/metadata/metadata_song_section.h 65
 src/ui/nuklear/metadata/metadata_state.h 63
 src/ui/nuklear/resources/sound_import_dialog.h 71
 src/ui/nuklear/resources/sound_import_runtime.h 63
-tests/sys/application_dispatch_fixture.h 247
+tests/sys/application_dispatch_fixture.h 244
 tests/sys/compose_area_dispatch_fixture.h 170
 tests/sys/compose_scene_cache_fixture.h 186
-tests/sys/compose_window_overloads.h 213
-tests/sys/frame_timing_fixtures.h 285
+tests/sys/compose_window_overloads_input.h 195
+tests/sys/compose_window_overloads_sound.h 190
+tests/sys/compose_window_overloads_view.h 209
+tests/sys/frame_timing_fixtures.h 282
 tests/ui/compose_ui_window_overloads.h 81

@@ -1,5 +1,7 @@
 #include "sys/compose/actions/compose_audition_requests.h"
-#include "compose_window_overloads.h"
+#include "compose_window_overloads_view.h"
+#include "compose_window_overloads_sound.h"
+#include "compose_window_overloads_input.h"
 #include "sys/app/application_defaults.h"
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose/actions/compose_sound_actions.h"
@@ -35,13 +37,11 @@
 #include <fstream>
 #include <thread>
 #include <source_location>
-
 // Native drop hit testing is unrelated to the action dispatcher in this
 // headless target; no rendered metadata pane can accept a file drop.
 wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t, float, float) {
     return {};
 }
-
 using namespace wormedit;
 using namespace wormedit::sys;
 

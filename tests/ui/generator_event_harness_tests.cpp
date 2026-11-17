@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "../sys/compose_window_overloads.h"
+#include "../sys/compose_window_overloads_view.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "sys/compose/actions/compose_actions.h"
 #include "sys/compose/generator_runtime.h"

@@ -1,5 +1,6 @@
 #include "sys/compose/actions/compose_audition_requests.h"
 #include "compose_ui_window_overloads.h"
+#include "../sys/compose_window_overloads_sound.h"
 #include "sys/app/application_timing_stage.h"
 #include "../sys/compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
@@ -38,7 +39,6 @@
 #include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 

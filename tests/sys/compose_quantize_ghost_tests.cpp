@@ -1,6 +1,5 @@
 // BGA stroke admission, quantize ghost geometry and BGA move previews.
 #include "frame_timing_fixtures.h"
-#include "compose_window_overloads.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>

@@ -45,7 +45,9 @@ tests/sys/compose_paste_offset_tests.cpp
 tests/sys/compose_quantize_ghost_tests.cpp
 tests/sys/compose_quantize_preview_tests.cpp
 tests/sys/compose_session_state_tests.cpp
-tests/sys/compose_window_overloads.h
+tests/sys/compose_window_overloads_input.h
+tests/sys/compose_window_overloads_sound.h
+tests/sys/compose_window_overloads_view.h
 tests/sys/export_cut_projection_tests.cpp
 tests/sys/frame_projection_arena_tests.cpp
 tests/sys/frame_projection_retention_tests.cpp

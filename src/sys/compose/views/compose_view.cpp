@@ -1,4 +1,5 @@
 #include <wormedit/core/bgm_columns.h>
+#include "sys/request_stamp_check.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose/views/compose_view.h"
@@ -2487,7 +2488,7 @@ auto toggle_compose_audio_offset_lock(const wormedit::ui::request_stamp_t& reque
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string {
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart)
         return "Audio offset lock ignored because the chart or document revision changed.";
-    if (!request.is_current(history.document, *workspace.selected_chart))
+    if (!wormedit::sys::request_stamp_current(request, history.document, *workspace.selected_chart))
         return wormedit::stale_action_message("Audio offset lock");
     application.project.timing_recipe.audio_offset_locked = !application.project.timing_recipe.audio_offset_locked;
     if (application.project.timing_recipe.audio_offset_locked) {

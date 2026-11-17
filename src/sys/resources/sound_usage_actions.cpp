@@ -1,4 +1,5 @@
 #include "sys/project/workspace_navigation.h"
+#include "sys/request_stamp_check.h"
 #include "sys/resources/sound_usage_actions.h"
 
 #include <wormedit/core/chart_editor.h>
@@ -40,7 +41,7 @@ auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
         workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
         request.selected_project_id != history.document.id ||
         request.selected_resource_id != action.sound_usage.resource_id ||
-        !action.stamp.is_document_current(history.document))
+        !request_stamp_document_current(action.stamp, history.document))
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =

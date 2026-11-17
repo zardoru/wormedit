@@ -134,11 +134,11 @@ using recipe_command_t = wormedit::ui::compose_recipe_command_t;
 
 void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
            WormUiComposeActionKind kind) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose_action = kind;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose.kind = kind;
     action.stamp = wormedit::ui::request_stamp_t::of(view);
-    action.recipe.recipe_id.value = view.recipe_form.recipe_id.value;
-    action.recipe.form = state.recipe_editor.recipe_edit_form;
+    action.compose.recipe.recipe_id.value = view.recipe_form.recipe_id.value;
+    action.compose.recipe.form = state.recipe_editor.recipe_edit_form;
 }
 
 void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
@@ -742,7 +742,7 @@ void commit_edit(const ComposeInspectorContext& inspector, edit_t edit) {
     }
     if (edit.settled && editor.recipe_edit_dirty) editor.recipe_edit_commit_pending = true;
     if (!editor.recipe_edit_commit_pending || edit.changed || view.recipe_form.evaluation_busy ||
-        editor.recipe_number_drag.dragging || inspector.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        editor.recipe_number_drag.dragging || inspector.action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     editor.recipe_edit_commit_pending = false;
     editor.recipe_edit_apply_pending = true;

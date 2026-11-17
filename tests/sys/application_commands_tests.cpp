@@ -50,16 +50,16 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
     wormedit::ui::workspace_action_t action{};
     action.timing.chart_id = wormedit::chart_id_t{2};
     action.timing.document_revision = 7;
-    action.audio_offset_drag_chart_id = wormedit::chart_id_t{2};
-    action.audio_offset_drag_document_revision = 7;
-    action.audio_offset_drag_sample_rate = 48'000;
+    action.audio_offset_drag.chart_id = wormedit::chart_id_t{2};
+    action.audio_offset_drag.document_revision = 7;
+    action.audio_offset_drag.sample_rate = 48'000;
     CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage));
-    CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
+    CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action.audio_offset_drag, history.document, workspace, 48'000));
     workspace.selected_chart.reset();
     const auto timing = wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage);
     REQUIRE(timing.has_value());
     CHECK(*timing == "Timing event staging expired because its chart or revision changed.");
-    const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000);
+    const auto audio = wormedit::sys::validate_audio_offset_drag_binding(action.audio_offset_drag, history.document, workspace, 48'000);
     REQUIRE(audio.has_value());
     CHECK(*audio == "Audio offset drag expired after its chart or waveform changed.");
 }
@@ -91,13 +91,13 @@ TEST_CASE("Application audio offset validation separates stamp expiry from missi
     const wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::metadata,
         .selected_chart = wormedit::chart_id_t{2}};
     wormedit::ui::workspace_action_t action{};
-    action.audio_offset_drag_chart_id = wormedit::chart_id_t{source == 0 ? 2u : 3u};
-    action.audio_offset_drag_document_revision = source == 0 ? 6 : 7;
-    action.audio_offset_drag_sample_rate = 48'000;
-    const auto failure = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, 48'000);
+    action.audio_offset_drag.chart_id = wormedit::chart_id_t{source == 0 ? 2u : 3u};
+    action.audio_offset_drag.document_revision = source == 0 ? 6 : 7;
+    action.audio_offset_drag.sample_rate = 48'000;
+    const auto failure = wormedit::sys::validate_audio_offset_drag_binding(action.audio_offset_drag, document, workspace, 48'000);
     REQUIRE(failure.has_value());
     wormedit::test::check_stale_action_message(*failure, "Audio offset drag");
-    const auto missing = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, std::nullopt);
+    const auto missing = wormedit::sys::validate_audio_offset_drag_binding(action.audio_offset_drag, document, workspace, std::nullopt);
     REQUIRE(missing.has_value());
     CHECK(*missing == "Audio offset drag expired after its chart or waveform changed.");
 }
@@ -228,8 +228,8 @@ struct AreaFixture {
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
         action.stamp.chart_id.value = 7;
         action.stamp.document_revision = history.document.revision;
-        action.area.begin_row = 121;
-        action.area.end_row = 620;
+        action.compose.area.begin_row = 121;
+        action.compose.area.end_row = 620;
     }
     auto dispatch() -> std::string {
         const auto result = dispatch_compose_area_action(action, history, state);
@@ -343,7 +343,7 @@ struct SoundImportDispatchFixture {
                   const wormedit::ui::sound_import_group_t* groups, std::size_t group_count)
         -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
-        action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
         action.stamp.project_id = history.document.id;
         action.stamp.chart_id.value = chart.value;
         action.stamp.document_revision = history.document.revision;
@@ -380,12 +380,12 @@ struct SoundSlotBatchDispatchFixture {
                   std::uint16_t slot, bool confirmed = false,
                   std::uint64_t revision = 0) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
-        action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
         action.stamp.project_id = history.document.id;
         action.stamp.chart_id.value = chart.value;
         action.stamp.document_revision = revision == 0 ? history.document.revision : revision;
-        action.resource.sound_slot = slot;
-        action.resource.sound_slot_confirmed = confirmed;
+        action.compose.resource.sound_slot = slot;
+        action.compose.resource.sound_slot_confirmed = confirmed;
         if (items) action.sound_import.items.assign(items, items + count);
 
         return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
@@ -614,9 +614,9 @@ void section_dispatch_preserves_model(wormedit::ui::sound_import_kind_t kind, bo
     } else {
         const auto* raw_path = path.c_str();
         wormedit::ui::workspace_action_t action{};
-        action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
         action.sound_import.kind = kind;
-        action.resource.import_paths = {raw_path};
+        action.compose.resource.import_paths = {raw_path};
 
         message = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
             fixture.chart, fixture.application_state, fixture.sink);
@@ -655,7 +655,7 @@ TEST_CASE("sound_import fixed section confirmation rejects stale revision atomic
     const auto path = sound_fixture_path("keysound-c4.ogg");
     const wormedit::ui::sound_import_item_t item{path.c_str(), "Section stem", wormedit::sound_kind_t::stem, true};
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.stamp.project_id = fixture.history.document.id;
     action.stamp.chart_id.value = fixture.chart.value;
     action.stamp.document_revision = fixture.history.document.revision;
@@ -726,7 +726,7 @@ TEST_CASE("Direct sound slot actions reject stale chart stamps before payload pr
                               WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
     SoundSlotBatchDispatchFixture fixture;
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = kind;
+    action.compose.kind = kind;
     action.stamp.chart_id.value = fixture.chart.value;
     action.stamp.document_revision = fixture.history.document.revision + 1;
     const auto response = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
@@ -1187,7 +1187,7 @@ TEST_CASE("Clearing an area span is an undoable transient selection change",
     AreaFixture f;
     f.state.retained_selection_range = position_span_t{{measure_id_t{1}, 121}, {measure_id_t{1}, 620}};
     const auto before = editor_selection_snapshot_t::from(f.state);
-    f.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR;
+    f.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR;
     (void)f.dispatch();
     CHECK_FALSE(f.state.retained_selection_range);
     CHECK(apply_editor_history(f.history, f.state, true).changed);
@@ -1590,7 +1590,7 @@ TEST_CASE("Compose area resizing snaps only the moving edge and leaves edits and
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto selected = fixture.state.selected_objects;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{121, 720});
     check_area_unchanged(fixture, original);
@@ -1604,15 +1604,15 @@ TEST_CASE("Compose area edge crossing normalizes rows and cancellation restores 
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto selected = fixture.state.selected_objects;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.area.begin_edge = true;
-    fixture.action.area.begin_row = 900;
-    fixture.action.area.end_row = 480;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose.area.begin_edge = true;
+    fixture.action.compose.area.begin_row = 900;
+    fixture.action.compose.area.end_row = 480;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{480, 960});
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
-    fixture.action.area.begin_row = 121;
-    fixture.action.area.end_row = 480;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
+    fixture.action.compose.area.begin_row = 121;
+    fixture.action.compose.area.end_row = 480;
     CHECK(fixture.dispatch() == "Area resize canceled.");
     check_original_area(fixture);
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
@@ -1625,7 +1625,7 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     const auto range = fixture.state.retained_selection_range;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
     SECTION("stale revision") {
         ++fixture.action.stamp.document_revision;
     }
@@ -1633,7 +1633,7 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
         ++fixture.action.stamp.chart_id.value;
     }
     SECTION("overflow row") {
-        fixture.action.area.end_row = std::numeric_limits<std::uint64_t>::max();
+        fixture.action.compose.area.end_row = std::numeric_limits<std::uint64_t>::max();
     }
     CHECK(fixture.dispatch() != "Selected area resized.");
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
@@ -1643,9 +1643,9 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
 
 TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][commands]") {
     AreaFixture fixture;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    fixture.action.quantize.divisions = fixture.state.active_snap_denominator;
-    fixture.action.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    fixture.action.compose.quantize.divisions = fixture.state.active_snap_denominator;
+    fixture.action.compose.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
     CHECK(fixture.dispatch() == "Selected objects quantized.");
     const auto& chart = fixture.history.document.charts.front();
     CHECK(chart.measures.front().notes[0].position.row == 240);
@@ -1658,7 +1658,7 @@ TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][
 TEST_CASE("Compose area deletion preserves notes and timing at the ending boundary",
           "[unit][sys][commands]") {
     AreaFixture fixture;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch() == "Selected area contents deleted.");
     const auto& chart = fixture.history.document.charts.front();
     REQUIRE(chart.measures.front().notes.size() == 2);
@@ -1677,15 +1677,15 @@ TEST_CASE("Compose area resizing retains virtual canvas rows without materializi
     fixture.state.retained_canvas_selection_range = canvas_row_span_t{2400, 4800};
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.area.is_virtual = true;
-    fixture.action.area.begin_row = 2400;
-    fixture.action.area.end_row = 5000;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose.area.is_virtual = true;
+    fixture.action.compose.area.begin_row = 2400;
+    fixture.action.compose.area.end_row = 5000;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{2400, 5040});
     CHECK_FALSE(fixture.state.retained_selection_range);
     check_area_unchanged(fixture, original);
-    fixture.action.area.end_row = 960000;
+    fixture.action.compose.area.end_row = 960000;
     CHECK(fixture.dispatch() != "Selected area resized.");
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
 }
@@ -1696,7 +1696,7 @@ TEST_CASE("Compose area deletion rejects unsupported timing atomically", "[unit]
     const auto original = wormedit::write_native_project(fixture.history.document).value;
     REQUIRE(original);
     CHECK_FALSE(compose_area_delete_supported(fixture.history, fixture.state));
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch().find("notes and BGM only") != std::string::npos);
     CHECK(wormedit::write_native_project(fixture.history.document).value == original);
     CHECK(fixture.history.undo.empty());
@@ -1721,7 +1721,7 @@ TEST_CASE("Compose area deletion removes interior BGM and preserves the ending b
     REQUIRE(compose_area_delete_supported(fixture.history, fixture.state));
     const auto index = measure_index_t::from(chart).value();
     CHECK(compose_area_delete_supported(chart, index, fixture.state));
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch() == "Selected area contents deleted.");
     const auto& events = fixture.history.document.charts.front().measures.front().bgm_events;
     REQUIRE(events.size() == 2);
@@ -1738,9 +1738,9 @@ TEST_CASE("Compose area edges follow measure-local active grid across odd measur
     chart.measures.front().notes.back().position.row = 520;
     fixture.state.retained_selection_range =
         position_span_t{{measure_id_t{2}, 17}, {measure_id_t{2}, 480}};
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
-    fixture.action.area.begin_row = 617;
-    fixture.action.area.end_row = 1100;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose.area.begin_row = 617;
+    fixture.action.compose.area.end_row = 1100;
     CHECK(fixture.dispatch() == "Selected area resized.");
     CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{617, 1080});
     REQUIRE(fixture.state.retained_selection_range);
@@ -1754,9 +1754,9 @@ TEST_CASE("Compose area quantization rejects ambiguous identities without edits"
     chart.bpms.back().id = wormedit::object_id_t{1};
     const auto revision = fixture.history.document.revision;
     const auto position = chart.measures.front().notes.front().position;
-    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    fixture.action.quantize.divisions = fixture.state.active_snap_denominator;
-    fixture.action.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
+    fixture.action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    fixture.action.compose.quantize.divisions = fixture.state.active_snap_denominator;
+    fixture.action.compose.quantize.holds = wormedit::quantization_hold_t::both_endpoints;
     CHECK(fixture.dispatch().find("reuses an object ID") != std::string::npos);
     CHECK(fixture.history.document.revision == revision);
     CHECK(chart.measures.front().notes.front().position == position);
@@ -2021,7 +2021,7 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     application_command_state_t state;
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
-    action.transport_keep_pitch = true;
+    action.transport.keep_pitch = true;
     expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     state.preferences.transport_keep_pitch_available = true;
     bool requested{};
@@ -2030,7 +2030,7 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     expect_keep_pitch(requested);
     expect_keep_pitch(state.preferences.transport_keep_pitch);
     state.services.transport_set_keep_pitch = [](bool) { return false; };
-    action.transport_keep_pitch = false;
+    action.transport.keep_pitch = false;
     expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     expect_keep_pitch(state.preferences.transport_keep_pitch);
 }
@@ -2100,7 +2100,7 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     check_transport_notification(entries[0].source == notification_source_t::audio);
     state.preferences.transport_keep_pitch_available = true;
     state.services.transport_set_keep_pitch = [](bool) { return true; };
-    action.transport_keep_pitch = true;
+    action.transport.keep_pitch = true;
     check_transport_notification(dispatch_transport_player_action(action, state, sink) == "Keep pitch enabled.");
     check_transport_notification(state.preferences.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
@@ -3648,8 +3648,8 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     catalog_requested_rate = {};
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-    action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
-    action.transport_rate_id = entry.id;
+    action.transport.rate_index = 255; // A contradictory legacy position must not control dispatch.
+    action.transport.rate_id = entry.id;
     const auto status =
         dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate changed."));
@@ -3669,7 +3669,7 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     catalog_requested_rate = {};
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-    action.transport_rate_id = static_cast<wormedit::audio::playback_rate_id_t>(255);
+    action.transport.rate_id = static_cast<wormedit::audio::playback_rate_id_t>(255);
     const auto status =
         dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate unchanged."));

@@ -95,5 +95,5 @@ TEST_CASE("Keysound tool exposes hitsound-only mode and exits with Escape",
     escape.key.key = SDLK_ESCAPE;
     escape.key.scancode = SDL_SCANCODE_ESCAPE;
     escape.key.down = true;
-    CHECK(fixture.harness.frame(std::span{&escape, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_SELECT_TOOL);
+    CHECK(fixture.harness.frame(std::span{&escape, 1}).get().compose.kind == WORM_UI_COMPOSE_ACTION_SELECT_TOOL);
 }

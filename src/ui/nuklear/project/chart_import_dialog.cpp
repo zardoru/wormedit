@@ -50,7 +50,7 @@ auto render_path_row(nk_context* context, wormedit::ui::workspace_action_t& acti
     if (chrome::Button{"Read", chrome::ButtonKind::secondary, "Read the chart file at this path",
                        field.text[0] != '\0'}.render(context)) {
         emit(action, WORM_UI_CHART_IMPORT_LOAD);
-        action.project_path = field.text.data();
+        action.project_open.path = field.text.data();
     }
     return browse;
 }

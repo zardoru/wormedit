@@ -210,13 +210,13 @@ void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
 void set_waveform_offset_drag_action(wormedit::ui::workspace_action_t* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
-    if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
+    if (!action || action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
         return;
-    action->audio_offset_drag_action = kind;
-    action->audio_offset_drag_chart_id = wormedit::chart_id_t{state.timing_drag.beat_zero_capture.chart};
-    action->audio_offset_drag_document_revision = state.timing_drag.beat_zero_capture.revision;
-    action->audio_offset_drag_sample_rate = state.timing_drag.beat_zero_capture.sample_rate;
-    action->audio_offset_drag_delta_frames = delta_frames;
+    action->audio_offset_drag.action = kind;
+    action->audio_offset_drag.chart_id = wormedit::chart_id_t{state.timing_drag.beat_zero_capture.chart};
+    action->audio_offset_drag.document_revision = state.timing_drag.beat_zero_capture.revision;
+    action->audio_offset_drag.sample_rate = state.timing_drag.beat_zero_capture.sample_rate;
+    action->audio_offset_drag.delta_frames = delta_frames;
 }
 
 void reset_waveform_offset_drag() {
@@ -1406,7 +1406,7 @@ static auto process_compose_bga_event_pointer(const ComposePointerEventContext& 
 }
 
 void update_compose_sound_hover(const ComposePointerEventContext& input) {
-    input.action->resource.sound_hover_object_id.value = !state.input_queue.action_overflowed && input.window_focused &&
+    input.action->compose.resource.sound_hover_object_id.value = !state.input_queue.action_overflowed && input.window_focused &&
         input.view->scene_available && input.pointer_inside && !input.compose_pointer_captured
         ? compose_sound_object_at(*input.view, input.pointer_x, input.pointer_y) : 0;
 }

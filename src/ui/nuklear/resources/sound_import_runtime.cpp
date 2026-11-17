@@ -47,7 +47,7 @@ void submit_import(wormedit::ui::workspace_action_t& action) {
     for (const auto& group : submitted->groups)
         action.sound_import.groups.push_back({group.name,
             group.existing_group.value_or(wormedit::sound_group_id_t{}), group.member_indexes});
-    action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.sound_import.kind = pending.fixed_kind;
     action.stamp = {.chart_id = {pending.chart_id}, .project_id = {pending.project_id},
                     .document_revision = pending.document_revision};
@@ -123,16 +123,16 @@ void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const wormedit::ui::w
 void worm_ui_nuklear_consume_sound_picker(const wormedit::ui::workspace_view_t& view,
                                          wormedit::ui::workspace_action_t& action) {
     std::lock_guard lock{picker.mutex};
-    if (!picker.ready || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (!picker.ready || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     picker.ready = false;
     const bool same_target = picker.target.project == view.project_id.value &&
         picker.target.chart == view.selected_chart_id.value && picker.target.revision == view.document_revision;
     if (!same_target || picker.paths.empty()) return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
     action.sound_import.kind = picker.target.kind;
     action.stamp = {.chart_id = {view.selected_chart_id.value}, .project_id = view.project_id,
                     .document_revision = view.document_revision};
-    action.resource.import_paths = std::move(picker.paths);
+    action.compose.resource.import_paths = std::move(picker.paths);
 }
 
 void worm_ui_nuklear_render_pending_sound_import(nk_context* context,
@@ -147,6 +147,6 @@ void worm_ui_nuklear_render_pending_sound_import(nk_context* context,
     if (intent == worm_ui_sound_import_dialog_action_t::cancel)
         worm_ui_nuklear_sound_import_cancel(pending);
     else if (intent == worm_ui_sound_import_dialog_action_t::confirm &&
-             action.compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+             action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
         submit_import(action);
 }

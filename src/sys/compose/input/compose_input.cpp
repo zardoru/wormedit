@@ -2298,7 +2298,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
         status = std::move(step.status);
         if (step.stop) return status;
     }
-    if (context.ui_action.marker.note_label_focus_consumed)
+    if (context.ui_action.compose.marker.note_label_focus_consumed)
         context.environment.controls.cache.frame.focus_note_label_editor = false;
     return status;
 }
@@ -2594,7 +2594,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
         history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
         application_state.preferences.editor_preferences);
     auto status = dispatch_compose_input_batch(input_context);
-    if (ui_action.marker.note_label_focus_consumed) {
+    if (ui_action.compose.marker.note_label_focus_consumed) {
         scene_cache.frame.focus_note_label_editor = false;
     }
 
@@ -2625,7 +2625,7 @@ void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application) {
     if (workspace.active_tab == wormedit::workspace_tab_t::compose)
-        apply_compose_timing_region_width(action.timing_region, application);
+        apply_compose_timing_region_width(action.compose.timing_region, application);
     if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.stamp.chart_id.value ||
         history.document.revision != action.stamp.document_revision ||

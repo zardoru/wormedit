@@ -32,24 +32,24 @@ auto rejection(std::string message) -> sound_usage_action_result_t {
 
 } // namespace
 
-auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_sound_usage_action(const wormedit::ui::request_stamp_t& stamp,
+                                 const wormedit::ui::sound_usage_locate_request_t& usage_request,
                                  const wormedit::ui::sound_usage_request_t& request,
                                  document_history_t& history, workspace_controller_t& workspace,
                                  std::optional<editor_interaction_state_t>& interaction)
     -> sound_usage_action_result_t {
-    if (action.kind != WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE ||
-        workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
+    if (workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
         request.selected_project_id != history.document.id ||
-        request.selected_resource_id != action.sound_usage.resource_id ||
-        !request_stamp_document_current(action.stamp, history.document))
+        request.selected_resource_id != usage_request.resource_id ||
+        !request_stamp_document_current(stamp, history.document))
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =
-        sound_usage_view_t::from(history.document, action.sound_usage.resource_id);
-    if (!usage.valid || usage.asset.value != action.sound_usage.asset_id.value)
+        sound_usage_view_t::from(history.document, usage_request.resource_id);
+    if (!usage.valid || usage.asset.value != usage_request.asset_id.value)
         return rejection("The selected sound is no longer available.");
     const auto found =
-        std::ranges::find_if(usage.rows, [&](const auto& row) { return row_matches(action.sound_usage, row); });
+        std::ranges::find_if(usage.rows, [&](const auto& row) { return row_matches(usage_request, row); });
     if (found == usage.rows.end())
         return rejection("The sound usage is no longer available.");
 

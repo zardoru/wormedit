@@ -109,12 +109,12 @@ TEST_CASE("Sounds group filter updates request before paging without editing the
     auto ungrouped = harness.drawn_text_center("Ungrouped");
     require_filter(ungrouped.has_value());
     const auto ungrouped_actions = click_filter(harness, ungrouped->first, ungrouped->second);
-    INFO("Ungrouped action codes down/up: " << ungrouped_actions[0].get().compose_action << "/"
-         << ungrouped_actions[1].get().compose_action);
-    check_filter(actions[0].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_filter(actions[1].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_filter(ungrouped_actions[0].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_filter(ungrouped_actions[1].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    INFO("Ungrouped action codes down/up: " << ungrouped_actions[0].get().compose.kind << "/"
+         << ungrouped_actions[1].get().compose.kind);
+    check_filter(actions[0].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    check_filter(actions[1].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    check_filter(ungrouped_actions[0].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    check_filter(ungrouped_actions[1].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     worm_ui_frontend_keysound_dock_request(&request);
     check_filter(request.group_filter_active);
     require_filter(request.group_filter_ids.size() == 1);
@@ -164,8 +164,8 @@ TEST_CASE("Sounds filter popup closes on Escape without a compose action",
     escape_up.key.down = false;
     const auto up_action = harness.frame(std::span{&escape_up, 1});
     CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_filters.is_popup_open());
-    CHECK(down_action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    CHECK(up_action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(down_action.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(up_action.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
@@ -180,8 +180,8 @@ TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
     auto blue = harness.drawn_text_center("Blue");
     require_filter(blue.has_value());
     const auto blue_actions = click_filter(harness, blue->first, blue->second);
-    INFO("Blue action codes down/up: " << blue_actions[0].get().compose_action << "/"
-         << blue_actions[1].get().compose_action << "; layer kind/id: "
+    INFO("Blue action codes down/up: " << blue_actions[0].get().compose.kind << "/"
+         << blue_actions[1].get().compose.kind << "; layer kind/id: "
          << worm_ui_nuklear_compose_state().keysound_filters.keysound_filters.layer_filter_kind << "/"
          << worm_ui_nuklear_compose_state().keysound_filters.keysound_filters.layer_filter_id);
     wormedit::ui::keysound_dock_request_t request{};
@@ -239,8 +239,8 @@ TEST_CASE("Sounds filter layer paging keeps its release off the sound rows",
     require_filter(more.has_value());
     const auto actions = click_filter(harness, more->first, more->second);
     (void)harness.frame();
-    check_filter(actions[0].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_filter(actions[1].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_filter(actions[0].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
+    check_filter(actions[1].get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_filter(worm_ui_nuklear_compose_state().keysound_filters.keysound_filter_layer_first == choices.size());
     check_filter(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selection.selected.empty());
 }

@@ -10,10 +10,10 @@ namespace {
 using namespace wormedit::ui::chrome;
 void emit_snap(nk_context* context, const wormedit::ui::compose_view_t& view,
                wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
     action.stamp = wormedit::ui::request_stamp_t::of(view);
-    action.quantize.snap_denominator = denominator;
+    action.compose.quantize.snap_denominator = denominator;
     context_menu_close(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, context);
 }
 void move_choice(nk_context* context, int count, int& selected) {
@@ -50,8 +50,8 @@ void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& 
     if (Button{"Find fitting snap", ButtonKind::secondary, nullptr,
                view.selected_note_count + view.selected_bgm_event_count != 0}.render(context)) {
         emit_snap(context, view, action, 0);
-        if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
-            action.compose_action = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
+        if (action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
+            action.compose.kind = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Arrows · Enter · Esc", NK_TEXT_LEFT);

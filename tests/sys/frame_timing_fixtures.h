@@ -99,15 +99,15 @@ inline void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     runtime::resource_copy_t resource_copy{scheduler, sink};
     runtime::output_group_export_t export_runtime{sink};
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
+    action.compose.kind = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
                                   : WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
     action.stamp.project_id.value = fixture.history.document.id.value;
     action.stamp.chart_id.value = fixture.history.document.charts.front().id.value;
     action.stamp.document_revision = fixture.history.document.revision;
-    action.quantize.divisions = divisions;
-    action.quantize.space = space;
-    action.quantize.tie = tie;
-    action.quantize.holds = holds;
+    action.compose.quantize.divisions = divisions;
+    action.compose.quantize.space = space;
+    action.compose.quantize.tie = tie;
+    action.compose.quantize.holds = holds;
     (void)dispatch_compose_view_action(action, fixture.history, *fixture.binding.value,
         *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,
         fixture.application, {}, scheduler, resource_copy, export_runtime, false, sink);

@@ -72,22 +72,22 @@ auto raise(const SoundsPanel& panel, WormUiComposeActionKind kind) -> bool {
 
 void stage_selection(const SoundsPanel& panel) {
     auto& state = *panel.state;
-    panel.action->resource.set_sound_resources(state.keysound_catalog.keysound_selection.selected);
+    panel.action->compose.resource.set_sound_resources(state.keysound_catalog.keysound_selection.selected);
 }
 
 void raise_on_selection(const SoundsPanel& panel, WormUiComposeActionKind kind,
                         std::uint64_t layer_id = 0) {
     if (!raise(panel, kind)) return;
     stage_selection(panel);
-    panel.action->layer.id.value = layer_id;
+    panel.action->compose.layer.id.value = layer_id;
 }
 
 void raise_sound_slot_assignment(const SoundsPanel& panel, std::uint16_t slot,
                                  std::string_view path, bool confirmed) {
     if (!raise(panel, WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT)) return;
-    panel.action->resource.sound_slot = slot;
-    panel.action->resource.sound_slot_confirmed = confirmed;
-    panel.action->resource.import_paths = {std::string{path}};
+    panel.action->compose.resource.sound_slot = slot;
+    panel.action->compose.resource.sound_slot_confirmed = confirmed;
+    panel.action->compose.resource.import_paths = {std::string{path}};
 }
 
 void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uint64_t chart,
@@ -116,7 +116,7 @@ void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uin
 
 void process_pending_slot_file(const SoundsPanel& panel) {
     auto& state = *panel.state;
-    if (!state.keysound_slots.keysound_pending_file || panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (!state.keysound_slots.keysound_pending_file || panel.action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     process_slot_file(panel, state.keysound_slots.keysound_pending_project, state.keysound_slots.keysound_pending_chart,
                       state.keysound_slots.keysound_pending_revision, state.keysound_slots.keysound_pending_slot,
@@ -482,7 +482,7 @@ void render_toolbar(const SoundsPanel& panel) {
     if (toolbar_button(context, has_primary,
             IconButton{Glyph::play, "Play the selected sound (Space on the list)"}) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
-        panel.action->resource.id.value = state.keysound_catalog.keysound_selection.primary;
+        panel.action->compose.resource.id.value = state.keysound_catalog.keysound_selection.primary;
     if (IconButton{Glyph::audio_lines, state.dock_layout.sounds_preview_on_click
                                             ? "Preview on click: on (click to turn off)"
                                             : "Preview on click: off (click to turn on)",
@@ -596,10 +596,10 @@ void render_group_actions(const SoundsPanel& panel) {
 void raise_sound_renumber(const SoundsPanel& panel, bool all) {
     if (!raise(panel, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
     auto& state = *panel.state;
-    if (!all) panel.action->resource.set_sound_resources(state.keysound_slots.keysound_renumber_resources);
+    if (!all) panel.action->compose.resource.set_sound_resources(state.keysound_slots.keysound_renumber_resources);
 
-    panel.action->resource.renumber_all = all;
-    panel.action->resource.renumber_bga = false;
+    panel.action->compose.resource.renumber_all = all;
+    panel.action->compose.resource.renumber_bga = false;
     wormedit::ui::nuklear::close_catalog_confirmation(
         wormedit::ui::nuklear::catalog_confirmation(state, false));
 }
@@ -704,7 +704,7 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
         set_armed_resource(state, slot.resource_id.value, compose_resource_origin_t::sounds);
         worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, slot.resource_id.value);
         if (state.dock_layout.sounds_preview_on_click && raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
-            panel.action->resource.id.value = slot.resource_id.value;
+            panel.action->compose.resource.id.value = slot.resource_id.value;
     } else {
         worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
     }
@@ -998,10 +998,10 @@ void assign_sound_layer(const SoundsPanel& panel, std::size_t index) {
 void confirm_sound_layer(const SoundsPanel& panel, bool overwrite) {
     if (!raise(panel, WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER)) return;
     auto& state = *panel.state;
-    panel.action->resource.set_sound_resources(state.keysound_slots.sound_layer_confirmation_resources);
+    panel.action->compose.resource.set_sound_resources(state.keysound_slots.sound_layer_confirmation_resources);
 
-    panel.action->layer.id.value = state.keysound_slots.sound_layer_confirmation_layer;
-    panel.action->resource.sound_overwrite_note_layers = overwrite;
+    panel.action->compose.layer.id.value = state.keysound_slots.sound_layer_confirmation_layer;
+    panel.action->compose.resource.sound_overwrite_note_layers = overwrite;
     state.keysound_slots.sound_layer_confirmation_open = false;
 }
 
@@ -1206,7 +1206,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     const auto* primary = find_row(*panel.view, state.keysound_catalog.keysound_selection.primary);
     if (state.dock_layout.sounds_preview_on_click && !ctrl && !shift && primary && !primary->missing &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
-        panel.action->resource.id.value = id;
+        panel.action->compose.resource.id.value = id;
     const bool double_click = nk_input_is_mouse_released(&panel.context->input, NK_BUTTON_DOUBLE);
     if (!primary || primary->missing || ctrl || shift) return;
     if (!double_click && !primary->stem_source_lane_id.value) return;
@@ -1230,14 +1230,14 @@ void render_row_actions(const SoundsPanel& panel, const wormedit::ui::compose_ke
     if (toolbar_button(context, available && !row.missing,
             IconButton{Glyph::play, available ? "Audition this sound" : nullptr}) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
-        panel.action->resource.id.value = row.resource_id.value;
+        panel.action->compose.resource.id.value = row.resource_id.value;
     nk_layout_row_push(context, 22);
     const auto tip = row.use_count == 0 ? std::string{"Delete unused resource; keep its file"}
         : "Cannot delete: " + std::to_string(row.use_count) + " stored references";
     if (toolbar_button(context, available && row.use_count == 0,
             DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
-        panel.action->resource.sound_resource_ids = {wormedit::resource_id_t{row.resource_id.value}};
+        panel.action->compose.resource.sound_resource_ids = {wormedit::resource_id_t{row.resource_id.value}};
     }
 }
 
@@ -1368,11 +1368,11 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
         const auto label = std::string{"Use "} + fallback->candidates[index];
         if (!chrome::context_menu_item(menu, context, label.c_str())) continue;
         auto& action = *panel.action;
-        if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) break;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+        if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) break;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
         action.stamp.project_id.value = panel.view->project_id.value;
-        action.resource.id.value = menu.stamp.object_id;
-        action.resource.fallback_candidate = static_cast<std::uint32_t>(index);
+        action.compose.resource.id.value = menu.stamp.object_id;
+        action.compose.resource.fallback_candidate = static_cast<std::uint32_t>(index);
         action.stamp.chart_id.value = panel.view->chart_id.value;
         action.stamp.document_revision = panel.view->document_revision;
     }

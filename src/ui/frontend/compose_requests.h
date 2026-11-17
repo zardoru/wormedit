@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-/* Payloads of Compose requests. `compose_action` selects the request; each struct holds the fields
+/* Payloads of Compose requests. `compose_request_t::kind` selects the request; each struct holds the fields
    one family of requests reads. Written by the Compose panels, read by sys/compose. */
 namespace wormedit::ui {
 struct sound_group_assignment_t {

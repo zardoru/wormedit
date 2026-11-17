@@ -328,15 +328,15 @@ TEST_CASE("Retained runtime timing view refills without heap allocations", "[sys
 TEST_CASE("Owned action sound lists reuse capacity after warming", "[sys][frontend-actions][allocation]") {
     ui::workspace_action_t action{};
     const std::array<std::uint64_t, 3> ids{7, 11, 19};
-    action.resource.set_sound_resources(ids);
-    const auto* storage = action.resource.sound_resource_ids.data();
+    action.compose.resource.set_sound_resources(ids);
+    const auto* storage = action.compose.resource.sound_resource_ids.data();
     const auto before = frame_heap_allocation_snapshot();
-    action.resource.set_sound_resources(ids);
+    action.compose.resource.set_sound_resources(ids);
     const auto after = frame_heap_allocation_snapshot();
     check_heap_counter(after.count, before.count);
     check_heap_counter(after.bytes, before.bytes);
-    CHECK(action.resource.sound_resource_ids.data() == storage);
-    CHECK(action.resource.sound_resource_ids ==
+    CHECK(action.compose.resource.sound_resource_ids.data() == storage);
+    CHECK(action.compose.resource.sound_resource_ids ==
         std::vector<resource_id_t>{resource_id_t{7}, resource_id_t{11}, resource_id_t{19}});
 }
 
@@ -344,14 +344,14 @@ TEST_CASE("Workspace action copies own scoped Text and measure positions", "[sys
     auto copy = [] {
         ui::workspace_action_t source{};
         source.bms_program.text = "#BPM 140";
-        source.measure.ids = {0, 4, 9};
+        source.compose.measure.ids = {0, 4, 9};
         auto result = source;
         source.bms_program.text.assign(128, 'x');
-        source.measure.ids.clear();
+        source.compose.measure.ids.clear();
         return result;
     }();
     CHECK(copy.bms_program.text == "#BPM 140");
-    CHECK(copy.measure.ids == std::vector<std::uint64_t>{0, 4, 9});
+    CHECK(copy.compose.measure.ids == std::vector<std::uint64_t>{0, 4, 9});
 }
 
 namespace {

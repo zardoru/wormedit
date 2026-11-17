@@ -82,7 +82,7 @@ TEST_CASE("BGA remove unused keeps referenced resources and rejects stale action
     fixture.history.document.charts.front().bga_events.push_back(
         {.id = object_id_t{12}, .position = {measure_id_t{1}, 0}, .resource = kept});
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA;
     action.stamp.document_revision = 0;
     require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1}, sink)));
     check_bga(fixture.history.document.resources.size() == 2);

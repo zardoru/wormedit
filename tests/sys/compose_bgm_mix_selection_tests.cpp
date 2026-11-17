@@ -228,11 +228,11 @@ TEST_CASE("Solo toggle and target actions affect the next selection in the same 
     const std::array expected{std::size_t{4}, std::size_t{4}, std::size_t{8}};
     for (std::size_t index = 0; index < actions.size(); ++index) {
         wormedit::ui::workspace_action_t action{};
-        action.compose_action = actions[index];
+        action.compose.kind = actions[index];
         action.stamp.project_id = f.history.document.id;
         action.stamp.chart_id = f.interaction->chart;
         action.stamp.document_revision = f.history.document.revision;
-        action.layer.id = layer_id_t{index == 0 ? 101u : 102u};
+        action.compose.layer.id = layer_id_t{index == 0 ? 101u : 102u};
         const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
             f.interaction->viewport_height_pixels, false);
         expect_compose_test(!status.empty());

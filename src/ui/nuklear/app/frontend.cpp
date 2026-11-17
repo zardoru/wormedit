@@ -402,7 +402,7 @@ static void consume_project_file_dialog(wormedit::ui::workspace_action_t& action
     if (g_project_dialog_error.empty() && !g_project_dialog.path.empty() &&
         action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action.kind = g_project_dialog.kind;
-        action.project_path = g_project_dialog.path;
+        action.project_open.path = g_project_dialog.path;
 
     }
     g_project_dialog.path.clear();
@@ -603,18 +603,18 @@ static void queue_compose_text_hotkeys(const char* text) {
 // Turns the first queued hotkey into a Compose action; the rest are dropped.
 static void consume_compose_text_hotkeys(wormedit::ui::workspace_action_t& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
-    if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
+    if (count == 0 || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE ||
         worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned ||
         worm_ui_nuklear_compose_state().layer_editor.layers_menu_input_consumed || compose_note_menu_consumed() || compose_quantize_owns_input() ||
         worm_ui_nuklear_compose_state().has_palette_context_menu() || nuklear_text_entry_active())
         return;
     switch (g_compose_text_hotkeys[0]) {
-    case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
-    case '-': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT; break;
+    case '+': action.compose.kind = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
+    case '-': action.compose.kind = WORM_UI_COMPOSE_ACTION_ZOOM_OUT; break;
     case '[':
-    case '{': action.compose_action = WORM_UI_COMPOSE_ACTION_RATE_SLOWER; break;
+    case '{': action.compose.kind = WORM_UI_COMPOSE_ACTION_RATE_SLOWER; break;
     case ']':
-    case '}': action.compose_action = WORM_UI_COMPOSE_ACTION_RATE_FASTER; break;
+    case '}': action.compose.kind = WORM_UI_COMPOSE_ACTION_RATE_FASTER; break;
     default: break;
     }
 }
@@ -641,11 +641,11 @@ static void set_recovery_action(wormedit::ui::workspace_action_t* action,
         return;
     }
     action->kind = kind;
-    action->recovery_scan_generation = candidate->scan_generation;
-    action->recovery_row_index = candidate->row_index;
-    action->recovery_candidate_index = candidate->candidate_index;
+    action->recovery.scan_generation = candidate->scan_generation;
+    action->recovery.row_index = candidate->row_index;
+    action->recovery.candidate_index = candidate->candidate_index;
     if (kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
-        action->recovery_save_as_destination = g_recovery_save_as_destination;
+        action->recovery.save_as_destination = g_recovery_save_as_destination;
     }
 }
 
@@ -1314,8 +1314,8 @@ static void consume_layer_creation_request(const wormedit::ui::workspace_view_t&
         view.compose.input_occluded || *request != worm_ui_compose_target_t{view.compose.project_id.value, view.compose.chart_id.value,
                                               view.compose.document_revision} ||
         action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.input.compose_inputs.size() != 0 ||
-        (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE &&
-         action.compose_action != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
+        (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE &&
+         action.compose.kind != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
     worm_ui_nuklear_open_layer_creation(view.compose, compose);
 }
 
@@ -1884,9 +1884,9 @@ static void apply_close_result(const wormedit::ui::close_confirmation_view_t& vi
         else start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
     }
     if (decision == WORM_UI_CLOSE_NONE) return;
-    action.close_decision = decision;
-    action.close_project_id = view.project_id;
-    action.close_revision = view.revision;
+    action.close.decision = decision;
+    action.close.project_id = view.project_id;
+    action.close.revision = view.revision;
 }
 
 static void render_close_confirmation(const wormedit::ui::close_confirmation_view_t& view,
@@ -1946,8 +1946,8 @@ wormedit::ui::workspace_action_t worm_ui_frontend_workspace_error(
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     consume_project_file_dialog(action);
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
-    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+    action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_NONE;
     if (!g_context || (!g_window && !g_headless)) {
         return action;
     }
@@ -1995,7 +1995,7 @@ static void apply_workspace_menu_action(MenuAction chosen,
     if (found == g_workspace_menu.end() || !found->enabled) return;
     if (found->recent_path) {
         action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-        action.project_path = found->recent_path;
+        action.project_open.path = found->recent_path;
         return;
     }
     if (found->command_id) {
@@ -2008,7 +2008,7 @@ static void apply_workspace_menu_action(MenuAction chosen,
     case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
     case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;
     case MenuAction::quit: action.kind = WORM_UI_WORKSPACE_ACTION_QUIT; break;
-    case MenuAction::reset_view: action.compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW; break;
+    case MenuAction::reset_view: action.compose.kind = WORM_UI_COMPOSE_ACTION_RESET_VIEW; break;
     case MenuAction::frame_timing: g_frame_timing_visible = !g_frame_timing_visible; break;
     case MenuAction::timing_settings: action.timing_settings.toggle = true; break;
     case MenuAction::preview: action.kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW; break;
@@ -2319,8 +2319,8 @@ static void render_transport_rate(const wormedit::ui::workspace_view_t& view, wo
     nk_spacing(g_context, 1);
     if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-        action->transport_rate_index = static_cast<uint8_t>(target);
-        action->transport_rate_id = rates.entries[target].id;
+        action->transport.rate_index = static_cast<uint8_t>(target);
+        action->transport.rate_id = rates.entries[target].id;
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
     const auto* keep_pitch_hint = view.transport_keep_pitch_available
@@ -2329,7 +2329,7 @@ static void render_transport_rate(const wormedit::ui::workspace_view_t& view, wo
                                          view.transport_keep_pitch}.render(g_context) &&
         view.transport_keep_pitch_available && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
-        action->transport_keep_pitch = !view.transport_keep_pitch;
+        action->transport.keep_pitch = !view.transport_keep_pitch;
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_end(g_context);
 }
@@ -3002,7 +3002,7 @@ static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view
     if (nk_progress(g_context, &seek_position, seek_steps, draggable ? NK_MODIFIABLE : NK_FIXED) &&
         draggable) {
         action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
-        action.transport_seek_frame =
+        action.transport.seek_frame =
             (view.transport_end_frame / seek_steps) * seek_position +
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
@@ -3064,7 +3064,7 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
         if (blocked) nk_widget_disable_end(g_context);
         if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.project_path = entry.path;
+            action.project_open.path = entry.path;
         }
         if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
             wormedit::ui::nuklear::tooltip::text(g_context, entry.path.data());
@@ -3131,9 +3131,9 @@ static void confirm_new_project_wizard(wormedit::ui::workspace_action_t& action)
     const auto& audio_path = g_new_project_wizard.audio_path;
     if (g_new_project_wizard.audio && audio_path.size() > wormedit::maximum_project_path_bytes) return;
     action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
-    action.new_project_layout_id = g_new_project_wizard.layout_id;
+    action.project_open.layout_id = g_new_project_wizard.layout_id;
     if (g_new_project_wizard.audio)
-        action.project_path = audio_path.c_str();
+        action.project_open.path = audio_path.c_str();
     g_new_project_wizard.open = false;
 }
 
@@ -3535,9 +3535,9 @@ static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& vie
             action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
             path.size() <= wormedit::maximum_project_path_bytes) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.bms_encoding_id = *encoding;
-            action.bms_lane_profile_id = profile;
-            action.project_path = path.c_str();
+            action.project_open.encoding_id = *encoding;
+            action.project_open.lane_profile_id = profile;
+            action.project_open.path = path.c_str();
         }
     }
     if (chrome::dialog_end(dialog, g_context) == chrome::DialogResult::cancel)
@@ -3936,8 +3936,8 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
-    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+    action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_NONE;
     consume_project_file_dialog(action);
     if (g_context && view) synchronize_metadata_timing_links(g_context, view->metadata);
     consume_pending_file_action(view, action);

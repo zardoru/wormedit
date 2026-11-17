@@ -54,7 +54,7 @@ TEST_CASE("Dock strip dragging reorders both stacked panes without chart actions
     const auto release = f.harness.frame(std::array{test::mouse_button(false, end.first, end.second)});
     CHECK(f.layout().order().front() == dock_panel_t::sounds);
     CHECK(f.layout().visible_panels()[0] == dock_panel_t::sounds);
-    CHECK(release.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(release.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(release.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
 }
 TEST_CASE("Dock resize captures defer preference publication until release", "[event-harness][dock-layout]") {
@@ -69,7 +69,7 @@ TEST_CASE("Dock resize captures defer preference publication until release", "[e
     const auto released = f.harness.frame(std::array{test::mouse_button(false, x - 100, y)});
     CHECK_FALSE(worm_ui_frontend_dock_layout_is_editing());
     CHECK(worm_ui_frontend_dock_layout().width() == expected_width);
-    CHECK(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(released.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 TEST_CASE("Dock split captures cancel on focus loss without a late panel action", "[event-harness][dock-layout]") {
     dock_fixture_t f;
@@ -82,7 +82,7 @@ TEST_CASE("Dock split captures cancel on focus loss without a late panel action"
     (void)f.harness.frame(std::span{&lost, 1});
     CHECK_FALSE(worm_ui_frontend_dock_layout_is_editing());
     const auto released = f.harness.frame(std::array{test::mouse_button(false, x, y + 60)});
-    CHECK(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(released.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 TEST_CASE("Dock panes share one horizontal footprint and retain a usable narrow canvas", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
@@ -112,10 +112,10 @@ TEST_CASE("Markers dock activates existing bookmark navigation with a stamped ta
         f.harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(true, x, y)}),
         f.harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(false, x, y)})};
     const auto action = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
     });
     REQUIRE(action != frames.end());
-    CHECK(action->get().marker.bookmark_id == object_id_t{77});
+    CHECK(action->get().compose.marker.bookmark_id == object_id_t{77});
     CHECK(action->get().stamp.chart_id == view.chart_id);
     CHECK(action->get().stamp.document_revision == view.document_revision);
     CHECK(f.layout().is_visible(dock_panel_t::markers));
@@ -133,7 +133,7 @@ TEST_CASE("Minimum width Sounds dock keeps its final toolbar control reachable",
     CHECK(worm_ui_nuklear_compose_state().dock_layout.sounds_layers_open);
     CHECK(std::ranges::all_of(frames, [](const auto& frame) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_NONE &&
-               frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE;
+               frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE;
     }));
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("Column divider drags start from the rendered split and publish on rel
     const auto release = f.harness.frame(std::array{test::mouse_button(false, x + 20, y)});
     CHECK_FALSE(worm_ui_frontend_dock_layout_is_editing());
     CHECK(worm_ui_frontend_dock_layout().is_side_by_side());
-    CHECK(release.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(release.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 TEST_CASE("Close confirmation blocks the dock arrangement toggle", "[event-harness][dock-layout]") {
     dock_fixture_t f;
@@ -288,7 +288,7 @@ struct mixer_fixture_t : dock_fixture_t {
             harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(false, x, y)})};
         const auto mix = requested_mix(frames);
         return mix && mix->is_default() && std::ranges::all_of(frames, [](const auto& frame) {
-            return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE;
+            return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE;
         });
     }
 };

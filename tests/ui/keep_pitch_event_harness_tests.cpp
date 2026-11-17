@@ -67,7 +67,7 @@ TEST_CASE("Keep pitch is an icon toggle that emits the set action when available
         const auto& action = frame.get();
         if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH) {
             emitted = true;
-            CHECK(action.transport_keep_pitch);
+            CHECK(action.transport.keep_pitch);
         }
     }
     CHECK(emitted);

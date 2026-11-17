@@ -37,12 +37,12 @@ struct ComposeAreaCapture {
                  view.area_range_end_row};
     }
     void restore(wormedit::ui::workspace_action_t& action) const {
-        action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
         action.stamp.chart_id = wormedit::chart_id_t{chart};
         action.stamp.document_revision = revision;
-        action.area.begin_row = begin;
-        action.area.end_row = end;
-        action.area.is_virtual = virtual_range;
+        action.compose.area.begin_row = begin;
+        action.compose.area.end_row = end;
+        action.compose.area.is_virtual = virtual_range;
     }
 };
 

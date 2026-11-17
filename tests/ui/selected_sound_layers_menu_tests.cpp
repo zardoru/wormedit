@@ -22,7 +22,7 @@ auto sound_menu_click(nuklear_event_harness_t& harness, float x, float y, Uint8 
     const auto down = harness.frame(std::array{motion, click});
     click.type = SDL_EVENT_MOUSE_BUTTON_UP; click.button.down = false;
     const auto up = harness.frame(std::array{motion, click});
-    return down.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE ? down : up;
+    return down.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE ? down : up;
 }
 
 auto sound_menu_key(nuklear_event_harness_t& harness, SDL_Keycode key, SDL_Scancode scan)
@@ -36,7 +36,7 @@ auto sound_menu_key(nuklear_event_harness_t& harness, SDL_Keycode key, SDL_Scanc
     event.type = SDL_EVENT_KEY_UP;
     event.key.down = false;
     const auto up = harness.frame(std::array{event});
-    return down.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE ? down : up;
+    return down.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE ? down : up;
 }
 
 struct sound_menu_fixture_t {
@@ -72,7 +72,7 @@ struct sound_menu_fixture_t {
     }
     void expand() {
         const auto action = click_label("Add selected sounds to layer…");
-        check_sound_menu(action.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU);
+        check_sound_menu(action.get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU);
         (void)harness.frame();
     }
 };
@@ -84,11 +84,11 @@ TEST_CASE("Area menu adds selected sounds to an explicit unlocked layer",
     fixture.expand();
     check_sound_menu(fixture.harness.drawn_text_center("Locked vocals").has_value());
     const auto locked = fixture.click_label("Locked vocals");
-    check_sound_menu(locked.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_menu(locked.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_menu(compose_area_menu_open());
     const auto selected = fixture.click_label("Percussion");
-    check_sound_menu(selected.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
-    check_sound_menu(selected.get().layer.id.value == 7);
+    check_sound_menu(selected.get().compose.kind == WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
+    check_sound_menu(selected.get().compose.layer.id.value == 7);
     check_sound_menu(selected.get().stamp.chart_id.value == fixture.harness.view().compose.chart_id.value);
     check_sound_menu(selected.get().stamp.document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
@@ -101,7 +101,7 @@ TEST_CASE("Area sound layer picker cancels on stale context and preserves disabl
     ++fixture.harness.view().compose.document_revision;
     const auto stale = fixture.harness.frame();
     check_sound_menu(!compose_area_menu_open());
-    check_sound_menu(stale.get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
+    check_sound_menu(stale.get().compose.kind != WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
 }
 
 TEST_CASE("Area sound layer picker releases its window request when dismissed",
@@ -109,7 +109,7 @@ TEST_CASE("Area sound layer picker releases its window request when dismissed",
     sound_menu_fixture_t fixture;
     fixture.expand();
     const auto dismissed = sound_menu_click(fixture.harness, 100, 650);
-    check_sound_menu(dismissed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
+    check_sound_menu(dismissed.get().compose.kind == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
     check_sound_menu(dismissed.get().stamp.chart_id.value == fixture.harness.view().compose.chart_id.value);
     check_sound_menu(dismissed.get().stamp.document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
@@ -122,7 +122,7 @@ TEST_CASE("Area sound layer command remains disabled without selected notes or B
     fixture.harness.view().compose.selected_bgm_event_count = 0;
     (void)fixture.harness.frame();
     const auto disabled = fixture.click_label("Add selected sounds to layer…");
-    check_sound_menu(disabled.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_menu(disabled.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_menu(compose_area_menu_open());
 }
 
@@ -135,9 +135,9 @@ TEST_CASE("Keyboard area context reaches the selected sound layer picker and ret
     check_sound_menu(compose_area_menu_open());
     (void)sound_menu_key(fixture.harness, SDLK_DOWN, SDL_SCANCODE_DOWN);
     const auto expanded = sound_menu_key(fixture.harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
-    check_sound_menu(expanded.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU);
+    check_sound_menu(expanded.get().compose.kind == WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU);
     check_sound_menu(fixture.harness.drawn_text_center("Percussion").has_value());
     const auto back = sound_menu_key(fixture.harness, SDLK_LEFT, SDL_SCANCODE_LEFT);
-    check_sound_menu(back.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
+    check_sound_menu(back.get().compose.kind == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
     check_sound_menu(fixture.harness.drawn_text_center("Quantize selection").has_value());
 }

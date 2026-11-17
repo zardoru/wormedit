@@ -12,10 +12,10 @@ dispatch_compose_area_action(const wormedit::ui::workspace_action_t& action, doc
                              editor_interaction_state_t& state,
                              notification_sink_t notifications = notification_sink_t::muted(),
                              bool timing_locked = false) -> std::optional<std::string> {
-    const auto kind = action.compose_action;
+    const auto kind = action.compose.kind;
     const auto* route = compose_action_detail::compose_action_route_t::find(
         kind, compose_action_detail::compose_area_routes);
-    if (!action.area.clear_requested && !route)
+    if (!action.compose.area.clear_requested && !route)
         return std::nullopt;
     if (compose_area_pause_conversion(kind) &&
         history.document.id != action.stamp.project_id) {

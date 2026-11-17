@@ -15,8 +15,8 @@ auto edit_selected_note_labels_action_t::validate(compose_action_context_t& cont
 auto edit_selected_note_labels_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     using namespace wormedit;
-    const auto label = context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL
-                           ? std::optional<std::string>{context.action.marker.note_label}
+    const auto label = context.action.compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL
+                           ? std::optional<std::string>{context.action.compose.marker.note_label}
                            : std::nullopt;
     auto applied = apply_note_label_edit(
         context.environment.document.history,
@@ -35,14 +35,14 @@ auto search_selected_note_labels_action_t::validate(compose_action_context_t& co
 auto search_selected_note_labels_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     const auto step =
-        context.action.compose_action == WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL
+        context.action.compose.kind == WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL
             ? label_search_step_t::next
-        : context.action.compose_action == WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL
+        : context.action.compose.kind == WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL
             ? label_search_step_t::previous
             : label_search_step_t::first;
     auto severity = notification_severity_t::warning;
     auto status = run_label_search(context.environment.document.history, context.state,
-                                   context.action.marker.note_label, step, &severity);
+                                   context.action.compose.marker.note_label, step, &severity);
     return compose_action_outcome_t::from(std::move(status), severity,
                                           notification_source_t::input);
 }

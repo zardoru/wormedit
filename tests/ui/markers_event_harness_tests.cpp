@@ -103,9 +103,9 @@ TEST_CASE("clicking a bookmark row navigates to it with the document stamps",
     bool navigated = false;
     for (const auto& frame : clicked) {
         const auto& action = frame.get();
-        if (action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) continue;
+        if (action.compose.kind != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) continue;
         navigated = true;
-        CHECK(action.marker.bookmark_id.value == 22);
+        CHECK(action.compose.marker.bookmark_id.value == 22);
         CHECK(action.stamp.chart_id.value == 7);
         CHECK(action.stamp.document_revision == 12);
     }
@@ -150,7 +150,7 @@ TEST_CASE("the Bookmarks add icon adds an unnamed bookmark and delete needs a se
     const auto remove = fixture.icon(header->second, "Select a bookmark to delete it");
     REQUIRE(remove.has_value());
     for (const auto& frame : click(fixture.harness, remove->first, remove->second))
-        CHECK(frame.get().compose_action != WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK);
+        CHECK(frame.get().compose.kind != WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK);
     bool added = false;
     for (const auto& frame : click(fixture.harness, add->first, add->second))
         added = added || std::string_view{frame.get().menu_command_id} == "markers.add_bookmark";
@@ -178,9 +178,9 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     enter.key.key = SDLK_RETURN;
     enter.key.scancode = SDL_SCANCODE_RETURN;
     const auto committed = fixture.harness.frame(std::array{enter}).get();
-    CHECK(committed.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL);
-    CHECK(committed.marker.section_id.value == 31);
-    CHECK(std::string{committed.marker.label} == "intro");
+    CHECK(committed.compose.kind == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL);
+    CHECK(committed.compose.marker.section_id.value == 31);
+    CHECK(std::string{committed.compose.marker.label} == "intro");
     CHECK(committed.stamp.chart_id.value == 7);
     CHECK(committed.stamp.document_revision == 12);
 }
@@ -211,7 +211,7 @@ auto clicked_action(nuklear_event_harness_t& harness, const char* label) -> Worm
     const auto center = harness.drawn_text_center(label);
     if (!center) return WORM_UI_COMPOSE_ACTION_NONE;
     for (const auto& frame : click(harness, center->first, center->second))
-        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE) return frame.get().compose_action;
+        if (frame.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return frame.get().compose.kind;
     return WORM_UI_COMPOSE_ACTION_NONE;
 }
 auto song_preview_view(bool chart_override) -> wormedit::ui::compose_audio_span_view_t {

@@ -87,8 +87,8 @@ struct generator_ui_fixture_t {
         const auto frames = test::click_at(harness, center->first, center->second);
         auto result = workspace_action_snapshot_t{ui::workspace_action_t{}};
         for (const auto& frame : frames)
-            if (frame.get().compose_action == kind) result = frame;
-        require_generator_ui(result.get().compose_action == kind);
+            if (frame.get().compose.kind == kind) result = frame;
+        require_generator_ui(result.get().compose.kind == kind);
         return result;
     }
     void dispatch(const workspace_action_snapshot_t& action) {
@@ -100,7 +100,7 @@ struct generator_ui_fixture_t {
     void run() {
         type_path();
         const auto run = click("Run", WORM_UI_COMPOSE_ACTION_GENERATOR_RUN);
-        check_generator_ui(std::string_view{run.get().recipe.generator_form.path} == "pattern.lua");
+        check_generator_ui(std::string_view{run.get().compose.recipe.generator_form.path} == "pattern.lua");
         dispatch(run);
         require_generator_ui(commands.project.generator.runtime != nullptr);
         commands.project.generator.runtime->wait(history, chart_id_t{1});
@@ -160,9 +160,9 @@ TEST_CASE("real generator inspector Cancel discards ghosts and stale Apply canno
 TEST_CASE("same identity project session discards generator drafts and keeps action snapshots owned", "[frontend-state][event-harness][generator]") {
     generator_ui_fixture_t fixture; fixture.type_path();
     const auto original = fixture.click("Run", WORM_UI_COMPOSE_ACTION_GENERATOR_RUN);
-    check_generator_ui(std::string_view{original.get().recipe.generator_form.path} == "pattern.lua");
+    check_generator_ui(std::string_view{original.get().compose.recipe.generator_form.path} == "pattern.lua");
     worm_ui_frontend_begin_project_session(); (void)fixture.harness.frame();
     const auto reset = fixture.click("Run", WORM_UI_COMPOSE_ACTION_GENERATOR_RUN);
-    check_generator_ui(std::string_view{reset.get().recipe.generator_form.path}.empty());
-    check_generator_ui(std::string_view{original.get().recipe.generator_form.path} == "pattern.lua");
+    check_generator_ui(std::string_view{reset.get().compose.recipe.generator_form.path}.empty());
+    check_generator_ui(std::string_view{original.get().compose.recipe.generator_form.path} == "pattern.lua");
 }

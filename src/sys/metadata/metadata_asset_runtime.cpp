@@ -443,14 +443,14 @@ auto metadata_asset_t::start_copy_preview(
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
     const bool import_copy = action.metadata.inspect_import;
-    const asset_id_t asset{action.resource.asset_id.value};
+    const asset_id_t asset{action.compose.resource.asset_id.value};
     std::filesystem::path source_path;
-    if (auto error = resolve_copy_preview_source(action.resource, history, asset, import_copy,
+    if (auto error = resolve_copy_preview_source(action.compose.resource, history, asset, import_copy,
                                                  source_path))
         return finish(*error, notification_severity_t::warning);
     std::filesystem::path output_path;
     if (action.metadata.inspect_export) {
-        if (auto error = resolve_export_copy_path(action.resource, history, workspace, output_path)) {
+        if (auto error = resolve_export_copy_path(action.compose.resource, history, workspace, output_path)) {
             return finish(*error, notification_severity_t::warning);
         }
     }
@@ -474,7 +474,7 @@ auto metadata_asset_t::start_copy_preview(
                                     .asset = asset,
                                     .source_path = source_path,
                                     .output_path = output_path,
-                                    .output_group_index = action.resource.output_group_index,
+                                    .output_group_index = action.compose.resource.output_group_index,
                                     .export_copy = action.metadata.inspect_export,
                                     .import_copy = import_copy};
     runtime.message = "Inspecting destination bytes in the background...";
@@ -521,10 +521,10 @@ auto metadata_asset_t::start_import_copy(
         return finish("Wait for the current resource copy, import, or export to finish.",
                       notification_severity_t::info);
     const auto reserved = next_resource_asset_id(history.document);
-    if (!reserved || reserved->value != action.resource.asset_id.value)
+    if (!reserved || reserved->value != action.compose.resource.asset_id.value)
         return finish("The reserved asset ID changed before import-copy started.",
                       notification_severity_t::warning);
-    const std::filesystem::path source_path{action.resource.import_path};
+    const std::filesystem::path source_path{action.compose.resource.import_path};
     const auto normalized_source = source_path.lexically_normal();
     if (!normalized_source.is_absolute() || normalized_source.filename().empty())
         return finish("Import-copy requires an absolute source file path.",
@@ -540,7 +540,7 @@ auto metadata_asset_t::start_import_copy(
                       notification_severity_t::warning);
     std::filesystem::path output_path;
     if (export_copy) {
-        if (auto error = resolve_export_copy_path(action.resource, history, workspace, output_path)) {
+        if (auto error = resolve_export_copy_path(action.compose.resource, history, workspace, output_path)) {
             return finish(*error, notification_severity_t::warning);
         }
     }

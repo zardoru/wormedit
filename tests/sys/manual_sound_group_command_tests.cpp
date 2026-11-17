@@ -38,12 +38,12 @@ struct dispatch_fixture_t {
     auto dispatch(const wormedit::ui::sound_group_assignment_t* assignments, std::size_t count,
                   std::uint64_t revision, bool keep) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
-        action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
+        action.compose.kind = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
         action.stamp.chart_id.value = chart_id.value;
         action.stamp.document_revision = revision;
-        action.resource.sound_group_assignments.assign(assignments, assignments + count);
+        action.compose.resource.sound_group_assignments.assign(assignments, assignments + count);
 
-        action.resource.sound_group_keep_ids_together = keep;
+        action.compose.resource.sound_group_keep_ids_together = keep;
         return sys::dispatch_compose_sound_action(action, history, workspace, chart_id, app);
     }
 };

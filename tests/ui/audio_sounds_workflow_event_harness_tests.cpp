@@ -80,17 +80,17 @@ TEST_CASE("Sounds keyboard selection and audition use resource identity and capt
     fixture_t fixture;
     fixture.focus_list();
     auto result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
-    expect(result.get().audio_resource_id.value==102);
+    expect(result.get().asset_selection.audio_resource_id.value==102);
     expect(worm_ui_nuklear_audio_state().selected_resource_id==102);
     result=fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE);
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().resource.id.value==102);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    expect(result.get().compose.resource.id.value==102);
     expect(fixture.release_shortcuts==0);
     expect(fixture.release_compose_inputs==0);
     expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
     result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
-    expect(result.get().audio_resource_id.value==103);
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(result.get().asset_selection.audio_resource_id.value==103);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Sounds waveform zoom retains pointer anchor and asset change resets view",
@@ -171,7 +171,7 @@ TEST_CASE("Sounds pan and alignment drag are separate zoom-aware gestures",
     const auto before=state.waveform_viewport;
     const auto x=plus->first, y=plus->second+100;
     const auto down=pointer(x,y,true);
-    expect(fixture.harness.frame({&down,1}).get().audio_offset_drag_action==WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    expect(fixture.harness.frame({&down,1}).get().audio_offset_drag.action==WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     SDL_Event move{}; move.type=SDL_EVENT_MOUSE_MOTION;
     move.motion.x=x-30; move.motion.y=y;
     (void)fixture.harness.frame({&move,1});
@@ -181,17 +181,17 @@ TEST_CASE("Sounds pan and alignment drag are separate zoom-aware gestures",
     (void)fixture.harness.frame({&move,1});
     const std::array alignment_events{key(SDLK_LSHIFT,SDL_SCANCODE_LSHIFT,true), down};
     const auto alignment=fixture.harness.frame(alignment_events,SDL_KMOD_SHIFT);
-    expect(alignment.get().audio_offset_drag_action==WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
+    expect(alignment.get().audio_offset_drag.action==WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
     const auto scale=state.offset_drag_frames_per_pixel;
     auto& view=fixture.harness.view().audio_slices;
     view.offset_drag_active=true; view.proposed_offset_denominator=1;
     move.motion.x=x+10;
     const auto preview=fixture.harness.frame({&move,1},SDL_KMOD_SHIFT);
-    expect(preview.get().audio_offset_drag_action==WORM_UI_AUDIO_OFFSET_DRAG_UPDATE);
-    expect(preview.get().audio_offset_drag_delta_frames==static_cast<std::int64_t>(std::round(10*scale)));
+    expect(preview.get().audio_offset_drag.action==WORM_UI_AUDIO_OFFSET_DRAG_UPDATE);
+    expect(preview.get().audio_offset_drag.delta_frames==static_cast<std::int64_t>(std::round(10*scale)));
     SDL_Event lost{}; lost.type=SDL_EVENT_WINDOW_FOCUS_LOST;
     const auto cancel=fixture.harness.frame({&lost,1});
-    expect(cancel.get().audio_offset_drag_action==WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    expect(cancel.get().audio_offset_drag.action==WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
     expect(!state.offset_drag_active);
 }
 
@@ -200,7 +200,7 @@ TEST_CASE("Sounds list yields to text and modal ownership and clears stale pendi
     fixture_t fixture;
     fixture.focus_list();
     fixture.harness.view().options.visible=true;
-    expect(fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN).get().audio_resource_id.value==0);
+    expect(fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN).get().asset_selection.audio_resource_id.value==0);
     expect(!worm_ui_nuklear_audio_state().sound_list_focused);
     fixture.harness.view().options.visible=false;
     (void)fixture.harness.frame();
@@ -208,7 +208,7 @@ TEST_CASE("Sounds list yields to text and modal ownership and clears stale pendi
     auto& state=worm_ui_nuklear_audio_state();
     expect(worm_ui_nuklear_audio_list_key_command(1,false));
     ++fixture.harness.view().audio_slices.document_revision;
-    expect(fixture.harness.frame().get().audio_resource_id.value==0);
+    expect(fixture.harness.frame().get().asset_selection.audio_resource_id.value==0);
     expect(state.list_move_pending==0);
     expect(!state.sound_list_focused);
 }
@@ -222,9 +222,9 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     (void)fixture.harness.frame({&motion,1});
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
-    expect(result.get().audio_resource_id.value==102);
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().resource.id.value==102);
+    expect(result.get().asset_selection.audio_resource_id.value==102);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    expect(result.get().compose.resource.id.value==102);
     expect(result.get().stamp.project_id.value==fixture.harness.view().project_id.value);
     expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
 }
@@ -236,12 +236,12 @@ TEST_CASE("Sounds audition yields to properties text and IME editing",
     const auto name=fixture.harness.drawn_text_center("Kick"); expect(name);
     (void)fixture.click(name->first,name->second);
     expect(!worm_ui_nuklear_audio_state().sound_list_focused);
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
     fixture.focus_list();
     SDL_Event composition{}; composition.type=SDL_EVENT_TEXT_EDITING;
     composition.edit.text="composing"; composition.edit.start=0; composition.edit.length=9;
     (void)fixture.harness.frame({&composition,1});
-    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Sounds double click cannot audition through Options",
@@ -255,8 +255,8 @@ TEST_CASE("Sounds double click cannot audition through Options",
     (void)fixture.harness.frame({&motion,1});
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
-    expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
-    expect(result.get().audio_resource_id.value==0);
+    expect(result.get().compose.kind==WORM_UI_COMPOSE_ACTION_NONE);
+    expect(result.get().asset_selection.audio_resource_id.value==0);
 }
 
 TEST_CASE("Sounds waveform instructions remain visible at narrow workspace size",
@@ -277,13 +277,13 @@ TEST_CASE("Sounds alignment release commits without a movement threshold",
     const auto down = pointer(plus->first, plus->second + 100, true);
     const std::array press{key(SDLK_LSHIFT, SDL_SCANCODE_LSHIFT, true), down};
     const auto started = fixture.harness.frame(press, SDL_KMOD_SHIFT);
-    expect(started.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
+    expect(started.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
     fixture.harness.view().audio_slices.offset_drag_active = true;
     fixture.harness.view().audio_slices.proposed_offset_denominator = 1;
     const auto up = pointer(plus->first, plus->second + 100, false);
     const auto released = fixture.harness.frame(std::span{&up, 1}, SDL_KMOD_SHIFT);
-    expect(released.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
-    expect(released.get().audio_offset_drag_delta_frames == 0);
+    expect(released.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
+    expect(released.get().audio_offset_drag.delta_frames == 0);
     expect(!worm_ui_nuklear_audio_state().offset_drag_active);
 }
 

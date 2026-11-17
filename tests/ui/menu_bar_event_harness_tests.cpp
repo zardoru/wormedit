@@ -81,7 +81,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         check_menu(action.input.compose_inputs.size() == 0);
         check_menu(action.project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         check_menu(action.clipboard == WORM_UI_CLIPBOARD_NONE);
-        check_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_menu(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
         const auto dispatched = wormedit::invoke_command(registry, {action.menu_command_id},
             {.workspace_active = true, .active_tab = static_cast<wormedit::workspace_tab_t>(tab),
              .visible_tabs = {static_cast<wormedit::workspace_tab_t>(tab)}});
@@ -391,7 +391,7 @@ TEST_CASE("Recent menu and startup entries dispatch guarded normal file opens",
             return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
         });
         require_menu(opened != frames.end());
-        check_menu(std::string_view{opened->get().project_path} == "/tmp/music/chart.bms");
+        check_menu(std::string_view{opened->get().project_open.path} == "/tmp/music/chart.bms");
         check_menu(opened->get().input.compose_inputs.size() == 0);
         check_menu(opened->get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         (void)harness.frame();
@@ -409,7 +409,7 @@ TEST_CASE("Recent menu and startup entries dispatch guarded normal file opens",
             return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
         });
         require_menu(opened != frames.end());
-        check_menu(std::string_view{opened->get().project_path} == "/tmp/project.wormedit");
+        check_menu(std::string_view{opened->get().project_open.path} == "/tmp/project.wormedit");
     }
     SECTION("Modal ownership disables recent entries") {
         view.options.visible = true;
@@ -454,7 +454,7 @@ TEST_CASE("File recent history scrolls within a small window and opens the last 
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
     });
     require_menu(opened != frames.end());
-    check_menu(std::string_view{opened->get().project_path} == paths.back());
+    check_menu(std::string_view{opened->get().project_open.path} == paths.back());
 }
 
 TEST_CASE("File Export dispatches the shared command", "[frontend-state][event-harness][menu-bar]") {

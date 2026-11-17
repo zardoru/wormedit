@@ -124,8 +124,8 @@ TEST_CASE("Sounds rows preserve distinct resource selection for shared assets",
     (void)harness.frame();
     const auto alias = click_action(click_text(harness, "Alias  ·  Keysound"),
                                     WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE);
-    check_sound_usage_ui(alias.audio_resource_id.value == 102);
-    check_sound_usage_ui(alias.audio_asset_id.value == 0);
+    check_sound_usage_ui(alias.asset_selection.audio_resource_id.value == 102);
+    check_sound_usage_ui(alias.asset_selection.audio_asset_id.value == 0);
 }
 
 TEST_CASE("Find uses activates positioned references and source rows without inventing a position",

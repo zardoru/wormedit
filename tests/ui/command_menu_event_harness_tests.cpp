@@ -62,7 +62,7 @@ TEST_CASE("Command menu searches all labels case-insensitively and dispatches en
     expect_menu(result.get().command_menu_invoked);
     expect_menu(std::string_view{result.get().command_menu_command_id} == "second");
     expect_menu(result.get().stamp.project_id.value == 1);
-    expect_menu(result.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_menu(result.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Command menu skips disabled rows and Escape never invokes or leaks its release",

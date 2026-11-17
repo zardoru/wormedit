@@ -120,7 +120,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     auto& action = context.ui_action;
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL) {
         cache.timing.offset_fit_drag.reset();
-        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t::stop_with_feedback(
             "Offset fit cancelled; timing was unchanged.", notification_severity_t::hint,
             notification_source_t::input);
@@ -145,12 +145,12 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
             .asset = *context.environment.document.workspace.transport.audio_asset,
             .target_y_pixels = input.y_pixels};
         cache.timing.beat_fit_drag.reset();
-        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_BEGIN;
-        action.audio_offset_drag_chart_id = context.state.chart;
-        action.audio_offset_drag_document_revision =
+        action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_BEGIN;
+        action.audio_offset_drag.chart_id = context.state.chart;
+        action.audio_offset_drag.document_revision =
             context.environment.document.history.document.revision;
-        action.audio_offset_drag_sample_rate = cache.timing.offset_fit_drag->beat.payload.sample_rate;
-        action.audio_offset_drag_delta_frames = 0;
+        action.audio_offset_drag.sample_rate = cache.timing.offset_fit_drag->beat.payload.sample_rate;
+        action.audio_offset_drag.delta_frames = 0;
         return compose_input_family_result_t::stop_with_feedback(
             "Dragging beat to shift waveform offset.", notification_severity_t::hint,
             notification_source_t::input);
@@ -162,7 +162,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
         cache.timing.offset_fit_drag->asset != context.environment.document.workspace.transport.audio_asset ||
         context.environment.commands.audio_offset_edits_locked()) {
         cache.timing.offset_fit_drag.reset();
-        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t::from(
             "Offset fit expired after its chart or waveform changed.");
     }
@@ -170,7 +170,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     if (!cache.timing.offset_fit_drag->beat.stamp.document.is_current(
             document, document_identity_policy_t::revision_only)) {
         cache.timing.offset_fit_drag.reset();
-        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t::from(stale_action_message("Offset fit"));
     }
     const auto& drag = *cache.timing.offset_fit_drag;
@@ -182,7 +182,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     if (!target || *target >= cache.waveform.waveform_overview_total_frames) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) {
             cache.timing.offset_fit_drag.reset();
-            action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+            action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         }
         return compose_input_family_result_t::from(
             "Offset target is outside the source audio range.");
@@ -190,19 +190,19 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     constexpr auto max_frame = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (*target > max_frame || drag.beat.payload.original_sample_frame > max_frame) {
         cache.timing.offset_fit_drag.reset();
-        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return compose_input_family_result_t::from(
             "Offset target exceeds the supported frame range.");
     }
     const auto delta = static_cast<std::int64_t>(*target) -
                        static_cast<std::int64_t>(drag.beat.payload.original_sample_frame);
-    action.audio_offset_drag_action = input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+    action.audio_offset_drag.action = input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
                                           ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
                                           : WORM_UI_AUDIO_OFFSET_DRAG_UPDATE;
-    action.audio_offset_drag_chart_id = drag.beat.stamp.chart;
-    action.audio_offset_drag_document_revision = drag.beat.stamp.document.revision;
-    action.audio_offset_drag_sample_rate = drag.beat.payload.sample_rate;
-    action.audio_offset_drag_delta_frames = delta;
+    action.audio_offset_drag.chart_id = drag.beat.stamp.chart;
+    action.audio_offset_drag.document_revision = drag.beat.stamp.document.revision;
+    action.audio_offset_drag.sample_rate = drag.beat.payload.sample_rate;
+    action.audio_offset_drag.delta_frames = delta;
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE)
         cache.timing.offset_fit_drag.reset();
     return compose_input_family_result_t::stop_with_feedback(

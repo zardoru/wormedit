@@ -39,11 +39,11 @@ auto click(nuklear_event_harness_t& harness, const char* text) -> workspace_acti
     press.type = SDL_EVENT_MOUSE_BUTTON_UP;
     press.button.down = false;
     const auto released = harness.frame(std::array{motion, press});
-    return pressed.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE ? pressed : released;
+    return pressed.get().compose.kind != WORM_UI_COMPOSE_ACTION_NONE ? pressed : released;
 }
 void check_confirmed_batch(const wormedit::ui::workspace_action_t& action) {
-    REQUIRE(action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
-    CHECK(action.resource.sound_slot == 35);
+    REQUIRE(action.compose.kind == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
+    CHECK(action.compose.resource.sound_slot == 35);
     REQUIRE(action.sound_import.items.size() == 2);
 
     CHECK(std::string{action.sound_import.items[0].path} == "/tmp/sound2.wav");
@@ -70,7 +70,7 @@ TEST_CASE("Invalid WAV batches stay visible and cannot confirm", "[event-harness
     enable_slots(harness);
     stage_batch(harness, "One file cannot be decoded.");
     const auto snapshot = click(harness, "Assign files");
-    CHECK(snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(snapshot.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
     CHECK(harness.drawn_text().find("One file cannot be decoded.") != std::string::npos);
 }
@@ -125,6 +125,6 @@ TEST_CASE("WAV batch dialog Cancel closes it and Enter confirms",
         enter.key.key = SDLK_RETURN;
         enter.key.scancode = SDL_SCANCODE_RETURN;
         enter.key.down = true;
-        CHECK(harness.frame(std::array{enter}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        CHECK(harness.frame(std::array{enter}).get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     }
 }

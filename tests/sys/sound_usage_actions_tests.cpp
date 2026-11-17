@@ -188,7 +188,7 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
     const auto baseline_action = usage_action(baseline_history);
     std::optional<editor_interaction_state_t> baseline_interaction;
     const auto baseline =
-        dispatch_sound_usage_action(baseline_action, valid_request(), baseline_history,
+        dispatch_sound_usage_action(baseline_action.stamp, baseline_action.sound_usage, valid_request(), baseline_history,
                                     baseline_workspace, baseline_interaction);
     INFO(baseline.message);
     REQUIRE(baseline.accepted);
@@ -215,7 +215,7 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
         mutate_document(history);
         const auto note_count = history.document.charts.front().measures.front().notes.size();
         const auto result =
-            dispatch_sound_usage_action(seed, request, history, workspace, interaction);
+            dispatch_sound_usage_action(seed.stamp, seed.sound_usage, request, history, workspace, interaction);
         check_rejection_unchanged(result, history, revision, undo_depth, note_count, workspace,
                                   *interaction, original_workspace, original_interaction);
     };
@@ -251,7 +251,7 @@ TEST_CASE("positioned sound usage selects chart and exact cursor") {
     const auto* chart_storage = history.document.charts.data();
     const auto* note_storage = history.document.charts.front().measures.front().notes.data();
     const auto result =
-        dispatch_sound_usage_action(action, valid_request(), history, workspace, interaction);
+        dispatch_sound_usage_action(action.stamp, action.sound_usage, valid_request(), history, workspace, interaction);
     INFO(result.message);
     REQUIRE(result.accepted);
     verify_positioned_navigation(result, history, workspace, interaction, document_address,
@@ -273,7 +273,7 @@ TEST_CASE("source sound usage selects channel identity without moving cursor") {
     const auto* document_address = &history.document;
     const auto* chart_storage = history.document.charts.data();
     const auto result =
-        dispatch_sound_usage_action(action, valid_request(), history, workspace, interaction);
+        dispatch_sound_usage_action(action.stamp, action.sound_usage, valid_request(), history, workspace, interaction);
     INFO(result.message);
     REQUIRE(result.accepted);
     verify_source_navigation(result, history, workspace, interaction, before, document_address,

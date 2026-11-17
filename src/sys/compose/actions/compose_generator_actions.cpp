@@ -23,7 +23,7 @@ auto feedback(document_command_result_t result) -> compose_action_outcome_t {
 }
 auto request_generator(compose_action_context_t& context, WormUiComposeActionKind kind) -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.generator;
-    const auto& form = context.action.recipe.generator_form;
+    const auto& form = context.action.compose.recipe.generator_form;
     auto& history = context.environment.document.history;
     if (!context.environment.resources) return compose_action_outcome_t::blocked("Generator worker is unavailable.");
     if (!state.runtime) state.runtime = std::make_shared<generator_runtime_t>(context.environment.resources->jobs.scheduler);
@@ -38,7 +38,7 @@ auto request_generator(compose_action_context_t& context, WormUiComposeActionKin
 }
 auto generator_action_t::perform(compose_action_context_t& context) const -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.generator;
-    const auto& form = context.action.recipe.generator_form;
+    const auto& form = context.action.compose.recipe.generator_form;
     auto& history = context.environment.document.history;
     if (kind == WORM_UI_COMPOSE_ACTION_GENERATOR_SELECT) {
         if (state.runtime) state.runtime->cancel();

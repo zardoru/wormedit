@@ -7,7 +7,7 @@ auto recipe_form_target(compose_action_context_t& context) -> std::optional<reci
     if (!chart || chart->id.value != context.action.stamp.chart_id.value)
         return std::nullopt;
     const auto recipe = std::ranges::find(
-        chart->sv_recipes, context.action.recipe.recipe_id, &sv_recipe_t::id);
+        chart->sv_recipes, context.action.compose.recipe.recipe_id, &sv_recipe_t::id);
     if (recipe == chart->sv_recipes.end())
         return std::nullopt;
     return recipe_form_target_t{&*chart, &*recipe};
@@ -25,8 +25,8 @@ auto propose_recipe_form_action_t::validate(compose_action_context_t& context)
 auto propose_recipe_form_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.timing_recipe;
-    const bool needs_worker = context.action.recipe.form.curve == sv_recipe_curve_t::lua_expression ||
-        !context.action.recipe.form.impulses.empty() ||
+    const bool needs_worker = context.action.compose.recipe.form.curve == sv_recipe_curve_t::lua_expression ||
+        !context.action.compose.recipe.form.impulses.empty() ||
         std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
             return recipe.enabled && (recipe.curve == sv_recipe_curve_t::lua_expression || !recipe.impulses.empty());
         });
@@ -43,7 +43,7 @@ auto propose_recipe_form_action_t::perform(compose_action_context_t& context) co
             baseline = &state.recipe_preview->report()->candidate;
         return compose_action_outcome_t::from(state.evaluation->request(
             context.environment.document.history.document, *target->chart, *baseline,
-            context.action.recipe.form, resources.asset_base), notification_severity_t::hint,
+            context.action.compose.recipe.form, resources.asset_base), notification_severity_t::hint,
             notification_source_t::input);
     }
     if (state.evaluation) state.evaluation->cancel();
@@ -51,7 +51,7 @@ auto propose_recipe_form_action_t::perform(compose_action_context_t& context) co
     auto preview = recipe_form_preview_t::revise(
         previous ? std::move(*previous) : recipe_form_outcome_t{},
         context.environment.document.history.document, *target->chart, *target->recipe,
-        context.action.recipe.form);
+        context.action.compose.recipe.form);
     const auto status = preview.diagnostics.empty() ? std::string{"SV recipe preview updated."}
                                                     : preview.diagnostics.front().message;
     const auto severity =
@@ -78,14 +78,14 @@ auto apply_recipe_form_action_t::validate(compose_action_context_t& context)
 auto apply_recipe_form_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.timing_recipe;
-    const bool needs_worker = context.action.recipe.form.curve == sv_recipe_curve_t::lua_expression ||
-        !context.action.recipe.form.impulses.empty() ||
+    const bool needs_worker = context.action.compose.recipe.form.curve == sv_recipe_curve_t::lua_expression ||
+        !context.action.compose.recipe.form.impulses.empty() ||
         std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
             return recipe.enabled && (recipe.curve == sv_recipe_curve_t::lua_expression || !recipe.impulses.empty());
         });
     if (needs_worker) {
         const auto* report = state.recipe_preview ? state.recipe_preview->report() : nullptr;
-        auto form = context.action.recipe.form;
+        auto form = context.action.compose.recipe.form;
         form.lua_reload = false;
         if (!state.recipe_preview || !state.recipe_preview->value || !report || report->prepared.empty() ||
             !report->requested_form || form != *report->requested_form ||
@@ -103,7 +103,7 @@ auto apply_recipe_form_action_t::perform(compose_action_context_t& context) cons
     auto severity = notification_severity_t::warning;
     auto status = wormedit::sys::apply_recipe_form(
         context.environment.document.history, target->chart->id, target->recipe->id,
-        context.action.recipe.form, applied, &severity);
+        context.action.compose.recipe.form, applied, &severity);
     if (applied)
         context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
     auto outcome = compose_action_outcome_t::from(

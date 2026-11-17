@@ -319,7 +319,7 @@ TEST_CASE("Area recipe creation projects a visible span for native and scoped BM
     const auto measure = fixture.history.read_chart(chart_id)->measures.front().id;
     fixture.interaction->retained_selection_range = position_span_t{{measure, 0}, {measure, 480}};
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
     action.stamp.chart_id = chart_id;
     action.stamp.document_revision = fixture.history.document.revision;
     const auto result = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
@@ -348,7 +348,7 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     fixture.interaction->retained_selection_range =
         position_span_t{{measure, 0}, {measure, 240}};
     wormedit::ui::workspace_action_t action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
     action.stamp.chart_id.value = fixture.history.document.charts.front().id.value;
     action.stamp.document_revision = fixture.history.document.revision;
     const auto status = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);

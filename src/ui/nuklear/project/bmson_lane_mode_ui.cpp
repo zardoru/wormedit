@@ -13,12 +13,12 @@ struct Confirmation {
 
 void emit(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
           uint64_t revision, uint64_t channel, WormUiComposeActionKind kind) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose_action = kind;
+    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose.kind = kind;
     action.stamp.project_id.value = project;
     action.stamp.chart_id.value = chart;
     action.stamp.document_revision = revision;
-    action.bmson.channel_id.value = channel;
+    action.compose.bmson.channel_id.value = channel;
 }
 }
 
@@ -29,7 +29,7 @@ void reset_bmson_lane_mode_confirmation() { confirmation = {}; }
 
 void request_bmson_lane_mode(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
     uint64_t revision, uint64_t channel, bool stem, bool continues, bool sounds_tab, uint64_t resource) {
-    if ((!channel && !resource) || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if ((!channel && !resource) || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (!stem && continues) {
         confirmation = {.open = true, .sounds_tab = sounds_tab,
                         .stamp = {project, chart, revision, 0}, .channel = channel};
@@ -37,7 +37,7 @@ void request_bmson_lane_mode(wormedit::ui::workspace_action_t& action, uint64_t 
     }
     emit(action, project, chart, revision, channel, stem ? WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM
                                                        : WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL);
-    action.resource.id.value = resource;
+    action.compose.resource.id.value = resource;
 }
 
 void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::workspace_action_t& action,
@@ -64,7 +64,7 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
     nk_label_wrap(context, "Packing requires converting every continuation point in this channel to a restart. This changes how the audio plays. Undo restores the channel and its stem lane.");
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
     if (wormedit::ui::chrome::button_label(context, "Convert continue points to restarts and pack") &&
-        action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
         emit(action, project, chart, revision, confirmation.channel,
              WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL);
         confirmation.open = false;

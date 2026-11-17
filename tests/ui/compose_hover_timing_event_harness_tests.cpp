@@ -48,7 +48,7 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     const std::array down{mouse_motion(640, 88), mouse_button(true, 640, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == first.get().input.hover_source.frame);
+    CHECK(clicked.get().transport.seek_frame == first.get().input.hover_source.frame);
 
     timing.hover_timing_source_frame += 1;
     (void)hover(harness, 640, 88);
@@ -113,7 +113,7 @@ TEST_CASE("Seek bar hover uses Nuklear's padded one-third click position",
     const std::array down{mouse_motion(x, 88), mouse_button(true, x, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == hovered.get().input.hover_source.frame);
+    CHECK(clicked.get().transport.seek_frame == hovered.get().input.hover_source.frame);
 }
 
 namespace {
@@ -141,11 +141,11 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
     check_native_toolbar(action.input.compose_inputs.size() == (available ? 1 : 0));
     if (available)
         check_native_toolbar(action.input.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
-    check_native_toolbar(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_native_toolbar(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     check_native_toolbar(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
     const std::array up{mouse_button(false, x, y)};
     const auto released = harness.frame(up);
-    check_native_toolbar(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_native_toolbar(released.get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     for (std::size_t index = 0; index < released.get().input.compose_inputs.size(); ++index)
         check_native_toolbar(released.get().input.compose_inputs[index].kind != WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
 }

@@ -29,13 +29,13 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     const auto move_clicked = wormedit::ui::chrome::button_label(context, "Move BMSON BGM to cursor");
     const auto delete_clicked = wormedit::ui::chrome::button_label(context, "Delete BMSON BGM");
     if (!can_move) nk_widget_disable_end(context);
-    if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+    if (action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
         if (move_clicked && can_move) {
-            action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
-            action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR;
+            action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+            action->compose.kind = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR;
         } else if (delete_clicked && can_move) {
-            action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
-            action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
+            action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+            action->compose.kind = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
         }
     }
 
@@ -47,13 +47,13 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     if (!can_assign_to_bgm) nk_widget_disable_begin(context);
     const auto assign_bgm_clicked = wormedit::ui::chrome::button_label(context, "Selected tap to BGM");
     if (!can_assign_to_bgm) nk_widget_disable_end(context);
-    if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+    if (action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
         if (assign_key_clicked && can_move) {
-            action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
-            action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
+            action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+            action->compose.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
         } else if (assign_bgm_clicked && can_assign_to_bgm) {
-            action->bmson.bgm_event_id.value = view.selected_bmson_note_event_id.value;
-            action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
+            action->compose.bmson.bgm_event_id.value = view.selected_bmson_note_event_id.value;
+            action->compose.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
         }
     }
 }
@@ -71,9 +71,9 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     const auto insert_restart = wormedit::ui::chrome::button_label(context, "Insert restart at cursor");
     if (!can_move) nk_widget_disable_end(context);
     if ((insert_continue || insert_restart) && can_move &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
-        action->compose_action = insert_restart
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+        action->compose.kind = insert_restart
             ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
@@ -86,9 +86,9 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     const auto stage_restart = wormedit::ui::chrome::button_label(context, "Stage restart");
     if (!can_move) nk_widget_disable_end(context);
     if ((stage_continue || stage_restart) && can_move &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
-        action->compose_action = stage_restart
+        action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+        action->compose.kind = stage_restart
             ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
@@ -137,9 +137,9 @@ void render_staged_bmson_actions(const BmsonTab& panel) {
     const auto commit_clicked = wormedit::ui::chrome::button_label(context, "Commit staged");
     const auto cancel_clicked = wormedit::ui::chrome::button_label(context, "Cancel staged");
     if (!has_staged) nk_widget_disable_end(context);
-    if (has_staged && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        if (commit_clicked) action->compose_action = WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM;
-        else if (cancel_clicked) action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM;
+    if (has_staged && action->compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (commit_clicked) action->compose.kind = WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM;
+        else if (cancel_clicked) action->compose.kind = WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM;
     }
 }
 
@@ -165,11 +165,11 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
     const auto restart_clicked = wormedit::ui::chrome::button_label(context, "Restart");
     const auto continue_clicked = wormedit::ui::chrome::button_label(context, "Continue");
     if (!enabled) nk_widget_disable_end(context);
-    if (!enabled || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
+    if (!enabled || action->compose.kind != WORM_UI_COMPOSE_ACTION_NONE ||
         (!restart_clicked && !continue_clicked)) return;
-    action->compose_action = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
+    action->compose.kind = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
                                             : WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE;
-    action->bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+    action->compose.bmson.bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
     action->stamp.chart_id.value = view.chart_id.value;
     action->stamp.document_revision = view.document_revision;
 }

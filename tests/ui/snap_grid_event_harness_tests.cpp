@@ -46,9 +46,9 @@ void prepare(nuklear_event_harness_t& harness) {
     require_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }
 void check_snap(const wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
-    INFO("action " << action.compose_action << " snap " << action.quantize.snap_denominator);
-    check_grid(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
-    check_grid(action.quantize.snap_denominator == denominator);
+    INFO("action " << action.compose.kind << " snap " << action.compose.quantize.snap_denominator);
+    check_grid(action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
+    check_grid(action.compose.quantize.snap_denominator == denominator);
     check_grid(action.stamp.project_id.value == 1);
     check_grid(action.stamp.chart_id.value == 1);
     check_grid(action.stamp.document_revision == 1);
@@ -68,7 +68,7 @@ TEST_CASE("Snap fraction badge opens supported grids and applies keyboard choice
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_snap(selected.get(), 8);
     check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
-    check_grid(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_grid(harness.frame().get().compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("Snap popup mouse choice supports custom denominators", "[frontend-state][event-harness][snap-grid]") {
@@ -102,7 +102,7 @@ TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss a
             result = harness.frame(std::span{&lost, 1});
         }
         if (cause >= 2 && cause < 8) result = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
-        check_grid(result.get().compose_action != WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
+        check_grid(result.get().compose.kind != WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
         // Focus loss may emit the existing cancel/release input, never a chart press.
         for (std::size_t index = 0; index < result.get().input.compose_inputs.size(); ++index)
             check_grid(result.get().input.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
@@ -121,7 +121,7 @@ TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action"
     const auto target=h.drawn_text_center("Find fitting snap");
     require_grid(target.has_value());
     const auto picked=mouse(h,target->first,target->second,true);
-    check_grid(picked.get().compose_action==WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
+    check_grid(picked.get().compose.kind==WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
     check_grid(picked.get().stamp.chart_id.value==1);
     check_grid(picked.get().stamp.document_revision==1);
     check_grid(picked.get().input.compose_inputs.size()==0);

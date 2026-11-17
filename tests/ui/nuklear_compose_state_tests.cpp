@@ -651,10 +651,10 @@ TEST_CASE("Area edge capture restores exact original virtual range and source bi
     moved.area_range_end_row = 12000;
     wormedit::ui::workspace_action_t action{};
     capture.restore(action);
-    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE);
-    CHECK(action.area.begin_row == 144);
-    CHECK(action.area.end_row == 10000);
-    CHECK(action.area.is_virtual);
+    CHECK(action.compose.kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE);
+    CHECK(action.compose.area.begin_row == 144);
+    CHECK(action.compose.area.end_row == 10000);
+    CHECK(action.compose.area.is_virtual);
     CHECK(action.stamp.chart_id.value == 7);
     CHECK(action.stamp.document_revision == 11);
     CHECK(view.selected_note_count == 3);
@@ -907,13 +907,13 @@ TEST_CASE("inline audio offset focuses exact text and emits one signed edit", "[
     wormedit::ui::workspace_action_t action{};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
     expect_inline(!state.inline_offset.inline_offset_open);
-    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
-    expect_inline(action.chart.audio_offset_numerator == -1);
-    expect_inline(action.chart.audio_offset_denominator == 8);
+    expect_inline(action.compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
+    expect_inline(action.compose.chart.audio_offset_numerator == -1);
+    expect_inline(action.compose.chart.audio_offset_denominator == 8);
     expect_inline(action.stamp.chart_id.value == 7 && action.stamp.document_revision == 11);
     action = {};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
-    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_inline(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("inline audio offset invalid Enter retains text and blur cancels", "[frontend][offset]") {
@@ -926,10 +926,10 @@ TEST_CASE("inline audio offset invalid Enter retains text and blur cancels", "[f
     expect_inline(state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_focus_pending);
     expect_inline(std::strcmp(state.inline_offset.inline_offset_text.data(), "-1/0") == 0);
     expect_inline(state.inline_offset.inline_offset_error[0] != 0);
-    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_inline(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
     worm_ui_nuklear_update_inline_offset(state, view, action, false, true);
     expect_inline(!state.inline_offset.inline_offset_open);
-    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_inline(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("inline audio offset cancels on chart revision lock and explicit Escape", "[frontend][offset]") {
@@ -944,7 +944,7 @@ TEST_CASE("inline audio offset cancels on chart revision lock and explicit Escap
     wormedit::ui::workspace_action_t action{};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
     expect_inline(!state.inline_offset.inline_offset_open);
-    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    expect_inline(action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 TEST_CASE("occluded offset readout cannot steal another panel's input", "[frontend][offset]") {

@@ -41,7 +41,7 @@ struct cut_fixture_t {
     auto command(std::string_view label, WormUiComposeActionKind kind) -> workspace_action_snapshot_t {
         const auto frames = click(label);
         const auto found = std::ranges::find_if(frames, [kind](const auto& frame) {
-            return frame.get().compose_action == kind;
+            return frame.get().compose.kind == kind;
         });
         REQUIRE(found != frames.end());
         return *found;
@@ -96,10 +96,10 @@ TEST_CASE("Markers export-cut list selects the song cut and captures owned edit 
     (void)fixture.harness.frame();
     const auto emitted = fixture.command("Apply cut", WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT);
     std::snprintf(editor.label.data(), editor.label.size(), "%s", "Changed buffer");
-    CHECK(emitted.get().marker.export_cut_id == object_id_t{31});
-    CHECK(emitted.get().marker.label == "Owned cut");
-    CHECK(emitted.get().marker.audio_begin == "525");
-    CHECK(emitted.get().marker.audio_end == "1425");
+    CHECK(emitted.get().compose.marker.export_cut_id == object_id_t{31});
+    CHECK(emitted.get().compose.marker.label == "Owned cut");
+    CHECK(emitted.get().compose.marker.audio_begin == "525");
+    CHECK(emitted.get().compose.marker.audio_end == "1425");
     CHECK(emitted.get().stamp.document_revision == 12);
 }
 
@@ -107,7 +107,7 @@ TEST_CASE("Markers export-cut deletion keeps its selected song identity", "[even
     cut_fixture_t fixture;
     fixture.select_intro();
     const auto emitted = fixture.command("Delete cut", WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT);
-    CHECK(emitted.get().marker.export_cut_id == object_id_t{31});
+    CHECK(emitted.get().compose.marker.export_cut_id == object_id_t{31});
     CHECK(emitted.get().stamp.project_id.value == 3);
     CHECK(emitted.get().stamp.chart_id.value == 7);
     CHECK(emitted.get().stamp.document_revision == 12);
@@ -124,7 +124,7 @@ TEST_CASE("Export-cut creation requires a materialized selection and an editable
     (void)fixture.harness.frame();
     const auto frames = test::click_at(fixture.harness, point->first, point->second);
     CHECK(std::ranges::none_of(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION;
     }));
 }
 
@@ -147,6 +147,6 @@ TEST_CASE("Removing a selected export cut retires its editor target before a lat
     CHECK_FALSE(worm_ui_nuklear_compose_state().export_cut_editor.selected);
     const auto frames = fixture.click("Delete cut");
     CHECK(std::ranges::none_of(frames, [](const auto& frame) {
-        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT;
+        return frame.get().compose.kind == WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT;
     }));
 }

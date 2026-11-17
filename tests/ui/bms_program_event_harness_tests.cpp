@@ -100,7 +100,7 @@ auto click_label(nuklear_event_harness_t& harness, std::string_view text) -> ui:
     REQUIRE(center);
     const auto clicks = test::click_at(harness, center->first, center->second);
     for (const auto& click : clicks)
-        if (click.get().compose_action == WORM_UI_COMPOSE_ACTION_BMS_PROGRAM) return click.get().bms_program;
+        if (click.get().compose.kind == WORM_UI_COMPOSE_ACTION_BMS_PROGRAM) return click.get().bms_program;
     FAIL("scope widget emitted no action");
     return {};
 }

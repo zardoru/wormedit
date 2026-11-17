@@ -115,8 +115,8 @@ void check_beat_drag(bool downscroll) {
 void check_offset_proposal(fit_fixture_t& fixture, WormUiComposeInputKind kind,
                            double world_pixel, std::int64_t delta) {
     fixture.send(kind, world_pixel);
-    expect_fit(fixture.action.audio_offset_drag_delta_frames == delta);
-    expect_fit(fixture.action.audio_offset_drag_sample_rate == 44'100);
+    expect_fit(fixture.action.audio_offset_drag.delta_frames == delta);
+    expect_fit(fixture.action.audio_offset_drag.sample_rate == 44'100);
     expect_fit(fixture.history.document.charts.front().beat_zero_audio_offset_seconds ==
                signed_rational_t{1, 4});
     expect_fit(fixture.history.undo.empty());
@@ -130,7 +130,7 @@ void check_offset_drag(bool downscroll) {
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 90, -11'025);
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 180, 22'050);
     check_offset_proposal(fixture, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 180, 22'050);
-    expect_fit(fixture.action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
+    expect_fit(fixture.action.audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
     expect_fit(!fixture.cache.timing.offset_fit_drag);
 }
 } // namespace
@@ -282,5 +282,5 @@ TEST_CASE("Offset fit stages hint feedback and cancel preserves timing", "[unit]
     expect_fit(fixture.center.current_line() != nullptr);
     expect_fit(fixture.center.current_line()->severity == notification_severity_t::hint);
     expect_fit(fixture.history.undo.empty());
-    expect_fit(fixture.action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
+    expect_fit(fixture.action.audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
 }

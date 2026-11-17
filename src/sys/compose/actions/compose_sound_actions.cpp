@@ -332,9 +332,9 @@ struct assign_sound_slot_action_t {
                 "Direct sound slots are available only for a BMS chart.");
         if (!request_stamp_current(action.stamp, history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
+        if (action.compose.resource.sound_slot == 0 || action.compose.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
-        if (action.resource.import_paths.size() != 1 || action.resource.import_paths[0].empty())
+        if (action.compose.resource.import_paths.size() != 1 || action.compose.resource.import_paths[0].empty())
             return compose_action_outcome_t::blocked(
                 "Assign exactly one audio file to the selected slot.");
         return std::nullopt;
@@ -342,7 +342,7 @@ struct assign_sound_slot_action_t {
     auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
         const auto& action = context.action;
         auto& history = context.document.history;
-        const auto path = std::filesystem::path{action.resource.import_paths[0]}.lexically_normal();
+        const auto path = std::filesystem::path{action.compose.resource.import_paths[0]}.lexically_normal();
         std::error_code error;
         if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
             return compose_action_outcome_t::blocked("The selected audio file is not readable.");
@@ -350,7 +350,7 @@ struct assign_sound_slot_action_t {
         if (!stream)
             return compose_action_outcome_t::blocked("The selected file is not decodable audio.");
         constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const auto number = action.resource.sound_slot;
+        const auto number = action.compose.resource.sound_slot;
         const auto identifier = std::string{digits[number / 36], digits[number % 36]};
         auto name = path.filename().generic_string();
         if (name.size() > 255)
@@ -361,7 +361,7 @@ struct assign_sound_slot_action_t {
                                         .role = resource_role_t::sample,
                                         .name = std::move(name),
                                         .audio_stream = stream},
-                      .confirm_replacement = action.resource.sound_slot_confirmed});
+                      .confirm_replacement = action.compose.resource.sound_slot_confirmed});
         return compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{
@@ -388,7 +388,7 @@ struct assign_sound_slot_batch_action_t {
                 "Direct sound slots are available only for a BMS chart.");
         if (!request_stamp_current(action.stamp, history.document, chart_id))
             return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-        if (action.resource.sound_slot == 0 || action.resource.sound_slot >= bms_slot_count)
+        if (action.compose.resource.sound_slot == 0 || action.compose.resource.sound_slot >= bms_slot_count)
             return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
         if (action.sound_import.items.empty() ||
             action.sound_import.items.size() > maximum_bulk_sound_import)
@@ -427,12 +427,12 @@ struct assign_sound_slot_batch_action_t {
                              .audio_stream = stream});
         }
         constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const auto number = action.resource.sound_slot;
+        const auto number = action.compose.resource.sound_slot;
         const auto identifier = std::string{digits[number / 36], digits[number % 36]};
         auto applied = apply_bms_wav_slot_batch_assignment(
             history, {.first_identifier = identifier,
                       .imported_files = std::move(files),
-                      .confirm_replacements = action.resource.sound_slot_confirmed});
+                      .confirm_replacements = action.compose.resource.sound_slot_confirmed});
         return compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{
@@ -454,7 +454,7 @@ struct delete_compose_sounds_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
 
-        ids = action.resource.sound_resource_ids;
+        ids = action.compose.resource.sound_resource_ids;
         if (auto rejected = metadata_command_detail::stale_rejection(
                 history, action.stamp.document_revision, "Resource deletion"))
             return compose_action_outcome_t::from(rejected->diagnostics.front(),
@@ -486,9 +486,9 @@ struct change_compose_sound_layers_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
         const auto chart = context.chart;
-        const auto ids = action.resource.sound_resource_ids;
-        const auto clear = action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS;
-        const auto add = action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
+        const auto ids = action.compose.resource.sound_resource_ids;
+        const auto clear = action.compose.kind == WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS;
+        const auto add = action.compose.kind == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
         auto applied =
             clear ? apply_sound_layer_defaults(history,
                                                {.chart = chart, .resources = ids, .layers = {}})
@@ -496,9 +496,9 @@ struct change_compose_sound_layers_action_t {
                         history,
                         {.chart = chart,
                          .resources = ids,
-                         .layer = action.layer.id,
+                         .layer = action.compose.layer.id,
                          .member = add,
-                         .overwrite_note_layers = action.resource.sound_overwrite_note_layers});
+                         .overwrite_note_layers = action.compose.resource.sound_overwrite_note_layers});
         const auto subject = sound_count_text(ids.size());
         return compose_action_outcome_t::from(
             std::move(applied),
@@ -522,14 +522,14 @@ struct group_compose_sounds_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
 
-        if (action.resource.sound_group_assignments.empty())
+        if (action.compose.resource.sound_group_assignments.empty())
             return compose_action_outcome_t::blocked("Choose at least one sound group.");
         auto next_group = std::uint64_t{1};
         for (const auto& group : history.document.sound_groups)
             next_group = std::max(next_group, group.id.value + 1);
-        edits.reserve(action.resource.sound_group_assignments.size());
-        for (std::size_t index = 0; index < action.resource.sound_group_assignments.size(); ++index) {
-            const auto& assignment = action.resource.sound_group_assignments[index];
+        edits.reserve(action.compose.resource.sound_group_assignments.size());
+        for (std::size_t index = 0; index < action.compose.resource.sound_group_assignments.size(); ++index) {
+            const auto& assignment = action.compose.resource.sound_group_assignments[index];
             if (assignment.sound_ids.empty())
                 return compose_action_outcome_t::blocked("A sound group has no selected members.");
             auto ids = assignment.sound_ids;
@@ -565,7 +565,7 @@ struct group_compose_sounds_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
         auto applied =
-            apply_sound_group_edits(history, edits, action.resource.sound_group_keep_ids_together);
+            apply_sound_group_edits(history, edits, action.compose.resource.sound_group_keep_ids_together);
         return compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{
@@ -586,7 +586,7 @@ struct ungroup_compose_sounds_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
 
-        ids = action.resource.sound_resource_ids;
+        ids = action.compose.resource.sound_resource_ids;
         if (auto rejected = metadata_command_detail::stale_rejection(
                 history, action.stamp.document_revision, "Sound group edit"))
             return compose_action_outcome_t::from(rejected->diagnostics.front(),
@@ -624,12 +624,12 @@ struct renumber_sound_ids_action_t {
             return compose_action_outcome_t::blocked(
                 "BMS identifiers are available only for a BMS chart.");
 
-        if (!action.resource.renumber_all && action.resource.sound_resource_ids.empty())
+        if (!action.compose.resource.renumber_all && action.compose.resource.sound_resource_ids.empty())
             return compose_action_outcome_t::blocked(
                 "Select sounds or choose all before renumbering.");
-        if (!action.resource.renumber_all)
-            ids = action.resource.sound_resource_ids;
-        name_space = action.resource.renumber_bga ? "BMP" : "WAV";
+        if (!action.compose.resource.renumber_all)
+            ids = action.compose.resource.sound_resource_ids;
+        name_space = action.compose.resource.renumber_bga ? "BMP" : "WAV";
         if (auto rejected = metadata_command_detail::stale_rejection(
                 history, action.stamp.document_revision, "BMS identifier renumber"))
             return compose_action_outcome_t::from(rejected->diagnostics.front(),
@@ -662,7 +662,7 @@ struct audition_compose_sound_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
 
-        resource = action.resource.id;
+        resource = action.compose.resource.id;
         const auto found =
             std::ranges::find(history.document.resources, resource, &resource_entry_t::id);
         if (!resource || found == history.document.resources.end())
@@ -692,9 +692,9 @@ struct import_compose_sounds_action_t {
         auto& history = context.document.history;
         const auto chart = context.chart;
         std::vector<std::string> paths;
-        for (std::size_t index = 0; index < action.resource.import_paths.size(); ++index)
-            if (!action.resource.import_paths[index].empty())
-                paths.emplace_back(action.resource.import_paths[index]);
+        for (std::size_t index = 0; index < action.compose.resource.import_paths.size(); ++index)
+            if (!action.compose.resource.import_paths[index].empty())
+                paths.emplace_back(action.compose.resource.import_paths[index]);
         return import_keysound_feedback(history, chart, paths,
                                         action.sound_import.kind ==
                                                 wormedit::ui::sound_import_kind_t::stem
@@ -968,7 +968,7 @@ auto dispatch_compose_sound_action(const wormedit::ui::workspace_action_t& actio
     const document_edit_inputs_t document{history, workspace, notifications};
     const resource_action_context_t context{action, document, chart};
     const auto* route = compose_action_detail::compose_action_route_t::find(
-        action.compose_action, compose_action_detail::compose_sound_routes);
+        action.compose.kind, compose_action_detail::compose_sound_routes);
     if (!route)
         return std::nullopt;
     auto finished = finish_compose_action(document, notifications,

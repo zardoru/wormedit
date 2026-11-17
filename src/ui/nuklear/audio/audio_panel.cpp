@@ -94,14 +94,14 @@ auto offset_pointer_delta(float pointer_x) -> std::int64_t {
 
 void set_offset_drag_action(wormedit::ui::workspace_action_t* action, WormUiAudioOffsetDragAction kind,
                             std::int64_t delta_frames) {
-    if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+    if (!action || action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
         return;
     }
-    action->audio_offset_drag_action = kind;
-    action->audio_offset_drag_chart_id = wormedit::chart_id_t{audio.offset_drag_chart_id};
-    action->audio_offset_drag_document_revision = audio.offset_drag_document_revision;
-    action->audio_offset_drag_sample_rate = audio.offset_drag_sample_rate;
-    action->audio_offset_drag_delta_frames = delta_frames;
+    action->audio_offset_drag.action = kind;
+    action->audio_offset_drag.chart_id = wormedit::chart_id_t{audio.offset_drag_chart_id};
+    action->audio_offset_drag.document_revision = audio.offset_drag_document_revision;
+    action->audio_offset_drag.sample_rate = audio.offset_drag_sample_rate;
+    action->audio_offset_drag.delta_frames = delta_frames;
 }
 
 void render_audio_asset_catalog(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
@@ -131,7 +131,7 @@ void render_audio_asset_catalog(struct nk_context* context, const wormedit::ui::
                 audio.selected_channel_id = 0;
                 audio.selected_clip_id = 0;
                 action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-                action.audio_asset_id.value = view.asset_ids[index].value;
+                action.asset_selection.audio_asset_id.value = view.asset_ids[index].value;
             }
         }
     }
@@ -164,7 +164,7 @@ void update_offset_pointer_drag(struct nk_context* context, const wormedit::ui::
             set_offset_drag_action(&action, WORM_UI_AUDIO_OFFSET_DRAG_UPDATE, delta);
         }
     } else if (can_drag_offset && nk_input_is_key_down(&context->input, NK_KEY_SHIFT) &&
-               action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
+               action.audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
                nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_LEFT, bounds, nk_true)) {
         audio.offset_drag_active = true;
         audio.offset_drag_anchor_x = context->input.mouse.pos.x;
@@ -483,19 +483,19 @@ void select_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit:
     audio.selected_resource_id = row.resource_id.value;
     audio.selected_channel_id = 0;
     audio.selected_clip_id = 0;
-    action.audio_resource_id.value = row.resource_id.value;
+    action.asset_selection.audio_resource_id.value = row.resource_id.value;
     if ((!view.has_selected_asset || view.selected_asset_id.value != row.asset_id.value) && row.asset_id.value != 0) {
         action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-        action.audio_asset_id.value = row.asset_id.value;
+        action.asset_selection.audio_asset_id.value = row.asset_id.value;
     } else action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE;
 }
 
 void audition_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& row,
                     wormedit::ui::workspace_action_t& action) {
-    if (row.missing || row.asset_id.value == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (row.missing || row.asset_id.value == 0 || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
-    action.resource.id.value = row.resource_id.value;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
+    action.compose.resource.id.value = row.resource_id.value;
     action.stamp.project_id.value = view.usage_song_id.value;
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
@@ -690,12 +690,12 @@ void render_sound_source_copy_button(struct nk_context* context, const wormedit:
     const auto clicked = wormedit::ui::chrome::button_label(context, "Copy source into project");
     if (!can_copy)
         nk_widget_disable_end(context);
-    if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+    if (!clicked || !can_copy || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.resource.asset_id.value = sound.asset_id.value;
+    action.compose.resource.asset_id.value = sound.asset_id.value;
     action.stamp.chart_id.value = view.chart_id.value;
     action.stamp.document_revision = view.document_revision;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+    action.compose.kind = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
 }
 
 void reset_sound_properties(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound) {

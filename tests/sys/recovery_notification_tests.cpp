@@ -41,9 +41,9 @@ struct recovery_fixture_t {
         const auto target = controller.view().rows.at(1).target;
         wormedit::ui::workspace_action_t value{};
         value.kind = kind;
-        value.recovery_scan_generation = target.scan_generation;
-        value.recovery_row_index = target.row_index;
-        value.recovery_candidate_index = target.candidate_index;
+        value.recovery.scan_generation = target.scan_generation;
+        value.recovery.row_index = target.row_index;
+        value.recovery.candidate_index = target.candidate_index;
         return value;
     }
     auto dispatch(const wormedit::ui::workspace_action_t& action, std::uint64_t primary_revision = 5) -> std::string {
@@ -97,7 +97,7 @@ TEST_CASE("Recovery validation warns and stale controller diagnostics retain act
     expect_recovery(entries.size() == 1);
     expect_recovery(entries[0].severity == notification_severity_t::warning);
     auto stale = fixture.action(WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT);
-    stale.recovery_scan_generation -= 1;
+    stale.recovery.scan_generation -= 1;
     expect_recovery(fixture.dispatch(stale) == "recovery action belongs to a stale scan generation");
     entries = fixture.entries();
     expect_recovery(entries.size() == 2);
@@ -110,10 +110,10 @@ TEST_CASE("Owned recovery destinations retain the input bound", "[unit][sys][rec
     recovery_fixture_t fixture;
     auto action = fixture.action(WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS);
     SECTION("overlength") {
-        action.recovery_save_as_destination.assign(maximum_recovery_destination_bytes + 1, 'x');
+        action.recovery.save_as_destination.assign(maximum_recovery_destination_bytes + 1, 'x');
     }
     SECTION("embedded null") {
-        action.recovery_save_as_destination = std::string{"a\0b", 3};
+        action.recovery.save_as_destination = std::string{"a\0b", 3};
     }
     expect_recovery(fixture.dispatch(action) ==
         "The recovery destination is too long or contains a null byte.");

@@ -2402,17 +2402,14 @@ void check_bookmark_callback(bool value) { CHECK(value); }
 void require_bookmark_callback(bool value) { REQUIRE(value); }
 struct bookmark_chooser_recorder_t {
     unsigned calls{};
-    std::uint64_t project{}, chart{}, revision{};
+    worm_ui_compose_target_t target{};
     bool accepted{true};
     auto operator==(const bookmark_chooser_recorder_t&) const -> bool = default;
-    static auto open(void* context, std::uint64_t project, std::uint64_t chart,
-                      std::uint64_t revision) -> bool {
-        auto& self = *static_cast<bookmark_chooser_recorder_t*>(context);
-        ++self.calls;
-        self.project = project;
-        self.chart = chart;
-        self.revision = revision;
-        return self.accepted;
+    auto operator()(worm_ui_targeted_action_t action, worm_ui_compose_target_t requested) -> bool {
+        if (action != worm_ui_targeted_action_t::bookmark_chooser) return false;
+        ++calls;
+        target = requested;
+        return accepted;
     }
 };
 }
@@ -2422,13 +2419,12 @@ TEST_CASE("Go To Bookmark command opens the retained chooser with the active con
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
     bookmark_chooser_recorder_t chooser;
-    fixture.application_state.bookmarks.chooser_backend = {
-        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    fixture.application_state.services.run_targeted_ui_action = std::ref(chooser);
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
     check_bookmark_callback(chooser.calls == 1);
-    check_bookmark_callback(chooser.project == fixture.fixture.history.document.id.value);
-    check_bookmark_callback(chooser.chart == fixture.compose_state->chart.value);
-    check_bookmark_callback(chooser.revision == revision);
+    check_bookmark_callback(chooser.target.project == fixture.fixture.history.document.id.value);
+    check_bookmark_callback(chooser.target.chart == fixture.compose_state->chart.value);
+    check_bookmark_callback(chooser.target.revision == revision);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.compose_state->cursor == cursor);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
@@ -2441,23 +2437,18 @@ TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback"
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
     bookmark_chooser_recorder_t chooser{.accepted = false};
-    fixture.application_state.bookmarks.chooser_backend = {
-        .open = bookmark_chooser_recorder_t::open, .context = &chooser};
+    fixture.application_state.services.run_targeted_ui_action = std::ref(chooser);
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).value);
 }
-TEST_CASE("Bookmark navigation reset retains the chooser backend and clock and clears project seeks",
+TEST_CASE("Bookmark navigation reset retains the clock and clears project seeks",
           "[sys][application_commands][bookmark][ownership]") {
     application_command_state_t state;
-    bookmark_chooser_recorder_t chooser;
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
-    state.bookmarks.chooser_backend = {.open = bookmark_chooser_recorder_t::open, .context = &chooser};
     state.bookmarks.fixed_clock = &now;
     state.bookmarks.record_seek(wormedit::chart_id_t{7}, 192);
     reset_application_project_edit_state(state);
     check_bookmark_callback(!state.bookmarks.recent_seek_row(wormedit::chart_id_t{7}));
     check_bookmark_callback(state.bookmarks.now() == now);
-    require_bookmark_callback(state.bookmarks.open_chooser(1, 7, 2));
-    check_bookmark_callback(chooser.calls == 1);
     now += std::chrono::milliseconds{301};
     check_bookmark_callback(state.bookmarks.now() == now);
 }
@@ -2467,13 +2458,13 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     const auto revision = fixture.fixture.history.document.revision;
     const auto undo_size = fixture.fixture.history.undo.size();
     unsigned calls{};
-    fixture.application_state.services.compose_dock_command = [&](WormUiComposeDockCommand dock,
-        std::uint64_t project, std::uint64_t chart, std::uint64_t expected_revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](worm_ui_targeted_action_t dock,
+        worm_ui_compose_target_t target) {
         ++calls;
-        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS);
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
+        check_bookmark_callback(dock >= worm_ui_targeted_action_t::dock_open_layers);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(target.revision == revision);
         return true;
     };
     for (const auto kind : {application_command_kind_t::view_open_layers,
@@ -2501,9 +2492,9 @@ TEST_CASE("Dock commands reject absent and unavailable callbacks",
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
                             application_command_kind_t::view_toggle_sounds}) {
-        fixture.application_state.services.compose_dock_command = {};
+        fixture.application_state.services.run_targeted_ui_action = {};
         check_bookmark_callback(!fixture.invoke(kind).value);
-        fixture.application_state.services.compose_dock_command = [](auto, auto, auto, auto) { return false; };
+        fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return false; };
         check_bookmark_callback(!fixture.invoke(kind).value);
     }
 }
@@ -2514,12 +2505,12 @@ TEST_CASE("Go to sound command opens the retained chooser with the active contex
     const auto revision = fixture.fixture.history.document.revision;
     const auto cursor = fixture.compose_state->cursor;
     unsigned calls{};
-    fixture.application_state.services.open_sound_picker = [&](std::uint64_t project,
-        std::uint64_t chart, std::uint64_t expected_revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](auto action, auto target) {
         ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.compose_state->chart.value);
-        check_bookmark_callback(expected_revision == revision);
+        check_bookmark_callback(action == worm_ui_targeted_action_t::sound_picker);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(target.revision == revision);
         return true;
     };
     require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
@@ -2535,9 +2526,9 @@ TEST_CASE("Go to sound command rejects a missing or blocked chooser callback",
           "[sys][application_commands][sound-picker]") {
     TimingInsertFixture fixture;
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
-    fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return false; };
+    fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return false; };
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
-    fixture.application_state.services.open_sound_picker = [](auto, auto, auto) { return true; };
+    fixture.application_state.services.run_targeted_ui_action = [](auto, auto) { return true; };
     fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).value);
 }
@@ -3151,12 +3142,12 @@ TEST_CASE("Project export command opens from every project tab without Compose d
           "[sys][application_commands][project-access]") {
     TimingInsertFixture fixture;
     unsigned calls{};
-    fixture.application_state.services.compose_dock_command = {};
-    fixture.application_state.services.open_project_export = [&](auto project, auto chart, auto revision) {
+    fixture.application_state.services.run_targeted_ui_action = [&](auto action, auto target) {
         ++calls;
-        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
-        check_bookmark_callback(chart == fixture.workspace.selected_chart->value);
-        check_bookmark_callback(revision == fixture.fixture.history.document.revision);
+        check_bookmark_callback(action == worm_ui_targeted_action_t::project_export);
+        check_bookmark_callback(target.project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(target.chart == fixture.workspace.selected_chart->value);
+        check_bookmark_callback(target.revision == fixture.fixture.history.document.revision);
         return true;
     };
     for (const auto tab : {wormedit::workspace_tab_t::setup, wormedit::workspace_tab_t::metadata,
@@ -3169,7 +3160,7 @@ TEST_CASE("Project export command opens from every project tab without Compose d
     fixture.compose_state->active_gesture.emplace();
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).value);
     fixture.compose_state->active_gesture.reset();
-    fixture.application_state.services.open_project_export = {};
+    fixture.application_state.services.run_targeted_ui_action = {};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).value);
 }
 

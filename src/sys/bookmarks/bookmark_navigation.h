@@ -13,11 +13,6 @@ class sdl_preview_output_t;
 namespace runtime { struct chart_preview_t; }
 inline constexpr auto playing_seek_repeat_window = std::chrono::milliseconds{300};
 
-struct bookmark_chooser_backend_t {
-    bool (*open)(void*, std::uint64_t project, std::uint64_t chart, std::uint64_t revision){};
-    void* context{};
-    auto operator==(const bookmark_chooser_backend_t&) const -> bool = default;
-};
 struct bookmark_navigation_t {
     struct bookmark_seek_record_t {
         chart_id_t chart{};
@@ -28,7 +23,6 @@ struct bookmark_navigation_t {
     struct project_t {
         std::optional<bookmark_seek_record_t> last_playing_bookmark_seek{};
     } project;
-    bookmark_chooser_backend_t chooser_backend{};
     // Deterministic clocks inject a value that may advance between event calls.
     const std::chrono::steady_clock::time_point* fixed_clock{};
     const workspace_controller_t* workspace{};
@@ -47,10 +41,6 @@ struct bookmark_navigation_t {
     }
     void record_seek(chart_id_t chart, std::uint64_t row) {
         project.last_playing_bookmark_seek = bookmark_seek_record_t{.chart = chart, .row = row, .at = now()};
-    }
-    [[nodiscard]] auto has_chooser_backend() const -> bool { return chooser_backend.open != nullptr; }
-    [[nodiscard]] auto open_chooser(std::uint64_t project_id, std::uint64_t chart, std::uint64_t revision) -> bool {
-        return chooser_backend.open && chooser_backend.open(chooser_backend.context, project_id, chart, revision);
     }
     [[nodiscard]] auto preserve_preview_revision(chart_id_t, std::uint64_t previous, std::uint64_t next) -> bool;
     [[nodiscard]] auto navigate_beat_bookmark(document_history_t&, editor_interaction_state_t&,

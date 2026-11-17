@@ -192,11 +192,6 @@
 #include <vector>
 
 namespace {
-bool open_bookmark_chooser_backend(void*, std::uint64_t project, std::uint64_t chart,
-                                  std::uint64_t revision) {
-    return worm_ui_frontend_open_bookmark_chooser(project, chart, revision);
-}
-
 using wormedit::sys::compose_action_outcome_t;
 
 
@@ -3628,12 +3623,9 @@ struct application_t::implementation_t {
         session.recovery_scan_feedback.publish(session.recovery_controller.view(),
                                                platform.notification_sink);
         session.recovery_scan_configured = startup.recovery_scan_configured;
-        commands.bookmarks.chooser_backend = {.open = open_bookmark_chooser_backend};
-        commands.services.open_sound_picker = worm_ui_frontend_open_sound_picker;
+        commands.services.run_targeted_ui_action = worm_ui_frontend_run_targeted_action;
         commands.services.free_slot_search_start = worm_ui_frontend_free_slot_search_start;
         commands.services.reveal_free_slot = worm_ui_frontend_reveal_free_slot;
-        commands.services.compose_dock_command = worm_ui_frontend_compose_dock_command;
-        commands.services.open_project_export = worm_ui_frontend_open_project_export;
         commands.services.system_clipboard_text = read_system_clipboard_text;
         commands.services.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
         commands.services.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;

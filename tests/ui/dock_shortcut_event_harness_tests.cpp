@@ -18,11 +18,11 @@ void prepare(nuklear_event_harness_t& harness) {
 auto registry_for_docks() -> command_registry_t {
     return command_registry_t::from([](const command_invocation_context_t& context) {
         const auto& id = context.command.value;
-        const auto dock = id == "view.open_layers" ? WORM_UI_COMPOSE_DOCK_OPEN_LAYERS
-            : id == "semantic_layer.create" ? WORM_UI_COMPOSE_DOCK_CREATE_LAYER
-            : WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS;
+        const auto dock = id == "view.open_layers" ? worm_ui_targeted_action_t::dock_open_layers
+            : id == "semantic_layer.create" ? worm_ui_targeted_action_t::dock_create_layer
+            : worm_ui_targeted_action_t::dock_toggle_sounds;
         return dispatch_outcome_t{
-            .value = worm_ui_frontend_compose_dock_command(dock, 1, 1, 1)};
+            .value = worm_ui_frontend_run_targeted_action(dock, {1, 1, 1})};
     });
 }
 auto press_and_dispatch(nuklear_event_harness_t& harness, SDL_Keycode code,
@@ -102,7 +102,7 @@ TEST_CASE("Dock shortcut toggles Sounds without opening the Go to sound picker",
         SDL_KMOD_CTRL | SDL_KMOD_SHIFT).value.status == command_dispatch_status_t::invoked);
     check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) != visible);
     check_dock(!worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
-    check_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
+    check_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_toggle_sounds, {1, 1, 1}));
     check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) == visible);
 }
 
@@ -112,7 +112,7 @@ TEST_CASE("Queued layer creation is discarded on stale contexts focus loss and m
         INFO("cause " << cause);
         nuklear_event_harness_t harness{1280, 800};
         prepare(harness);
-        require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
+        require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 1}));
         std::vector<SDL_Event> events;
         if (cause == 0) ++harness.view().compose.document_revision;
         if (cause == 1) ++harness.view().compose.chart_id.value;
@@ -134,18 +134,18 @@ TEST_CASE("Dock requests cannot bypass stale stamps or popup and IME ownership",
           "[frontend-state][event-harness][dock-shortcuts]") {
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
-    check_dock(!worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 2));
-    require_dock(worm_ui_frontend_open_sound_picker(1, 1, 1));
-    for (const auto dock : {WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, WORM_UI_COMPOSE_DOCK_CREATE_LAYER,
-                           WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS})
-        check_dock(!worm_ui_frontend_compose_dock_command(dock, 1, 1, 1));
+    check_dock(!worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 2}));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::sound_picker, {1, 1, 1}));
+    for (const auto dock : {worm_ui_targeted_action_t::dock_open_layers, worm_ui_targeted_action_t::dock_create_layer,
+                           worm_ui_targeted_action_t::dock_toggle_sounds})
+        check_dock(!worm_ui_frontend_run_targeted_action(dock, {1, 1, 1}));
     cancel_compose_sound_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker);
     static_cast<void>(harness.frame());
     SDL_Event composition{};
     composition.type = SDL_EVENT_TEXT_EDITING;
     composition.edit.text = "x";
     static_cast<void>(harness.frame(std::span{&composition, 1}));
-    check_dock(!worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
+    check_dock(!worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 1}));
 }
 
 TEST_CASE("Creating a layer reveals the appended target beyond the visible layer window",
@@ -154,9 +154,9 @@ TEST_CASE("Creating a layer reveals the appended target beyond the visible layer
     prepare(harness);
     auto& view = harness.view().compose;
     view.semantic_layer_total_count = 200;
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_open_layers, {1, 1, 1}));
     static_cast<void>(harness.frame());
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 1}));
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
     SDL_Event enter{};
@@ -189,7 +189,7 @@ TEST_CASE("Create layer from a closed populated dock takes priority over list pr
     prepare(harness);
     harness.view().compose.semantic_layer_total_count = 200;
     require_dock(!worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 1}));
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
     SDL_Event enter{};
@@ -205,14 +205,14 @@ TEST_CASE("Compact dock shortcuts switch panels and close the active panel", "[f
     nuklear_event_harness_t harness{960, 720};
     prepare(harness);
     auto& state = worm_ui_nuklear_compose_state();
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_open_layers, {1, 1, 1}));
     static_cast<void>(harness.frame());
     check_dock(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_toggle_sounds, {1, 1, 1}));
     static_cast<void>(harness.frame());
     check_dock(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
     check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_toggle_sounds, {1, 1, 1}));
     static_cast<void>(harness.frame());
     check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
     check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
@@ -233,7 +233,7 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
           "[frontend-state][event-harness][compose-dialogs]") {
     nuklear_event_harness_t harness{960, 720};
     prepare(harness);
-    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
+    require_dock(worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t::dock_create_layer, {1, 1, 1}));
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
     auto& state = worm_ui_nuklear_compose_state();

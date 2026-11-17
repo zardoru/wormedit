@@ -572,7 +572,7 @@ void export_tutorial_from_compose(charting_t& flow, const std::filesystem::path&
     expect(model.value);
     auto shell = frontend_workspace_view_t::from(*model.value, flow.history.document, "Ready", {}, false);
     flow.harness.view().compose.output_groups = std::move(shell.view.compose.output_groups);
-    flow.commands.services.open_project_export = worm_ui_frontend_open_project_export;
+    flow.commands.services.run_targeted_ui_action = worm_ui_frontend_run_targeted_action;
     const auto export_key = key(SDLK_E, SDL_SCANCODE_E);
     expect(flow.shortcut(flow.harness.frame({&export_key, 1}, SDL_KMOD_CTRL)).value.is_invoked());
     const auto released = key(SDLK_E, SDL_SCANCODE_E, false);

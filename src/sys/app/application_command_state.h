@@ -19,6 +19,7 @@
 #include <wormedit/core/interaction_state.h>
 #include "ui/compose_timing_geometry.h"
 #include "ui/compose_mode.h"
+#include "ui/frontend/targeted_action.h"
 #include <chrono>
 #include <functional>
 #include <set>
@@ -43,15 +44,12 @@ struct application_command_services_t {
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
     std::function<std::uint64_t(std::uint64_t)> transport_preview_frame_from_source;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
     // Free-slot search: the slot the UI searches after (0 = before 01) and the reveal of the result
     // (selects it in the WAV slot list, or remembers it as the BMP search position).
     std::function<std::size_t(bool bmp)> free_slot_search_start;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t, bool bmp, std::size_t slot)>
-        reveal_free_slot;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
-    std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
-        compose_dock_command;
+    std::function<bool(worm_ui_compose_target_t, bool bmp, std::size_t slot)> reveal_free_slot;
+    // The one door for UI actions that need a document target: choosers, dialogs and dock commands.
+    std::function<bool(worm_ui_targeted_action_t, worm_ui_compose_target_t)> run_targeted_ui_action;
     std::function<int()> compose_left_dock_pixels;
     std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;
     std::function<std::string()> transport_play_pause;

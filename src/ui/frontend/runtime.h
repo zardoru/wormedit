@@ -1,6 +1,7 @@
 #pragma once
 #include <wormedit/core/ui_layout_preferences.h>
 #include "actions.h"
+#include "targeted_action.h"
 
 #include <string>
 #include <string_view>
@@ -131,21 +132,13 @@ void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_re
                                        uint64_t* event_id, double* y_pixels);
 void worm_ui_frontend_keysound_dock_request(wormedit::ui::keysound_dock_request_t* request);
 void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_request_t* request);
-bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
-bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 // Free-slot search for the WAV slot list and the BMP lane: where the next search starts (0 = before
-// slot 01) and the reveal of the slot found.
+// slot 01) and the reveal of the slot found (dock gate, document-context target).
 size_t worm_ui_frontend_free_slot_search_start(bool bmp);
-bool worm_ui_frontend_reveal_free_slot(uint64_t project_id, uint64_t chart_id, uint64_t revision,
-                                       bool bmp, size_t slot);
-bool worm_ui_frontend_open_project_export(uint64_t project_id, uint64_t chart_id, uint64_t revision);
-typedef enum WormUiComposeDockCommand {
-    WORM_UI_COMPOSE_DOCK_OPEN_LAYERS,
-    WORM_UI_COMPOSE_DOCK_CREATE_LAYER,
-    WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS,
-} WormUiComposeDockCommand;
-bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
-    uint64_t project_id, uint64_t chart_id, uint64_t revision);
+bool worm_ui_frontend_reveal_free_slot(worm_ui_compose_target_t target, bool bmp, size_t slot);
+/* Runs one targeted action when `target` still matches and the action's input gate is open.
+   The target check, gate and handler live in one table in frontend.cpp. */
+bool worm_ui_frontend_run_targeted_action(worm_ui_targeted_action_t action, worm_ui_compose_target_t target);
 /* Width in logical pixels the BMS branch dock took from the left of the Compose field last frame;
    the Compose projection narrows its viewport by it. Zero while the dock is hidden. */
 int worm_ui_frontend_compose_left_dock_pixels(void);

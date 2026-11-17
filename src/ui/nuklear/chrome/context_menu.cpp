@@ -279,21 +279,30 @@ auto context_menu_begin(ContextMenu& menu, nk_context* context, PopupContextStam
     return true;
 }
 
+namespace {
+// Claims the next row of the menu being rendered and lets the keyboard or a moving pointer select
+// it when it is enabled. Rows outside a menu are -1.
+auto claim_menu_row(ContextMenu* menu, const nk_context* context, struct nk_rect bounds, bool enabled)
+    -> int {
+    if (!menu) return -1;
+    const auto row = menu->row_cursor++;
+    menu->frame_rows.push_back(enabled ? 1 : 0);
+    if (!enabled) return row;
+    if (menu->keyboard_mode && menu->selected_row < 0) menu->selected_row = row;
+    const auto moved = context->input.mouse.delta.x != 0 || context->input.mouse.delta.y != 0;
+    if (moved && nk_input_is_mouse_hovering_rect(&context->input, bounds)) {
+        menu->selected_row = row;
+        menu->keyboard_mode = false;
+    }
+    return row;
+}
+} // namespace
+
 auto context_menu_button(nk_context* context, const char* label, const char* disabled_reason, bool submenu)
     -> bool {
     const auto bounds = nk_widget_bounds(context);
     auto* menu = rendering_menu;
-    const auto row = menu ? menu->row_cursor++ : -1;
-    if (menu) {
-        menu->frame_rows.push_back(disabled_reason ? 0 : 1);
-        if (!disabled_reason && menu->keyboard_mode && menu->selected_row < 0)
-            menu->selected_row = row;
-        const auto moved = context->input.mouse.delta.x != 0 || context->input.mouse.delta.y != 0;
-        if (!disabled_reason && moved && nk_input_is_mouse_hovering_rect(&context->input, bounds)) {
-            menu->selected_row = row;
-            menu->keyboard_mode = false;
-        }
-    }
+    const auto row = claim_menu_row(menu, context, bounds, !disabled_reason);
     const bool click_guarded = menu && menu->click_guard;
     if (click_guarded && !context->input.mouse.buttons[NK_BUTTON_LEFT].down) menu->click_guard = false;
     const bool selected = menu && menu->selected_row == row;

@@ -9,6 +9,7 @@
 #include <memory>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 #include <array>
 #include <algorithm>
 
@@ -175,6 +176,13 @@ TEST_CASE("Cursor navigation skips removed rows on the active musical grid", "[c
     CHECK(setup.state->cursor.row == 0);
 }
 
+void check_cut_axis(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_cut_axis(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("A fixed cursor scrolled next to a cut leaves it toward the side it reached",
           "[core][export-cut][cursor][scroll]") {
     using namespace wormedit;
@@ -186,12 +194,12 @@ TEST_CASE("A fixed cursor scrolled next to a cut leaves it toward the side it re
     auto history = document_history_t::from({.id = song_id_t{1}, .charts = {chart}});
     const std::array snaps{std::uint64_t{4}};
     auto setup = editor_interaction_state_t::from(history, chart.id, lane_id_t{1}, {measure_id_t{2}, 0}, snaps, 4);
-    REQUIRE(setup.state);
+    require_cut_axis(static_cast<bool>(setup.state));
     const auto timing = timing_index_t::from(chart);
-    REQUIRE(timing.value);
+    require_cut_axis(static_cast<bool>(timing.value));
     // 500..1100 ms hides rows 240..528: the grid rows 240 and 480 are gone.
     const auto axis = export_cut_axis_t::from(*timing.value, axis_cuts(500, 1100));
-    REQUIRE(axis.ok());
+    require_cut_axis(axis.ok());
     auto state = *setup.state;
     state.cut_axis = std::make_shared<const export_cut_axis_t>(axis.value);
     state.pixels_per_standard_measure = 960.0;
@@ -200,12 +208,12 @@ TEST_CASE("A fixed cursor scrolled next to a cut leaves it toward the side it re
     const auto index = measure_index_t::from(history.document.charts.front()).value();
     // Just before the seam snapping rounds onto the cut: the cursor stays before it.
     state.viewport_scroll_pixels = 139.0;
-    REQUIRE(synchronize_editor_cursor_to_viewport(history.document.charts.front(), index, state));
-    CHECK(state.cursor.row == 0);
+    require_cut_axis(synchronize_editor_cursor_to_viewport(history.document.charts.front(), index, state));
+    check_cut_axis(state.cursor.row == 0);
     // Just after the seam the cursor continues past it.
     state.viewport_scroll_pixels = 141.0;
-    REQUIRE(synchronize_editor_cursor_to_viewport(history.document.charts.front(), index, state));
-    CHECK(state.cursor.row == 720);
+    require_cut_axis(synchronize_editor_cursor_to_viewport(history.document.charts.front(), index, state));
+    check_cut_axis(state.cursor.row == 720);
 }
 
 TEST_CASE("Cuts made from rows preserve their exclusive end after millisecond conversion",

@@ -2,6 +2,7 @@
 #include "frame_timing_fixtures.h"
 #include "../support/stale_action_assertions.h"
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 #include <catch2/catch_approx.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>
@@ -91,6 +92,13 @@ void check_retained_timing_marker_positions(const ui::compose_view_t& view) {
 }
 } // namespace
 
+void check_cut_bookmarks(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_cut_bookmarks(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("Bookmarks inside an export cut are hidden and the one on its end stays",
           "[sys][export-cut][bookmarks]") {
     // 120 BPM: a measure is two seconds, so 0..16000 ms hides measures 1..8 and ends on measure 9.
@@ -107,19 +115,19 @@ TEST_CASE("Bookmarks inside an export cut are hidden and the one on its end stay
     compose_test_fixture_t fixture{std::move(song)};
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
-    REQUIRE(view.cut_axis);
-    REQUIRE(view.beat_bookmarks.size() == 4);
+    require_cut_bookmarks(static_cast<bool>(view.cut_axis));
+    require_cut_bookmarks(view.beat_bookmarks.size() == 4);
     for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
         const auto& bookmark = view.beat_bookmarks[index];
         CAPTURE(index, bookmark.chart_row);
         // The cut's end row is visible; every row inside [begin, end) is not.
-        CHECK(bookmark.projection_visible == !view.cut_axis->contains_row(bookmark.chart_row));
+        check_cut_bookmarks(bookmark.projection_visible == !view.cut_axis->contains_row(bookmark.chart_row));
     }
-    CHECK_FALSE(view.beat_bookmarks[0].projection_visible);
-    CHECK_FALSE(view.beat_bookmarks[1].projection_visible);
-    CHECK(view.beat_bookmarks[2].projection_visible);
-    REQUIRE(view.audio_bookmarks.size() == 1);
-    CHECK_FALSE(view.audio_bookmarks[0].projection_visible);
+    check_cut_bookmarks(!(view.beat_bookmarks[0].projection_visible));
+    check_cut_bookmarks(!(view.beat_bookmarks[1].projection_visible));
+    check_cut_bookmarks(view.beat_bookmarks[2].projection_visible);
+    require_cut_bookmarks(view.audio_bookmarks.size() == 1);
+    check_cut_bookmarks(!(view.audio_bookmarks[0].projection_visible));
 }
 
 TEST_CASE("Retained timing markers agree with live positions after export cuts while scrolling",

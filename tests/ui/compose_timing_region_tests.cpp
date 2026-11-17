@@ -2,27 +2,35 @@
 #include "ui/compose_timing_geometry.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <cmath>
 #include <cstdint>
+
+void check_timing_region(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_timing_region(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
 
 TEST_CASE("Timing lanes hide in priority order when the region is too narrow",
           "[ui][timing-region]") {
     using wormedit::ui::compose_timing_fit_mask;
     const auto bit = [](wormedit::timing_lane_kind_t lane) { return 1U << static_cast<unsigned>(lane); };
-    CHECK(compose_timing_fit_mask(wormedit::all_timing_lane_mask, 1000.0) == wormedit::all_timing_lane_mask);
+    check_timing_region(compose_timing_fit_mask(wormedit::all_timing_lane_mask, 1000.0) == wormedit::all_timing_lane_mask);
     // Optional lanes first, then anchor, kiai, warp, speed (with SV), delay, stop and BPM last.
-    CHECK(compose_timing_fit_mask(wormedit::all_timing_lane_mask, 200.0) == 0xFFU);
-    CHECK(compose_timing_fit_mask(0xFFU, 150.0) ==
+    check_timing_region(compose_timing_fit_mask(wormedit::all_timing_lane_mask, 200.0) == 0xFFU);
+    check_timing_region(compose_timing_fit_mask(0xFFU, 150.0) ==
           (0xFFU & ~bit(wormedit::timing_lane_kind_t::anchor) & ~bit(wormedit::timing_lane_kind_t::kiai)));
-    CHECK(compose_timing_fit_mask(0xFFU, 100.0) ==
+    check_timing_region(compose_timing_fit_mask(0xFFU, 100.0) ==
           (bit(wormedit::timing_lane_kind_t::bpm) | bit(wormedit::timing_lane_kind_t::scroll) |
            bit(wormedit::timing_lane_kind_t::stop) | bit(wormedit::timing_lane_kind_t::delay)));
-    CHECK(compose_timing_fit_mask(0xFFU, 50.0) ==
+    check_timing_region(compose_timing_fit_mask(0xFFU, 50.0) ==
           (bit(wormedit::timing_lane_kind_t::bpm) | bit(wormedit::timing_lane_kind_t::stop)));
-    CHECK(compose_timing_fit_mask(0xFFU, 10.0) == bit(wormedit::timing_lane_kind_t::bpm));
+    check_timing_region(compose_timing_fit_mask(0xFFU, 10.0) == bit(wormedit::timing_lane_kind_t::bpm));
     // A lane the user kept alone is never dropped.
-    CHECK(compose_timing_fit_mask(bit(wormedit::timing_lane_kind_t::anchor), 1.0) ==
+    check_timing_region(compose_timing_fit_mask(bit(wormedit::timing_lane_kind_t::anchor), 1.0) ==
           bit(wormedit::timing_lane_kind_t::anchor));
 }
 

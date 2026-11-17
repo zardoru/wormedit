@@ -572,25 +572,24 @@ auto red_timing_lines(const std::string& osu) -> std::vector<std::string> {
     return lines;
 }
 
+namespace {
+// Red (uninherited) lines after parsing an osu! timing section and writing it back.
+auto round_trip_red_lines(std::string_view timing, std::string_view hits) -> std::size_t {
+    const auto parsed = parse_inline(timing_fixture(timing, hits));
+    REQUIRE(parsed.value);
+    REQUIRE(parsed.value->charts.front().measures.size() > 3);
+    const auto written = write_inline(*parsed.value);
+    REQUIRE(written.value);
+    return red_timing_lines(*written.value).size();
+}
+} // namespace
+
 TEST_CASE("osu!mania writer emits red lines only where BPM or meter changes",
           "[unit][format][osu-mania][timing][writer]") {
     const auto hits = std::string("64,192,0,1,0,0:0:0:0:\n64,192,9000,1,0,0:0:0:0:\n");
-    SECTION("constant BPM and meter yields a single red line") {
-        const auto parsed = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n", hits));
-        REQUIRE(parsed.value);
-        REQUIRE(parsed.value->charts.front().measures.size() > 3);
-        const auto written = write_inline(*parsed.value);
-        REQUIRE(written.value);
-        CHECK(red_timing_lines(*written.value).size() == 1);
-    }
-    SECTION("a meter change keeps its red line") {
-        const auto parsed = parse_inline(
-            timing_fixture("0,500,4,0,0,100,1,0\n4000,500,3,0,0,100,1,0\n", hits));
-        REQUIRE(parsed.value);
-        const auto written = write_inline(*parsed.value);
-        REQUIRE(written.value);
-        CHECK(red_timing_lines(*written.value).size() == 2);
-    }
+    // Constant BPM and meter yields a single red line; a meter change keeps its own.
+    CHECK(round_trip_red_lines("0,500,4,0,0,100,1,0\n", hits) == 1);
+    CHECK(round_trip_red_lines("0,500,4,0,0,100,1,0\n4000,500,3,0,0,100,1,0\n", hits) == 2);
 }
 
 TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline measure",

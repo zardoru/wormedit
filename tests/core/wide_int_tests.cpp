@@ -1,6 +1,7 @@
 #include "core/wide_int.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <cstdint>
 #include <limits>
@@ -11,25 +12,32 @@ namespace {
 using wormedit::wide_int::portable_i128_t;
 using wormedit::wide_int::portable_u128_t;
 
+void check_wide_int(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_wide_int(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("portable 128-bit arithmetic matches small exact values", "[wide-int]") {
     const portable_u128_t big = portable_u128_t{std::numeric_limits<std::uint64_t>::max()} + 1;
-    REQUIRE(big.high() == 1);
-    REQUIRE(big.low() == 0);
-    REQUIRE(big - 1 == portable_u128_t{std::numeric_limits<std::uint64_t>::max()});
-    REQUIRE(portable_u128_t{-1}.high() == ~std::uint64_t{});
-    REQUIRE(static_cast<std::uint64_t>(big * 3 / 3 + 5) == 5);
-    REQUIRE(big % 7 == portable_u128_t{2});  // 2^64 mod 7 == 2
-    REQUIRE((big * big) == portable_u128_t{});  // wraps at 2^128
+    require_wide_int(big.high() == 1);
+    require_wide_int(big.low() == 0);
+    require_wide_int(big - 1 == portable_u128_t{std::numeric_limits<std::uint64_t>::max()});
+    require_wide_int(portable_u128_t{-1}.high() == ~std::uint64_t{});
+    require_wide_int(static_cast<std::uint64_t>(big * 3 / 3 + 5) == 5);
+    require_wide_int(big % 7 == portable_u128_t{2});  // 2^64 mod 7 == 2
+    require_wide_int((big * big) == portable_u128_t{});  // wraps at 2^128
 
     const portable_i128_t negative = -portable_i128_t{5};
-    REQUIRE(negative < 0);
-    REQUIRE(negative + 5 == portable_i128_t{0});
-    REQUIRE(static_cast<portable_u128_t>(negative) == portable_u128_t{-5});
-    REQUIRE(portable_i128_t{std::numeric_limits<std::int64_t>::min()} < negative);
-    REQUIRE(portable_i128_t{-7} / 2 == portable_i128_t{-3});
-    REQUIRE(portable_i128_t{-7} % 2 == portable_i128_t{-1});
-    REQUIRE(portable_i128_t{7} / -2 == portable_i128_t{-3});
-    REQUIRE(portable_i128_t{7} % -2 == portable_i128_t{1});
+    require_wide_int(negative < 0);
+    require_wide_int(negative + 5 == portable_i128_t{0});
+    require_wide_int(static_cast<portable_u128_t>(negative) == portable_u128_t{-5});
+    require_wide_int(portable_i128_t{std::numeric_limits<std::int64_t>::min()} < negative);
+    require_wide_int(portable_i128_t{-7} / 2 == portable_i128_t{-3});
+    require_wide_int(portable_i128_t{-7} % 2 == portable_i128_t{-1});
+    require_wide_int(portable_i128_t{7} / -2 == portable_i128_t{-3});
+    require_wide_int(portable_i128_t{7} % -2 == portable_i128_t{1});
 }
 
 TEST_CASE("portable subtraction reports signed overflow", "[wide-int]") {
@@ -64,13 +72,13 @@ TEST_CASE("portable unsigned arithmetic matches __int128", "[wide-int]") {
         if (b == 0) b = 1;
         const auto x = to_builtin(a);
         const auto y = to_builtin(b);
-        REQUIRE(to_builtin(a + b) == x + y);
-        REQUIRE(to_builtin(a - b) == x - y);
-        REQUIRE(to_builtin(a * b) == x * y);
-        REQUIRE(to_builtin(a / b) == x / y);
-        REQUIRE(to_builtin(a % b) == x % y);
-        REQUIRE((a < b) == (x < y));
-        REQUIRE((a == b) == (x == y));
+        require_wide_int(to_builtin(a + b) == x + y);
+        require_wide_int(to_builtin(a - b) == x - y);
+        require_wide_int(to_builtin(a * b) == x * y);
+        require_wide_int(to_builtin(a / b) == x / y);
+        require_wide_int(to_builtin(a % b) == x % y);
+        require_wide_int((a < b) == (x < y));
+        require_wide_int((a == b) == (x == y));
     }
 }
 #endif

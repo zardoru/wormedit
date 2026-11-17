@@ -2,6 +2,7 @@
 #include "frame_timing_fixtures.h"
 #include "sys/compose/compose_playhead_cursor.h"
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 #include <catch2/catch_approx.hpp>
 #include <algorithm>
 #include <array>
@@ -607,26 +608,33 @@ TEST_CASE("Compose horizontal layout orders timing, BGA, playable and BGM panes"
     CHECK(compose_horizontal_layout_is_ordered());
 }
 
+void check_timing_width(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_timing_width(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("A user-chosen timing width replaces the natural one within its limits",
           "[sys][horizontal-layout][timing-region]") {
     using namespace wormedit::sys;
     const auto automatic = compose_horizontal_layout(900, 5, true, 0, 0xFF);
-    CHECK(automatic.bga_pane_left_pixels == 426.0);
-    CHECK(automatic.timing_lane_mask == 0xFFU);
+    check_timing_width(automatic.bga_pane_left_pixels == 426.0);
+    check_timing_width(automatic.timing_lane_mask == 0xFFU);
     const auto narrowed = compose_horizontal_layout(900, 5, true, 0, 0xFF, 100.0);
-    CHECK(narrowed.bga_pane_left_pixels == compose_measure_rail_width_pixels + 100.0);
-    CHECK(narrowed.timing_lane_mask == 0x1BU);
+    check_timing_width(narrowed.bga_pane_left_pixels == compose_measure_rail_width_pixels + 100.0);
+    check_timing_width(narrowed.timing_lane_mask == 0x1BU);
     // Wider than twice natural is capped; the window still limits what fits.
     const auto widened = compose_horizontal_layout(2000, 5, true, 0, 0xFF, 5000.0);
-    CHECK(widened.bga_pane_left_pixels == compose_measure_rail_width_pixels + 768.0);
+    check_timing_width(widened.bga_pane_left_pixels == compose_measure_rail_width_pixels + 768.0);
     const auto cramped = compose_horizontal_layout(900, 5, true, 0, 0xFF, 5000.0);
-    CHECK(cramped.bga_pane_left_pixels == 900.0 - 240.0);
+    check_timing_width(cramped.bga_pane_left_pixels == 900.0 - 240.0);
     // Never smaller than one icon, which keeps BPM.
     const auto minimum = compose_horizontal_layout(900, 5, true, 0, 0xFF, 1.0);
-    CHECK(minimum.bga_pane_left_pixels == compose_measure_rail_width_pixels + 24.0);
-    CHECK(minimum.timing_lane_mask == 1U);
+    check_timing_width(minimum.bga_pane_left_pixels == compose_measure_rail_width_pixels + 24.0);
+    check_timing_width(minimum.timing_lane_mask == 1U);
     // BGA keeps its fixed width regardless.
-    CHECK(compose_horizontal_layout(900, 5, true, 2, 0xFF, 100.0).bga_pane_width_pixels == 96.0);
+    check_timing_width(compose_horizontal_layout(900, 5, true, 2, 0xFF, 100.0).bga_pane_width_pixels == 96.0);
 }
 
 TEST_CASE("scroll overrides follow mode identity across native and imported charts", "[frame-timing]") {

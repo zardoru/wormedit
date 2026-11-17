@@ -1,6 +1,7 @@
 #include <wormedit/core/task_graph.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <atomic>
 #include <memory>
@@ -266,6 +267,13 @@ TEST_CASE("task scheduler runs the worker start hook once per worker and survive
     CHECK(*task_value_cast<int>(*submitted.value().outcome(*added)) == 7);
 }
 
+void check_task_graph(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_task_graph(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("task scheduler signals every terminal task and survives a throwing signal",
           "[core][task-graph]") {
     std::atomic<int> terminal{0};
@@ -274,27 +282,27 @@ TEST_CASE("task scheduler signals every terminal task and survives a throwing si
     const auto first = graph.create_task({}, [](std::span<const task_outcome_t>, std::stop_token) {
         return task_value_t::from(std::make_shared<const int>(1));
     });
-    REQUIRE(first);
+    require_task_graph(static_cast<bool>(first));
     const task_id_t dependencies[] = {*first};
     const auto second = graph.create_task(dependencies, [](std::span<const task_outcome_t>, std::stop_token) {
         return task_value_t::from(std::make_shared<const int>(2));
     });
-    REQUIRE(second);
+    require_task_graph(static_cast<bool>(second));
     auto submitted = scheduler.begin(std::move(graph));
-    REQUIRE(submitted);
-    REQUIRE(submitted.value().wait());
-    CHECK(terminal.load() == 2);
+    require_task_graph(static_cast<bool>(submitted));
+    require_task_graph(submitted.value().wait());
+    check_task_graph(terminal.load() == 2);
 
     task_scheduler_t throwing(1, 2, {.on_task_terminal = [] { throw std::runtime_error("denied"); }});
     task_graph_t other(1);
     const auto added = other.create_task({}, [](std::span<const task_outcome_t>, std::stop_token) {
         return task_value_t::from(std::make_shared<const int>(9));
     });
-    REQUIRE(added);
+    require_task_graph(static_cast<bool>(added));
     auto handle = throwing.begin(std::move(other));
-    REQUIRE(handle);
-    REQUIRE(handle.value().wait());
-    CHECK(*task_value_cast<int>(*handle.value().outcome(*added)) == 9);
+    require_task_graph(static_cast<bool>(handle));
+    require_task_graph(handle.value().wait());
+    check_task_graph(*task_value_cast<int>(*handle.value().outcome(*added)) == 9);
 }
 
 TEST_CASE("task outcomes retain failure payloads through callbacks",

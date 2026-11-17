@@ -1,6 +1,7 @@
 #include "ui/frontend/transport_status.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 using namespace wormedit::ui;
 
@@ -80,6 +81,13 @@ TEST_CASE("Transport readouts mark unavailable chart coordinates", "[transport-s
     CHECK(text.source_musical_position() == "—");
 }
 
+void check_status_text(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_status_text(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("Status text carries both clocks and the compose coordinates for tooltips", "[transport-status]") {
     transport_status_text_t text;
     transport_status_input_t input{.status = "Ready",
@@ -88,23 +96,23 @@ TEST_CASE("Status text carries both clocks and the compose coordinates for toolt
         .position = transport_position_view_t{.source_row = 960, .source_measure = 5, .beat = 1,
             .compose_row = 400, .compose_measure = 3}};
     text.refresh(input, 1);
-    CHECK(text.elapsed() == "0:50.010");
-    CHECK(text.other_elapsed() == "1:12.236");
-    CHECK(text.compose_row() == "400");
-    CHECK(text.compose_musical_position() == "3:1");
-    CHECK(text.source_musical_position() == "5:1");
+    check_status_text(text.elapsed() == "0:50.010");
+    check_status_text(text.other_elapsed() == "1:12.236");
+    check_status_text(text.compose_row() == "400");
+    check_status_text(text.compose_musical_position() == "3:1");
+    check_status_text(text.source_musical_position() == "5:1");
     // Timing focus shows the source clock and offers the compose one.
     input.time_is_source = true;
     input.immediate = true;
     text.refresh(input, 2);
-    CHECK(text.elapsed() == "1:12.236");
-    CHECK(text.other_elapsed() == "0:50.010");
+    check_status_text(text.elapsed() == "1:12.236");
+    check_status_text(text.other_elapsed() == "0:50.010");
     // Without a cut between the clocks and the coordinates, the tooltips have nothing to add.
     input.clocks_differ = false;
     input.position->compose_row.reset();
     input.position->compose_measure.reset();
     text.refresh(input, 3);
-    CHECK(text.other_elapsed().empty());
-    CHECK(text.compose_row().empty());
-    CHECK(text.compose_musical_position().empty());
+    check_status_text(text.other_elapsed().empty());
+    check_status_text(text.compose_row().empty());
+    check_status_text(text.compose_musical_position().empty());
 }

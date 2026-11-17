@@ -4,6 +4,7 @@
 #include <wormedit/core/bgm_columns.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <algorithm>
 #include <limits>
@@ -178,6 +179,13 @@ TEST_CASE("osu!mania BGM column growth preserves samples and undoes as one step"
           resource_id_t{40});
 }
 
+void check_bgm_columns(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_bgm_columns(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("BGM column count works on every format and ignores bmson stem lanes",
           "[unit][core][bgm-columns]") {
     for (const auto family : {format_family_t::native_project, format_family_t::bmson,
@@ -196,16 +204,16 @@ TEST_CASE("BGM column count works on every format and ignores bmson stem lanes",
             chart.bgm_source_lanes.push_back(
                 {.id = object_id_t{900}, .name = "Stem", .source_order = 50,
                  .stem_channel = object_id_t{901}});
-            REQUIRE(validate_document(song).empty());
+            require_bgm_columns(validate_document(song).empty());
         }
         auto history = document_history_t::from(std::move(song));
         const auto stems = family == format_family_t::bmson ? 1u : 0u;
-        REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 4).applied);
-        CHECK(ordinal_bgm_column_count(history.document.charts.front()) == 4);
-        CHECK(history.document.charts.front().bgm_source_lanes.size() == 4 + stems);
-        REQUIRE(apply_bgm_column_count(history, chart_id_t{2}, 2).applied);
-        CHECK(ordinal_bgm_column_count(history.document.charts.front()) == 2);
-        CHECK(history.document.charts.front().bgm_source_lanes.size() == 2 + stems);
+        require_bgm_columns(apply_bgm_column_count(history, chart_id_t{2}, 4).applied);
+        check_bgm_columns(ordinal_bgm_column_count(history.document.charts.front()) == 4);
+        check_bgm_columns(history.document.charts.front().bgm_source_lanes.size() == 4 + stems);
+        require_bgm_columns(apply_bgm_column_count(history, chart_id_t{2}, 2).applied);
+        check_bgm_columns(ordinal_bgm_column_count(history.document.charts.front()) == 2);
+        check_bgm_columns(history.document.charts.front().bgm_source_lanes.size() == 2 + stems);
         check_original_bgm_event(history.document.charts.front());
     }
 }

@@ -210,6 +210,47 @@ auto Button::render(nk_context* context) const -> bool {
     return usable && hit.clicked;
 }
 
+namespace {
+// The border is a filled rounded rect with the interior inset, not a stroked path: Nuklear's
+// rounded stroke is polygonal and drifts off the fill at small radii.
+void draw_checkbox_box(nk_command_buffer* canvas, struct nk_rect box, CheckState state, bool usable,
+                       bool lit) {
+    const auto border = !usable ? color(UiColor::border)
+                        : state == CheckState::off ? (lit ? color(UiColor::text_bright) : color(UiColor::border_hover))
+                        : (lit ? color(UiColor::border_hover) : color(UiColor::selected));
+    const auto inside = state == CheckState::off ? color(UiColor::surface)
+                        : usable ? color(UiColor::selected) : disabled_fill();
+    constexpr float edge = 1.0f;
+    nk_fill_rect(canvas, box, metrics::radius_control, border);
+    nk_fill_rect(canvas, nk_rect(box.x + edge, box.y + edge, box.w - 2 * edge, box.h - 2 * edge),
+                 metrics::radius_control - edge, inside);
+    if (state == CheckState::off) return;
+    const auto mark = usable ? color(UiColor::selected_text) : chrome::text_faint();
+    if (state == CheckState::on) {
+        nk_stroke_line(canvas, box.x + 3.5f, box.y + 8.5f, box.x + 6.8f, box.y + 11.8f, 2.0f, mark);
+        nk_stroke_line(canvas, box.x + 6.8f, box.y + 11.8f, box.x + 12.5f, box.y + 4.8f, 2.0f, mark);
+    } else {
+        nk_stroke_line(canvas, box.x + 4.0f, box.y + 8.0f, box.x + 12.0f, box.y + 8.0f, 2.0f, mark);
+    }
+}
+
+// The label sits gap_medium to the right of the box, placed like a stock toggle's label so it lines
+// up with stock text and buttons in the same row, and centered like a Button's label so both share
+// a baseline and drawn text bounds.
+void draw_checkbox_label(const nk_context* context, nk_command_buffer* canvas, struct nk_rect bounds,
+                         struct nk_rect box, const char* label, bool usable, bool lit) {
+    const auto* font = context->style.font;
+    if (!label || !label[0] || !font) return;
+    const auto label_x = box.x + box.w + metrics::gap_medium;
+    const auto text_area = nk_rect(label_x, bounds.y + (bounds.h - font->height) * 0.5f,
+                                   std::max(0.0f, bounds.x + bounds.w - label_x), font->height);
+    const auto label_color = !usable ? chrome::text_faint()
+                             : lit ? color(UiColor::text_bright) : color(UiColor::text);
+    nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
+                 nk_rgba(0, 0, 0, 0), label_color);
+}
+} // namespace
+
 auto Checkbox::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
@@ -223,40 +264,8 @@ auto Checkbox::render(nk_context* context) const -> bool {
                              std::floor(bounds.y + (bounds.h - metrics::checkbox_box) * 0.5f),
                              metrics::checkbox_box, metrics::checkbox_box);
     const bool lit = hit.hovered && usable;
-    // The border is a filled rounded rect with the interior inset, not a stroked path:
-    // Nuklear's rounded stroke is polygonal and drifts off the fill at small radii.
-    const auto border = !usable ? color(UiColor::border)
-                        : state == CheckState::off ? (lit ? color(UiColor::text_bright) : color(UiColor::border_hover))
-                        : (lit ? color(UiColor::border_hover) : color(UiColor::selected));
-    const auto inside = state == CheckState::off ? color(UiColor::surface)
-                        : usable ? color(UiColor::selected) : disabled_fill();
-    constexpr float edge = 1.0f;
-    nk_fill_rect(canvas, box, metrics::radius_control, border);
-    nk_fill_rect(canvas, nk_rect(box.x + edge, box.y + edge, box.w - 2 * edge, box.h - 2 * edge),
-                 metrics::radius_control - edge, inside);
-    if (state != CheckState::off) {
-        const auto mark = usable ? color(UiColor::selected_text) : chrome::text_faint();
-        if (state == CheckState::on) {
-            nk_stroke_line(canvas, box.x + 3.5f, box.y + 8.5f, box.x + 6.8f, box.y + 11.8f, 2.0f, mark);
-            nk_stroke_line(canvas, box.x + 6.8f, box.y + 11.8f, box.x + 12.5f, box.y + 4.8f, 2.0f, mark);
-        } else {
-            nk_stroke_line(canvas, box.x + 4.0f, box.y + 8.0f, box.x + 12.0f, box.y + 8.0f, 2.0f, mark);
-        }
-    }
-    // The label sits gap_medium to the right of the box, placed like a stock toggle's label so it
-    // lines up with stock text and buttons in the same row.
-    const auto label_x = box.x + box.w + metrics::gap_medium;
-    const auto label_area = nk_rect(label_x, bounds.y, std::max(0.0f, bounds.x + bounds.w - label_x), bounds.h);
-    const auto* font = context->style.font;
-    const auto label_color = !usable ? chrome::text_faint()
-                             : lit ? color(UiColor::text_bright) : color(UiColor::text);
-    if (label && label[0] && font) {
-        // Centered like a Button's label, so both share a baseline and drawn text bounds in a row.
-        const auto text_area = nk_rect(label_area.x, label_area.y + (label_area.h - font->height) * 0.5f,
-                                       label_area.w, font->height);
-        nk_draw_text(canvas, text_area, label, static_cast<int>(std::strlen(label)), font,
-                     nk_rgba(0, 0, 0, 0), label_color);
-    }
+    draw_checkbox_box(canvas, box, state, usable, lit);
+    draw_checkbox_label(context, canvas, bounds, box, label, usable, lit);
     tooltip_if_hovered(context, hit, tooltip);
     return usable && hit.clicked;
 }

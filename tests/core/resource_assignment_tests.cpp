@@ -367,18 +367,15 @@ TEST_CASE("next free BMS slot searches forward, wraps past ZZ and reports a full
                                                 {format_family_t::bms, "04", "WAV"},
                                                 {format_family_t::bms, "ZZ", "WAV"},
                                                 {format_family_t::bms, "03", "BMP"}};
-    CHECK(find_next_free_bms_slot(song, "WAV", 0) == std::optional<std::size_t>{3});
-    CHECK(find_next_free_bms_slot(song, "WAV", 1) == std::optional<std::size_t>{3});
-    CHECK(find_next_free_bms_slot(song, "WAV", 3) == std::optional<std::size_t>{5});
-    // Wraps from the last slot (and from the occupied ZZ) back to the first gap.
-    CHECK(find_next_free_bms_slot(song, "WAV", 1'295) == std::optional<std::size_t>{3});
-    CHECK(find_next_free_bms_slot(song, "WAV", 1'294) == std::optional<std::size_t>{3});
-    // Out-of-range starts behave like "before 01".
-    CHECK(find_next_free_bms_slot(song, "WAV", 99'999) == std::optional<std::size_t>{3});
-    // The namespaces are independent.
-    CHECK(find_next_free_bms_slot(song, "BMP", 0) == std::optional<std::size_t>{1});
-    CHECK(find_next_free_bms_slot(song, "BMP", 2) == std::optional<std::size_t>{4});
-    CHECK(!find_next_free_bms_slot(song, "OTHER", 0));
+    // Wraps from the last slot (and from the occupied ZZ) back to the first gap; out-of-range
+    // starts behave like "before 01"; the namespaces are independent.
+    struct slot_case_t { const char* channel; std::size_t start; std::optional<std::size_t> expected; };
+    for (const auto& [channel, start, expected] : std::array<slot_case_t, 9>{{{"WAV", 0, 3}, {"WAV", 1, 3},
+             {"WAV", 3, 5}, {"WAV", 1'295, 3}, {"WAV", 1'294, 3}, {"WAV", 99'999, 3}, {"BMP", 0, 1},
+             {"BMP", 2, 4}, {"OTHER", 0, std::nullopt}}}) {
+        INFO(channel << " from " << start);
+        CHECK(find_next_free_bms_slot(song, channel, start) == expected);
+    }
     // Only 00 is never offered; a fully used namespace has nothing to find.
     for (std::size_t value = 1; value <= 1'295; ++value) {
         const auto digits = std::string_view{"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"};

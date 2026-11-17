@@ -6,6 +6,7 @@
 #include <wormedit/audio/decoder.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <array>
 #include <chrono>
@@ -179,30 +180,37 @@ TEST_CASE("Preview cursor retains a supplied geometry failure", "[sys][playhead-
     CHECK(std::get<std::string>(result) == "Chart cursor has invalid measure geometry.");
 }
 
+void check_cut_skip(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_cut_skip(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("playing skips never land in a cut and count only visible steps", "[sys][playhead-skip][cut]") {
     const auto chart = skip_chart();
     const auto timing = timing_index_t::from(chart);
-    REQUIRE(timing.value);
+    require_cut_skip(static_cast<bool>(timing.value));
     // At 240 BPM a beat (240 rows) is 250 ms: 208..729 ms hides rows 200..700.
     const std::array cut{export_cut_t{.id = object_id_t{1}, .begin_milliseconds = 208, .end_milliseconds = 729}};
     const auto timeline = export_cut_timeline_t::from(cut);
-    REQUIRE(timeline.ok());
+    require_cut_skip(timeline.ok());
     const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
-    REQUIRE(axis.ok());
+    require_cut_skip(axis.ok());
     const auto& hidden = axis.value;
-    REQUIRE(hidden.contains_row(480));
+    require_cut_skip(hidden.contains_row(480));
     const auto forward = playhead_skip_target_row(two_measures(), 100.0, playhead_skip_unit_t::beat, 1, 960, 4, &hidden);
-    REQUIRE(forward);
-    CHECK_FALSE(hidden.contains_row(*forward));
-    CHECK(*forward > 100);
+    require_cut_skip(static_cast<bool>(forward));
+    check_cut_skip(!(hidden.contains_row(*forward)));
+    check_cut_skip(*forward > 100);
     const auto backward = playhead_skip_target_row(two_measures(), 900.0, playhead_skip_unit_t::beat, -1, 960, 4, &hidden);
-    REQUIRE(backward);
-    CHECK_FALSE(hidden.contains_row(*backward));
-    CHECK(*backward < 900);
+    require_cut_skip(static_cast<bool>(backward));
+    check_cut_skip(!(hidden.contains_row(*backward)));
+    check_cut_skip(*backward < 900);
     const auto two = playhead_skip_target_row(two_measures(), 100.0, playhead_skip_unit_t::snap, 2, 960, 4, &hidden);
-    REQUIRE(two);
-    CHECK(*two > *forward);
-    CHECK_FALSE(hidden.contains_row(*two));
+    require_cut_skip(static_cast<bool>(two));
+    check_cut_skip(*two > *forward);
+    check_cut_skip(!(hidden.contains_row(*two)));
 }
 
 TEST_CASE("the playing stepper and the parked cursor share one resolver", "[sys][playhead-skip][cut]") {
@@ -249,25 +257,25 @@ TEST_CASE("measure and page steps skip measures the cut hides entirely", "[sys][
     }
     measures.total_rows = 40 * 960;
     const auto timing = timing_index_t::from(chart);
-    REQUIRE(timing.value);
+    require_cut_skip(static_cast<bool>(timing.value));
     // Measures 17..24 (seconds 16..24) are cut.
     const std::array cut{export_cut_t{.id = object_id_t{1}, .begin_milliseconds = 16000, .end_milliseconds = 24000}};
     const auto timeline = export_cut_timeline_t::from(cut);
-    REQUIRE(timeline.ok());
+    require_cut_skip(timeline.ok());
     const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
-    REQUIRE(axis.ok());
+    require_cut_skip(axis.ok());
     const auto& hidden = axis.value;
     constexpr double measure_25 = 24.0 * 960;
     constexpr std::uint64_t measure_16 = 15ull * 960;
     for (const auto unit : {playhead_skip_unit_t::measure, playhead_skip_unit_t::page}) {
-        CHECK(playhead_skip_target_row(measures, measure_25, unit, -1, 960, 4, &hidden, &*timing.value) == measure_16);
-        CHECK(playhead_skip_target_row(measures, static_cast<double>(measure_16), unit, 1, 960, 4, &hidden, &*timing.value) ==
+        check_cut_skip(playhead_skip_target_row(measures, measure_25, unit, -1, 960, 4, &hidden, &*timing.value) == measure_16);
+        check_cut_skip(playhead_skip_target_row(measures, static_cast<double>(measure_16), unit, 1, 960, 4, &hidden, &*timing.value) ==
               static_cast<std::uint64_t>(measure_25));
     }
     // Without a cut the step is the neighbouring measure.
-    CHECK(playhead_skip_target_row(measures, measure_25, playhead_skip_unit_t::measure, -1, 960, 4) == 23ull * 960);
+    check_cut_skip(playhead_skip_target_row(measures, measure_25, playhead_skip_unit_t::measure, -1, 960, 4) == 23ull * 960);
     // The post-cut measure number drops the hidden measures: M25 reads as 17.
-    CHECK(hidden_measures_before(measures, &hidden, 24) == 8);
-    CHECK(hidden_measures_before(measures, &hidden, 16) == 0);
-    CHECK(hidden_measures_before(measures, nullptr, 24) == 0);
+    check_cut_skip(hidden_measures_before(measures, &hidden, 24) == 8);
+    check_cut_skip(hidden_measures_before(measures, &hidden, 16) == 0);
+    check_cut_skip(hidden_measures_before(measures, nullptr, 24) == 0);
 }

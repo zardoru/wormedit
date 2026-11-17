@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 using namespace wormedit;
 
@@ -35,15 +36,22 @@ TEST_CASE("core.scrub_tracker idle without scroll input", "[scrub]") {
     }
 }
 
+void check_scrub(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_scrub(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("core.scrub_tracker follows a steady drag speed, forwards and backwards", "[scrub]") {
     for (const auto speed : {1.0, -1.0, 2.5, -2.5}) {
         drag_t drag;
         auto first = drag.step(speed, true);
-        REQUIRE(first.began);
-        REQUIRE(first.anchor_seconds == Catch::Approx(drag.position));
+        require_scrub(first.began);
+        require_scrub(first.anchor_seconds == Catch::Approx(drag.position));
         for (int i = 0; i < 60; ++i) drag.step(speed, true);
-        REQUIRE(drag.last.phase == scrub_phase_t::moving);
-        REQUIRE(drag.last.speed == Catch::Approx(speed).epsilon(0.02));
+        require_scrub(drag.last.phase == scrub_phase_t::moving);
+        require_scrub(drag.last.speed == Catch::Approx(speed).epsilon(0.02));
     }
 }
 
@@ -69,19 +77,19 @@ TEST_CASE("core.scrub_tracker holds the record while fingers rest and ends when 
     drag_t drag;
     for (int i = 0; i < 30; ++i) drag.step(1.0, true, 2);
     for (int i = 0; i < 40; ++i) drag.step(0.0, false, 2);
-    REQUIRE(drag.last.phase == scrub_phase_t::held);
-    REQUIRE(drag.last.speed == 0.0);
-    REQUIRE_FALSE(drag.last.ended);
+    require_scrub(drag.last.phase == scrub_phase_t::held);
+    require_scrub(drag.last.speed == 0.0);
+    require_scrub(!(drag.last.ended));
     // Scrolling again picks the needle back up.
     for (int i = 0; i < 20; ++i) drag.step(-1.0, true, 2);
-    REQUIRE(drag.last.phase == scrub_phase_t::moving);
-    REQUIRE(drag.last.speed < -0.5);
+    require_scrub(drag.last.phase == scrub_phase_t::moving);
+    require_scrub(drag.last.speed < -0.5);
     // Fingers up with no motion ends the gesture.
     const auto out = drag.step(0.0, false, 0);
-    REQUIRE(out.phase == scrub_phase_t::moving);
+    require_scrub(out.phase == scrub_phase_t::moving);
     bool ended = false;
     for (int i = 0; i < 10 && !ended; ++i) ended = drag.step(0.0, false, 0).ended;
-    REQUIRE(ended);
+    require_scrub(ended);
 }
 
 TEST_CASE("core.scrub_tracker slow drift sits in the dead zone", "[scrub]") {
@@ -96,7 +104,7 @@ TEST_CASE("core.scrub_tracker resumes interrupted playback after the delay", "[s
     for (int i = 0; i < 30; ++i) drag.step(1.0, true);
     scrub_output_t end;
     for (int i = 0; i < 20 && !end.ended; ++i) end = drag.step(0.0, false);
-    REQUIRE(end.ended);
+    require_scrub(end.ended);
     const auto stopped_at = drag.position;
     bool resumed = false;
     double waited = 0.0;
@@ -105,14 +113,14 @@ TEST_CASE("core.scrub_tracker resumes interrupted playback after the delay", "[s
         waited += 1.0 / 60.0;
         if (out.resume_playback) {
             resumed = true;
-            REQUIRE(out.resume_seconds == Catch::Approx(stopped_at).margin(0.2));
+            require_scrub(out.resume_seconds == Catch::Approx(stopped_at).margin(0.2));
         }
     }
-    REQUIRE(resumed);
-    REQUIRE(waited >= 0.1);
-    REQUIRE(waited <= 0.25);
+    require_scrub(resumed);
+    require_scrub(waited >= 0.1);
+    require_scrub(waited <= 0.25);
     // Only once.
-    REQUIRE_FALSE(drag.step(0.0, false).resume_playback);
+    require_scrub(!(drag.step(0.0, false).resume_playback));
 }
 
 TEST_CASE("core.scrub_tracker a stopped transport does not resume", "[scrub]") {
@@ -146,27 +154,27 @@ TEST_CASE("core.scrub_tracker cancel returns to idle without resuming", "[scrub]
 TEST_CASE("core.scrub_tracker fingers laid on the pad hold a playing record without scrolling", "[scrub]") {
     drag_t drag;
     // One finger is just the pointer: nothing happens.
-    for (int i = 0; i < 20; ++i) REQUIRE_FALSE(drag.step(0.0, false, 1, true).began);
+    for (int i = 0; i < 20; ++i) require_scrub(!(drag.step(0.0, false, 1, true).began));
     // Two fingers must rest briefly before the record is held.
     auto first = drag.step(1.0, false, 2, true);
-    REQUIRE_FALSE(first.began);
+    require_scrub(!(first.began));
     bool began = false;
     for (int i = 0; i < 10 && !began; ++i) began = drag.step(1.0, false, 2, true).began;
-    REQUIRE(began);
+    require_scrub(began);
     // While they rest, the record stays held even though the playhead keeps moving.
     for (int i = 0; i < 60; ++i) {
         const auto out = drag.step(1.0, false, 2, true);
-        REQUIRE(out.phase == scrub_phase_t::held);
-        REQUIRE(out.speed == 0.0);
-        REQUIRE_FALSE(out.ended);
+        require_scrub(out.phase == scrub_phase_t::held);
+        require_scrub(out.speed == 0.0);
+        require_scrub(!(out.ended));
     }
     // Lifting them releases it, and playback resumes shortly after.
     bool ended = false;
     for (int i = 0; i < 10 && !ended; ++i) ended = drag.step(1.0, false, 0, true).ended;
-    REQUIRE(ended);
+    require_scrub(ended);
     bool resumed = false;
     for (int i = 0; i < 30 && !resumed; ++i) resumed = drag.step(1.0, false, 0, true).resume_playback;
-    REQUIRE(resumed);
+    require_scrub(resumed);
 }
 
 TEST_CASE("core.scrub_tracker a brief two-finger tap or a stopped transport holds nothing", "[scrub]") {

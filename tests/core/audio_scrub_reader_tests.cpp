@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <source_location>
 
 #include <cmath>
 #include <vector>
@@ -153,18 +154,25 @@ TEST_CASE("audio.scrub_reader holding fades to silence without a click", "[audio
     for (std::size_t i = 1900; i < 2048; ++i) REQUIRE(std::abs(out[i * 2]) < 1e-3F);
 }
 
+void check_scrub_reader(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); CHECK(value);
+}
+void require_scrub_reader(bool value, std::source_location where = std::source_location::current()) {
+    INFO("check at line " << where.line()); REQUIRE(value);
+}
+
 TEST_CASE("audio.scrub_reader wanted blocks run nearest first and lean along the motion", "[audio][scrub]") {
     const auto source = source_named("a");
     const std::vector<scrub_segment_t> segments{{source, 0, 0, 10 * maximum_read_frames}};
     const auto position = 5.5 * maximum_read_frames;
     std::vector<audio_block_key_t> wanted;
     scrub_reader_t::plan_blocks(segments, position, 2 * maximum_read_frames, maximum_read_frames / 2, 1.0, wanted);
-    REQUIRE_FALSE(wanted.empty());
-    REQUIRE(wanted.front().block_index == 5);
-    for (const auto& key : wanted) REQUIRE(key.block_index >= 5);
-    REQUIRE(wanted.back().block_index == 7);
+    require_scrub_reader(!(wanted.empty()));
+    require_scrub_reader(wanted.front().block_index == 5);
+    for (const auto& key : wanted) require_scrub_reader(key.block_index >= 5);
+    require_scrub_reader(wanted.back().block_index == 7);
     scrub_reader_t::plan_blocks(segments, position, 2 * maximum_read_frames, maximum_read_frames / 2, -1.0, wanted);
-    REQUIRE(wanted.front().block_index == 5);
-    for (const auto& key : wanted) REQUIRE(key.block_index <= 6);
-    REQUIRE(wanted.back().block_index == 3);
+    require_scrub_reader(wanted.front().block_index == 5);
+    for (const auto& key : wanted) require_scrub_reader(key.block_index <= 6);
+    require_scrub_reader(wanted.back().block_index == 3);
 }

@@ -27,9 +27,9 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
         if (diagnostic.has_row) {
             if (wormedit::ui::chrome::button_label(context, label)) {
                 action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
-                action.compare_diagnostic_row = diagnostic.row;
-                action.compare_diagnostic_measure.value = diagnostic.measure.value;
-                action.compare_diagnostic_chart = view.diagnostic_chart_id;
+                action.compare.diagnostic_row = diagnostic.row;
+                action.compare.diagnostic_measure.value = diagnostic.measure.value;
+                action.compare.diagnostic_chart = view.diagnostic_chart_id;
             }
         } else {
             nk_label(context, label, NK_TEXT_LEFT);
@@ -59,7 +59,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
             selected, 24, nk_vec2(220, 300), &wormedit::ui::compare_chart_view_t::label);
         if (next != selected && static_cast<std::size_t>(next) < view->charts.size()) {
             action->kind = WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART;
-            action->compare_chart_id = view->charts[next].id;
+            action->compare.chart_id = view->charts[next].id;
         }
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 2);
@@ -80,6 +80,6 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     if ((nk_input_is_mouse_hovering_rect(&context->input, first) ||
          nk_input_is_mouse_hovering_rect(&context->input, second)) && scroll.y != 0.0f) {
         action->kind = WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL;
-        action->compare_scroll_delta = static_cast<double>(scroll.y) * 72.0;
+        action->compare.scroll_delta = static_cast<double>(scroll.y) * 72.0;
     }
 }

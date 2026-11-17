@@ -30,17 +30,17 @@ auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& ac
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:
         return toggle_metronome_status(application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
-        if (set_transport_rate(application_state, action.transport_rate_id))
+        if (set_transport_rate(application_state, action.transport.rate_id))
             return publish_transport_feedback(notifications, notification_severity_t::success, "Playback rate changed.");
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Playback rate unchanged.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
         if (!application_state.preferences.transport_keep_pitch_available ||
             !application_state.services.transport_set_keep_pitch ||
-            !application_state.services.transport_set_keep_pitch(action.transport_keep_pitch))
+            !application_state.services.transport_set_keep_pitch(action.transport.keep_pitch))
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Keep pitch is unavailable.");
-        application_state.preferences.transport_keep_pitch = action.transport_keep_pitch;
+        application_state.preferences.transport_keep_pitch = action.transport.keep_pitch;
         return publish_transport_feedback(notifications, notification_severity_t::success,
-            action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
+            action.transport.keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
         if (application_state.services.transport_play_pause) return application_state.services.transport_play_pause();
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview is unavailable.");
@@ -55,7 +55,7 @@ auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& ac
         if (application_state.services.transport_seek) {
             auto outcome = finish_compose_action(
                 notifications,
-                application_state.services.transport_seek(action.transport_seek_frame));
+                application_state.services.transport_seek(action.transport.seek_frame));
             return std::move(outcome.message);
         }
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview seek is unavailable.");

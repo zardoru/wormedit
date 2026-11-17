@@ -50,9 +50,9 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
     wormedit::ui::workspace_action_t action{};
     action.timing.chart_id = wormedit::chart_id_t{2};
     action.timing.document_revision = 7;
-    action.audio_offset_drag_chart_id = wormedit::chart_id_t{2};
-    action.audio_offset_drag_document_revision = 7;
-    action.audio_offset_drag_sample_rate = 48'000;
+    action.audio_offset_drag.chart_id = wormedit::chart_id_t{2};
+    action.audio_offset_drag.document_revision = 7;
+    action.audio_offset_drag.sample_rate = 48'000;
     CHECK_FALSE(wormedit::sys::validate_timing_stage_binding(action.timing, history, workspace, stage));
     CHECK_FALSE(wormedit::sys::validate_audio_offset_drag_binding(action, history.document, workspace, 48'000));
     workspace.selected_chart.reset();
@@ -91,9 +91,9 @@ TEST_CASE("Application audio offset validation separates stamp expiry from missi
     const wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::metadata,
         .selected_chart = wormedit::chart_id_t{2}};
     wormedit::ui::workspace_action_t action{};
-    action.audio_offset_drag_chart_id = wormedit::chart_id_t{source == 0 ? 2u : 3u};
-    action.audio_offset_drag_document_revision = source == 0 ? 6 : 7;
-    action.audio_offset_drag_sample_rate = 48'000;
+    action.audio_offset_drag.chart_id = wormedit::chart_id_t{source == 0 ? 2u : 3u};
+    action.audio_offset_drag.document_revision = source == 0 ? 6 : 7;
+    action.audio_offset_drag.sample_rate = 48'000;
     const auto failure = wormedit::sys::validate_audio_offset_drag_binding(action, document, workspace, 48'000);
     REQUIRE(failure.has_value());
     wormedit::test::check_stale_action_message(*failure, "Audio offset drag");
@@ -2021,7 +2021,7 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     application_command_state_t state;
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
-    action.transport_keep_pitch = true;
+    action.transport.keep_pitch = true;
     expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     state.preferences.transport_keep_pitch_available = true;
     bool requested{};
@@ -2030,7 +2030,7 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     expect_keep_pitch(requested);
     expect_keep_pitch(state.preferences.transport_keep_pitch);
     state.services.transport_set_keep_pitch = [](bool) { return false; };
-    action.transport_keep_pitch = false;
+    action.transport.keep_pitch = false;
     expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     expect_keep_pitch(state.preferences.transport_keep_pitch);
 }
@@ -2100,7 +2100,7 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     check_transport_notification(entries[0].source == notification_source_t::audio);
     state.preferences.transport_keep_pitch_available = true;
     state.services.transport_set_keep_pitch = [](bool) { return true; };
-    action.transport_keep_pitch = true;
+    action.transport.keep_pitch = true;
     check_transport_notification(dispatch_transport_player_action(action, state, sink) == "Keep pitch enabled.");
     check_transport_notification(state.preferences.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
@@ -3648,8 +3648,8 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     catalog_requested_rate = {};
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-    action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
-    action.transport_rate_id = entry.id;
+    action.transport.rate_index = 255; // A contradictory legacy position must not control dispatch.
+    action.transport.rate_id = entry.id;
     const auto status =
         dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate changed."));
@@ -3669,7 +3669,7 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     catalog_requested_rate = {};
     wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-    action.transport_rate_id = static_cast<wormedit::audio::playback_rate_id_t>(255);
+    action.transport.rate_id = static_cast<wormedit::audio::playback_rate_id_t>(255);
     const auto status =
         dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate unchanged."));

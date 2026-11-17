@@ -365,12 +365,12 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
 
 static void request_toolbar_offset_nudge(wormedit::ui::workspace_action_t* action,
                                          const wormedit::ui::compose_view_t* view, std::int64_t frames) {
-    if (action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
-    action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
-    action->audio_offset_drag_chart_id = wormedit::chart_id_t{view->chart_id.value};
-    action->audio_offset_drag_document_revision = view->document_revision;
-    action->audio_offset_drag_sample_rate = view->waveform_overview_sample_rate;
-    action->audio_offset_drag_delta_frames = frames;
+    if (action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
+    action->audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_NUDGE;
+    action->audio_offset_drag.chart_id = wormedit::chart_id_t{view->chart_id.value};
+    action->audio_offset_drag.document_revision = view->document_revision;
+    action->audio_offset_drag.sample_rate = view->waveform_overview_sample_rate;
+    action->audio_offset_drag.delta_frames = frames;
 }
 
 static void render_offset_value(nk_context* context, const wormedit::ui::compose_view_t& view) {

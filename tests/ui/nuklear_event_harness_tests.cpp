@@ -460,7 +460,7 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     REQUIRE(create);
     const auto create_actions = click_at(harness, create->first, create->second);
     CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    CHECK(std::string_view{create_actions[0].get().new_project_layout_id} == "osu-mania-7k");
+    CHECK(std::string_view{create_actions[0].get().project_open.layout_id} == "osu-mania-7k");
 }
 
 namespace {
@@ -1418,14 +1418,14 @@ TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",
     (void)harness.frame();
     const auto clicked = click_at(harness, 640, 88);
     CHECK(clicked.front().get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.front().get().transport_seek_frame > 2'000'000);
-    CHECK(clicked.front().get().transport_seek_frame < 2'400'000);
+    CHECK(clicked.front().get().transport.seek_frame > 2'000'000);
+    CHECK(clicked.front().get().transport.seek_frame < 2'400'000);
     const std::array down{mouse_motion(320, 88), mouse_button(true, 320, 88)};
     (void)harness.frame(down);
     const std::array moved{mouse_motion(960, 88)};
     const auto dragged = harness.frame(moved);
     CHECK(dragged.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(dragged.get().transport_seek_frame > 3'000'000);
+    CHECK(dragged.get().transport.seek_frame > 3'000'000);
 }
 
 namespace {
@@ -1941,7 +1941,7 @@ TEST_CASE("Compare fields route wheel input as one shared read-only scroll actio
     const std::array<SDL_Event, 2> wheel_script{mouse_motion(320.0f, 420.0f), wheel};
     const auto action = harness.frame(wheel_script);
     CHECK(action.get().kind == WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL);
-    CHECK(action.get().compare_scroll_delta != 0.0);
+    CHECK(action.get().compare.scroll_delta != 0.0);
     CHECK(action.get().input.compose_inputs.size() == 0);
 }
 
@@ -1984,9 +1984,9 @@ auto click_compare_diagnostic(nuklear_event_harness_t& harness)
 
 void check_clickable_compare_diagnostic(const std::vector<workspace_action_snapshot_t>& clickable) {
     REQUIRE(clickable.size() == 2);
-    CHECK(clickable[0].get().compare_diagnostic_row == 17);
-    CHECK(clickable[0].get().compare_diagnostic_measure.value == 5);
-    CHECK(clickable[0].get().compare_diagnostic_chart.value == 42);
+    CHECK(clickable[0].get().compare.diagnostic_row == 17);
+    CHECK(clickable[0].get().compare.diagnostic_measure.value == 5);
+    CHECK(clickable[0].get().compare.diagnostic_chart.value == 42);
 }
 
 void check_rowless_compare_diagnostic(nuklear_event_harness_t& harness, float y) {
@@ -2227,12 +2227,12 @@ void select_and_filter_sound(nuklear_event_harness_t& harness) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
     });
     REQUIRE(action != selected.end());
-    CHECK(action->get().audio_asset_id.value == 22);
-    CHECK(action->get().audio_resource_id.value == 102);
+    CHECK(action->get().asset_selection.audio_asset_id.value == 22);
+    CHECK(action->get().asset_selection.audio_resource_id.value == 102);
     auto& audio_view = harness.view().audio_slices;
-    audio_view.selected_resource_id = wormedit::resource_id_t{action->get().audio_resource_id.value};
+    audio_view.selected_resource_id = wormedit::resource_id_t{action->get().asset_selection.audio_resource_id.value};
     audio_view.has_selected_asset = true;
-    audio_view.selected_asset_id = wormedit::asset_id_t{action->get().audio_asset_id.value};
+    audio_view.selected_asset_id = wormedit::asset_id_t{action->get().asset_selection.audio_asset_id.value};
     std::snprintf(worm_ui_nuklear_audio_state().search_text, 128, "kick");
     CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     expect_filtered_sound_rows(harness);
@@ -5176,7 +5176,7 @@ struct close_dialog_fixture_t {
     static auto decision_of(const std::vector<workspace_action_snapshot_t>& frames)
         -> std::optional<wormedit::ui::workspace_action_t> {
         for (const auto& frame : frames)
-            if (frame.get().close_decision != WORM_UI_CLOSE_NONE) return frame.get();
+            if (frame.get().close.decision != WORM_UI_CLOSE_NONE) return frame.get();
         return std::nullopt;
     }
     auto click_button(const char* label) {
@@ -5217,24 +5217,24 @@ TEST_CASE("Unsaved changes buttons emit their decisions with the stamps",
         close_dialog_fixture_t f;
         const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Cancel"));
         REQUIRE(decided);
-        CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
-        CHECK(decided->close_project_id.value == 5);
-        CHECK(decided->close_revision == 9);
+        CHECK(decided->close.decision == WORM_UI_CLOSE_CANCEL);
+        CHECK(decided->close.project_id.value == 5);
+        CHECK(decided->close.revision == 9);
     }
     {
         close_dialog_fixture_t f;
         const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Discard changes"));
         REQUIRE(decided);
-        CHECK(decided->close_decision == WORM_UI_CLOSE_DISCARD);
+        CHECK(decided->close.decision == WORM_UI_CLOSE_DISCARD);
     }
     {
         close_dialog_fixture_t f;
         const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Save"));
         REQUIRE(decided);
-        CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
+        CHECK(decided->close.decision == WORM_UI_CLOSE_SAVE);
         CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
-        CHECK(decided->close_project_id.value == 5);
-        CHECK(decided->close_revision == 9);
+        CHECK(decided->close.project_id.value == 5);
+        CHECK(decided->close.revision == 9);
     }
 }
 
@@ -5244,13 +5244,13 @@ TEST_CASE("Unsaved changes maps Escape to cancel and Enter to save",
         close_dialog_fixture_t f;
         const auto decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE));
         REQUIRE(decided);
-        CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
+        CHECK(decided->close.decision == WORM_UI_CLOSE_CANCEL);
     }
     {
         close_dialog_fixture_t f;
         const auto decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_RETURN, SDL_SCANCODE_RETURN));
         REQUIRE(decided);
-        CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
+        CHECK(decided->close.decision == WORM_UI_CLOSE_SAVE);
         CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
     }
 }
@@ -5397,8 +5397,8 @@ TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt
         CHECK(project_modal_fixture_t::kind_of(frames) == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
         for (const auto& frame : frames)
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
-                CHECK(std::string(frame.get().project_path) == "/music/song.ogg");
-                CHECK(std::string_view{frame.get().new_project_layout_id} == "osu-mania-4k");
+                CHECK(std::string(frame.get().project_open.path) == "/music/song.ogg");
+                CHECK(std::string_view{frame.get().project_open.layout_id} == "osu-mania-4k");
             }
     }
     {
@@ -5453,8 +5453,8 @@ TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated pro
         for (const auto& frame : frames)
             if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE) {
                 opened = true;
-                CHECK(std::string(frame.get().project_path) == "/charts/song.bms");
-                CHECK(frame.get().bms_encoding_id == wormedit::text_encoding_t::utf8);
+                CHECK(std::string(frame.get().project_open.path) == "/charts/song.bms");
+                CHECK(frame.get().project_open.encoding_id == wormedit::text_encoding_t::utf8);
             }
         CHECK(opened);
     }
@@ -5543,7 +5543,7 @@ TEST_CASE("Import chart dialog emits toggle, read, import and cancel actions",
         CHECK(read->kind == WORM_UI_CHART_IMPORT_LOAD);
         for (const auto& frame : frames)
             if (frame.get().chart_import.kind == WORM_UI_CHART_IMPORT_LOAD)
-                CHECK(std::string(frame.get().project_path) == "/charts/song.sm");
+                CHECK(std::string(frame.get().project_open.path) == "/charts/song.sm");
     }
     {
         chart_import_fixture_t f;
@@ -6441,7 +6441,7 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     const std::array events{mouse_motion(640, wheel_y), wheel};
     const auto frame = harness.frame(events);
     check_layer_menu(audio.waveform_viewport.frames_per_pixel == before);
-    check_layer_menu(frame.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    check_layer_menu(frame.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     check_layer_menu(frame.get().metadata.kind == WORM_UI_METADATA_EDIT_NONE);
     (void)harness.frame();
     check_layer_menu(harness.drawn_text().find("Audio and export") != std::string::npos);
@@ -9197,7 +9197,7 @@ void check_new_project_choice(nuklear_event_harness_t& harness) {
     REQUIRE(create);
     const auto actions = click_at(harness, create->first, create->second);
     CHECK(actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    CHECK(std::string_view{actions[0].get().new_project_layout_id} == "pms-bme-style-18button");
+    CHECK(std::string_view{actions[0].get().project_open.layout_id} == "pms-bme-style-18button");
 }
 } // namespace
 
@@ -9244,7 +9244,7 @@ TEST_CASE("New project picker selects one stable identity from every game family
     const auto create = harness.drawn_text_center("Create project");
     REQUIRE(create);
     const auto actions = click_at(harness, create->first, create->second);
-    CHECK(std::string_view{actions[0].get().new_project_layout_id} == expected);
+    CHECK(std::string_view{actions[0].get().project_open.layout_id} == expected);
 }
 
 TEST_CASE("New project picker switches variants without changing its lane-shape group",
@@ -9261,7 +9261,7 @@ TEST_CASE("New project picker switches variants without changing its lane-shape 
     const auto create = harness.drawn_text_center("Create project");
     REQUIRE(create);
     const auto actions = click_at(harness, create->first, create->second);
-    CHECK(std::string_view{actions[0].get().new_project_layout_id} ==
+    CHECK(std::string_view{actions[0].get().project_open.layout_id} ==
           "bms-5k-inside-scratch-foot-pedal");
 }
 
@@ -9283,7 +9283,7 @@ TEST_CASE("New project picker bounds game card and variant keyboard navigation",
     const auto create = harness.drawn_text_center("Create project");
     REQUIRE(create);
     const auto actions = click_at(harness, create->first, create->second);
-    CHECK(std::string_view{actions[0].get().new_project_layout_id} == "bme-7k-inside-scratch");
+    CHECK(std::string_view{actions[0].get().project_open.layout_id} == "bme-7k-inside-scratch");
 }
 
 TEST_CASE("New project picker disables creation when the selected stable identity disappears",
@@ -9340,7 +9340,7 @@ TEST_CASE("BMS encoding dialog sends the offered identity independently of posit
     for (const auto& frame : click_at(harness, open->first, open->second)) {
         if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE) continue;
         opened = true;
-        CHECK(frame.get().bms_encoding_id == entries[0].id);
+        CHECK(frame.get().project_open.encoding_id == entries[0].id);
     }
     CHECK(opened);
 }
@@ -9805,8 +9805,8 @@ TEST_CASE("BMS import profile choice submits its stable identity after explicit 
     const auto frames = click_at(harness, ready->first, ready->second);
     check_bms_import(std::ranges::any_of(frames, [&](const auto& frame) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE &&
-            frame.get().bms_lane_profile_id == expected.id &&
-            frame.get().project_path == "/charts/choose-profile.bms";
+            frame.get().project_open.lane_profile_id == expected.id &&
+            frame.get().project_open.path == "/charts/choose-profile.bms";
     }));
 }
 

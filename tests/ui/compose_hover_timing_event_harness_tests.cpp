@@ -48,7 +48,7 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     const std::array down{mouse_motion(640, 88), mouse_button(true, 640, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == first.get().input.hover_source.frame);
+    CHECK(clicked.get().transport.seek_frame == first.get().input.hover_source.frame);
 
     timing.hover_timing_source_frame += 1;
     (void)hover(harness, 640, 88);
@@ -113,7 +113,7 @@ TEST_CASE("Seek bar hover uses Nuklear's padded one-third click position",
     const std::array down{mouse_motion(x, 88), mouse_button(true, x, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
-    CHECK(clicked.get().transport_seek_frame == hovered.get().input.hover_source.frame);
+    CHECK(clicked.get().transport.seek_frame == hovered.get().input.hover_source.frame);
 }
 
 namespace {

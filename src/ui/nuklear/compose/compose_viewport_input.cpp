@@ -416,7 +416,7 @@ static void start_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
         !input.window_focused || !view.scene_available ||
         !view.waveform_beat_zero_visible || view.waveform_timing_locked || view.audio_offset_locked ||
         view.waveform_offset_drag_active ||
-        input.action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE ||
+        input.action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE ||
         !zero_x || std::abs(static_cast<double>(left_button.clicked_pos.x) - *zero_x) > 7.0) {
         return;
     }
@@ -477,7 +477,7 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
         !state.waveform_drag.waveform_beat_zero_drag_active && input.pressed &&
         input.window_focused &&
         view.scene_available && !view.waveform_offset_drag_active &&
-        input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+        input.action->audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
         state.waveform_drag.waveform_overview_drag_active = true;
         state.waveform_drag.waveform_overview_capture = {
             view.chart_id.value, view.document_revision, view.selected_audio_asset_id.value,
@@ -491,7 +491,7 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
     const bool valid = worm_ui_nuklear_overview_capture_matches(
             state.waveform_drag.waveform_overview_capture, view, input.overview.x, input.overview.w,
             input.available, input.window_focused) &&
-        input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
+        input.action->audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
         !view.waveform_offset_drag_active;
     const auto event = worm_ui_nuklear_overview_gesture(state.waveform_drag.waveform_overview_gesture,
         input.context->input.mouse.pos.x, input.pressed && state.waveform_drag.waveform_overview_drag_active,
@@ -529,8 +529,8 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
     // An orphaned offset preview is cancelled unless the rail offset fit owns it.
     if (input.view->waveform_offset_drag_active && !state.waveform_drag.waveform_beat_zero_drag_active &&
         !state.waveform_drag.offset_fit_drag_active &&
-        input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
-        input.action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        input.action->audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+        input.action->audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
     }
     update_waveform_beat_zero_drag(input);
     update_waveform_overview_seek(input);

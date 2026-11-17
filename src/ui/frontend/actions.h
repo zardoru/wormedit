@@ -484,6 +484,57 @@ struct frame_input_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+/* Playback transport: seek target and rate. */
+struct transport_request_t {
+    uint64_t seek_frame;
+    uint8_t rate_index;
+    wormedit::audio::playback_rate_id_t rate_id;
+    bool keep_pitch;
+};
+/* Drag of the audio offset handle, stamped with the chart and revision it started on. */
+struct audio_offset_drag_request_t {
+    WormUiAudioOffsetDragAction action;
+    chart_id_t chart_id;
+    uint64_t document_revision;
+    uint32_t sample_rate;
+    int64_t delta_frames;
+};
+/* Recovery list: the scan the choice was made against and the chosen row, candidate and destination. */
+struct recovery_request_t {
+    uint64_t scan_generation;
+    size_t row_index;
+    size_t candidate_index;
+    std::string save_as_destination;
+};
+/* Compare tab: chart under comparison and the diagnostic row to jump to. */
+struct compare_request_t {
+    chart_id_t chart_id;
+    uint64_t diagnostic_row;
+    wormedit::measure_id_t diagnostic_measure;
+    chart_id_t diagnostic_chart;
+    double scroll_delta;
+};
+/* Answer to the close-project prompt. */
+struct close_request_t {
+    WormUiCloseDecision decision;
+    song_id_t project_id;
+    uint64_t revision;
+};
+/* Project to open or create. */
+struct project_open_request_t {
+    std::string path;
+    // Unknown requests automatic detection.
+    text_encoding_t encoding_id;
+    std::string lane_profile_id;
+    // Stable core layout identity.
+    std::string layout_id;
+};
+/* Assets chosen in the audio and visual selectors. */
+struct asset_selection_request_t {
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
 struct workspace_action_t {
     timing_link_action_t timing_link;
     wormedit::ui::file_jobs_action_t file_jobs;
@@ -493,9 +544,6 @@ struct workspace_action_t {
     wormedit::ui::notification_action_t notifications;
     wormedit::ui::options_action_t options;
     wormedit::ui::lane_keys_action_t lane_keys;
-    WormUiCloseDecision close_decision;
-    song_id_t close_project_id;
-    uint64_t close_revision;
     wormedit::ui::project_chart_action_t project_chart;
     wormedit::ui::project_settings_action_t project_settings;
     wormedit::ui::project_output_group_action_t project_output_group;
@@ -506,38 +554,18 @@ struct workspace_action_t {
     std::optional<wormedit::preview_mix_t> preview_mix;
     WormUiWorkspaceActionKind kind;
     struct wormedit::ui::external_player_action_t external_player;
-    std::string project_path;
-    // Unknown requests automatic detection.
-    text_encoding_t bms_encoding_id;
-    std::string bms_lane_profile_id;
-    // Stable core layout identity.
-    std::string new_project_layout_id;
+    project_open_request_t project_open;
+    close_request_t close;
+    recovery_request_t recovery;
+    transport_request_t transport;
+    asset_selection_request_t asset_selection;
+    audio_offset_drag_request_t audio_offset_drag;
+    compare_request_t compare;
     WormUiWorkspaceTab tab;
-    uint64_t recovery_scan_generation;
-    uint64_t transport_seek_frame;
-    uint8_t transport_rate_index;
-    wormedit::audio::playback_rate_id_t transport_rate_id;
-    bool transport_keep_pitch;
     std::optional<audio_slicer_action_t> audio_slicer;
-    wormedit::asset_id_t audio_asset_id;
-    wormedit::resource_id_t audio_resource_id;
     wormedit::ui::bga_usage_activation_t bga_usage;
     wormedit::ui::sound_usage_locate_request_t sound_usage;
-    wormedit::asset_id_t visual_asset_id;
     wormedit::player_preview_skin_t player_preview_skin;
-    WormUiAudioOffsetDragAction audio_offset_drag_action;
-    chart_id_t audio_offset_drag_chart_id;
-    uint64_t audio_offset_drag_document_revision;
-    uint32_t audio_offset_drag_sample_rate;
-    int64_t audio_offset_drag_delta_frames;
-    size_t recovery_row_index;
-    chart_id_t compare_chart_id;
-    uint64_t compare_diagnostic_row;
-    wormedit::measure_id_t compare_diagnostic_measure;
-    chart_id_t compare_diagnostic_chart;
-    double compare_scroll_delta;
-    size_t recovery_candidate_index;
-    std::string recovery_save_as_destination;
     // Metadata payloads own their text and lists across frontend calls.
     metadata_edit_request_t metadata;
     // Input sampled this frame (keyboard, pointer, hover); not requests.

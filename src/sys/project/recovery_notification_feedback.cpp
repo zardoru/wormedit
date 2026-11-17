@@ -67,7 +67,7 @@ auto recovery_action_request(
             },
         };
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS: {
-        const auto& destination = action.recovery_save_as_destination;
+        const auto& destination = action.recovery.save_as_destination;
         if (destination.empty()) {
             error = "Choose a new project path before using Save as.";
             return native_project_recovery_target_action_t{
@@ -115,8 +115,8 @@ auto load_recovered_document(
     const auto& recovery_view = controller.view();
     std::optional<native_project_document_version_t> recovered_save_baseline;
     auto recovered_sequence = std::uint64_t{};
-    if (action.recovery_row_index < recovery_view.rows.size()) {
-        const auto& row = recovery_view.rows[action.recovery_row_index];
+    if (action.recovery.row_index < recovery_view.rows.size()) {
+        const auto& row = recovery_view.rows[action.recovery.row_index];
         if (row.last_explicit_save_revision) {
             recovered_save_baseline = native_project_document_version_t{
                 .project_id = result.value.document->id,
@@ -148,9 +148,9 @@ auto dispatch_recovery_ui_action(
     const wormedit::notification_sink_t& notifications) -> std::string {
     using namespace wormedit;
     const native_project_recovery_action_target_t target{
-        .scan_generation = action.recovery_scan_generation,
-        .row_index = action.recovery_row_index,
-        .candidate_index = action.recovery_candidate_index,
+        .scan_generation = action.recovery.scan_generation,
+        .row_index = action.recovery.row_index,
+        .candidate_index = action.recovery.candidate_index,
     };
     std::string request_error;
     const auto request = recovery_action_request(action, history, scanned_primary_version,

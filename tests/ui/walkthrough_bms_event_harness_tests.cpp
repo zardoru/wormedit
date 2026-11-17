@@ -289,7 +289,7 @@ TEST_CASE("BMS walkthrough wizard creates BME and BMSON charts with their source
     (void)click_text(harness, entries[1].game.data());
     const auto created = click_text(harness, "Create project");
     require_step(created.front().get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    const auto document = make_initial_document(song_id_t{1}, created.front().get().new_project_layout_id);
+    const auto document = make_initial_document(song_id_t{1}, created.front().get().project_open.layout_id);
     require_step(document);
     require_step(document->read_charts().size() == 1);
     check_step((*document->read_charts().front()).input_profile.bindings.size() == (bmson ? 0 : 8));

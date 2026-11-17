@@ -220,7 +220,7 @@ TEST_CASE("real picker cancellation stale callback and shutdown stay quiet", "[e
     worm_ui_frontend_project_dialog_callback_for_testing(current, files);
     const auto accepted = worm_ui_frontend_consume_project_dialog_for_testing();
     check_drop_notification(accepted.kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
-    check_drop_notification(std::string_view{accepted.project_path} == "/current.wormedit");
+    check_drop_notification(std::string_view{accepted.project_open.path} == "/current.wormedit");
     worm_ui_frontend_shutdown();
     worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "Detached after shutdown.");
     center.drain_inbox(notification_time_t{0});

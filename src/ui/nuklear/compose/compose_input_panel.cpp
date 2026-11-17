@@ -210,13 +210,13 @@ void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
 void set_waveform_offset_drag_action(wormedit::ui::workspace_action_t* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
-    if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
+    if (!action || action->audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
         return;
-    action->audio_offset_drag_action = kind;
-    action->audio_offset_drag_chart_id = wormedit::chart_id_t{state.timing_drag.beat_zero_capture.chart};
-    action->audio_offset_drag_document_revision = state.timing_drag.beat_zero_capture.revision;
-    action->audio_offset_drag_sample_rate = state.timing_drag.beat_zero_capture.sample_rate;
-    action->audio_offset_drag_delta_frames = delta_frames;
+    action->audio_offset_drag.action = kind;
+    action->audio_offset_drag.chart_id = wormedit::chart_id_t{state.timing_drag.beat_zero_capture.chart};
+    action->audio_offset_drag.document_revision = state.timing_drag.beat_zero_capture.revision;
+    action->audio_offset_drag.sample_rate = state.timing_drag.beat_zero_capture.sample_rate;
+    action->audio_offset_drag.delta_frames = delta_frames;
 }
 
 void reset_waveform_offset_drag() {

@@ -220,7 +220,7 @@ TEST_CASE("Offset fit capture expiry remains separate from an absent drag",
     if (missing) CHECK(message == "Offset fit expired after its chart or waveform changed.");
     else test::check_stale_action_message(message, "Offset fit");
     expect_compose_test(!fixture.cache.timing.offset_fit_drag.has_value());
-    expect_compose_test(action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    expect_compose_test(action.audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
     expect_compose_test(fixture.history.undo.empty());
 }
 
@@ -266,7 +266,7 @@ TEST_CASE("Locked offset fit rejects captured input without clearing a BPM previ
     expect_compose_test(status.find("unlocked waveform") != std::string::npos);
     expect_compose_test(fixture.cache.timing.beat_fit_drag.has_value());
     expect_compose_test(!fixture.cache.timing.offset_fit_drag.has_value());
-    expect_compose_test(action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    expect_compose_test(action.audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     expect_compose_test(fixture.history.undo.empty());
 }
 
@@ -289,7 +289,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     action.stamp.chart_id.value = 1;
     action.stamp.project_id = fixture.history.document.id;
     action.stamp.document_revision = fixture.history.document.revision;
-    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
+    action.audio_offset_drag.action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
     (void)toggle_compose_audio_offset_lock(action.stamp, fixture.history, *fixture.binding.value,
         fixture.application, fixture.cache, drag, tab);
     expect_compose_test(fixture.application.project.timing_recipe.audio_offset_locked);

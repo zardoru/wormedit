@@ -338,13 +338,13 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
     v.waveform_beat_zero_visible = true;
     v.waveform_beat_zero_fraction = (x - overview.left) / overview.width;
     const auto start = h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
-    verify_fit_event(start.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
+    verify_fit_event(start.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
     v.waveform_offset_drag_active = true;
     const auto end = h.frame(std::array{fit_motion(x + distance, y), fit_button(x + distance, y, false)});
-    verify_fit_event(end.get().audio_offset_drag_action == (distance >= 4
+    verify_fit_event(end.get().audio_offset_drag.action == (distance >= 4
         ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL));
-    verify_fit_event(end.get().audio_offset_drag_chart_id.value == 1 &&
-                     end.get().audio_offset_drag_document_revision == 1);
+    verify_fit_event(end.get().audio_offset_drag.chart_id.value == 1 &&
+                     end.get().audio_offset_drag.document_revision == 1);
     verify_fit_event(!s.waveform_drag.waveform_beat_zero_drag_active && !s.timing_drag.beat_zero_capture.active);
 }
 

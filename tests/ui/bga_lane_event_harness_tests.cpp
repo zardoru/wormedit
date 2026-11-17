@@ -1680,16 +1680,16 @@ TEST_CASE("Inspector offset nudges preserve frame precision and disabled locks",
     for (std::size_t index = 0; index < deltas.size(); ++index) {
         const auto actions = click(f.harness, left + width * (static_cast<float>(index) + 0.5f) / 4,
                                    value.second + 31);
-        check_bga(actions.front().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE);
-        check_bga(actions.front().get().audio_offset_drag_delta_frames == deltas[index]);
-        check_bga(actions.front().get().audio_offset_drag_chart_id.value == 1);
-        check_bga(actions.front().get().audio_offset_drag_document_revision == 1);
-        check_bga(actions.back().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+        check_bga(actions.front().get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_NUDGE);
+        check_bga(actions.front().get().audio_offset_drag.delta_frames == deltas[index]);
+        check_bga(actions.front().get().audio_offset_drag.chart_id.value == 1);
+        check_bga(actions.front().get().audio_offset_drag.document_revision == 1);
+        check_bga(actions.back().get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     }
     f.harness.view().compose.audio_offset_locked = true;
     (void)f.harness.frame();
     const auto disabled = click(f.harness, left + width * 0.875f, value.second + 31);
-    check_bga(disabled.front().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    check_bga(disabled.front().get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
 }
 
 TEST_CASE("Collapsing Timing cancels an inspector offset draft",
@@ -1728,7 +1728,7 @@ TEST_CASE("Inspector BPM snap choice is shared with the timing-focus toolbar",
     check_bga(worm_ui_nuklear_compose_state().waveform_drag.beat_fit_snap_step_index == 2);
     check_bga(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(selected.front().get().input.compose_inputs.size() == 0);
-    check_bga(selected.front().get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    check_bga(selected.front().get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     f.harness.view().compose.timing_focus = true;
     (void)f.harness.frame();
     check_bga(f.harness.drawn_text_center("0.5").has_value());

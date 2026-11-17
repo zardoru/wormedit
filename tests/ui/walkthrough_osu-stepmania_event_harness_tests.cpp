@@ -255,8 +255,8 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
     });
     expect(created != frames.end());
-    expect(std::string_view{created->get().new_project_layout_id} == "osu-mania-7k");
-    expect(std::string_view{created->get().project_path} == "/music/song.ogg");
+    expect(std::string_view{created->get().project_open.layout_id} == "osu-mania-7k");
+    expect(std::string_view{created->get().project_open.path} == "/music/song.ogg");
     (void)harness.frame();
     auto& view = harness.view();
     view.pending_new_project_audio_path = "";

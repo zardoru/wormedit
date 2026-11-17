@@ -386,7 +386,7 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
         lifecycle_check(worm_ui_nuklear_compose_state().waveform_drag.waveform_overview_capture.chart_id == 0);
     }
     if (family == lifecycle_family::beat_zero)
-        lifecycle_check(interrupted.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+        lifecycle_check(interrupted.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
     else if (family == lifecycle_family::navigation)
         lifecycle_check(lifecycle_has(interrupted.get(), WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL));
     else if (family != lifecycle_family::chip)
@@ -396,7 +396,7 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
         lifecycle_key(SDLK_2, SDL_SCANCODE_2, false),
         lifecycle_key(SDLK_SPACE, SDL_SCANCODE_SPACE, false)};
     const auto late = f.harness.frame(release, f.modifiers);
-    lifecycle_check(late.get().audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
+    lifecycle_check(late.get().audio_offset_drag.action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
     for (const auto kind : {WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE,
          WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
          WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
@@ -530,17 +530,17 @@ TEST_CASE("Keyboard queue overflow drains frame input and defers stamped audio c
     lifecycle_check(state.input_queue.key_event_count == 0);
     lifecycle_check(!state.input_queue.keyboard_focus);
     const auto cancelled = f.harness.frame();
-    lifecycle_check(cancelled.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
-    lifecycle_check(cancelled.get().audio_offset_drag_chart_id.value == capture.chart);
-    lifecycle_check(cancelled.get().audio_offset_drag_document_revision == capture.revision);
-    lifecycle_check(cancelled.get().audio_offset_drag_sample_rate == capture.sample_rate);
+    lifecycle_check(cancelled.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    lifecycle_check(cancelled.get().audio_offset_drag.chart_id.value == capture.chart);
+    lifecycle_check(cancelled.get().audio_offset_drag.document_revision == capture.revision);
+    lifecycle_check(cancelled.get().audio_offset_drag.sample_rate == capture.sample_rate);
     lifecycle_check(cancelled.get().input.compose_viewport_inputs.size() == 0);
     lifecycle_check(!lifecycle_has(cancelled.get(), WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS));
     lifecycle_check(!state.input_queue.waveform_offset_cancel_pending);
     // The next view acknowledges cancellation, as the application dispatcher does.
     f.harness.view().compose.waveform_offset_drag_active = false;
     const auto following = f.harness.frame();
-    lifecycle_check(following.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    lifecycle_check(following.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
     lifecycle_check(following.get().input.compose_viewport_inputs.size() == 0);
 }
 
@@ -671,7 +671,7 @@ TEST_CASE("Beat-zero continuation rejects changed audio source geometry",
     if (changed == 2) ++view.waveform_overview_sample_rate;
     const auto release = lifecycle_button(f.x + 30, f.y, false);
     const auto result = f.harness.frame(std::span{&release, 1});
-    lifecycle_check(result.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    lifecycle_check(result.get().audio_offset_drag.action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
     lifecycle_check(!f.active());
 }
 

@@ -1,13 +1,17 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/nuklear/compose/compose_ui_window.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include "ui/nuklear/compose/compose_state.h"
 
 struct nk_context;
 
 void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                                               const wormedit::ui::compose_view_t* view,
-                                              wormedit::ui::workspace_action_t* action,
+                                              wormedit::ui::compose_ui_window_t* action,
                                               worm_ui_nuklear_compose_state_t* state);
 
 // Modal surfaces render after the workspace, never inside the inspector window.
@@ -16,7 +20,7 @@ void worm_ui_nuklear_open_export_dialog(const wormedit::ui::compose_view_t& view
 void worm_ui_nuklear_open_layer_creation(const wormedit::ui::compose_view_t& view,
     worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const wormedit::ui::compose_view_t& view,
-    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state);
+    wormedit::ui::compose_ui_window_t& action, worm_ui_nuklear_compose_state_t& state);
 
 enum class compose_resource_origin_t { selection, sounds, bga };
 enum class compose_resource_reset_reason_t { project_changed, chart_changed, source_cleared };

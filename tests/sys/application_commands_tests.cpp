@@ -4,6 +4,8 @@
 #include "../support/stale_action_assertions.h"
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "../sys/application_dispatch_fixture.h"
+#include "compose_window_overloads_sound.h"
+#include "compose_window_overloads_input.h"
 #include "sys/app/application_editor_views.h"
 #endif
 #include "compose_area_dispatch_fixture.h"

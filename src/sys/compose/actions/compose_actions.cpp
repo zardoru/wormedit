@@ -2308,14 +2308,14 @@ struct edit_compose_bms_program_action_t {
     auto operator==(const edit_compose_bms_program_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
         const auto& workspace = context.environment.document.workspace;
-        if (workspace.active_tab != workspace_tab_t::compose || workspace.selected_chart != context.action.bms_program.difficulty)
+        if (workspace.active_tab != workspace_tab_t::compose || workspace.selected_chart != context.action.compose.bms_program.difficulty)
             return compose_action_outcome_t::blocked(stale_action_message("BMS scope action"), notification_source_t::format);
         return context.require_no_gesture("Finish or cancel the active gesture before editing BMS scopes.");
     }
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         auto& history = context.environment.document.history;
         auto& runtime = context.environment.editor.commands.project.bms_program;
-        auto result = runtime.apply(history, context.state, context.action.bms_program);
+        auto result = runtime.apply(history, context.state, context.action.compose.bms_program);
         return compose_action_outcome_t::from(std::move(result), compose_action_description_t{
             .success = "BMS scope updated.", .unchanged = "", .rebind_failure = "BMS scope changed, but workspace rebinding failed.",
             .source = notification_source_t::format});
@@ -2816,7 +2816,7 @@ auto perform_compose_view_action(compose_action_context_t& context) -> compose_a
     return perform_routed_compose_action(context, *route);
 }
 } // namespace compose_action_detail
-auto resource_path_tab_action(const wormedit::ui::workspace_action_t& action,
+auto resource_path_tab_action(const wormedit::ui::compose_window_t& action,
                               wormedit::workspace_tab_t tab) -> bool {
     if (tab == wormedit::workspace_tab_t::audio_slices)
         return action.compose.kind == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND ||
@@ -2830,19 +2830,19 @@ auto resource_path_tab_action(const wormedit::ui::workspace_action_t& action,
          action.compose.kind == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
 }
 
-auto is_initial_layout_workspace_action(const wormedit::ui::workspace_action_t& action) -> bool {
+auto is_initial_layout_workspace_action(const wormedit::ui::compose_window_t& action) -> bool {
     return action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE ||
         action.compose.kind == WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
 }
 
-auto is_chart_only_workspace_action(const wormedit::ui::workspace_action_t& action) -> bool {
+auto is_chart_only_workspace_action(const wormedit::ui::compose_window_t& action) -> bool {
     return action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT ||
         is_initial_layout_workspace_action(action) ||
         action.compose.kind == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
 }
 
 auto temporary_compose_interaction_is_current(
-    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
+    const wormedit::ui::compose_window_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, bool initial_layout_action) -> bool {
     const auto* selected = selected_chart(history, workspace);
     return workspace.active_tab == wormedit::workspace_tab_t::compose &&
@@ -2861,7 +2861,7 @@ auto temporary_compose_interaction_expired_message(bool initial_layout_action, b
         : wormedit::stale_action_message("BGM column count edit");
 }
 
-auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_compose_view_action(const wormedit::ui::compose_window_t& action,
                                   const compose_action_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state,
                                   double viewport_height, bool metadata_import_busy,
@@ -2902,7 +2902,7 @@ auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action
     return finish_compose_action(context, perform_compose_view_action(context));
 }
 
-auto dispatch_project_export_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_project_export_action(const wormedit::ui::compose_window_t& action,
                                     const compose_action_inputs_t& environment,
                                     bool metadata_import_busy) -> bool {
     auto& history = environment.document.history;
@@ -2948,7 +2948,7 @@ auto dispatch_project_export_action(const wormedit::ui::workspace_action_t& acti
 }
 
 namespace {
-auto dispatch_compose_workspace_action_with_resources(const wormedit::ui::workspace_action_t& action,
+auto dispatch_compose_workspace_action_with_resources(const wormedit::ui::compose_window_t& action,
                                                       const compose_action_inputs_t& environment,
                                                       double viewport_height,
                                                       bool metadata_import_busy) -> bool {
@@ -3024,7 +3024,7 @@ auto dispatch_compose_workspace_action_with_resources(const wormedit::ui::worksp
 }
 } // namespace
 
-auto dispatch_compose_workspace_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_compose_workspace_action(const wormedit::ui::compose_window_t& action,
                                        const compose_action_inputs_t& environment,
                                        double viewport_height, bool metadata_import_busy) -> bool {
     if (!environment.resources)

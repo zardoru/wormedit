@@ -1,5 +1,6 @@
 #pragma once
-#include "ui/frontend.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/preview_audio.h"
 #include "ui/nuklear/chrome/dialog.h"
 #include <array>
 
@@ -19,6 +20,6 @@ struct preview_audio_dialog_t {
     void begin_from_preview(const wormedit::ui::compose_view_t& view);
     void start(const wormedit::ui::compose_view_t& view, preview_audio_range_view_t source,
                std::uint64_t begin_row, std::uint64_t end_row);
-    void render(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action);
+    void render(nk_context* context, const wormedit::ui::compose_view_t& view, std::optional<wormedit::ui::preview_audio_export_action_t>& export_request);
 };
 }

@@ -17,7 +17,7 @@ std::uint64_t menu_recipe{};
 // Command ids carried in ui::compose_input_action_t::span_edge by RECIPE_COMMAND.
 using recipe_command_t = wormedit::ui::compose_recipe_command_t;
 
-void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
                    recipe_command_t command) {
     append_compose_input(&action, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 0.0, 0.0, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
@@ -28,7 +28,7 @@ void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::works
 }
 
 void menu_entry(nk_context* context, const char* title, const char* disabled_reason,
-                const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+                const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
                 recipe_command_t command) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason))
         queue_command(view, action, command);
@@ -40,7 +40,7 @@ auto find_area(const wormedit::ui::compose_view_t& view, std::uint64_t id) -> co
     return nullptr;
 }
 
-void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action) {
     if (!menu.open) return;
     const auto* area = find_area(view, menu_recipe);
     if (!area) {
@@ -96,7 +96,7 @@ void reset_compose_recipe_menu() {
 }
 
 void process_compose_recipe_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                 wormedit::ui::workspace_action_t& action, struct nk_rect viewport,
+                                 wormedit::ui::compose_ui_window_t& action, struct nk_rect viewport,
                                  double input_right, bool focused) {
     (void)chrome::context_menu_update(menu, context);
     if (!view.scene_available || view.viewport_width_pixels <= 0 || view.viewport_height_pixels <= 0 ||

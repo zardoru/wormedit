@@ -24,8 +24,6 @@ struct timing_target_t {
    the step; the other members are the fields that step reads. */
 namespace wormedit::ui {
 struct timing_edit_request_t {
-    std::string meter_numerator_text;
-    std::string meter_denominator_text;
     std::optional<timing_anchoring_t> anchoring;
     wormedit::ui::timing_stage_action_t stage_action;
     wormedit::chart_id_t chart_id;

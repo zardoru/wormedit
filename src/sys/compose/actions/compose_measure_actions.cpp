@@ -39,8 +39,8 @@ auto set_cursor_measure_meter_action_t::perform(compose_action_context_t& contex
     auto severity = notification_severity_t::warning;
     auto status =
         apply_cursor_measure_meter(context.environment.document.history, context.state,
-                                   context.action.timing.meter_numerator_text,
-                                   context.action.timing.meter_denominator_text, &severity);
+                                   context.action.compose.measure.meter_numerator_text,
+                                   context.action.compose.measure.meter_denominator_text, &severity);
     const auto mutated = revision != context.environment.document.history.document.revision;
     auto outcome = compose_action_outcome_t::from(
         std::move(status), severity, notification_source_t::edit, mutated,
@@ -64,8 +64,8 @@ auto set_measures_meter_action_t::perform(compose_action_context_t& context) con
     auto severity = notification_severity_t::warning;
     const auto& ids = context.action.compose.measure.ids;
     auto status = apply_measures_meter(context.environment.document.history, context.state, ids,
-                                       context.action.timing.meter_numerator_text,
-                                       context.action.timing.meter_denominator_text, &severity);
+                                       context.action.compose.measure.meter_numerator_text,
+                                       context.action.compose.measure.meter_denominator_text, &severity);
     const auto mutated = revision != context.environment.document.history.document.revision;
     auto outcome = compose_action_outcome_t::from(
         std::move(status), severity, notification_source_t::edit, mutated,
@@ -106,9 +106,9 @@ auto move_compose_bar_line_action_t::perform(compose_action_context_t& context) 
     const auto& action = context.action;
     auto status = apply_bar_line_move(
         context.environment.document.history, context.state, action.compose.measure.ids[0],
-        {static_cast<std::uint32_t>(std::strtoul(action.timing.meter_numerator_text.c_str(), nullptr, 10)),
+        {static_cast<std::uint32_t>(std::strtoul(action.compose.measure.meter_numerator_text.c_str(), nullptr, 10)),
          static_cast<std::uint32_t>(
-             std::strtoul(action.timing.meter_denominator_text.c_str(), nullptr, 10))},
+             std::strtoul(action.compose.measure.meter_denominator_text.c_str(), nullptr, 10))},
         {action.compose.measure.second_meter_numerator, action.compose.measure.second_meter_denominator},
         &severity);
     const auto mutated = revision != context.environment.document.history.document.revision;

@@ -160,7 +160,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
                                      const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::string_view beat_section_success(const wormedit::ui::workspace_action_t& action, bool from_selection);
+std::string_view beat_section_success(const wormedit::ui::compose_window_t& action, bool from_selection);
 
 struct edit_beat_section_action_t {
     const chart_document_t* chart{};
@@ -379,7 +379,7 @@ void find_bms_leaf_target(const wormedit::bms_control_node_t& node, std::uint64_
 auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64_t id)
     -> const wormedit::bms_control_node_t*;
 
-auto run_bms_block_command(const wormedit::ui::workspace_action_t& action,
+auto run_bms_block_command(const wormedit::ui::compose_window_t& action,
                            wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t;

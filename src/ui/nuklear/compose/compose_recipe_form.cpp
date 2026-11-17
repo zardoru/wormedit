@@ -132,7 +132,7 @@ void set_rational(rational_text_t& value, const char* text) {
 
 using recipe_command_t = wormedit::ui::compose_recipe_command_t;
 
-void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
            WormUiComposeActionKind kind) {
     if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose.kind = kind;
@@ -141,7 +141,7 @@ void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
     action.compose.recipe.form = state.recipe_editor.recipe_edit_form;
 }
 
-void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
+void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action,
                         wormedit::recipe_id_t id, WormUiComposeInputKind kind, recipe_command_t command = {}) {
     append_compose_input(&action, kind, 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, id.value, 0, false,

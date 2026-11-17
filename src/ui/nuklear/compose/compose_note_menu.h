@@ -1,5 +1,9 @@
 #pragma once
-#include "ui/frontend.h"
+#include "ui/nuklear/compose/compose_ui_window.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 struct nk_context;
 struct nk_rect;
 
@@ -8,9 +12,9 @@ bool compose_note_menu_consumed();
 void begin_compose_note_menu_frame();
 void reset_compose_note_menu();
 void prepare_compose_note_menu(const wormedit::ui::compose_view_t*, bool active, bool focused,
-                               wormedit::ui::workspace_action_t*);
+                               wormedit::ui::compose_ui_window_t*);
 void dismiss_compose_note_popup(nk_context*);
-void process_compose_note_menu(nk_context*, const wormedit::ui::compose_view_t&, wormedit::ui::workspace_action_t&,
+void process_compose_note_menu(nk_context*, const wormedit::ui::compose_view_t&, wormedit::ui::compose_ui_window_t&,
                                struct nk_rect viewport, double input_right, bool focused);
 
 // The submenu contract is independently bounded and safe for frontend-only callers.

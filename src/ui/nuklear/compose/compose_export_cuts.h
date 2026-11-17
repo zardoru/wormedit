@@ -2,7 +2,7 @@
 #include "ui/frontend/compose.h"
 
 struct nk_context;
-namespace wormedit::ui { struct compose_view_t; struct workspace_action_t; }
+namespace wormedit::ui { struct compose_view_t; struct compose_request_t; struct request_stamp_t; }
 
 namespace wormedit::ui {
 // Drawing and pointer admission share the visible edge grips, including when
@@ -24,4 +24,4 @@ struct compose_export_cut_handle_t {
 }
 
 void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
-    const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action);
+    const wormedit::ui::compose_view_t& view, wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp);

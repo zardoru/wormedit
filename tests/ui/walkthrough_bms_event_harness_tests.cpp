@@ -1,4 +1,6 @@
 #include "sys/resources/bms_catalog_bindings.h"
+#include "../sys/compose_window_overloads_sound.h"
+#include "../sys/compose_window_overloads_input.h"
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
 #include "sys/app/application_defaults.h"

@@ -411,7 +411,10 @@ auto dispatch_timing_link(const ui::timing_link_action_t& action, const metadata
     return std::move(feedback.message);
 }
 }
-auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_metadata_action(const wormedit::ui::timing_link_action_t& links,
+                              const wormedit::ui::metadata_edit_request_t& edit,
+                              const wormedit::ui::compose_resource_request_t& resource,
+                              const wormedit::ui::request_stamp_t& stamp,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool file_jobs_busy, bool post_notifications)
     -> std::optional<std::string> {
@@ -424,23 +427,23 @@ auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
     const notification_sink_t notifications =
         post_notifications ? environment.document.notifications : notification_sink_t::muted();
 
-    if (action.timing_link.requested) return dispatch_timing_link(action.timing_link, environment, timing_locked, notifications);
-    if (action.metadata.kind != WORM_UI_METADATA_EDIT_NONE) {
-        auto feedback = dispatch_metadata_edit(action.metadata, history, workspace, timing_locked, metadata_drop);
+    if (links.requested) return dispatch_timing_link(links, environment, timing_locked, notifications);
+    if (edit.kind != WORM_UI_METADATA_EDIT_NONE) {
+        auto feedback = dispatch_metadata_edit(edit, history, workspace, timing_locked, metadata_drop);
         notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
-        if (action.metadata.kind == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
+        if (edit.kind == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
             metadata_drop.clear_output();
         return std::move(feedback.message);
     }
-    if (action.metadata.import_copy_project || action.metadata.import_copy_export) {
+    if (edit.import_copy_project || edit.import_copy_export) {
         auto status = metadata_asset_runtime.start_import_copy(
-            action, history, workspace, asset_base, resource_copy_scheduler, file_jobs_busy);
+            edit, resource, stamp, history, workspace, asset_base, resource_copy_scheduler, file_jobs_busy);
         if (metadata_asset_runtime.import_pending())
             metadata_drop.clear_music();
         return status;
     }
-    if (action.metadata.inspect_copy)
-        return metadata_asset_runtime.start_copy_preview(action, history, workspace, asset_base);
+    if (edit.inspect_copy)
+        return metadata_asset_runtime.start_copy_preview(edit, resource, stamp, history, workspace, asset_base);
     return std::nullopt;
 }
 

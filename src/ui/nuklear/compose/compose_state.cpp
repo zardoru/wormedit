@@ -244,7 +244,7 @@ auto inline_timing_number_allowed(wormedit::timing_lane_kind_t lane, inline_timi
     return false;
 }
 
-void set_inline_timing_number(wormedit::ui::workspace_action_t& action, wormedit::timing_lane_kind_t lane,
+void set_inline_timing_number(wormedit::ui::timing_edit_request_t& timing, wormedit::timing_lane_kind_t lane,
                               inline_timing_rational_t value) {
     char numerator[64]{};
     char denominator[64]{};
@@ -253,13 +253,13 @@ void set_inline_timing_number(wormedit::ui::workspace_action_t& action, wormedit
     std::snprintf(denominator, sizeof(denominator), "%llu",
                   static_cast<unsigned long long>(value.denominator));
     if (lane == wormedit::timing_lane_kind_t::warp) {
-        action.timing.secondary_numerator_text = numerator;
-        action.timing.secondary_denominator_text = denominator;
-        action.timing.secondary_value = static_cast<double>(value.numerator);
+        timing.secondary_numerator_text = numerator;
+        timing.secondary_denominator_text = denominator;
+        timing.secondary_value = static_cast<double>(value.numerator);
     } else {
-        action.timing.primary_numerator_text = numerator;
-        action.timing.primary_denominator_text = denominator;
-        action.timing.value = wormedit::to_double(value);
+        timing.primary_numerator_text = numerator;
+        timing.primary_denominator_text = denominator;
+        timing.value = wormedit::to_double(value);
     }
 }
 
@@ -412,7 +412,7 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
 
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
                                                   const wormedit::ui::compose_view_t& view,
-                                                  wormedit::ui::workspace_action_t& action) {
+                                                  wormedit::ui::compose_ui_window_t& action) {
     if (state.input_queue.action_overflowed || action.input.compose_inputs.size() == 0) return;
     action.input.compose_inputs[action.input.compose_inputs.size() - 1].resource_id.value =
         worm_ui_nuklear_armed_dock_sound(state, view);
@@ -486,7 +486,7 @@ void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state
 }
 
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
-    const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action, bool committed, bool deactivated) {
+    const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action, bool committed, bool deactivated) {
     if (!state.inline_offset.inline_offset_open) return;
     state.inline_offset.inline_offset_input_consumed = true;
     if (state.inline_offset.inline_offset_cancel_pending || !view.audio_offset_editable ||
@@ -534,7 +534,7 @@ void worm_ui_nuklear_inline_timing_initial_text(const wormedit::ui::timing_view_
 
 auto worm_ui_nuklear_inline_timing_review_new_stage(
     worm_ui_nuklear_compose_state_t& state, const wormedit::ui::timing_view_t& view,
-    const wormedit::ui::workspace_action_t& action, float anchor_x, float anchor_y) -> bool {
+    const wormedit::ui::compose_ui_window_t& action, float anchor_x, float anchor_y) -> bool {
     if (!view.stage_active) {
         state.inline_timing.inline_timing_stage_seen = false;
         return false;
@@ -574,7 +574,7 @@ auto worm_ui_nuklear_inline_timing_review_new_stage(
 }
 
 auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& view, const char* text,
-                                           wormedit::ui::workspace_action_t& action) -> bool {
+                                           wormedit::ui::timing_edit_request_t& timing) -> bool {
     if (!view.stage_active || !text) return false;
     const auto input = wormedit::text_util::trim(text, wormedit::text_util::ascii_whitespace);
     if (input.size() >= 64) return false;
@@ -588,41 +588,41 @@ auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& vi
         : !value || !inline_timing_number_allowed(view.stage_lane, *value)) return false;
     const auto bpm_decimal = view.stage_lane == wormedit::timing_lane_kind_t::bpm &&
                              input.find('/') == std::string_view::npos;
-    auto result = action;
-    result.timing.stage_action = wormedit::ui::timing_stage_action_t::confirm;
-    result.timing.chart_id.value = view.chart_id.value;
-    result.timing.document_revision = view.document_revision;
-    result.timing.object_id.value = view.stage_existing_object_id.value;
-    result.timing.lane = view.stage_lane;
-    result.timing.value = view.stage_value;
-    result.timing.secondary_value = view.stage_secondary_value;
-    result.timing.transition_is_seconds = view.stage_transition_is_seconds;
-    result.timing.toggle_primary = view.stage_toggle_primary;
-    result.timing.pause_unit = view.stage_pause_unit;
-    result.timing.primary_numerator_text = view.stage_primary_numerator_text.c_str();
-    result.timing.primary_denominator_text = view.stage_primary_denominator_text.c_str();
-    result.timing.secondary_numerator_text = view.stage_secondary_numerator_text.c_str();
-    result.timing.secondary_denominator_text = view.stage_secondary_denominator_text.c_str();
-    result.timing.bpm_decimal_text = view.stage_primary_decimal_text.c_str();
-    result.timing.bpm_decimal_edited = false;
-    result.timing.bpm_step = 0;
+    auto result = timing;
+    result.stage_action = wormedit::ui::timing_stage_action_t::confirm;
+    result.chart_id.value = view.chart_id.value;
+    result.document_revision = view.document_revision;
+    result.object_id.value = view.stage_existing_object_id.value;
+    result.lane = view.stage_lane;
+    result.value = view.stage_value;
+    result.secondary_value = view.stage_secondary_value;
+    result.transition_is_seconds = view.stage_transition_is_seconds;
+    result.toggle_primary = view.stage_toggle_primary;
+    result.pause_unit = view.stage_pause_unit;
+    result.primary_numerator_text = view.stage_primary_numerator_text.c_str();
+    result.primary_denominator_text = view.stage_primary_denominator_text.c_str();
+    result.secondary_numerator_text = view.stage_secondary_numerator_text.c_str();
+    result.secondary_denominator_text = view.stage_secondary_denominator_text.c_str();
+    result.bpm_decimal_text = view.stage_primary_decimal_text.c_str();
+    result.bpm_decimal_edited = false;
+    result.bpm_step = 0;
     if (anchor_frame) {
-        result.timing.primary_numerator_text = std::to_string(static_cast<unsigned long long>(*anchor_frame));
-        result.timing.primary_denominator_text = "1";
-        result.timing.value = static_cast<double>(*anchor_frame);
+        result.primary_numerator_text = std::to_string(static_cast<unsigned long long>(*anchor_frame));
+        result.primary_denominator_text = "1";
+        result.value = static_cast<double>(*anchor_frame);
     } else {
         set_inline_timing_number(result, view.stage_lane, *value);
     }
     if (bpm_decimal) {
-        result.timing.bpm_decimal_text = input;
-        result.timing.bpm_decimal_edited = true;
+        result.bpm_decimal_text = input;
+        result.bpm_decimal_edited = true;
     }
-    action = result;
+    timing = result;
     return true;
 }
 
 void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
-                                         wormedit::ui::workspace_action_t& action) {
+                                         wormedit::ui::compose_ui_window_t& action) {
     state.inline_timing.inline_timing_input_consumed = true;
     state.inline_timing.inline_timing_open = false;
     state.inline_timing.inline_timing_focus_pending = false;
@@ -632,11 +632,11 @@ void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state
 
 void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,
                                          const wormedit::ui::timing_view_t& view,
-                                         wormedit::ui::workspace_action_t& action,
+                                         wormedit::ui::compose_ui_window_t& action,
                                          bool committed, bool deactivated) {
     state.inline_timing.inline_timing_input_consumed = true;
     if (committed) {
-        if (worm_ui_nuklear_inline_timing_confirm(view, state.inline_timing.inline_timing_text.data(), action)) {
+        if (worm_ui_nuklear_inline_timing_confirm(view, state.inline_timing.inline_timing_text.data(), action.timing)) {
             state.inline_timing.inline_timing_open = false;
             state.inline_timing.inline_timing_focus_pending = false;
         } else {
@@ -768,7 +768,7 @@ void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
 }
 
 void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
-    wormedit::ui::workspace_action_t& action, uint8_t kind, uint64_t id) {
+    wormedit::ui::compose_ui_window_t& action, uint8_t kind, uint64_t id) {
     state.pointer_capture.draw_source_kind = id ? kind : 0;
     state.pointer_capture.draw_source_id = id;
     if (!id) reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);

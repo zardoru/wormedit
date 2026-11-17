@@ -142,7 +142,7 @@ void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool app
 void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
                                             worm_ui_sound_slot_batch_t& state,
                                             const wormedit::ui::compose_view_t& view,
-                                            wormedit::ui::workspace_action_t& action,
+                                            wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, wormedit::ui::sound_import_request_t& sound_import,
                                             int window_width, int window_height) {
     if (!state.open) return;
     if (stale_target(state, view)) {
@@ -163,7 +163,7 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
         static_cast<std::size_t>(state.first_slot) + state.items.size() - 1 <= wormedit::bms_max_slot;
     const auto can_confirm = !state.commit_pending && state.reason.empty() && valid_count && replacements_ready(state) &&
         std::ranges::none_of(state.items, [](const auto& item) { return item.ambiguous; }) &&
-        action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE;
+        compose.kind == WORM_UI_COMPOSE_ACTION_NONE;
     if (chrome::dialog_begin(dialog, context, "Assign BMS WAV slots", "Assign BMS WAV slots",
                              {.modal = true, .width = 850.0f,
                               .area = nk_vec2(static_cast<float>(window_width),
@@ -181,15 +181,15 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
             worm_ui_sound_slot_batch_cancel(state);
         if (chrome::dialog_button(dialog, context, "Assign files", chrome::DialogButtonRole::primary,
                                   can_confirm)) {
-            action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-            action.stamp = {.chart_id = {state.chart_id}, .project_id = {state.project_id},
+            compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+            stamp = {.chart_id = {state.chart_id}, .project_id = {state.project_id},
                             .document_revision = state.revision};
             for (const auto& item : state.items)
-                action.sound_import.items.push_back({.path = item.path, .name = item.name,
+                sound_import.items.push_back({.path = item.path, .name = item.name,
                     .kind = wormedit::sound_kind_t::keysound});
 
-            action.compose.resource.sound_slot = state.first_slot;
-            action.compose.resource.sound_slot_confirmed = has_occupants(state);
+            compose.resource.sound_slot = state.first_slot;
+            compose.resource.sound_slot_confirmed = has_occupants(state);
             state.commit_pending = true;
         }
     }

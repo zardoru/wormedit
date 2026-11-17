@@ -1,6 +1,10 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/nuklear/compose/compose_ui_window.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include "wormedit/nuklear_config.h"
 
 #include <cstdint>
@@ -50,6 +54,6 @@ auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
                                         bool window_focused) -> bool;
 
 void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                    wormedit::ui::workspace_action_t& action,
+                                    wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused);

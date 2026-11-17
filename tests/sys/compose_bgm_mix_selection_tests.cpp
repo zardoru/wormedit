@@ -1,5 +1,7 @@
 // BGM mute/solo mixing and registered selection scopes.
 #include "frame_timing_fixtures.h"
+#include "compose_window_overloads_view.h"
+#include "compose_window_overloads_input.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>

@@ -1,4 +1,5 @@
 #include "sys/compose/actions/compose_sound_actions.h"
+#include "compose_window_overloads_sound.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
 #include <algorithm>

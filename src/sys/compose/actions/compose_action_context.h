@@ -2,13 +2,13 @@
 #include <wormedit/core/proposal.h>
 #include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_action_outcome.h"
-#include "ui/frontend.h"
+#include "ui/frontend/compose_window.h"
 
 namespace wormedit::sys::compose_action_detail {
 struct compose_action_context_t {
     using outcome_type = compose_action_outcome_t;
     const compose_action_inputs_t& environment;
-    const wormedit::ui::workspace_action_t& action;
+    const wormedit::ui::compose_window_t& action;
     wormedit::editor_interaction_state_t& state;
     double viewport_height;
     bool metadata_import_busy;

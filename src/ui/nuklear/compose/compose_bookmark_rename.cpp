@@ -119,23 +119,23 @@ auto prompt_text(inline_label_kind_t kind) -> prompt_text_t {
     return {"Rename bookmark", "Bookmark name…", "Enter to apply · Esc to cancel"};
 }
 
-void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
+void stage_rename(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, const wormedit::ui::compose_view_t& view,
                   const inline_label_editor_t& editor) {
-    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
-        stage_note_label_inline(action, view, editor);
+        stage_note_label_inline(compose, stamp, view, editor);
         return;
     }
     if (editor.kind == inline_label_kind_t::section_label) {
-        stage_section_label_inline(action, view, editor);
+        stage_section_label_inline(compose, stamp, view, editor);
         return;
     }
-    action.compose.kind = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
-    action.compose.marker.bookmark_id.value = editor.bookmark_id;
-    action.stamp.project_id.value = view.project_id.value;
-    action.stamp.chart_id.value = editor.chart_id;
-    action.stamp.document_revision = editor.document_revision;
-    action.compose.marker.label = editor.label;
+    compose.kind = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
+    compose.marker.bookmark_id.value = editor.bookmark_id;
+    stamp.project_id.value = view.project_id.value;
+    stamp.chart_id.value = editor.chart_id;
+    stamp.document_revision = editor.document_revision;
+    compose.marker.label = editor.label;
 
 }
 
@@ -187,7 +187,7 @@ auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
 }
 
 void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                    wormedit::ui::workspace_action_t& action,
+                                    wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {
     (void)wormedit::ui::chrome::popup_update_release_pending(
@@ -227,7 +227,7 @@ void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::com
     const bool cancelled = nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE) ||
                            ((flags & NK_EDIT_COMMITTED) == 0 && (flags & NK_EDIT_DEACTIVATED) != 0);
     const bool committed = !cancelled && (flags & NK_EDIT_COMMITTED) != 0;
-    if (committed) stage_rename(action, view, editor);
+    if (committed) stage_rename(compose, stamp, view, editor);
     const bool finished = cancelled || committed;
     if (finished) nk_popup_close(context);
     wormedit::ui::chrome::text_prompt_end(context, surface);

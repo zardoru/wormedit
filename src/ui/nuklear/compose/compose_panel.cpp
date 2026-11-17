@@ -663,7 +663,7 @@ static void render_compose_waveform_overview(const ComposeOverviewContext& overv
 
 void worm_ui_nuklear_render_compose_minimap(
     struct nk_context* context, const wormedit::ui::compose_view_t* view,
-    wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
+    wormedit::ui::compose_ui_window_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
     action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
@@ -822,7 +822,7 @@ void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const wormedit::ui::
     }
 }
 
-void append_bgm_bar_input(wormedit::ui::workspace_action_t* action, WormUiComposeInputKind kind,
+void append_bgm_bar_input(wormedit::ui::compose_ui_window_t* action, WormUiComposeInputKind kind,
                           double amount, double audio_fraction) {
     append_compose_input(action, kind, amount);
     if (action->input.compose_inputs.size() == 0) return;
@@ -832,7 +832,7 @@ void append_bgm_bar_input(wormedit::ui::workspace_action_t* action, WormUiCompos
 
 // Wheel zoom centers on the visible field span; Shift+wheel or middle-drag pans the range.
 void process_bgm_bar_view_input(struct nk_context* context, const wormedit::ui::compose_view_t& view,
-                                wormedit::ui::workspace_action_t* action,
+                                wormedit::ui::compose_ui_window_t* action,
                                 const BgmBarGeometry& geometry) {
     static bool middle_dragged = false;
     auto& input = context->input;
@@ -866,7 +866,7 @@ void process_bgm_bar_view_input(struct nk_context* context, const wormedit::ui::
 }
 
 void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::compose_view_t* view,
-                              wormedit::ui::workspace_action_t* action, const BgmBarGeometry& geometry) {
+                              wormedit::ui::compose_ui_window_t* action, const BgmBarGeometry& geometry) {
     if (!nk_input_is_mouse_hovering_rect(&context->input, geometry.bounds)) return;
     constexpr char instructions[] =
         "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
@@ -899,7 +899,7 @@ void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::co
 
 void worm_ui_nuklear_render_compose_bgm_bar(
     struct nk_context* context, const wormedit::ui::compose_view_t* view,
-    wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
+    wormedit::ui::compose_ui_window_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
     action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
@@ -943,7 +943,7 @@ struct ComposePanelRenderContext {
     struct nk_context* context;
     const wormedit::ui::compose_view_t* view;
     const wormedit::ui::timing_view_t* timing_view;
-    wormedit::ui::workspace_action_t* action;
+    wormedit::ui::compose_ui_window_t* action;
     bool window_focused;
     bool ime_composition_active;
     const worm_ui_nuklear_pointer_click_t* double_clicks;
@@ -959,7 +959,7 @@ static auto is_inline_audio_timing(wormedit::timing_lane_kind_t lane) -> bool {
 static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
     bool committed, bool changed) {
     const auto& timing = *panel.timing_view;
-    worm_ui_nuklear_render_timing_anchoring(panel.context, timing, *panel.action);
+    worm_ui_nuklear_render_timing_anchoring(panel.context, timing, panel.action->timing);
     nk_layout_row_dynamic(panel.context, wormedit::ui::metrics::control_default, 1);
     const bool apply = wormedit::ui::chrome::button_label(panel.context, "Apply timing edit") != 0;
     if (committed || apply) {
@@ -969,7 +969,7 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
         if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::confirm)
             state.inline_timing.inline_timing_open = true;
     } else if (changed && panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::none &&
-        worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing.inline_timing_text.data(), *panel.action)) {
+        worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing.inline_timing_text.data(), panel.action->timing)) {
         panel.action->timing.stage_action = wormedit::ui::timing_stage_action_t::update;
     }
 }
@@ -1192,7 +1192,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     if (view->input_occluded || owned_popup || compose_input_queries_t{state}.is_canvas_input_blocked()) {
         discard_occluded_compose_input(panel);
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
     const auto pointer_focus = update_compose_pointer_focus(
@@ -1204,7 +1204,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
     if (state.dialogs.go_to_measure_open) {
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
 
@@ -1303,7 +1303,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-    render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+    render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
     render_compose_inline_timing_editor(panel, viewport);
 }
 
@@ -1317,7 +1317,7 @@ static void close_go_to_measure(nk_context* context) {
 }
 
 static void confirm_go_to_measure(const wormedit::ui::compose_view_t& view,
-                                  wormedit::ui::workspace_action_t& action, nk_context* context) {
+                                  wormedit::ui::compose_ui_window_t& action, nk_context* context) {
     const auto number = worm_ui_nuklear_compose_measure_number(view,
                                                               state.dialogs.go_to_measure_text.data());
     if (!number) {
@@ -1336,7 +1336,7 @@ static void confirm_go_to_measure(const wormedit::ui::compose_view_t& view,
 }
 
 static void render_go_to_measure(nk_context* context, const wormedit::ui::compose_view_t& view,
-                                 wormedit::ui::workspace_action_t& action, bool window_focused) {
+                                 wormedit::ui::compose_ui_window_t& action, bool window_focused) {
     if (!state.dialogs.go_to_measure_open) return;
     if (!window_focused || view.chart_id.value != state.dialogs.go_to_measure_chart_id ||
         view.document_revision != state.dialogs.go_to_measure_revision) {
@@ -1450,7 +1450,7 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
 static void render_compose_inspector_contents(nk_context* context,
                                                const wormedit::ui::compose_view_t* view,
                                                const wormedit::ui::timing_view_t* timing_view,
-                                               wormedit::ui::workspace_action_t* action) {
+                                               wormedit::ui::compose_ui_window_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_recipe_form(inspector);
     render_compose_quantize_section(inspector);
@@ -1484,10 +1484,10 @@ void render_dock_images(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_bga(panel.context, panel.view, panel.action, &state);
 }
 void render_dock_measures(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_measures(panel.context, panel.view, panel.action, &state);
+    worm_ui_nuklear_render_compose_measures(panel.context, panel.view, &panel.action->compose, &panel.action->stamp, &state);
 }
 void render_dock_layers(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_layers(panel.context, panel.view, panel.action, &state);
+    worm_ui_nuklear_render_compose_layers(panel.context, panel.view, &panel.action->compose, &panel.action->stamp, &state);
 }
 void render_dock_markers(const ComposePanelRenderContext& panel) {
     if (state.bookmark_ui.bookmark_chooser.open) {
@@ -1498,7 +1498,7 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_markers(panel.context, panel.view, panel.action);
 }
 void render_dock_mixer(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, panel.action);
+    worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, &panel.action->preview_mix);
 }
 void render_dock_generator(const ComposePanelRenderContext& panel) {
     const ComposeInspectorContext inspector{panel.context, panel.view, panel.timing_view, panel.action};
@@ -1541,7 +1541,7 @@ static void render_compose_side_docks(const ComposePanelRenderContext& panel,
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const wormedit::ui::compose_view_t* view,
                                           const wormedit::ui::timing_view_t* timing_view,
-                                          wormedit::ui::workspace_action_t* action, bool window_focused,
+                                          wormedit::ui::compose_ui_window_t* action, bool window_focused,
                                           bool ime_composition_active,
                                           const worm_ui_nuklear_pointer_click_t* double_clicks,
                                           std::size_t double_click_count,
@@ -1595,7 +1595,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
             "BMS branches", NK_WINDOW_BORDER,
             [&] {
                 wormedit::ui::chrome::panel_header(context, "BMS branches");
-                worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+                worm_ui_nuklear_render_bms_branch_panel(context, view, &action->compose);
             });
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
@@ -1611,7 +1611,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_compose_hitsound_menu({context, view, action});
     render_go_to_measure(context, *view, *action, window_focused);
-    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_ui.bookmark_chooser);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, &action->compose, &action->stamp, window_focused, &state.bookmark_ui.bookmark_chooser);
     render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 

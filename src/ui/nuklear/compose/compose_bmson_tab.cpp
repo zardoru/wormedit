@@ -12,7 +12,7 @@ namespace {
 struct BmsonTab {
     nk_context* context;
     const wormedit::ui::compose_view_t* view;
-    wormedit::ui::workspace_action_t* action;
+    wormedit::ui::compose_ui_window_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
@@ -221,7 +221,7 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
 
 void worm_ui_nuklear_render_compose_bmson_tab(struct nk_context* context,
                                               const wormedit::ui::compose_view_t* view,
-                                              wormedit::ui::workspace_action_t* action,
+                                              wormedit::ui::compose_ui_window_t* action,
                                               worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     const BmsonTab panel{context, view, action, state};

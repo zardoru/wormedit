@@ -16,8 +16,8 @@ void metadata_timing_link_draft_t::update_release(nk_context* context) {
     (void)chrome::popup_update_release_pending(context, confirmation_.release_pending);
 }
 void metadata_timing_link_draft_t::request(const ui::metadata_view_t& view,
-    const ui::timing_link_category_view_t& row, timing_link_operation_t operation, ui::workspace_action_t& action) {
-    if (!view.visible || !view.has_chart || !view.chart_fields_editable || view.timing_locked || action.timing_link.requested || confirmation_.owns_input()) return;
+    const ui::timing_link_category_view_t& row, timing_link_operation_t operation, ui::timing_link_action_t& action) {
+    if (!view.visible || !view.has_chart || !view.chart_fields_editable || view.timing_locked || action.requested || confirmation_.owns_input()) return;
     ui::timing_link_action_t request{.requested = true, .context = view.timing_link_context,
         .request = {.category = row.category, .operation = operation,
             .source = operation == timing_link_operation_t::relink ? row.source : source_for(row.category)}};
@@ -25,10 +25,10 @@ void metadata_timing_link_draft_t::request(const ui::metadata_view_t& view,
         pending_ = request;
         confirmation_.open = true;
         dialog_ = {};
-    } else action.timing_link = request;
+    } else action = request;
 }
 void metadata_timing_link_draft_t::render_confirmation(nk_context* context,
-    const ui::metadata_view_t& view, ui::workspace_action_t& action) {
+    const ui::metadata_view_t& view, ui::timing_link_action_t& action) {
     synchronize(view);
     if (!confirmation_.open) return;
     if (chrome::dialog_begin(dialog_, context, "Replace category timing", "Replace local timing?", {.enter_confirms = false})) {
@@ -41,7 +41,7 @@ void metadata_timing_link_draft_t::render_confirmation(nk_context* context,
         chrome::dialog_footer_begin(dialog_, context, 2, true);
         if (chrome::dialog_button(dialog_, context, "Replace", chrome::DialogButtonRole::destructive)) {
             pending_.request.discard_confirmed = true;
-            action.timing_link = pending_;
+            action = pending_;
         }
         (void)chrome::dialog_button(dialog_, context, "Cancel", chrome::DialogButtonRole::secondary);
     }
@@ -69,15 +69,15 @@ void render_link_buttons(const MetadataPanel& panel, const ui::timing_link_categ
     if (!can_link) nk_widget_disable_begin(panel.context);
     const bool link = wormedit::ui::chrome::button_label(panel.context, "Link") && can_link;
     if (!can_link) nk_widget_disable_end(panel.context);
-    if (link) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::link, *panel.action);
+    if (link) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::link, *panel.links);
     if (!row.source) nk_widget_disable_begin(panel.context);
     const bool detach = wormedit::ui::chrome::button_label(panel.context, "Detach") && row.source;
     if (!row.source) nk_widget_disable_end(panel.context);
-    if (detach) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::detach, *panel.action);
+    if (detach) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::detach, *panel.links);
     if (!row.is_local_override) nk_widget_disable_begin(panel.context);
     const bool relink = wormedit::ui::chrome::button_label(panel.context, "Relink") && row.is_local_override;
     if (!row.is_local_override) nk_widget_disable_end(panel.context);
-    if (relink) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::relink, *panel.action);
+    if (relink) state.timing_links.request(*panel.metadata, row, timing_link_operation_t::relink, *panel.links);
 }
 void render_link_row(const MetadataPanel& panel, const ui::timing_link_category_view_t& row) {
     constexpr float widths[]{0.18f, 0.19f, 0.30f, 0.10f, 0.12f, 0.11f};
@@ -106,6 +106,6 @@ void synchronize_metadata_timing_links(nk_context* context, const ui::metadata_v
     draft.synchronize(view);
 }
 auto metadata_timing_links_own_input() -> bool { return worm_ui_nuklear_metadata_state().timing_links.owns_input(); }
-void render_metadata_timing_link_confirmation(nk_context* context, const ui::metadata_view_t& view, ui::workspace_action_t& action) {
+void render_metadata_timing_link_confirmation(nk_context* context, const ui::metadata_view_t& view, ui::timing_link_action_t& action) {
     worm_ui_nuklear_metadata_state().timing_links.render_confirmation(context, view, action);
 }

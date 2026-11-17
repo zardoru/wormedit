@@ -187,7 +187,7 @@ auto wait_for_export_worker() -> bool {
 TEST_CASE("metadata copy inspection posts start and completion once", "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
-    REQUIRE(fixture.assets.start_copy_preview(action, fixture.history, fixture.workspace,
+    REQUIRE(fixture.assets.start_copy_preview(action.metadata, action.compose.resource, action.stamp, fixture.history, fixture.workspace,
                                               fixture.project) ==
             "Copy destination inspection started.");
     auto entries = fixture.entries();
@@ -210,7 +210,7 @@ TEST_CASE("metadata inspection retains advisory feedback after invalidation and 
     resource_notification_fixture_t fixture;
     auto action = fixture.inspect_action();
     require_resource_notification(fixture.assets.start_copy_preview(
-                                      action, fixture.history, fixture.workspace,
+                                      action.metadata, action.compose.resource, action.stamp, fixture.history, fixture.workspace,
                                       fixture.project) == "Copy destination inspection started.");
     fixture.assets.clear_copy_preview_key();
     ++fixture.history.document.revision;
@@ -233,7 +233,7 @@ TEST_CASE("metadata copy inspection rejection is explicit and does not mutate do
     auto action = fixture.inspect_action();
     action.stamp.document_revision++;
     const auto revision = fixture.history.document.revision;
-    const auto message = fixture.assets.start_copy_preview(action, fixture.history,
+    const auto message = fixture.assets.start_copy_preview(action.metadata, action.compose.resource, action.stamp, fixture.history,
                                                            fixture.workspace, fixture.project);
     test::check_stale_action_message(message, "Metadata copy inspection");
     const auto entries = fixture.entries();
@@ -255,7 +255,7 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
                                fixture.source);
     auto action = fixture.inspect_action();
     action.metadata.import_copy_project = true;
-    (void)fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
+    (void)fixture.assets.start_import_copy(action.metadata, action.compose.resource, action.stamp, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
     if (replace_project) fixture.history.document.id = song_id_t{2};
@@ -278,7 +278,7 @@ TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
     auto action = fixture.inspect_action();
     action.metadata.import_copy_project = true;
     ++action.stamp.document_revision;
-    const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
+    const auto message = fixture.assets.start_import_copy(action.metadata, action.compose.resource, action.stamp, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     test::check_stale_action_message(message, "Metadata import-copy");
     check_resource_notification(!fixture.assets.import_pending());
@@ -293,7 +293,7 @@ TEST_CASE("metadata import decode failure posts once and never links invalid aud
     auto action = fixture.inspect_action();
     action.metadata.import_copy_project = true;
     const auto revision = fixture.history.document.revision;
-    const auto started = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
+    const auto started = fixture.assets.start_import_copy(action.metadata, action.compose.resource, action.stamp, fixture.history, fixture.workspace,
         fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
     auto entries = fixture.entries();

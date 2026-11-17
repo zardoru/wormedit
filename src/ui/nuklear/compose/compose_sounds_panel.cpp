@@ -48,7 +48,7 @@ constexpr float chip_size = 8.0f;
 struct SoundsPanel {
     nk_context* context;
     const wormedit::ui::compose_view_t* view;
-    wormedit::ui::workspace_action_t* action;
+    wormedit::ui::compose_ui_window_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
@@ -1554,7 +1554,7 @@ static void render_sounds_dock_tabs(const SoundsPanel& panel) {
 
 void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
                                            const wormedit::ui::compose_view_t* view,
-                                           wormedit::ui::workspace_action_t* action,
+                                           wormedit::ui::compose_ui_window_t* action,
                                            worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     const SoundsPanel panel{context, view, action, state};

@@ -267,7 +267,7 @@ static bool prepare_bga_pointer_target(const wormedit::ui::compose_view_t& view,
     return open_bga_stack_for_event(view, target_id);
 }
 
-static void set_bga_pointer_kind(wormedit::ui::workspace_action_t* action, std::uint8_t role,
+static void set_bga_pointer_kind(wormedit::ui::compose_ui_window_t* action, std::uint8_t role,
                                  const wormedit::ui::compose_view_t& view, double x, double y) {
     if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->input.compose_inputs.size() == 0) return;
     auto& output = action->input.compose_inputs[action->input.compose_inputs.size() - 1];

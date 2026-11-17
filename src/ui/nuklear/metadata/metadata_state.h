@@ -4,7 +4,9 @@
 #include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
 
-#include "ui/frontend.h"
+#include "ui/frontend/metadata_audio.h"
+#include "ui/frontend/metadata_edit.h"
+#include "ui/frontend/timing_links.h"
 
 #include <array>
 #include <cstddef>
@@ -47,8 +49,8 @@ class metadata_timing_link_draft_t {
     }
     [[nodiscard]] auto owns_input() const -> bool { return confirmation_.owns_input(); }
     void request(const wormedit::ui::metadata_view_t&, const wormedit::ui::timing_link_category_view_t&,
-        wormedit::timing_link_operation_t, wormedit::ui::workspace_action_t&);
-    void render_confirmation(nk_context*, const wormedit::ui::metadata_view_t&, wormedit::ui::workspace_action_t&);
+        wormedit::timing_link_operation_t, wormedit::ui::timing_link_action_t&);
+    void render_confirmation(nk_context*, const wormedit::ui::metadata_view_t&, wormedit::ui::timing_link_action_t&);
   private:
     std::optional<wormedit::ui::timing_link_context_t> context_;
     wormedit::timing_link_selection_t selected_;

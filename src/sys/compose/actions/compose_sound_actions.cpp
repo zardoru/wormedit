@@ -947,7 +947,7 @@ struct edit_sound_properties_action_t {
 static_assert(compose_action<edit_sound_properties_action_t, const resource_action_context_t>);
 } // namespace
 
-auto dispatch_sound_properties_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_sound_properties_action(const wormedit::ui::compose_window_t& action,
                                       document_history_t& history,
                                       workspace_controller_t& workspace,
                                       notification_sink_t notifications) -> bool {
@@ -960,7 +960,7 @@ auto dispatch_sound_properties_action(const wormedit::ui::workspace_action_t& ac
     return true;
 }
 
-auto dispatch_compose_sound_action(const wormedit::ui::workspace_action_t& action, document_history_t& history,
+auto dispatch_compose_sound_action(const wormedit::ui::compose_window_t& action, document_history_t& history,
                                    workspace_controller_t& workspace, chart_id_t chart,
                                    application_command_state_t& application_state,
                                    notification_sink_t notifications)

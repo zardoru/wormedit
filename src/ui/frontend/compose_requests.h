@@ -49,6 +49,9 @@ struct compose_measure_request_t {
     uint32_t second_meter_denominator{};
     std::string length_numerator_text;
     std::string length_denominator_text;
+    // SET_MEASURE_METER: the time signature to set, as typed.
+    std::string meter_numerator_text;
+    std::string meter_denominator_text;
 };
 /* Chart-level settings changed from Compose: lane profile, BGM columns, audio offset. */
 struct compose_chart_request_t {

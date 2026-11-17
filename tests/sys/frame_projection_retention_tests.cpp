@@ -343,14 +343,14 @@ TEST_CASE("Owned action sound lists reuse capacity after warming", "[sys][fronte
 TEST_CASE("Workspace action copies own scoped Text and measure positions", "[sys][frontend-actions]") {
     auto copy = [] {
         ui::workspace_action_t source{};
-        source.bms_program.text = "#BPM 140";
+        source.compose.bms_program.text = "#BPM 140";
         source.compose.measure.ids = {0, 4, 9};
         auto result = source;
-        source.bms_program.text.assign(128, 'x');
+        source.compose.bms_program.text.assign(128, 'x');
         source.compose.measure.ids.clear();
         return result;
     }();
-    CHECK(copy.bms_program.text == "#BPM 140");
+    CHECK(copy.compose.bms_program.text == "#BPM 140");
     CHECK(copy.compose.measure.ids == std::vector<std::uint64_t>{0, 4, 9});
 }
 

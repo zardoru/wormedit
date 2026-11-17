@@ -4,6 +4,7 @@
 #include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/render/theme.h"
 
+#include <wormedit/core/ui_layout_preferences.h>
 #include "wormedit/nuklear_config.h"
 
 #include <cmath>
@@ -28,12 +29,12 @@ auto strip_text(bool silenced) -> nk_color {
 struct MixerPanel {
     nk_context* context;
     const wormedit::preview_mix_t& current;
-    wormedit::ui::workspace_action_t& action;
+    std::optional<wormedit::preview_mix_t>& requested_mix;
     bool available;
 
     // Edits accumulate on the pending request so several controls in one frame all apply.
     [[nodiscard]] auto next() const -> wormedit::preview_mix_t {
-        return action.preview_mix.value_or(current);
+        return requested_mix.value_or(current);
     }
 };
 
@@ -78,20 +79,20 @@ void render_bus(const MixerPanel& panel, const wormedit::mix_bus_definition_t& b
     if (const auto level = render_level(context, strip.level, silenced)) {
         auto next = panel.next();
         next.bus(bus.id).level = *level;
-        panel.action.preview_mix = next;
+        panel.requested_mix = next;
     }
     const auto title = std::string{bus.title};
     const auto mute_tip = (strip.muted ? "Unmute " : "Mute ") + title;
     if (chrome::MixToggle{chrome::MixToggleKind::mute, strip.muted, mute_tip.c_str()}.render(context)) {
         auto next = panel.next();
         next.bus(bus.id).muted = !strip.muted;
-        panel.action.preview_mix = next;
+        panel.requested_mix = next;
     }
     const auto solo_tip = strip.solo ? "Remove " + title + " from solo mix" : "Solo " + title + " (additive)";
     if (chrome::MixToggle{chrome::MixToggleKind::solo, strip.solo, solo_tip.c_str()}.render(context)) {
         auto next = panel.next();
         next.bus(bus.id).solo = !strip.solo;
-        panel.action.preview_mix = next;
+        panel.requested_mix = next;
     }
 }
 
@@ -102,7 +103,7 @@ void render_master(const MixerPanel& panel) {
     if (const auto level = render_level(context, panel.current.master, false)) {
         auto next = panel.next();
         next.master = *level;
-        panel.action.preview_mix = next;
+        panel.requested_mix = next;
     }
     nk_spacing(context, 2);
 }
@@ -117,7 +118,7 @@ void render_header(const MixerPanel& panel) {
         wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::mixer)].title.data());
     if (chrome::Button{"Reset", chrome::ButtonKind::ghost, "Restore every level and clear mute and solo",
                        panel.available && !panel.current.is_default()}.render(context))
-        panel.action.preview_mix = wormedit::preview_mix_t{};
+        panel.requested_mix = wormedit::preview_mix_t{};
 }
 
 void render_separator(nk_context* context) {
@@ -132,9 +133,9 @@ void render_separator(nk_context* context) {
 
 void worm_ui_nuklear_render_compose_mixer(struct nk_context* context,
                                           const wormedit::ui::compose_view_t* view,
-                                          wormedit::ui::workspace_action_t* action) {
-    if (!context || !view || !action) return;
-    const MixerPanel panel{context, view->preview_mix, *action, view->preview_mix_available};
+                                          std::optional<wormedit::preview_mix_t>* requested_mix) {
+    if (!context || !view || !requested_mix) return;
+    const MixerPanel panel{context, view->preview_mix, *requested_mix, view->preview_mix_available};
     render_header(panel);
     chrome::group_gap(context);
     if (!view->preview_mix_available) nk_widget_disable_begin(context);

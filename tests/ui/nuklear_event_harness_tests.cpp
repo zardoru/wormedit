@@ -1,4 +1,6 @@
 #include "sys/compose/actions/compose_audition_requests.h"
+#include "compose_ui_window_overloads.h"
+#include "../sys/compose_window_overloads_sound.h"
 #include "sys/app/application_timing_stage.h"
 #include "../sys/compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
@@ -30,7 +32,6 @@
 #include "ui/nuklear/resources/sound_import_runtime.h"
 #include "ui/nuklear/render/theme.h"
 #include <wormedit/core/resource_assignment.h>
-
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
@@ -38,7 +39,6 @@
 #include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -1582,8 +1582,8 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     });
     REQUIRE(found != applied.end());
     CHECK(found->get().compose.measure.ids.size() == 3);
-    CHECK(std::string(found->get().timing.meter_numerator_text) == "6");
-    CHECK(std::string(found->get().timing.meter_denominator_text) == "8");
+    CHECK(std::string(found->get().compose.measure.meter_numerator_text) == "6");
+    CHECK(std::string(found->get().compose.measure.meter_denominator_text) == "8");
 }
 
 namespace {

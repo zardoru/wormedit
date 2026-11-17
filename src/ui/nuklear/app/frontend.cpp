@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose/compose_generator_form.h"
+#include "ui/nuklear/compose/compose_ui_window_of.h"
 #include <wormedit/core/bms36.h>
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
@@ -2264,7 +2265,8 @@ static void render_status_minimap(const wormedit::ui::workspace_view_t& view,
     const bool focused = g_window_focused && interactive && !readonly &&
         !g_new_project_wizard.open && !project_dialog_active() &&
         view.pending_bms_encoding_path.empty();
-    worm_ui_nuklear_render_compose_bgm_bar(g_context, &view.compose, action, bounds, focused);
+    auto compose_window = wormedit::ui::compose_ui_window_of(*action);
+    worm_ui_nuklear_render_compose_bgm_bar(g_context, &view.compose, &compose_window, bounds, focused);
     if (available && g_window_focused && !g_new_project_wizard.open && !project_dialog_active())
         render_minimap_preferences(view, action, bounds);
 }
@@ -2500,8 +2502,10 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     layout.begin(g_context);
     render_status_transport_buttons(view, action);
     if (layout.show_rate) render_transport_rate(*view, action);
-    if (layout.show_snap)
-        render_compose_snap_badge(g_context, view->compose, *action, snap_badge_available(*view));
+    if (layout.show_snap) {
+        auto compose_window = wormedit::ui::compose_ui_window_of(*action);
+        render_compose_snap_badge(g_context, view->compose, compose_window.compose, compose_window.stamp, snap_badge_available(*view));
+    }
     if (layout.show_zoom)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
@@ -2804,7 +2808,8 @@ static void retire_sound_picker(const wormedit::ui::workspace_view_t& view, worm
         !view.options.visible && !project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
     cancel_compose_sound_picker(state.sound_picker_ui.sound_picker);
-    render_compose_sound_picker(g_context, view.compose, action, state, false);
+    auto compose_window = wormedit::ui::compose_ui_window_of(action);
+    render_compose_sound_picker(g_context, view.compose, compose_window, state, false);
 }
 
 static void retire_bookmark_editors(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
@@ -2812,9 +2817,10 @@ static void retire_bookmark_editors(const wormedit::ui::workspace_view_t& view, 
     auto& state = worm_ui_nuklear_compose_state();
     worm_ui_nuklear_bookmark_chooser_cancel(g_context, state.bookmark_ui.bookmark_chooser);
     cancel_compose_bookmark_rename(state.bookmark_ui.bookmark_rename);
+    auto compose_window = wormedit::ui::compose_ui_window_of(action);
     (void)worm_ui_nuklear_render_compose_bookmark_chooser(g_context, view.compose.bookmark_chooser,
-        &action, false, &state.bookmark_ui.bookmark_chooser);
-    render_compose_bookmark_rename(g_context, view.compose, action, state.bookmark_ui.bookmark_rename,
+        &compose_window.compose, &compose_window.stamp, false, &state.bookmark_ui.bookmark_chooser);
+    render_compose_bookmark_rename(g_context, view.compose, compose_window.compose, compose_window.stamp, state.bookmark_ui.bookmark_rename,
         nk_rect(0, 0, 0, 0), false);
 }
 
@@ -2871,15 +2877,16 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
                                               metadata_interactive);
     } else if (view.compose.visible) {
         auto& compose = view.compose;
+        auto compose_window = wormedit::ui::compose_ui_window_of(action);
         worm_ui_nuklear_render_compose_panel(
-            g_context, &compose, &view.timing, &action, g_window_focused,
+            g_context, &compose, &view.timing, &compose_window, g_window_focused,
             g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
             g_shortcut_event_count);
     } else if (view.audio_slices.visible) {
         worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
                                             audio_content_interactive(view));
     } else if (view.compare.visible) {
-        worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
+        worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action.compare, &action.kind);
     } else {
         nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, 1);
         if (view.summary_lines.size() == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
@@ -3783,10 +3790,10 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1]);
     render_file_job(frame.view.file_jobs.preview, file_job_titles[2], frame.action.file_jobs.cancel_preview, jobs[2]);
     worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
-    render_metadata_timing_link_confirmation(g_context, frame.view.metadata, frame.action);
+    render_metadata_timing_link_confirmation(g_context, frame.view.metadata, frame.action.timing_link);
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
     if (frame.view.project_loaded &&
-        worm_ui_nuklear_render_chart_import_dialog(g_context, frame.view.chart_import, frame.action,
+        worm_ui_nuklear_render_chart_import_dialog(g_context, frame.view.chart_import, frame.action.chart_import, frame.action.project_open,
                                                    frame.width, frame.height))
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE);
     if (!project_modal_active(frame.view))
@@ -3802,9 +3809,10 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     }
     render_frame_timing_overlay(frame.width, frame.height);
     render_tap_timing_tool(frame);
-    worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action);
+    worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action.timing_settings,
+                                                  frame.action.compose);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
-                                          &frame.action, frame.width, frame.height);
+                                          &frame.action.kind, &frame.action.player_preview_skin, frame.width, frame.height);
 }
 
 static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {
@@ -3985,7 +3993,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         worm_ui_nuklear_compose_state().abandon_palette_context_menus();
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);
         render_close_confirmation(view->close_confirmation, action, width, height);
-        worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
+        worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action.compose, action.stamp,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
         render_about(*view);
@@ -4015,9 +4023,10 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     g_compose_area_shortcuts_active = compose_tab_active && view->compose.visible &&
         !project_modal_active(*view) && !command_menu_owns_input();
+    auto compose_window = wormedit::ui::compose_ui_window_of(action);
     worm_ui_nuklear_prepare_compose_panel(&view->compose,
                                           compose_tab_active && !project_modal_active(*view), g_window_focused,
-                                          &action);
+                                          &compose_window);
     clear_inactive_compose_controls(*view, g_window_focused);
 
     worm_ui_nuklear_audio_state().sound_list_valid = false;
@@ -4028,14 +4037,15 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     if (action.sound_import.pick_requested && !g_headless)
         worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import.kind);
     consume_layer_creation_request(*view, action);
-    worm_ui_nuklear_render_compose_dialogs(g_context, view->compose, action,
+    worm_ui_nuklear_render_compose_dialogs(g_context, view->compose, compose_window,
         worm_ui_nuklear_compose_state());
-    worm_ui_nuklear_consume_sound_picker(*view, action);
-    worm_ui_nuklear_render_pending_sound_import(g_context, *view, action, width, height);
+    worm_ui_nuklear_consume_sound_picker(*view, action.compose, action.stamp, action.sound_import);
+    worm_ui_nuklear_render_pending_sound_import(g_context, *view, action.compose, action.stamp, action.sound_import,
+                                                width, height);
     worm_ui_nuklear_render_sound_slot_batch(g_context,
         worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch, view->compose,
-        action, width, height);
-    worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
+        action.compose, action.stamp, action.sound_import, width, height);
+    worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action.compose, action.stamp,
         worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
     render_about(*view);

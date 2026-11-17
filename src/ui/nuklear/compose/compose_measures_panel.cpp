@@ -15,9 +15,9 @@
 namespace {
 constexpr float row_height = 26.0f;
 
-auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
-           WormUiComposeActionKind kind) -> bool {
-    return wormedit::ui::raise_compose_action(action, view, kind,
+auto raise(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
+           const wormedit::ui::compose_view_t& view, WormUiComposeActionKind kind) -> bool {
+    return wormedit::ui::raise_compose_action(compose, stamp, view, kind,
                                               wormedit::ui::compose_project_stamp_t::preserve);
 }
 
@@ -49,8 +49,8 @@ void draw_cells(struct nk_command_buffer* canvas, const nk_user_font* font, stru
     text(bounds.x + inset + number_width + cell_inset + meter_column, length);
 }
 
-void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
-         worm_ui_nuklear_compose_state_t& state, std::size_t index) {
+void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::compose_request_t& compose,
+         wormedit::ui::request_stamp_t& stamp, worm_ui_nuklear_compose_state_t& state, std::size_t index) {
     nk_layout_row_dynamic(context, row_height, 1);
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) && !view.input_occluded;
@@ -73,8 +73,8 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
     // A plain or Shift click also moves the cursor, so the field follows the list.
     if (value.measure_index == state.measures_dock.measure_selection.primary &&
-        raise(action, view, WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE))
-        action.compose.measure.number = value.number;
+        raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE))
+        compose.measure.number = value.number;
 }
 
 struct measure_definition_row_t {
@@ -104,38 +104,41 @@ struct measure_definition_row_t {
 };
 
 void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
-                    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+                    wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
+                    worm_ui_nuklear_compose_state_t& state) {
     const measure_definition_row_t row{.label = "Meter", .numerator = state.measures_dock.measures_meter_numerator,
         .denominator = state.measures_dock.measures_meter_denominator, .button = "Apply"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
-        !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
-    action.compose.measure.ids = state.measures_dock.measure_selection.selected;
-    action.timing.meter_numerator_text = row.numerator.data();
-    action.timing.meter_denominator_text = row.denominator.data();
+        !raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
+    compose.measure.ids = state.measures_dock.measure_selection.selected;
+    compose.measure.meter_numerator_text = row.numerator.data();
+    compose.measure.meter_denominator_text = row.denominator.data();
 }
 
 void length_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
-                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+                     wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
+                     worm_ui_nuklear_compose_state_t& state) {
     const measure_definition_row_t row{.label = "Length", .numerator = state.measures_dock.measures_length_numerator,
         .denominator = state.measures_dock.measures_length_denominator, .button = "Set"};
     if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
-        !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH)) return;
-    action.compose.measure.ids = state.measures_dock.measure_selection.selected;
-    action.compose.measure.length_numerator_text = row.numerator.data();
-    action.compose.measure.length_denominator_text = row.denominator.data();
+        !raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH)) return;
+    compose.measure.ids = state.measures_dock.measure_selection.selected;
+    compose.measure.length_numerator_text = row.numerator.data();
+    compose.measure.length_denominator_text = row.denominator.data();
 }
 } // namespace
 
 void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit::ui::compose_view_t* view,
-    wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
+    wormedit::ui::compose_request_t* compose, wormedit::ui::request_stamp_t* stamp,
+    worm_ui_nuklear_compose_state_t* state) {
     char title[64];
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());
     wormedit::ui::chrome::panel_header(context, title);
     nk_layout_row_dynamic(context, 27, 2);
     if (wormedit::ui::chrome::button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
     if (wormedit::ui::chrome::button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
-    meter_controls(context, *view, *action, *state);
-    length_controls(context, *view, *action, *state);
+    meter_controls(context, *view, *compose, *stamp, *state);
+    length_controls(context, *view, *compose, *stamp, *state);
     nk_layout_row_dynamic(context, 34, 1);
     nk_label_wrap(context, "Length clears incompatible meters.");
     worm_ui_keysound_prune(state->measures_dock.measure_selection, ids_of(*view));
@@ -159,7 +162,7 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
                            static_cast<int>(row_height),
                            static_cast<int>(std::max<std::size_t>(view->measure_rows.size(), 1)))) {
         for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->measure_rows.size())); ++index)
-            row(context, *view, *action, *state, static_cast<std::size_t>(index));
+            row(context, *view, *compose, *stamp, *state, static_cast<std::size_t>(index));
         wormedit::ui::chrome::scroll_list_view_end(&list);
     }
 

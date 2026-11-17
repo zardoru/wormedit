@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/nuklear/metadata/metadata_state.h"
+#include "ui/frontend/actions.h"
 
 #include <cstddef>
 #include <initializer_list>
@@ -16,6 +17,9 @@ struct metadata_tree_identity_t {
 struct MetadataPanel {
     nk_context* context;
     const wormedit::ui::metadata_view_t* metadata;
+    wormedit::ui::metadata_edit_request_t* edit;
+    wormedit::ui::timing_link_action_t* links;
+    // The audio section also drives the audio dock and imports through Compose, so it keeps the whole action.
     wormedit::ui::workspace_action_t* action;
     bool window_focused;
 };

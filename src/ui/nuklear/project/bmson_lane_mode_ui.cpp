@@ -11,14 +11,14 @@ struct Confirmation {
     uint64_t channel{};
 } confirmation;
 
-void emit(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
-          uint64_t revision, uint64_t channel, WormUiComposeActionKind kind) {
-    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose.kind = kind;
-    action.stamp.project_id.value = project;
-    action.stamp.chart_id.value = chart;
-    action.stamp.document_revision = revision;
-    action.compose.bmson.channel_id.value = channel;
+void emit(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, uint64_t project,
+          uint64_t chart, uint64_t revision, uint64_t channel, WormUiComposeActionKind kind) {
+    if (compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    compose.kind = kind;
+    stamp.project_id.value = project;
+    stamp.chart_id.value = chart;
+    stamp.document_revision = revision;
+    compose.bmson.channel_id.value = channel;
 }
 }
 
@@ -27,20 +27,22 @@ bool bmson_lane_mode_confirmation_owns_input(bool sounds_tab) {
 }
 void reset_bmson_lane_mode_confirmation() { confirmation = {}; }
 
-void request_bmson_lane_mode(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
+void request_bmson_lane_mode(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp,
+    uint64_t project, uint64_t chart,
     uint64_t revision, uint64_t channel, bool stem, bool continues, bool sounds_tab, uint64_t resource) {
-    if ((!channel && !resource) || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if ((!channel && !resource) || compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (!stem && continues) {
         confirmation = {.open = true, .sounds_tab = sounds_tab,
                         .stamp = {project, chart, revision, 0}, .channel = channel};
         return;
     }
-    emit(action, project, chart, revision, channel, stem ? WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM
+    emit(compose, stamp, project, chart, revision, channel, stem ? WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM
                                                        : WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL);
-    action.compose.resource.id.value = resource;
+    compose.resource.id.value = resource;
 }
 
-void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::workspace_action_t& action,
+void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::compose_request_t& compose,
+    wormedit::ui::request_stamp_t& stamp,
     uint64_t project, uint64_t chart, uint64_t revision, bool focused, bool sounds_tab) {
     (void)wormedit::ui::chrome::popup_update_release_pending(context, confirmation.release_pending);
     if (!confirmation.open) return;
@@ -64,8 +66,8 @@ void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::work
     nk_label_wrap(context, "Packing requires converting every continuation point in this channel to a restart. This changes how the audio plays. Undo restores the channel and its stem lane.");
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_primary, 1);
     if (wormedit::ui::chrome::button_label(context, "Convert continue points to restarts and pack") &&
-        action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
-        emit(action, project, chart, revision, confirmation.channel,
+        compose.kind == WORM_UI_COMPOSE_ACTION_NONE) {
+        emit(compose, stamp, project, chart, revision, confirmation.channel,
              WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL);
         confirmation.open = false;
     }

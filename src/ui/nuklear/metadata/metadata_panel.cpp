@@ -206,7 +206,7 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
     }
     if (!window_focused) worm_ui_nuklear_cancel_metadata_tag_drag();
     if (metadata_buffer_key_changed(metadata)) initialize_metadata_buffers(metadata);
-    const MetadataPanel panel{context, metadata, action, window_focused};
+    const MetadataPanel panel{context, metadata, &action->metadata, &action->timing_link, action, window_focused};
     render_song_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
     render_difficulty_section(panel);

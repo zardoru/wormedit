@@ -337,7 +337,7 @@ auto dispatch_compose_lane_key_release(const wormedit::ui::compose_input_action_
 
 struct bmson_compose_context_t {
     const compose_input_inputs_t& environment;
-    const wormedit::ui::workspace_action_t& action;
+    const wormedit::ui::compose_input_window_t& action;
     wormedit::editor_interaction_state_t& state;
     bool gesture_active;
 };
@@ -485,7 +485,7 @@ auto insert_bmson_stem_point(const wormedit::ui::compose_input_action_t& input,
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
-auto dispatch_bmson_compose_input(const wormedit::ui::workspace_action_t& ui_action,
+auto dispatch_bmson_compose_input(const wormedit::ui::compose_input_window_t& ui_action,
                                   const wormedit::ui::compose_input_action_t& input,
                                   const compose_input_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state, bool gesture_active,
@@ -571,7 +571,7 @@ void update_compose_pointer_hover(const wormedit::ui::frame_input_t& frame, bool
 
 struct compose_input_context_t {
     const compose_input_inputs_t& environment;
-    wormedit::ui::workspace_action_t& ui_action;
+    wormedit::ui::compose_input_window_t& ui_action;
     wormedit::editor_interaction_state_t& state;
     const wormedit::notification_sink_t* notifications{};
     const wormedit::chart_document_t* input_chart{};
@@ -1687,7 +1687,7 @@ namespace wormedit::sys {
 auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
                                  application_command_state_t& application) -> bool;
 
-auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_action,
+auto dispatch_compose_input_action_impl(wormedit::ui::compose_input_window_t& ui_action,
                                         const compose_input_inputs_t& environment,
                                         wormedit::editor_interaction_state_t& state,
                                         double viewport_delta_seconds,
@@ -1698,7 +1698,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
 
 namespace wormedit::sys::compose_input_detail {
 auto dispatch_bgm_mix_toggle(const wormedit::ui::compose_input_action_t& input,
-                             const wormedit::ui::workspace_action_t& action,
+                             const wormedit::ui::compose_input_window_t& action,
                              const wormedit::document_history_t& history,
                              const wormedit::workspace_controller_t& workspace,
                              application_command_state_t& application, bool& accepted)

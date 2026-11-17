@@ -34,7 +34,6 @@ stamp
 sound_properties
 preview_audio_export
 sound_import
-bms_program
 timing
 command_menu_invoked
 command_menu_command_id

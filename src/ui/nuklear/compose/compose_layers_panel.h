@@ -1,6 +1,10 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/nuklear/compose/compose_ui_window.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include "ui/nuklear/compose/compose_state.h"
 
 struct nk_context;
@@ -10,5 +14,5 @@ void worm_ui_nuklear_dismiss_layer_popup(struct nk_context* context);
 
 void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
                                            const wormedit::ui::compose_view_t* view,
-                                           wormedit::ui::workspace_action_t* action,
+                                           wormedit::ui::compose_request_t* compose, wormedit::ui::request_stamp_t* stamp,
                                            worm_ui_nuklear_compose_state_t* state);

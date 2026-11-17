@@ -32,10 +32,10 @@ auto scope_warning_color() -> nk_color {
     return wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::conflict);
 }
 
-void emit_scope_action(wormedit::ui::workspace_action_t& action, const scope_view_t& view,
+void emit_scope_action(wormedit::ui::compose_request_t& action, const scope_view_t& view,
     scope_operation_t operation, wormedit::branch_id_t node = {}, std::string text = {}) {
-    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose.kind = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM;
+    if (action.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.kind = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM;
     action.bms_program = {.project = view.project, .difficulty = view.difficulty, .revision = view.revision,
         .selected = view.selected, .operation = operation, .node = node, .text = std::move(text)};
 }
@@ -61,7 +61,7 @@ void scope_message(nk_context* context, const char* text, bool warning, bool err
     wormedit::ui::chrome::text_block_t{.text = text}.render(context);
     nk_style_pop_color(context);
 }
-void scope_text_input(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action,
+void scope_text_input(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action,
     const std::string& value, scope_operation_t operation, bool multiline = false) {
     constexpr std::size_t maximum = 1024U * 1024U;
     if (value.size() >= maximum) {
@@ -249,7 +249,7 @@ void paint_row_background(nk_context* context, const row_geometry_t& geometry,
 }
 void render_scope_row(nk_context* context, const scope_view_t& view,
     const wormedit::ui::bms_program_row_t& row, bool has_children, bool target,
-    wormedit::ui::workspace_action_t& action) {
+    wormedit::ui::compose_request_t& action) {
     nk_layout_row_dynamic(context, row_height, 1);
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);
@@ -304,7 +304,7 @@ auto inset_group_begin(nk_context* context, const char* name, inset_size_t size)
 auto has_visible_children(const scope_view_t& view, std::size_t index) -> bool {
     return index + 1 < view.rows.size() && view.rows[index + 1].depth > view.rows[index].depth;
 }
-void render_scope_tree(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_tree(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     std::vector<std::size_t> visible;
     std::optional<std::size_t> folded_depth;
     for (std::size_t index = 0; index < view.rows.size(); ++index) {
@@ -327,7 +327,7 @@ void open_popup(const scope_view_t& view, popup_t which) {
     tree_state.popup = tree_state.popup == which ? popup_t::none : which;
     tree_state.popup_node = view.selected;
 }
-void render_scope_bar(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_bar(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     nk_layout_row_template_begin(context, metrics::control_default);
     for (int index = 0; index < 4; ++index) nk_layout_row_template_push_static(context, chrome::IconButton::width);
     nk_layout_row_template_end(context);
@@ -342,7 +342,7 @@ void render_scope_bar(nk_context* context, const scope_view_t& view, wormedit::u
             "Unwrap (not available for this node)", false, view.can_unwrap}.render(context))
         emit_scope_action(action, view, scope_operation_t::prepare_unwrap);
 }
-void render_scope_add(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_add(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     if (tree_state.popup != popup_t::add) return;
     std::vector<const scope_kind_t*> kinds;
     std::vector<const char*> labels;
@@ -361,7 +361,7 @@ void render_scope_add(nk_context* context, const scope_view_t& view, wormedit::u
     // Runtime resolves a scope's last child, or the selected leaf's parent/anchor.
     tree_state.popup = popup_t::none;
 }
-void render_scope_move(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_move(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     if (tree_state.popup != popup_t::move) return;
     const auto candidates = view.rows.size() - 1;
     if (!inset_group_begin(context, "Move targets", inset_size(context, candidates, row_height,
@@ -380,13 +380,13 @@ void render_scope_move(nk_context* context, const scope_view_t& view, wormedit::
     }
     nk_group_end(context);
 }
-void render_scope_pair(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action,
+void render_scope_pair(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action,
     chrome::Button first, scope_operation_t first_operation, chrome::Button second, scope_operation_t second_operation) {
     nk_layout_row_dynamic(context, metrics::control_default, 2);
     if (first.render(context)) { nk_edit_unfocus(context); emit_scope_action(action, view, first_operation); }
     if (second.render(context)) { nk_edit_unfocus(context); emit_scope_action(action, view, second_operation); }
 }
-void render_scope_detail(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_detail(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     const auto selected = std::ranges::find(view.rows, view.selected, &wormedit::ui::bms_program_row_t::node);
     const std::string title = selected != view.rows.end() ? selected->label : "Node";
     constexpr char hash[] = "scope-node-detail";
@@ -403,7 +403,7 @@ void render_scope_detail(nk_context* context, const scope_view_t& view, wormedit
         scope_operation_t::reload);
     chrome::section_pop(context);
 }
-void render_scope_preview(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_preview(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     constexpr char hash[] = "scope-preview-detail";
     if (!chrome::section_push(context, NK_TREE_NODE, "Playback preview", NK_MAXIMIZED, hash, sizeof(hash) - 1, 0)) return;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
@@ -417,7 +417,7 @@ void render_scope_preview(nk_context* context, const scope_view_t& view, wormedi
         emit_scope_action(action, view, scope_operation_t::clear_preview);
     chrome::section_pop(context);
 }
-void render_scope_confirmation(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_confirmation(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     if (view.confirmation.empty()) return;
     scope_message(context, view.confirmation.c_str(), true);
     const auto operation = view.confirmation_operation.value_or(scope_operation_t::cancel);
@@ -441,7 +441,7 @@ void render_scope_messages(nk_context* context, const scope_view_t& view) {
     for (const auto& [message, count] : unique)
         scope_message(context, message->text.c_str(), message->warning, message->error, count);
 }
-void render_scope_panel(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
+void render_scope_panel(nk_context* context, const scope_view_t& view, wormedit::ui::compose_request_t& action) {
     if (tree_state.popup != popup_t::none && tree_state.popup_node != view.selected) tree_state.popup = popup_t::none;
     render_scope_bar(context, view, action);
     render_scope_add(context, view, action);
@@ -467,7 +467,7 @@ bool worm_ui_nuklear_bms_branch_panel_visible(const wormedit::ui::compose_view_t
 }
 
 void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
-    const wormedit::ui::compose_view_t* view, wormedit::ui::workspace_action_t* action) {
+    const wormedit::ui::compose_view_t* view, wormedit::ui::compose_request_t* action) {
     if (!context || !view || !action || !worm_ui_nuklear_bms_branch_panel_visible(view)) return;
     render_scope_panel(context, view->bms_program, *action);
 }

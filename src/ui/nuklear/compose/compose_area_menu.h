@@ -1,5 +1,9 @@
 #pragma once
-#include "ui/frontend.h"
+#include "ui/nuklear/compose/compose_ui_window.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include <wormedit/core/editor_axis.h>
 #include <algorithm>
 #include <cmath>
@@ -36,7 +40,7 @@ struct ComposeAreaCapture {
                  view.area_range_begin_row,
                  view.area_range_end_row};
     }
-    void restore(wormedit::ui::workspace_action_t& action) const {
+    void restore(wormedit::ui::compose_ui_window_t& action) const {
         action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
         action.stamp.chart_id = wormedit::chart_id_t{chart};
         action.stamp.document_revision = revision;
@@ -47,12 +51,12 @@ struct ComposeAreaCapture {
 };
 
 auto compose_area_band_rect(const wormedit::ui::compose_view_t&, struct nk_rect) -> struct nk_rect;
-void process_compose_area_menu(nk_context*, const wormedit::ui::compose_view_t&, wormedit::ui::workspace_action_t&,
+void process_compose_area_menu(nk_context*, const wormedit::ui::compose_view_t&, wormedit::ui::compose_ui_window_t&,
                                struct nk_rect, double input_right, bool focused);
 auto compose_area_pointer_consumed() -> bool;
 auto compose_area_menu_open() -> bool;
 auto compose_area_menu_consumed() -> bool;
-void cancel_compose_area_capture(wormedit::ui::workspace_action_t&);
+void cancel_compose_area_capture(wormedit::ui::compose_ui_window_t&);
 void reset_compose_area_menu();
 auto compose_area_capture_active() -> bool;
 

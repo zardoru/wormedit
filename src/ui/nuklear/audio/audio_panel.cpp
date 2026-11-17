@@ -810,7 +810,7 @@ void render_sound_properties_column(struct nk_context* context, const wormedit::
     if (selected->bmson_channel_id && view.has_chart && !view.timing_locked) {
         const bool stem = selected->kind == wormedit::sound_kind_t::stem;
         if (wormedit::ui::chrome::button_label(context, stem ? "Kind: Keysound (pack into columns)" : "Kind: Stem (make stem)"))
-            request_bmson_lane_mode(action, view.usage_song_id.value, view.chart_id.value, view.document_revision,
+            request_bmson_lane_mode(action.compose, action.stamp, view.usage_song_id.value, view.chart_id.value, view.document_revision,
                 selected->bmson_channel_id.value, !stem, selected->bmson_channel_continues, true);
     }
     nk_labelf(context, NK_TEXT_LEFT, "Used %llu time(s)", static_cast<unsigned long long>(selected->use_count));
@@ -924,7 +924,7 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
             action->sound_import.pick_requested = true;
         nk_label(context, "Drop audio files anywhere here to import", NK_TEXT_RIGHT);
         render_sound_columns(context, *view, *action);
-        render_bmson_lane_mode_confirmation(context, *action, view->usage_song_id.value, view->chart_id.value,
+        render_bmson_lane_mode_confirmation(context, action->compose, action->stamp, view->usage_song_id.value, view->chart_id.value,
             view->document_revision, window_focused, true);
         return;
     }

@@ -38,18 +38,18 @@ void SDLCALL picker_callback(void* userdata, const char* const* paths, int) {
         picker.paths.emplace_back(paths[index]);
 }
 
-void submit_import(wormedit::ui::workspace_action_t& action) {
+void submit_import(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, wormedit::ui::sound_import_request_t& sound_import) {
     auto submitted = worm_ui_nuklear_sound_import_confirm(pending);
     if (!submitted) return;
     for (const auto& item : submitted->items)
-        action.sound_import.items.push_back({item.path, item.name,
+        sound_import.items.push_back({item.path, item.name,
             item.kind, pending.fixed_kind != wormedit::ui::sound_import_kind_t::generic});
     for (const auto& group : submitted->groups)
-        action.sound_import.groups.push_back({group.name,
+        sound_import.groups.push_back({group.name,
             group.existing_group.value_or(wormedit::sound_group_id_t{}), group.member_indexes});
-    action.compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
-    action.sound_import.kind = pending.fixed_kind;
-    action.stamp = {.chart_id = {pending.chart_id}, .project_id = {pending.project_id},
+    compose.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    sound_import.kind = pending.fixed_kind;
+    stamp = {.chart_id = {pending.chart_id}, .project_id = {pending.project_id},
                     .document_revision = pending.document_revision};
 }
 } // namespace
@@ -121,22 +121,22 @@ void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const wormedit::ui::w
 }
 
 void worm_ui_nuklear_consume_sound_picker(const wormedit::ui::workspace_view_t& view,
-                                         wormedit::ui::workspace_action_t& action) {
+                                         wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, wormedit::ui::sound_import_request_t& sound_import) {
     std::lock_guard lock{picker.mutex};
-    if (!picker.ready || action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (!picker.ready || compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
     picker.ready = false;
     const bool same_target = picker.target.project == view.project_id.value &&
         picker.target.chart == view.selected_chart_id.value && picker.target.revision == view.document_revision;
     if (!same_target || picker.paths.empty()) return;
-    action.compose.kind = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
-    action.sound_import.kind = picker.target.kind;
-    action.stamp = {.chart_id = {view.selected_chart_id.value}, .project_id = view.project_id,
+    compose.kind = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+    sound_import.kind = picker.target.kind;
+    stamp = {.chart_id = {view.selected_chart_id.value}, .project_id = view.project_id,
                     .document_revision = view.document_revision};
-    action.compose.resource.import_paths = std::move(picker.paths);
+    compose.resource.import_paths = std::move(picker.paths);
 }
 
 void worm_ui_nuklear_render_pending_sound_import(nk_context* context,
-    const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action, int width, int height) {
+    const wormedit::ui::workspace_view_t& view, wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, wormedit::ui::sound_import_request_t& sound_import, int width, int height) {
     if (pending.phase == worm_ui_sound_import_phase_t::closed) return;
     if (!view.project_loaded || pending.project_id != view.project_id.value ||
         pending.chart_id != view.selected_chart_id.value) {
@@ -147,6 +147,6 @@ void worm_ui_nuklear_render_pending_sound_import(nk_context* context,
     if (intent == worm_ui_sound_import_dialog_action_t::cancel)
         worm_ui_nuklear_sound_import_cancel(pending);
     else if (intent == worm_ui_sound_import_dialog_action_t::confirm &&
-             action.compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
-        submit_import(action);
+             compose.kind == WORM_UI_COMPOSE_ACTION_NONE)
+        submit_import(compose, stamp, sound_import);
 }

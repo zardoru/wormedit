@@ -102,7 +102,7 @@ struct imported_resource_metadata_t {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> image;
 };
 
-auto import_resource_role(const wormedit::ui::workspace_action_t& action)
+auto import_resource_role(const wormedit::ui::compose_resource_request_t& request)
     -> std::optional<wormedit::resource_role_t>;
 
 auto inspect_imported_resource(const std::filesystem::path& path, wormedit::resource_role_t role)
@@ -130,7 +130,7 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
 compose_action_outcome_t start_output_export(compose_action_context_t& context,
                                              output_group_export_plan_t plan);
 
-auto compose_placement_kind(const wormedit::ui::workspace_action_t& action)
+auto compose_placement_kind(const wormedit::ui::compose_resource_request_t& request)
     -> std::optional<wormedit::resource_placement_kind_t>;
 
 auto apply_compose_resource_placement(compose_action_context_t& context,

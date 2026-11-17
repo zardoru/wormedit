@@ -23,8 +23,8 @@ void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::works
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu_recipe, 0, false,
                          wormedit::timing_lane_kind_t::scroll, view.chart_id.value, view.document_revision);
-    if (action.compose_inputs.size() != 0)
-        action.compose_inputs[action.compose_inputs.size() - 1].span_edge = static_cast<std::uint8_t>(command);
+    if (action.input.compose_inputs.size() != 0)
+        action.input.compose_inputs[action.input.compose_inputs.size() - 1].span_edge = static_cast<std::uint8_t>(command);
 }
 
 void menu_entry(nk_context* context, const char* title, const char* disabled_reason,

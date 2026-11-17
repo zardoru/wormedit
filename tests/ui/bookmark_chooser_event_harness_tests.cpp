@@ -83,7 +83,7 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
 
 auto has_bookmark_action(const wormedit::ui::workspace_action_t& action, std::uint64_t id) -> bool {
     return action.compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK &&
-           action.compose_bookmark_id.value == id;
+           action.marker.bookmark_id.value == id;
 }
 void check_opened_rows(const nuklear_event_harness_t& harness,
                        const std::array<wormedit::ui::bookmark_chooser_row_view_t, 2>& rows) {
@@ -94,9 +94,9 @@ void check_opened_rows(const nuklear_event_harness_t& harness,
 void check_selected_action(const workspace_action_snapshot_t& selected, std::uint64_t id,
                            std::uint64_t chart, std::uint64_t revision) {
     CHECK(has_bookmark_action(selected.get(), id));
-    CHECK(selected.get().compose_input_project_id.value == 3);
-    CHECK(selected.get().compose_input_chart_id.value == chart);
-    CHECK(selected.get().compose_input_document_revision == revision);
+    CHECK(selected.get().stamp.project_id.value == 3);
+    CHECK(selected.get().stamp.chart_id.value == chart);
+    CHECK(selected.get().stamp.document_revision == revision);
 }
 void prepare_paged_view(nuklear_event_harness_t& harness,
                         std::array<wormedit::ui::bookmark_chooser_row_view_t, 13>& rows,
@@ -339,7 +339,7 @@ TEST_CASE("bookmark chooser retains its Enter routing during synthetic IME compo
     const auto enter = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
     const auto selected = harness.frame(std::span{&enter, 1});
     check_selected_action(selected, 80, 7, 11);
-    check_chooser_lifecycle(selected.get().shortcut_events.size() == 0);
+    check_chooser_lifecycle(selected.get().input.shortcuts.events.size() == 0);
     check_chooser_lifecycle(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open);
 }
 
@@ -364,7 +364,7 @@ TEST_CASE("bookmark chooser context loss cancels without navigation or shortcut 
         check_chooser_lifecycle(!state.open);
         check_chooser_lifecycle(state.release_pending);
         check_chooser_lifecycle(canceled.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_chooser_lifecycle(canceled.get().shortcut_events.size() == 0);
+        check_chooser_lifecycle(canceled.get().input.shortcuts.events.size() == 0);
     }
 }
 
@@ -398,11 +398,11 @@ TEST_CASE("bookmark sorting requests a new projection and guards stale keyboard 
 namespace {
 void check_reorder_action(const wormedit::ui::workspace_action_t& action) {
     CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK);
-    CHECK(action.compose_bookmark_reorder == wormedit::bookmark_reorder_t{
+    CHECK(action.marker.bookmark_reorder == wormedit::bookmark_reorder_t{
         .bookmark = {80}, .target = {81}, .place_after = true});
-    CHECK(action.compose_input_project_id.value == 3);
-    CHECK(action.compose_input_chart_id.value == 7);
-    CHECK(action.compose_input_document_revision == 11);
+    CHECK(action.stamp.project_id.value == 3);
+    CHECK(action.stamp.chart_id.value == 7);
+    CHECK(action.stamp.document_revision == 11);
 }
 }
 

@@ -136,11 +136,9 @@ void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
            WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id.value;
-    action.compose_input_chart_id.value = view.chart_id.value;
-    action.compose_input_document_revision = view.document_revision;
-    action.compose_recipe_id.value = view.recipe_form.recipe_id.value;
-    action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
+    action.stamp = wormedit::ui::request_stamp_t::of(view);
+    action.recipe.recipe_id.value = view.recipe_form.recipe_id.value;
+    action.recipe.form = state.recipe_editor.recipe_edit_form;
 }
 
 void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
@@ -148,8 +146,8 @@ void queue_recipe_input(const wormedit::ui::compose_view_t& view, wormedit::ui::
     append_compose_input(&action, kind, 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, id.value, 0, false,
                          wormedit::timing_lane_kind_t::scroll, view.chart_id.value, view.document_revision);
-    if (!action.compose_inputs.empty())
-        action.compose_inputs.back().span_edge = static_cast<std::uint8_t>(command);
+    if (!action.input.compose_inputs.empty())
+        action.input.compose_inputs.back().span_edge = static_cast<std::uint8_t>(command);
 }
 
 void queue_command(const ComposeInspectorContext& inspector, recipe_command_t command) {

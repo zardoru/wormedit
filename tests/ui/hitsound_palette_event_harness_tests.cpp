@@ -8,10 +8,10 @@
 namespace {
 auto click_hitsound(nuklear_event_harness_t& harness, int x, int y) -> wormedit::hitsound_change_t {
     const auto actions = wormedit::test::click_at(harness, x, y);
-    const auto found = std::ranges::find_if(actions, [](const auto& a) { return a.get().compose_hitsound.has_value(); });
+    const auto found = std::ranges::find_if(actions, [](const auto& a) { return a.get().resource.hitsound.has_value(); });
     REQUIRE(found != actions.end());
-    CHECK(found->get().compose_input_chart_id.value == harness.view().compose.chart_id.value);
-    return *found->get().compose_hitsound;
+    CHECK(found->get().stamp.chart_id.value == harness.view().compose.chart_id.value);
+    return *found->get().resource.hitsound;
 }
 void open_sample_set_menu(nuklear_event_harness_t& harness) {
     const auto target = harness.widget_center("Normal sample set: Soft; click cycles, right-click chooses");
@@ -163,10 +163,10 @@ TEST_CASE("Draw mode places a sample-set control from the armed toolbar bank",
     const auto y = viewport.y + 200.0f / 600 * viewport.height;
     const auto frames = test::click_at(harness, x, y);
     const auto inserted = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().timing_stage_action == ui::timing_stage_action_t::quick_insert;
+        return frame.get().timing.stage_action == ui::timing_stage_action_t::quick_insert;
     });
     REQUIRE(inserted != frames.end());
-    CHECK(inserted->get().timing_lane == timing_lane_kind_t::sample_set);
-    CHECK(inserted->get().timing_primary_numerator_text == "3");
-    CHECK(inserted->get().timing_chart_id == view.chart_id);
+    CHECK(inserted->get().timing.lane == timing_lane_kind_t::sample_set);
+    CHECK(inserted->get().timing.primary_numerator_text == "3");
+    CHECK(inserted->get().timing.chart_id == view.chart_id);
 }

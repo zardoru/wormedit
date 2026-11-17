@@ -336,13 +336,13 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     wormedit::ui::workspace_action_t action{};
     action.compose_action = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
                                   : WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
-    action.compose_input_project_id.value = fixture.history.document.id.value;
-    action.compose_input_chart_id.value = fixture.history.document.charts.front().id.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_quantize_divisions = divisions;
-    action.compose_quantize_space = space;
-    action.compose_quantize_tie = tie;
-    action.compose_quantize_holds = holds;
+    action.stamp.project_id.value = fixture.history.document.id.value;
+    action.stamp.chart_id.value = fixture.history.document.charts.front().id.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.quantize.divisions = divisions;
+    action.quantize.space = space;
+    action.quantize.tie = tie;
+    action.quantize.holds = holds;
     (void)dispatch_compose_view_action(action, fixture.history, *fixture.binding.value,
         *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,
         fixture.application, {}, scheduler, resource_copy, export_runtime, false, sink);
@@ -1808,15 +1808,15 @@ TEST_CASE("Retained runtime timing view refills without heap allocations", "[sys
 TEST_CASE("Owned action sound lists reuse capacity after warming", "[sys][frontend-actions][allocation]") {
     ui::workspace_action_t action{};
     const std::array<std::uint64_t, 3> ids{7, 11, 19};
-    action.set_sound_resources(ids);
-    const auto* storage = action.compose_sound_resource_ids.data();
+    action.resource.set_sound_resources(ids);
+    const auto* storage = action.resource.sound_resource_ids.data();
     const auto before = frame_heap_allocation_snapshot();
-    action.set_sound_resources(ids);
+    action.resource.set_sound_resources(ids);
     const auto after = frame_heap_allocation_snapshot();
     check_heap_counter(after.count, before.count);
     check_heap_counter(after.bytes, before.bytes);
-    CHECK(action.compose_sound_resource_ids.data() == storage);
-    CHECK(action.compose_sound_resource_ids ==
+    CHECK(action.resource.sound_resource_ids.data() == storage);
+    CHECK(action.resource.sound_resource_ids ==
         std::vector<resource_id_t>{resource_id_t{7}, resource_id_t{11}, resource_id_t{19}});
 }
 
@@ -1824,14 +1824,14 @@ TEST_CASE("Workspace action copies own scoped Text and measure positions", "[sys
     auto copy = [] {
         ui::workspace_action_t source{};
         source.bms_program.text = "#BPM 140";
-        source.compose_measure_ids = {0, 4, 9};
+        source.measure.ids = {0, 4, 9};
         auto result = source;
         source.bms_program.text.assign(128, 'x');
-        source.compose_measure_ids.clear();
+        source.measure.ids.clear();
         return result;
     }();
     CHECK(copy.bms_program.text == "#BPM 140");
-    CHECK(copy.compose_measure_ids == std::vector<std::uint64_t>{0, 4, 9});
+    CHECK(copy.measure.ids == std::vector<std::uint64_t>{0, 4, 9});
 }
 
 TEST_CASE("Render convert submit and present child phases retain inclusive parent timing", "[sys][frame-timing][gpu-work]") {
@@ -2450,18 +2450,18 @@ auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uin
     expect_compose_test(snapped.has_value());
     expect_compose_test(snapped->row == row);
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = chart.id.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
+    action.stamp.chart_id.value = chart.id.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
         .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
         .y_pixels = screen_y};
-    action.compose_inputs.resize(1);
+    action.input.compose_inputs.resize(1);
     if (commit) {
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{2}));
-        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT};
-        action.compose_inputs.resize(2);
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{2}));
+        action.input.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT};
+        action.input.compose_inputs.resize(2);
     }
     return action;
 }
@@ -2517,15 +2517,15 @@ auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, st
                 double anchor_y = 0.0) -> wormedit::ui::workspace_action_t {
     const auto& chart = fixture.history.document.charts.front();
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = chart.id.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-    action.compose_inputs[0] = {.kind = kind, .object_id = {head}, .timing_chart_id = {chart.id.value},
+    action.stamp.chart_id.value = chart.id.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+    action.input.compose_inputs[0] = {.kind = kind, .object_id = {head}, .timing_chart_id = {chart.id.value},
                                 .timing_document_revision = fixture.history.document.revision,
                                 .y_pixels = y, .span_edge = edge,
                                 .span_anchor_y_pixels = anchor_y};
-    action.compose_inputs.resize(1);
+    action.input.compose_inputs.resize(1);
     return action;
 }
 auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
@@ -2564,7 +2564,7 @@ TEST_CASE("Compose inner timing stamps reject stale selection and move requests"
     fixture.project();
     fixture.interaction->selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{9001}}};
     auto action = kiai_input(fixture, request.first, 9001);
-    ++action.compose_inputs[0].timing_document_revision;
+    ++action.input.compose_inputs[0].timing_document_revision;
     test::check_stale_action_message(dispatch_paste_action(fixture, action), request.second);
     expect_compose_test(fixture.history.undo.empty());
 }
@@ -2579,7 +2579,7 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
 
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
                             kiai_screen_y(fixture, 480));
-    stale.compose_inputs[0].timing_document_revision += 1;
+    stale.input.compose_inputs[0].timing_document_revision += 1;
     test::check_stale_action_message(dispatch_paste_action(fixture, stale), "Kiai edit");
     CHECK(fixture.history.undo.empty());
 
@@ -2663,7 +2663,7 @@ TEST_CASE("A stale preview drag publishes nothing", "[sys][song-preview]") {
     project_with_eighth_snap(fixture);
     auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT, 0, WORM_UI_SPAN_HANDLE_END,
                              kiai_screen_y(fixture, 700), kiai_screen_y(fixture, 480));
-    ++action.compose_inputs[0].timing_document_revision;
+    ++action.input.compose_inputs[0].timing_document_revision;
     test::check_stale_action_message(dispatch_paste_action(fixture, action), "Preview edit");
     expect_compose_test(fixture.history.undo.empty());
 }
@@ -2720,13 +2720,13 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
 
     auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                             kiai_screen_y(fixture, 480));
-    stale.compose_inputs[0].timing_document_revision += 1;
+    stale.input.compose_inputs[0].timing_document_revision += 1;
     test::check_stale_action_message(dispatch_paste_action(fixture, stale), "SV recipe edit");
 
     // End edge dragged to row 480; the span stays ordered when an edge crosses the other.
     auto end_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                                kiai_screen_y(fixture, 480));
-    end_drag.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 720);
+    end_drag.input.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 720);
     CHECK(dispatch_paste_action(fixture, end_drag) == "SV recipe moved.");
     CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
     CHECK(fixture.history.undo.size() == 1);
@@ -2734,7 +2734,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     fixture.project();
     auto cross = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 0,
                             kiai_screen_y(fixture, 720));
-    cross.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 240);
+    cross.input.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 240);
     CHECK(dispatch_paste_action(fixture, cross) == "SV recipe moved.");
     CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{480, 720});
 
@@ -2742,7 +2742,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     fixture.project();
     auto body = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 2,
                            kiai_screen_y(fixture, 240));
-    body.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    body.input.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
     CHECK(dispatch_paste_action(fixture, body) == "SV recipe moved.");
     CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
 
@@ -2752,7 +2752,7 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     const auto revision = fixture.history.document.revision;
     auto locked_edit = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
                                   kiai_screen_y(fixture, 720));
-    locked_edit.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    locked_edit.input.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
     CHECK(dispatch_paste_action(fixture, locked_edit) != "SV recipe moved.");
     auto locked_command = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
     CHECK(dispatch_paste_action(fixture, locked_command) == "Timing is locked.");
@@ -2832,8 +2832,8 @@ TEST_CASE("Area recipe creation projects a visible span for native and scoped BM
     fixture.interaction->retained_selection_range = position_span_t{{measure, 0}, {measure, 480}};
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
-    action.compose_input_chart_id = chart_id;
-    action.compose_input_document_revision = fixture.history.document.revision;
+    action.stamp.chart_id = chart_id;
+    action.stamp.document_revision = fixture.history.document.revision;
     const auto result = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
     REQUIRE(result);
     CHECK(*result == "SV recipe added over the selected area.");
@@ -2861,8 +2861,8 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
         position_span_t{{measure, 0}, {measure, 240}};
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
-    action.compose_input_chart_id.value = fixture.history.document.charts.front().id.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
+    action.stamp.chart_id.value = fixture.history.document.charts.front().id.value;
+    action.stamp.document_revision = fixture.history.document.revision;
     const auto status = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
     REQUIRE(status.has_value());
     CHECK(*status == "SV recipe added over the selected area.");
@@ -2872,7 +2872,7 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     CHECK(recipes.back().range.end.row == 240);
     CHECK(recipes.back().curve == sv_recipe_curve_t::linear);
 
-    action.compose_input_document_revision += 1;
+    action.stamp.document_revision += 1;
     const auto stale = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
     REQUIRE(stale.has_value());
     CHECK(stale->find("ignored") != std::string::npos);
@@ -3055,7 +3055,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     const std::string collision{fixture.application.project.clipboard.paste_session->proposal.diagnostics.front().message};
     expect_compose_test(!collision.empty());
     auto outside = paste_pointer_action(fixture, false);
-    outside.compose_inputs[0].y_pixels = 10000;
+    outside.input.compose_inputs[0].y_pixels = 10000;
     (void)dispatch_paste_action(fixture, outside);
     fixture.project();
     expect_compose_test(std::string{fixture.flattened.view.compose.paste_diagnostic}.find("outside") != std::string::npos);
@@ -3083,11 +3083,11 @@ TEST_CASE("Offset lock action rejects stale binding without clearing captured ed
     compose_test_fixture_t fixture;
     fixture.project();
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision + 1;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision + 1;
     std::optional<proposal_t<audio_offset_drag_t>> drag{proposal_t<audio_offset_drag_t>{}};
     std::optional<workspace_tab_t> tab{workspace_tab_t::compose};
-    const auto message = toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.value,
+    const auto message = toggle_compose_audio_offset_lock(action.stamp, fixture.history, *fixture.binding.value,
         fixture.application, fixture.cache, drag, tab);
     test::check_stale_action_message(message, "Audio offset lock");
     expect_compose_test(!fixture.application.project.timing_recipe.audio_offset_locked);
@@ -3143,11 +3143,11 @@ TEST_CASE("Locked offset fit rejects captured input without clearing a BPM previ
     fixture.application.project.timing_recipe.audio_offset_locked = true;
     fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, .object_id = {2}};
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, .object_id = {2}};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     const auto status = dispatch_compose_input_action(action, fixture.history,
@@ -3177,17 +3177,18 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
         [] { return std::optional<timing_index_t>{}; }));
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
-    action.compose_input_chart_id.value = 1;
-    action.compose_input_document_revision = fixture.history.document.revision;
+    action.stamp.chart_id.value = 1;
+    action.stamp.project_id = fixture.history.document.id;
+    action.stamp.document_revision = fixture.history.document.revision;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
-    (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.value,
+    (void)toggle_compose_audio_offset_lock(action.stamp, fixture.history, *fixture.binding.value,
         fixture.application, fixture.cache, drag, tab);
     expect_compose_test(fixture.application.project.timing_recipe.audio_offset_locked);
     expect_compose_test(!drag && !tab && !fixture.cache.timing.offset_fit_drag);
     expect_compose_test(!fixture.cache.timing.proposed_offset_timing_index.key());
     expect_compose_test(fixture.cache.timing.beat_fit_drag.has_value());
     expect_compose_test(fixture.history.undo.empty());
-    (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.value,
+    (void)toggle_compose_audio_offset_lock(action.stamp, fixture.history, *fixture.binding.value,
         fixture.application, fixture.cache, drag, tab);
     expect_compose_test(!fixture.application.project.timing_recipe.audio_offset_locked);
     expect_compose_test(!drag && !tab && !fixture.cache.timing.offset_fit_drag);
@@ -4074,12 +4075,12 @@ namespace {
 auto pinch_dispatch_action(compose_test_fixture_t& fixture, double factor,
                            double anchor) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
+    action.input.shortcuts.window_focused = true;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
         .cursor_x_pixels = 100, .cursor_y_pixels = anchor, .zoom_factor = factor};
     return action;
 }
@@ -4605,12 +4606,12 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
     expect_compose_test(fixture.flattened.view.compose.note_endpoints.size() > 0);
     const auto before = fixture.interaction->viewport_scroll_pixels;
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+    action.input.shortcuts.window_focused = true;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_y = -1, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -4633,10 +4634,10 @@ auto cursor_placement_song() -> song_document_t {
 
 auto cursor_placement_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.shortcuts.window_focused = true;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
     return action;
 }
 
@@ -4653,10 +4654,10 @@ void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
         std::get<editor_interaction_view_model_t>(view), position);
     expect_compose_test(y.has_value());
     auto action = cursor_placement_action(fixture);
-    action.compose_inputs.resize(1);
+    action.input.compose_inputs.resize(1);
     fixture.application.project.compose_gesture.note_paint_mode_active = !resource;
-    action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-    action.compose_inputs[0] = {.kind = resource ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE
+    action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+    action.input.compose_inputs[0] = {.kind = resource ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE
                                                : WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .object_id = {fixture.history.document.resources.front().id.value},
         .resource_role = wormedit::resource_role_t::sample,
@@ -4664,11 +4665,11 @@ void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
         .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
             compose_field_downscroll(chart, fixture.application.preferences.editor_preferences))};
     if (mode == 2) {
-        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{2}));
-        action.compose_inputs[1] = action.compose_inputs[0];
-        action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
-        action.compose_inputs.resize(2);
+        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{2}));
+        action.input.compose_inputs[1] = action.input.compose_inputs[0];
+        action.input.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
+        action.input.compose_inputs.resize(2);
     }
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -4693,8 +4694,8 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
     expect_compose_test(std::abs(fixture.flattened.view.compose.cursor->bounds.top - 47) < 1e-9);
     const auto scroll = fixture.interaction->viewport_scroll_pixels;
     auto action = cursor_placement_action(fixture);
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_y = downscroll ? -1.0 : 1.0, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -4725,13 +4726,13 @@ void check_ten_key_note_commit() {
     editor_navigation_input_controller_t navigation;
     for (const auto& binding : profile.input.bindings) {
         auto action = cursor_placement_action(fixture);
-        action.compose_inputs.resize(1);
-        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+        action.input.compose_inputs.resize(1);
+        action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
             .lane_id = {binding.lane.value}};
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
         expect_compose_test((fixture.interaction->hold() != nullptr));
-        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
+        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
         expect_compose_test(!(fixture.interaction->hold() != nullptr));
@@ -4751,8 +4752,8 @@ void check_latched_range_projection(bool downscroll) {
     auto& state = *fixture.interaction;
     state.active_snap_denominator = 4;
     auto action = cursor_placement_action(fixture);
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
@@ -4793,8 +4794,8 @@ void check_wheel_displacement(bool downscroll, double delta,
                                               notification_source_t::input);
     };
     auto action = cursor_placement_action(fixture);
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = kind, .delta_y = delta,
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = kind, .delta_y = delta,
         .cursor_x_pixels = 200, .cursor_y_pixels = 300};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -4829,20 +4830,20 @@ TEST_CASE("Compose batches reject later object or viewport input after an earlie
     expect_compose_test(y.has_value());
     auto action = cursor_placement_action(fixture);
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .object_id = {fixture.history.document.resources.front().id.value},
         .resource_role = wormedit::resource_role_t::sample,
         .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
             compose_field_downscroll(chart, fixture.application.preferences.editor_preferences))};
     if (viewport_later) {
-        action.compose_viewport_inputs.resize(1);
-        action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        action.input.compose_viewport_inputs.resize(1);
+        action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
             .delta_y = -1, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
     } else {
-        action.compose_inputs.resize(2);
-        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, .resource_role = wormedit::resource_role_t::bga, .resource_id = {999}};
+        action.input.compose_inputs.resize(2);
+        action.input.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, .resource_role = wormedit::resource_role_t::bga, .resource_id = {999}};
     }
     const auto scroll = state.viewport_scroll_pixels;
     viewport_input_controller_t viewport;
@@ -4907,15 +4908,15 @@ TEST_CASE("Compose latched autoscroll preserves pixel speed during playback",
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     auto action = cursor_placement_action(fixture);
-    action.compose_viewport_middle_click = true;
-    action.compose_viewport_middle_click_x_pixels = 200.0;
-    action.compose_viewport_middle_click_y_pixels = 100.0;
-    action.compose_viewport_pointer_valid = true;
-    action.compose_viewport_pointer_x_pixels = 200.0;
-    action.compose_viewport_pointer_y_pixels = 100.0 + offset;
+    action.input.compose_viewport_middle_click = true;
+    action.input.compose_viewport_middle_click_x_pixels = 200.0;
+    action.input.compose_viewport_middle_click_y_pixels = 100.0;
+    action.input.compose_viewport_pointer_valid = true;
+    action.input.compose_viewport_pointer_x_pixels = 200.0;
+    action.input.compose_viewport_pointer_y_pixels = 100.0 + offset;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
         state, viewport, navigation, fixture.application, fixture.cache, 0.0);
-    action.compose_viewport_middle_click = false;
+    action.input.compose_viewport_middle_click = false;
     for (int frame = 0; frame < frames; ++frame)
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
             state, viewport, navigation, fixture.application, fixture.cache, 1.0 / frames);
@@ -4959,16 +4960,16 @@ auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -
         std::get<editor_interaction_view_model_t>(view), position);
     expect_compose_test(y.has_value());
     auto action = cursor_placement_action(fixture);
-    action.compose_inputs.resize(2);
-    action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+    action.input.compose_inputs.resize(2);
+    action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
         .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
             compose_field_downscroll(chart, fixture.application.preferences.editor_preferences)),
         .resource_id = {sound}};
-    action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{2}));
-    action.compose_inputs[1] = action.compose_inputs[0];
-    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
+    action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{2}));
+    action.input.compose_inputs[1] = action.input.compose_inputs[0];
+    action.input.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
     return action;
 }
 
@@ -4979,7 +4980,7 @@ void dispatch_virtual_paint(compose_test_fixture_t& fixture, WormUiComposeInputK
     const auto& state = *fixture.interaction;
     const auto source_y = static_cast<double>(row) * state.pixels_per_standard_measure /
         fixture.history.read_chart(state.chart)->divisions_per_standard_measure - state.viewport_scroll_pixels;
-    action.compose_inputs = {{.kind = kind,
+    action.input.compose_inputs = {{.kind = kind,
         .x_pixels = view.playable_field_left_pixels + 20,
         .y_pixels = compose_source_y(source_y, state.viewport_height_pixels, view.downscroll)}};
     viewport_input_controller_t viewport;
@@ -5079,15 +5080,15 @@ void check_armed_layer_placement(int mode, bool no_layer) {
         place_cursor_at(*fixture.interaction,
             {(*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().id, 240});
         const auto lane = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).lane_layouts.front().layout.lanes.front().id;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {lane.value}};
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{2}));
-        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {lane.value}};
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+        action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {lane.value}};
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{2}));
+        action.input.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {lane.value}};
     } else if (mode == 2) {
-        action.compose_inputs.resize(1);
-        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE;
-        action.compose_inputs[0].object_id.value = sound.value;
-        action.compose_inputs[0].resource_role = wormedit::resource_role_t::sample;
+        action.input.compose_inputs.resize(1);
+        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE;
+        action.input.compose_inputs[0].object_id.value = sound.value;
+        action.input.compose_inputs[0].resource_role = wormedit::resource_role_t::sample;
     }
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -5171,12 +5172,12 @@ void check_click_audition_preference(bool enabled) {
     expect_compose_test(fixture.flattened.view.compose.note_endpoints.size() > 0);
     const auto& bounds = fixture.flattened.view.compose.note_endpoints[0].bounds;
     wormedit::ui::workspace_action_t action{};
-    action.shortcut_window_focused = true;
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    action.input.shortcuts.window_focused = true;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
         .x_pixels = (bounds.left + bounds.right) / 2,
         .y_pixels = (bounds.top + bounds.bottom) / 2};
     viewport_input_controller_t viewport;
@@ -5383,9 +5384,9 @@ struct lane_key_callback_fixture_t {
     auto dispatch(WormUiComposeInputKind kind, std::uint64_t lane = 1,
                   std::uint64_t sound = 7, bool successive = false) -> std::string {
         auto action = cursor_placement_action(compose);
-        action.compose_input_project_id.value = compose.history.document.id.value;
-        action.compose_inputs.resize(1);
-        action.compose_inputs[0] = {.kind = kind, .lane_id = {lane},
+        action.stamp.project_id.value = compose.history.document.id.value;
+        action.input.compose_inputs.resize(1);
+        action.input.compose_inputs[0] = {.kind = kind, .lane_id = {lane},
                                     .successive = successive, .resource_id = {sound}};
         return dispatch_compose_input_action(action, compose.history, *compose.binding.value,
             *compose.interaction, viewport, navigation, compose.application, compose.cache, 0);
@@ -6167,9 +6168,9 @@ auto resizable_stem_song() -> song_document_t {
 }
 void scroll_resized_bgm(compose_test_fixture_t& fixture, double delta) {
     auto action = cursor_placement_action(fixture);
-    action.shortcut_window_focused = true;
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+    action.input.shortcuts.window_focused = true;
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_x = delta,
         .cursor_x_pixels = fixture.flattened.view.compose.playable_field_right_pixels + 20,
         .cursor_y_pixels = 300};
@@ -6332,12 +6333,12 @@ void project_chip_request(compose_test_fixture_t& fixture, wormedit::ui::keysoun
 }
 auto dispatch_chip_input(compose_test_fixture_t& fixture, wormedit::ui::compose_input_action_t input) -> std::string {
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = 1;
-    action.compose_input_project_id.value = fixture.history.document.id.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = input;
-    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.stamp.chart_id.value = 1;
+    action.stamp.project_id.value = fixture.history.document.id.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = input;
+    action.input.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     return dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
@@ -6407,7 +6408,7 @@ TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick
     const auto revision = fixture.history.document.revision;
     const auto undos = fixture.history.undo.size();
     const auto attempted = paint_stroke_inputs(fixture, 179);
-    const auto rejected = dispatch_chip_input(fixture, attempted.compose_inputs[0]);
+    const auto rejected = dispatch_chip_input(fixture, attempted.input.compose_inputs[0]);
     t475_check(rejected.find("paint sound is not an existing sample resource") != std::string::npos);
     t475_check(fixture.history.document.revision == revision && fixture.history.undo.size() == undos);
     t475_check(!fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
@@ -6487,22 +6488,22 @@ struct move_feedback_dispatch_fixture_t {
     }
     auto dispatch(WormUiComposeInputKind kind, double row, bool to_bgm = false) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_project_id.value = compose.history.document.id.value;
-        action.compose_input_chart_id.value = 1;
-        action.compose_input_document_revision = compose.history.document.revision;
-        action.compose_inputs.resize(1);
+        action.stamp.project_id.value = compose.history.document.id.value;
+        action.stamp.chart_id.value = 1;
+        action.stamp.document_revision = compose.history.document.revision;
+        action.input.compose_inputs.resize(1);
         const auto& view = compose.flattened.view.compose;
         const auto downscroll = compose.cache.frame.preview_scene_request.scroll_direction ==
             editor_field_scroll_direction_t::down;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-        action.compose_inputs[0] = {
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+        action.input.compose_inputs[0] = {
             .kind = kind,
             .note_move_to_bgm = to_bgm,
             .x_pixels = to_bgm ? view.playable_field_right_pixels + 10 : x,
             .y_pixels = compose_project_y(row + .000001, pixels_per_row,
                 compose.interaction->viewport_scroll_pixels, view.viewport_height_pixels,
                 downscroll)};
-        action.compose_input_viewport_width_pixels =
+        action.input.compose_input_viewport_width_pixels =
             compose.flattened.view.compose.viewport_width_pixels;
         viewport_input_controller_t viewport;
         editor_navigation_input_controller_t navigation;
@@ -7058,9 +7059,9 @@ namespace {
 auto range_pause_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE;
-    action.compose_input_project_id.value = fixture.history.document.id.value;
-    action.compose_input_chart_id.value = fixture.interaction->chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
+    action.stamp.project_id.value = fixture.history.document.id.value;
+    action.stamp.chart_id.value = fixture.interaction->chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
     return action;
 }
 auto dispatch_range_pause(compose_test_fixture_t& fixture, const wormedit::ui::workspace_action_t& action) -> std::string {
@@ -7080,9 +7081,9 @@ auto range_pause_routing(unsigned guard) -> bool {
     fixture.interaction->retained_selection_range = position_span_t{{measure, 240}, {measure, 288}};
     auto action = range_pause_action(fixture);
     switch (guard) {
-    case 1: ++action.compose_input_project_id.value; break;
-    case 2: ++action.compose_input_chart_id.value; break;
-    case 3: ++action.compose_input_document_revision; break;
+    case 1: ++action.stamp.project_id.value; break;
+    case 2: ++action.stamp.chart_id.value; break;
+    case 3: ++action.stamp.document_revision; break;
     case 4: fixture.application.project.timing_recipe.timing_locked = true; break;
     case 5: fixture.interaction->active_gesture = wormedit::proposal_t<wormedit::pending_editor_area_selection_t, wormedit::document_stamp_t>{}; break;
     case 6: fixture.interaction->retained_selection_range.reset(); break;
@@ -7242,9 +7243,9 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     auto action = cursor_placement_action(f);
-    action.compose_input_project_id.value = f.history.document.id.value;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+    action.stamp.project_id.value = f.history.document.id.value;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
                                .lane_id = {2}, .resource_id = {7}};
     const auto status = dispatch_compose_input_action(action, f.history, *f.binding.value,
         *f.interaction, viewport, navigation, f.application, f.cache, 0);
@@ -7259,8 +7260,8 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     const auto original_id = changed.measures.front().notes.back().id;
     const auto source_id = changed.measures.front().notes.back().sound_channel_event;
     const auto source_count = changed.sound_channels.front().events.size();
-    action.compose_input_document_revision = f.history.document.revision;
-    action.compose_inputs[0].lane_id.value = 1;
+    action.stamp.document_revision = f.history.document.revision;
+    action.input.compose_inputs[0].lane_id.value = 1;
     (void)dispatch_compose_input_action(action, f.history, *f.binding.value,
         *f.interaction, viewport, navigation, f.application, f.cache, 0);
     const auto& moved_chart = f.history.document.charts.front();
@@ -7348,8 +7349,8 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
     compose_test_fixture_t fixture;
     fixture.project();
     auto action = cursor_placement_action(fixture);
-    action.compose_inputs.resize(0);
-    action.compose_input_editor_right_pixels = 700;
+    action.input.compose_inputs.resize(0);
+    action.input.compose_input_editor_right_pixels = 700;
     editor_navigation_input_controller_t navigation;
     viewport_input_controller_t viewport;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
@@ -7358,8 +7359,8 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.playable_field_right_pixels <= 700);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
-    ++action.compose_input_document_revision;
-    action.compose_input_editor_right_pixels = 200;
+    ++action.stamp.document_revision;
+    action.input.compose_input_editor_right_pixels = 200;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
     expect_compose_test(fixture.application.project.compose_view.compose_editor_right_pixels == 700);
@@ -7371,10 +7372,10 @@ namespace {
 auto bgm_mix_test_action(const compose_test_fixture_t& fixture, WormUiComposeInputKind kind,
     std::uint64_t lane) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = 1;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0] = {.kind = kind, .lane_id = {lane}};
+    action.stamp.chart_id.value = 1;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0] = {.kind = kind, .lane_id = {lane}};
     return action;
 }
 auto bgm_mix_test_song() -> song_document_t {
@@ -7400,7 +7401,7 @@ TEST_CASE("BGM mute and additive solo are session-only and refresh cached lane h
     auto toggle = [&](WormUiComposeInputKind kind, std::uint64_t lane) {
         auto action = bgm_mix_test_action(fixture, kind, lane);
         (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.value, fixture.application);
-        expect_compose_test(action.compose_inputs.size() == 0);
+        expect_compose_test(action.input.compose_inputs.size() == 0);
         fixture.project();
     };
     toggle(WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
@@ -7434,7 +7435,7 @@ TEST_CASE("BGM mixing rejects stale missing and runtime-failed controls atomical
     int calls{};
     fixture.application.services.transport_set_bgm_mix = [&](auto, auto) { ++calls; return false; };
     auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
-    ++action.compose_input_document_revision;
+    ++action.stamp.document_revision;
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.value, fixture.application);
     expect_compose_test(calls == 0);
     action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 99999);
@@ -7461,8 +7462,8 @@ TEST_CASE("BGM-only charts receive canvas width and mix controls without note in
     compose_test_fixture_t fixture{std::move(song)};
     fixture.application.services.transport_set_bgm_mix = [](auto, auto) { return true; };
     auto action = bgm_mix_test_action(fixture, WORM_UI_COMPOSE_INPUT_BGM_MUTE, 80000);
-    action.compose_input_viewport_width_pixels = 1232;
-    action.compose_input_editor_right_pixels = 800;
+    action.input.compose_input_viewport_width_pixels = 1232;
+    action.input.compose_input_editor_right_pixels = 800;
     refresh_compose_editor_width(action, fixture.history, *fixture.binding.value, fixture.application);
     expect_compose_test(fixture.application.project.compose_view.compose_editor_right_pixels == 800);
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.value, fixture.application);
@@ -7510,10 +7511,10 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
         {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
         .source_frame_count = short_source ? 1000U : 480000U}});
     auto action = paint_stroke_inputs(fixture, 100);
-    action.compose_inputs[0].paint_intent = 1;
+    action.input.compose_inputs[0].paint_intent = 1;
     if (alt) {
-        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN;
-        action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
+        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN;
+        action.input.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE;
     }
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -7585,10 +7586,10 @@ TEST_CASE("Solo toggle and target actions affect the next selection in the same 
     for (std::size_t index = 0; index < actions.size(); ++index) {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = actions[index];
-        action.compose_input_project_id = f.history.document.id;
-        action.compose_input_chart_id = f.interaction->chart;
-        action.compose_input_document_revision = f.history.document.revision;
-        action.compose_semantic_layer_id = layer_id_t{index == 0 ? 101u : 102u};
+        action.stamp.project_id = f.history.document.id;
+        action.stamp.chart_id = f.interaction->chart;
+        action.stamp.document_revision = f.history.document.revision;
+        action.layer.id = layer_id_t{index == 0 ? 101u : 102u};
         const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
             f.interaction->viewport_height_pixels, false);
         expect_compose_test(!status.empty());
@@ -8151,15 +8152,15 @@ TEST_CASE("Measure-lane drag inputs dispatch through the bar-line move gesture",
     editor_navigation_input_controller_t navigation;
     const auto dispatch = [&](WormUiComposeInputKind kind, std::uint64_t row) {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_project_id.value = fixture.history.document.id.value;
-        action.compose_input_chart_id.value = 1;
-        action.compose_input_document_revision = fixture.history.document.revision;
-        action.compose_inputs.resize(1);
+        action.stamp.project_id.value = fixture.history.document.id.value;
+        action.stamp.chart_id.value = 1;
+        action.stamp.document_revision = fixture.history.document.revision;
+        action.input.compose_inputs.resize(1);
         const auto& view = fixture.flattened.view.compose;
         const auto downscroll = fixture.cache.frame.preview_scene_request.scroll_direction ==
             editor_field_scroll_direction_t::down;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-        action.compose_inputs[0] = {
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+        action.input.compose_inputs[0] = {
             .kind = kind,
             .object_id = {2},
             .x_pixels = 20,
@@ -8167,7 +8168,7 @@ TEST_CASE("Measure-lane drag inputs dispatch through the bar-line move gesture",
                 static_cast<double>(row), view.pixels_per_standard_measure / 960.0,
                 fixture.interaction->viewport_scroll_pixels, view.viewport_height_pixels,
                 downscroll)};
-        action.compose_input_viewport_width_pixels = view.viewport_width_pixels;
+        action.input.compose_input_viewport_width_pixels = view.viewport_width_pixels;
         return dispatch_compose_input_action(
             action, fixture.history, *fixture.binding.value, *fixture.interaction,
             viewport, navigation, fixture.application, fixture.cache, 0, &sink);
@@ -8229,9 +8230,9 @@ TEST_CASE("Oversized owned Compose input batches cancel the active gesture",
     REQUIRE(fixture.interaction->is_pending());
     auto action = cursor_placement_action(fixture);
     if (viewport_batch)
-        action.compose_viewport_inputs.resize(ui::compose_viewport_input_admission_limit + 1);
+        action.input.compose_viewport_inputs.resize(ui::compose_viewport_input_admission_limit + 1);
     else
-        action.compose_inputs.resize(ui::compose_input_admission_limit + 1);
+        action.input.compose_inputs.resize(ui::compose_input_admission_limit + 1);
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     const auto revision = fixture.history.document.revision;
@@ -8947,7 +8948,7 @@ TEST_CASE("Stale cut edge input rejects before mutating song cuts", "[sys][expor
     project_cut_timing(fixture);
     const auto original = fixture.history.document.export_cuts;
     auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
-    ++action.compose_inputs.front().timing_document_revision;
+    ++action.input.compose_inputs.front().timing_document_revision;
     test::check_stale_action_message(dispatch_paste_action(fixture, action), "Export cut edit");
     expect_compose_test(fixture.history.document.export_cuts == original);
     expect_compose_test(fixture.history.undo.empty());
@@ -8973,7 +8974,7 @@ TEST_CASE("Cut edge drags reject inverted intervals and unknown handles", "[sys]
             "Keep the export cut start nonnegative and before its end.");
     }
     SECTION("unknown handle") {
-        action.compose_inputs.front().span_edge = WORM_UI_SPAN_HANDLE_CREATE;
+        action.input.compose_inputs.front().span_edge = WORM_UI_SPAN_HANDLE_CREATE;
         expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut handle is stale.");
     }
     expect_compose_test(fixture.history.document.export_cuts == original);
@@ -8986,11 +8987,11 @@ TEST_CASE("Missing export cuts and invalid pointer clocks reject without publica
     const auto original = fixture.history.document.export_cuts;
     auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
     SECTION("missing cut") {
-        action.compose_inputs.front().object_id = object_id_t{9999};
+        action.input.compose_inputs.front().object_id = object_id_t{9999};
         expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut or its chart timing is no longer available.");
     }
     SECTION("invalid pointer") {
-        action.compose_inputs.front().y_pixels = std::numeric_limits<double>::quiet_NaN();
+        action.input.compose_inputs.front().y_pixels = std::numeric_limits<double>::quiet_NaN();
         expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut destination is outside the source-song timeline.");
     }
     expect_compose_test(fixture.history.document.export_cuts == original);

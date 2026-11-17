@@ -123,22 +123,22 @@ struct compose_notification_fixture_t {
 
     auto batch(std::span<const wormedit::ui::compose_input_action_t> inputs) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = state.chart.value;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_input_viewport_width_pixels = 800;
-        action.compose_inputs.assign(inputs.begin(), inputs.end());
+        action.stamp.chart_id.value = state.chart.value;
+        action.stamp.document_revision = history.document.revision;
+        action.input.compose_input_viewport_width_pixels = 800;
+        action.input.compose_inputs.assign(inputs.begin(), inputs.end());
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
 
     auto input(WormUiComposeInputKind kind) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = state.chart.value;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_input_viewport_width_pixels = 800;
-        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
-        action.compose_inputs[0] = {.kind = kind};
-        action.compose_inputs.resize(1);
+        action.stamp.chart_id.value = state.chart.value;
+        action.stamp.document_revision = history.document.revision;
+        action.input.compose_input_viewport_width_pixels = 800;
+        action.input.compose_inputs.resize(std::max(action.input.compose_inputs.size(), std::size_t{1}));
+        action.input.compose_inputs[0] = {.kind = kind};
+        action.input.compose_inputs.resize(1);
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
@@ -279,9 +279,9 @@ void expect_entry(const notification_entry_t& entry, notification_severity_t sev
 auto dispatch_stale(compose_notification_fixture_t& fixture, std::uint64_t revision)
     -> std::string {
     wormedit::ui::workspace_action_t stale{};
-    stale.compose_input_chart_id.value = fixture.state.chart.value;
-    stale.compose_input_document_revision = revision - 1;
-    stale.compose_input_viewport_width_pixels = 800;
+    stale.stamp.chart_id.value = fixture.state.chart.value;
+    stale.stamp.document_revision = revision - 1;
+    stale.input.compose_input_viewport_width_pixels = 800;
     return dispatch_compose_input_action(stale, fixture.history, fixture.workspace,
         fixture.state, fixture.viewport, fixture.navigation, fixture.application,
         fixture.cache, 0, &fixture.sink);
@@ -394,9 +394,9 @@ TEST_CASE("Compose accepted history no-op is informational and does not mutate",
 TEST_CASE("Idle Compose input emits no notification", "[unit][sys][compose-notification]") {
     compose_notification_fixture_t fixture;
     wormedit::ui::workspace_action_t idle{};
-    idle.compose_input_chart_id.value = fixture.state.chart.value;
-    idle.compose_input_document_revision = fixture.history.document.revision;
-    idle.compose_input_viewport_width_pixels = 800;
+    idle.stamp.chart_id.value = fixture.state.chart.value;
+    idle.stamp.document_revision = fixture.history.document.revision;
+    idle.input.compose_input_viewport_width_pixels = 800;
     (void)dispatch_compose_input_action(idle, fixture.history, fixture.workspace, fixture.state,
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0, &fixture.sink);
     CHECK(fixture.drain().empty());
@@ -418,11 +418,11 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
                                               notification_source_t::input);
     };
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.state.chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = 800;
-    action.compose_viewport_inputs.resize(1);
-    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+    action.stamp.chart_id.value = fixture.state.chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = 800;
+    action.input.compose_viewport_inputs.resize(1);
+    action.input.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_y = 1, .cursor_x_pixels = 1, .cursor_y_pixels = 1};
     auto dispatch = [&] { return dispatch_compose_input_action(action, fixture.history,
         fixture.workspace, fixture.state, fixture.viewport, fixture.navigation,
@@ -455,12 +455,12 @@ TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][co
     const auto revision = fixture.history.document.revision;
     const auto undo_size = fixture.history.undo.size();
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.state.chart.value;
-    action.compose_input_document_revision = revision;
-    action.compose_input_viewport_width_pixels = 800;
-    action.compose_inputs.resize(2);
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_PASTE_CANCEL;
-    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
+    action.stamp.chart_id.value = fixture.state.chart.value;
+    action.stamp.document_revision = revision;
+    action.input.compose_input_viewport_width_pixels = 800;
+    action.input.compose_inputs.resize(2);
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_PASTE_CANCEL;
+    action.input.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
     CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0,
         &fixture.sink) == "Paste preview cancelled.");
@@ -488,15 +488,15 @@ TEST_CASE("Unchanged BGM move keeps the original stop boundary", "[unit][sys][co
     REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
         begin_note_move_gesture_action_t{object_id_t{45}}));
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.state.chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = 800;
-    action.compose_inputs.resize(2);
-    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
-    action.compose_inputs[0].object_id.value = 45;
-    action.compose_inputs[0].lane_id.value = 4;
-    action.compose_inputs[0].y_pixels = 60;
-    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
+    action.stamp.chart_id.value = fixture.state.chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = 800;
+    action.input.compose_inputs.resize(2);
+    action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
+    action.input.compose_inputs[0].object_id.value = 45;
+    action.input.compose_inputs[0].lane_id.value = 4;
+    action.input.compose_inputs[0].y_pixels = 60;
+    action.input.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
     CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0,
         &fixture.sink) == "BGM event remained at its original position.");
@@ -523,14 +523,14 @@ void setup_mixed_bgm_input(compose_notification_fixture_t& fixture) {
 auto mixed_bgm_input(compose_notification_fixture_t& fixture, WormUiComposeInputKind kind, double y, std::uint64_t lane = 4)
     -> std::string {
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id.value = fixture.state.chart.value;
-    action.compose_input_document_revision = fixture.history.document.revision;
-    action.compose_input_viewport_width_pixels = 800;
-    action.compose_inputs.resize(1);
-    action.compose_inputs[0].kind = kind;
-    action.compose_inputs[0].y_pixels = y;
-    action.compose_inputs[0].lane_id.value = lane;
-    action.compose_inputs[0].object_id.value = 45;
+    action.stamp.chart_id.value = fixture.state.chart.value;
+    action.stamp.document_revision = fixture.history.document.revision;
+    action.input.compose_input_viewport_width_pixels = 800;
+    action.input.compose_inputs.resize(1);
+    action.input.compose_inputs[0].kind = kind;
+    action.input.compose_inputs[0].y_pixels = y;
+    action.input.compose_inputs[0].lane_id.value = lane;
+    action.input.compose_inputs[0].object_id.value = 45;
     return dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0, &fixture.sink);
 }
@@ -697,10 +697,10 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
     }
     auto run(std::initializer_list<wormedit::ui::compose_input_action_t> inputs) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id.value = state.chart.value;
-        action.compose_input_document_revision = history.document.revision;
-        action.compose_input_viewport_width_pixels = 800;
-        for (const auto& input : inputs) action.compose_inputs.emplace_back() = input;
+        action.stamp.chart_id.value = state.chart.value;
+        action.stamp.document_revision = history.document.revision;
+        action.input.compose_input_viewport_width_pixels = 800;
+        for (const auto& input : inputs) action.input.compose_inputs.emplace_back() = input;
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }

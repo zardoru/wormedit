@@ -39,11 +39,11 @@ struct dispatch_fixture_t {
                   std::uint64_t revision, bool keep) -> std::optional<std::string> {
         wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
-        action.compose_input_chart_id.value = chart_id.value;
-        action.compose_input_document_revision = revision;
-        action.compose_sound_group_assignments.assign(assignments, assignments + count);
+        action.stamp.chart_id.value = chart_id.value;
+        action.stamp.document_revision = revision;
+        action.resource.sound_group_assignments.assign(assignments, assignments + count);
 
-        action.compose_sound_group_keep_ids_together = keep;
+        action.resource.sound_group_keep_ids_together = keep;
         return sys::dispatch_compose_sound_action(action, history, workspace, chart_id, app);
     }
 };

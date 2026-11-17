@@ -57,14 +57,14 @@ struct fixture_t {
         (void)harness.frame({&motion,1});
         const auto down=pointer(x,y,true); auto result=harness.frame({&down,1});
         const auto up=pointer(x,y,false); auto released=harness.frame({&up,1});
-        return released.get().kind != WORM_UI_WORKSPACE_ACTION_NONE || released.get().sound_properties_apply
+        return released.get().kind != WORM_UI_WORKSPACE_ACTION_NONE || released.get().sound_properties.apply
             ? released : result;
     }
     auto press(SDL_Keycode code, SDL_Scancode scan) -> workspace_action_snapshot_t {
         const auto down=key(code,scan,true); auto result=harness.frame({&down,1});
         const auto up=key(code,scan,false); const auto released=harness.frame({&up,1});
-        release_shortcuts=released.get().shortcut_events.size();
-        release_compose_inputs=released.get().compose_inputs.size();
+        release_shortcuts=released.get().input.shortcuts.events.size();
+        release_compose_inputs=released.get().input.compose_inputs.size();
         return result;
     }
     void focus_list() {
@@ -84,10 +84,10 @@ TEST_CASE("Sounds keyboard selection and audition use resource identity and capt
     expect(worm_ui_nuklear_audio_state().selected_resource_id==102);
     result=fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id.value==102);
+    expect(result.get().resource.id.value==102);
     expect(fixture.release_shortcuts==0);
     expect(fixture.release_compose_inputs==0);
-    expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
     result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
     expect(result.get().audio_resource_id.value==103);
     expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
@@ -125,10 +125,10 @@ TEST_CASE("Sounds properties are staged, revertible and stamped before Apply",
     (void)fixture.harness.frame();
     const auto apply=fixture.harness.drawn_text_center("Apply"); expect(apply);
     const auto result=fixture.click(apply->first,apply->second);
-    expect(result.get().sound_properties_apply);
-    expect(result.get().sound_properties_resource_id.value==101);
-    expect(result.get().sound_properties_document_revision==fixture.harness.view().document_revision);
-    expect(std::string_view{result.get().sound_properties_name}=="New kick");
+    expect(result.get().sound_properties.apply);
+    expect(result.get().sound_properties.resource_id.value==101);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
+    expect(std::string_view{result.get().sound_properties.name}=="New kick");
     ++fixture.harness.view().audio_slices.document_revision;
     (void)fixture.harness.frame();
     expect(std::string_view{state.properties_name}=="Kick");
@@ -148,17 +148,17 @@ TEST_CASE("Sounds tag chips emit one stamped add or remove without applying name
         const auto button = fixture.harness.drawn_text_center("Add tag");
         expect(button);
         const auto action = fixture.click(button->first, button->second);
-        expect(action.get().sound_properties_tags ==
+        expect(action.get().sound_properties.tags ==
               std::optional{std::vector<std::string>{"Drum", "Kick", "Low"}});
-        expect(std::string_view{action.get().sound_properties_name} == "Kick");
+        expect(std::string_view{action.get().sound_properties.name} == "Kick");
     }
     SECTION("remove") {
         const auto button = fixture.harness.drawn_text_center("Drum  ×");
         expect(button);
         const auto action = fixture.click(button->first, button->second);
-        expect(action.get().sound_properties_tags ==
+        expect(action.get().sound_properties.tags ==
               std::optional{std::vector<std::string>{"Kick"}});
-        expect(action.get().sound_properties_resource_id.value == 101);
+        expect(action.get().sound_properties.resource_id.value == 101);
     }
 }
 
@@ -224,9 +224,9 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     const auto result=fixture.harness.frame({&down,1});
     expect(result.get().audio_resource_id.value==102);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id.value==102);
-    expect(result.get().compose_input_project_id.value==fixture.harness.view().project_id.value);
-    expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
+    expect(result.get().resource.id.value==102);
+    expect(result.get().stamp.project_id.value==fixture.harness.view().project_id.value);
+    expect(result.get().stamp.document_revision==fixture.harness.view().document_revision);
 }
 
 TEST_CASE("Sounds audition yields to properties text and IME editing",

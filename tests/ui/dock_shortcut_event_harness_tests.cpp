@@ -34,8 +34,8 @@ auto press_and_dispatch(nuklear_event_harness_t& harness, SDL_Keycode code,
     event.key.scancode = scan;
     event.key.down = true;
     const auto frame = harness.frame(std::span{&event, 1}, modifiers);
-    require_dock(frame.get().shortcut_events.size() == 1);
-    const auto& input = frame.get().shortcut_events[0];
+    require_dock(frame.get().input.shortcuts.events.size() == 1);
+    const auto& input = frame.get().input.shortcuts.events[0];
     const auto registry = registry_for_docks();
     return dispatch_shortcut(registry,
         {.chord = {static_cast<shortcut_key_t>(input.hid_usage), input.modifiers},
@@ -84,10 +84,10 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     enter.key.scancode = SDL_SCANCODE_RETURN;
     const auto action = harness.frame({&enter, 1});
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(std::string_view(action.get().compose_semantic_layer_name) == "Chorus");
-    check_dock(action.get().compose_input_project_id.value == 1);
-    check_dock(action.get().compose_input_chart_id.value == 1);
-    check_dock(action.get().compose_input_document_revision == 1);
+    check_dock(std::string_view(action.get().layer.name) == "Chorus");
+    check_dock(action.get().stamp.project_id.value == 1);
+    check_dock(action.get().stamp.chart_id.value == 1);
+    check_dock(action.get().stamp.document_revision == 1);
     check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
     check_dock(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
@@ -171,8 +171,8 @@ TEST_CASE("Creating a layer reveals the appended target beyond the visible layer
     view.semantic_layer_target = {.layer_id = {900}, .name = "Layer"};
     const auto requested = harness.frame();
     check_dock(requested.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
-    check_dock(requested.get().compose_semantic_layer_first_row > 180);
-    const auto first = requested.get().compose_semantic_layer_first_row;
+    check_dock(requested.get().layer.first_row > 180);
+    const auto first = requested.get().layer.first_row;
     view.semantic_layer_first_row = first;
     view.semantic_layers.resize(201 - first);
     std::vector<wormedit::ui::compose_semantic_layer_view_t> layers(view.semantic_layers.size());
@@ -247,7 +247,7 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
     const auto escape = dialog_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto action = harness.frame({&escape, 1});
     check_dock(action.get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(action.get().shortcut_events.size() == 0);
+    check_dock(action.get().input.shortcuts.events.size() == 0);
     check_dock(!state.layer_editor.layer_creation_context);
 }
 
@@ -272,9 +272,9 @@ TEST_CASE("Export dialog fits a small viewport and submits the saved target poli
     const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto action = harness.frame({&enter, 1});
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
-    check_dock(action.get().compose_output_group_index == 7);
-    check_dock(action.get().compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
-    check_dock(action.get().compose_input_project_id.value == 1);
+    check_dock(action.get().resource.output_group_index == 7);
+    check_dock(action.get().resource.existing_files == WORM_UI_EXISTING_FILES_SAVED);
+    check_dock(action.get().stamp.project_id.value == 1);
     check_dock(!state.dialogs.export_dialog_open);
 }
 

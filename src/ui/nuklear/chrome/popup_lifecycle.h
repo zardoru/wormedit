@@ -15,6 +15,10 @@ struct PopupContextStamp {
     std::uint64_t revision{};
     std::uint64_t object_id{};
 
+    /* The document state the popup was opened against, for the request it raises. */
+    auto request_stamp() const -> wormedit::ui::request_stamp_t {
+        return {wormedit::chart_id_t{chart_id}, wormedit::song_id_t{project_id}, revision};
+    }
     static auto from(const wormedit::ui::compose_view_t& view, std::uint64_t object = 0) -> PopupContextStamp {
         return {view.project_id.value, view.chart_id.value, view.document_revision, object};
     }

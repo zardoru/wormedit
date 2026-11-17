@@ -304,14 +304,14 @@ void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
     post_runtime_message(notifications, severity, source, runtime.message);
 }
 
-auto resolve_export_copy_path(const wormedit::ui::workspace_action_t& action,
+auto resolve_export_copy_path(const wormedit::ui::compose_resource_request_t& request,
                               const wormedit::document_history_t& history,
                               const wormedit::workspace_controller_t& workspace,
                               std::filesystem::path& output_path) -> std::optional<std::string> {
-    if (action.compose_output_group_index >= history.document.output_groups.size()) {
+    if (request.output_group_index >= history.document.output_groups.size()) {
         return "The selected output group is no longer available.";
     }
-    const auto& group = history.document.output_groups[action.compose_output_group_index];
+    const auto& group = history.document.output_groups[request.output_group_index];
     if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end()) {
         return "The selected output group no longer includes this difficulty.";
     }
@@ -319,14 +319,14 @@ auto resolve_export_copy_path(const wormedit::ui::workspace_action_t& action,
     return std::nullopt;
 }
 
-auto resolve_copy_preview_source(const wormedit::ui::workspace_action_t& action,
+auto resolve_copy_preview_source(const wormedit::ui::compose_resource_request_t& request,
                                  const wormedit::document_history_t& history,
                                  wormedit::asset_id_t asset, bool import_copy,
                                  std::filesystem::path& source_path) -> std::optional<std::string> {
     using namespace wormedit;
     if (import_copy) {
         const auto reserved = next_resource_asset_id(history.document);
-        source_path = std::filesystem::path{action.compose_import_path}.lexically_normal();
+        source_path = std::filesystem::path{request.import_path}.lexically_normal();
         if (!reserved || *reserved != asset || !source_path.is_absolute() ||
             source_path.filename().empty())
             return "External audio or its reserved asset ID changed before inspection.";
@@ -422,8 +422,8 @@ auto metadata_asset_t::start_copy_preview(
     const std::filesystem::path& asset_base) -> std::string {
     using namespace wormedit;
     auto& runtime = impl_->copy_preview;
-    const auto source = action.metadata_inspect_export ? notification_source_t::export_
-                       : action.metadata_inspect_import ? notification_source_t::import_
+    const auto source = action.metadata.inspect_export ? notification_source_t::export_
+                       : action.metadata.inspect_import ? notification_source_t::import_
                                                         : notification_source_t::document;
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
@@ -432,8 +432,8 @@ auto metadata_asset_t::start_copy_preview(
         return finish("Metadata copy inspection expired after the chart or document changed.", notification_severity_t::warning);
     if (workspace.active_tab != workspace_tab_t::metadata ||
         !chart_stamp_t{.document = {.project = history.document.id,
-                                   .revision = action.compose_input_document_revision},
-                       .chart = action.compose_input_chart_id}
+                                   .revision = action.stamp.document_revision},
+                       .chart = action.stamp.chart_id}
              .is_current(history.document, *workspace.selected_chart))
         return finish(stale_action_message("Metadata copy inspection"), notification_severity_t::warning);
     if (asset_base.empty())
@@ -442,15 +442,15 @@ auto metadata_asset_t::start_copy_preview(
     if (runtime.job.is_busy())
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
-    const bool import_copy = action.metadata_inspect_import;
-    const asset_id_t asset{action.compose_resource_asset_id.value};
+    const bool import_copy = action.metadata.inspect_import;
+    const asset_id_t asset{action.resource.asset_id.value};
     std::filesystem::path source_path;
-    if (auto error = resolve_copy_preview_source(action, history, asset, import_copy,
+    if (auto error = resolve_copy_preview_source(action.resource, history, asset, import_copy,
                                                  source_path))
         return finish(*error, notification_severity_t::warning);
     std::filesystem::path output_path;
-    if (action.metadata_inspect_export) {
-        if (auto error = resolve_export_copy_path(action, history, workspace, output_path)) {
+    if (action.metadata.inspect_export) {
+        if (auto error = resolve_export_copy_path(action.resource, history, workspace, output_path)) {
             return finish(*error, notification_severity_t::warning);
         }
     }
@@ -462,7 +462,7 @@ auto metadata_asset_t::start_copy_preview(
             return metadata_copy_inspection_request_t{.copy = request,
                                                       .output_path = output_path,
                                                       .export_copy =
-                                                          action.metadata_inspect_export};
+                                                          action.metadata.inspect_export};
         },
         source, inspect_copy);
     if (!started)
@@ -474,8 +474,8 @@ auto metadata_asset_t::start_copy_preview(
                                     .asset = asset,
                                     .source_path = source_path,
                                     .output_path = output_path,
-                                    .output_group_index = action.compose_output_group_index,
-                                    .export_copy = action.metadata_inspect_export,
+                                    .output_group_index = action.resource.output_group_index,
+                                    .export_copy = action.metadata.inspect_export,
                                     .import_copy = import_copy};
     runtime.message = "Inspecting destination bytes in the background...";
     return finish("Copy destination inspection started.", notification_severity_t::info);
@@ -487,7 +487,7 @@ auto metadata_asset_t::start_import_copy(
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& scheduler,
     bool file_jobs_busy) -> std::string {
     using namespace wormedit;
-    const auto source = action.metadata_import_copy_export ? notification_source_t::export_
+    const auto source = action.metadata.import_copy_export ? notification_source_t::export_
                                                            : notification_source_t::import_;
     const auto finish = [&](std::string message, notification_severity_t severity) {
         return post_start_result(impl_->notifications, severity, source, std::move(message));
@@ -506,25 +506,25 @@ auto metadata_asset_t::start_import_copy(
         return finish("Metadata import-copy expired after the chart or document changed.", notification_severity_t::warning);
     if (workspace.active_tab != workspace_tab_t::metadata ||
         !chart_stamp_t{.document = {.project = history.document.id,
-                                   .revision = action.compose_input_document_revision},
-                       .chart = action.compose_input_chart_id}
+                                   .revision = action.stamp.document_revision},
+                       .chart = action.stamp.chart_id}
              .is_current(history.document, *workspace.selected_chart))
         return finish(stale_action_message("Metadata import-copy"), notification_severity_t::warning);
     if (asset_base.empty())
         return finish("Open a saved native project before importing an asset copy.",
                       notification_severity_t::warning);
-    const bool export_copy = action.metadata_import_copy_export;
-    if (export_copy == action.metadata_import_copy_project)
+    const bool export_copy = action.metadata.import_copy_export;
+    if (export_copy == action.metadata.import_copy_project)
         return finish("Choose exactly one project or export import-copy destination.",
                       notification_severity_t::warning);
     if (file_jobs_busy || pending_import)
         return finish("Wait for the current resource copy, import, or export to finish.",
                       notification_severity_t::info);
     const auto reserved = next_resource_asset_id(history.document);
-    if (!reserved || reserved->value != action.compose_resource_asset_id.value)
+    if (!reserved || reserved->value != action.resource.asset_id.value)
         return finish("The reserved asset ID changed before import-copy started.",
                       notification_severity_t::warning);
-    const std::filesystem::path source_path{action.compose_import_path};
+    const std::filesystem::path source_path{action.resource.import_path};
     const auto normalized_source = source_path.lexically_normal();
     if (!normalized_source.is_absolute() || normalized_source.filename().empty())
         return finish("Import-copy requires an absolute source file path.",
@@ -540,7 +540,7 @@ auto metadata_asset_t::start_import_copy(
                       notification_severity_t::warning);
     std::filesystem::path output_path;
     if (export_copy) {
-        if (auto error = resolve_export_copy_path(action, history, workspace, output_path)) {
+        if (auto error = resolve_export_copy_path(action.resource, history, workspace, output_path)) {
             return finish(*error, notification_severity_t::warning);
         }
     }

@@ -36,7 +36,7 @@ struct metadata_inheritance_fixture_t {
     }
 };
 void check_no_inheritance_action(const std::vector<workspace_action_snapshot_t>& frames) {
-    for (const auto& frame : frames) CHECK(frame.get().metadata_edit != WORM_UI_METADATA_EDIT_INHERITANCE);
+    for (const auto& frame : frames) CHECK(frame.get().metadata.kind != WORM_UI_METADATA_EDIT_INHERITANCE);
 }
 }
 TEST_CASE("Metadata inherit checkboxes emit one owned atomic override action", "[frontend-state][event-harness][metadata-inheritance]") {
@@ -45,15 +45,15 @@ TEST_CASE("Metadata inherit checkboxes emit one owned atomic override action", "
     check_no_inheritance_action(fixture.click("Inherit Artist"));
     const auto frames = fixture.click("Apply fields");
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
-        return frame.get().metadata_edit == WORM_UI_METADATA_EDIT_INHERITANCE;
+        return frame.get().metadata.kind == WORM_UI_METADATA_EDIT_INHERITANCE;
     });
     REQUIRE(found != frames.end());
     const auto& action = found->get();
-    CHECK(action.metadata_document_revision == 7);
-    CHECK(action.metadata_chart_id == wormedit::chart_id_t{52});
-    CHECK(action.metadata_overrides.value(wormedit::inherited_metadata_field_t::title) == std::optional<std::string>{"Shared title"});
-    CHECK(action.metadata_overrides.value(wormedit::inherited_metadata_field_t::artist) == std::optional<std::string>{""});
-    CHECK_FALSE(action.metadata_overrides.value(wormedit::inherited_metadata_field_t::genre));
+    CHECK(action.metadata.document_revision == 7);
+    CHECK(action.metadata.chart_id == wormedit::chart_id_t{52});
+    CHECK(action.metadata.overrides.value(wormedit::inherited_metadata_field_t::title) == std::optional<std::string>{"Shared title"});
+    CHECK(action.metadata.overrides.value(wormedit::inherited_metadata_field_t::artist) == std::optional<std::string>{""});
+    CHECK_FALSE(action.metadata.overrides.value(wormedit::inherited_metadata_field_t::genre));
 }
 TEST_CASE("Read-only Metadata inheritance cannot emit an edit", "[frontend-state][event-harness][metadata-inheritance]") {
     metadata_inheritance_fixture_t fixture{false};

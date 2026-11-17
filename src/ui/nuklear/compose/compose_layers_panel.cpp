@@ -35,7 +35,7 @@ struct LayersPanel {
 auto raise(const LayersPanel& panel, WormUiComposeActionKind kind, std::uint64_t id = 0) -> bool {
     if (!wormedit::ui::raise_compose_action(*panel.action, *panel.view, kind))
         return false;
-    panel.action->compose_semantic_layer_id.value = id;
+    panel.action->layer.id.value = id;
     return true;
 }
 
@@ -148,8 +148,8 @@ auto layer_entry_reason(const LayersPanel& panel, const wormedit::ui::compose_se
 auto raise_captured(const LayersPanel& panel, WormUiComposeActionKind kind) -> bool {
     if (!layer_capture_current(panel) ||
         !raise(panel, kind, panel.state->layer_editor.layers_menu.stamp.object_id)) return false;
-    panel.action->compose_input_chart_id.value = panel.state->layer_editor.layers_menu.stamp.chart_id;
-    panel.action->compose_input_document_revision = panel.state->layer_editor.layers_menu.stamp.revision;
+    panel.action->stamp.chart_id.value = panel.state->layer_editor.layers_menu.stamp.chart_id;
+    panel.action->stamp.document_revision = panel.state->layer_editor.layers_menu.stamp.revision;
     return true;
 }
 
@@ -242,7 +242,7 @@ void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::comp
     if (!allowed || !valid) nk_widget_disable_end(context);
     const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && valid && raise_captured(panel, WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER)) {
-        panel.action->compose_semantic_layer_name = state.layer_editor.semantic_layer_name.data();
+        panel.action->layer.name = state.layer_editor.semantic_layer_name.data();
         close_layer_editors(state);
     } else if (cancel) close_layer_editors(state);
 }
@@ -263,10 +263,10 @@ void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::com
     if (!allowed) nk_widget_disable_end(context);
     const auto cancel = wormedit::ui::chrome::button_label(context, "Cancel");
     if (apply && allowed && raise_captured(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR)) {
-        panel.action->compose_semantic_layer_red = wormedit::ui::chrome::unit_to_byte(value.r);
-        panel.action->compose_semantic_layer_green = wormedit::ui::chrome::unit_to_byte(value.g);
-        panel.action->compose_semantic_layer_blue = wormedit::ui::chrome::unit_to_byte(value.b);
-        panel.action->compose_semantic_layer_alpha = wormedit::ui::chrome::unit_to_byte(value.a);
+        panel.action->layer.red = wormedit::ui::chrome::unit_to_byte(value.r);
+        panel.action->layer.green = wormedit::ui::chrome::unit_to_byte(value.g);
+        panel.action->layer.blue = wormedit::ui::chrome::unit_to_byte(value.b);
+        panel.action->layer.alpha = wormedit::ui::chrome::unit_to_byte(value.a);
         close_layer_editors(state);
     } else if (cancel) close_layer_editors(state);
 }
@@ -400,8 +400,8 @@ void render_list(const LayersPanel& panel, float height) {
     if (!panel.state->layer_editor.layers_menu.open && panel.view->semantic_layer_total_count &&
         (first != panel.view->semantic_layer_first_row || count != panel.view->semantic_layers.size()) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) {
-        panel.action->compose_semantic_layer_first_row = first;
-        panel.action->compose_semantic_layer_row_count = count;
+        panel.action->layer.first_row = first;
+        panel.action->layer.row_count = count;
     }
     wormedit::ui::chrome::scroll_list_view_end(&list);
 }

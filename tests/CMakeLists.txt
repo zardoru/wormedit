@@ -20,6 +20,9 @@ set_tests_properties(tooling.raw-popups PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.targeted-action-triple
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_targeted_action_triple.py")
 set_tests_properties(tooling.targeted-action-triple PROPERTIES LABELS "unit;tooling")
+add_test(NAME tooling.workspace-action-members
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_workspace_action_members.py")
+set_tests_properties(tooling.workspace-action-members PROPERTIES LABELS "unit;tooling")
 add_test(NAME tooling.raw-scroll-groups
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_raw_scroll_groups.py")
 set_tests_properties(tooling.raw-scroll-groups PROPERTIES LABELS "unit;tooling")

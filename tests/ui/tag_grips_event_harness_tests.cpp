@@ -91,14 +91,14 @@ TEST_CASE("Tag grips stage insertion reorder until Apply and Revert restores sou
     tag_fixture_t fixture;
     expect_tag(fixture.harness.drawn_text().find("Up") == std::string::npos);
     fixture.begin();
-    expect_tag(fixture.drop().get().metadata_edit == WORM_UI_METADATA_EDIT_NONE);
+    expect_tag(fixture.drop().get().metadata.kind == WORM_UI_METADATA_EDIT_NONE);
     auto& state = worm_ui_nuklear_metadata_state();
     expect_tag(std::string_view{state.search_tags[2].data()} == "alpha");
     const auto applied = fixture.click("Apply");
-    expect_tag(applied.get().metadata_edit == WORM_UI_METADATA_EDIT_SONG);
-    expect_tag(applied.get().metadata_search_tags.size() == 3);
-    expect_tag(std::string_view{*applied.get().metadata_search_tags[0]} == "beta");
-    expect_tag(std::string_view{*applied.get().metadata_search_tags[2]} == "alpha");
+    expect_tag(applied.get().metadata.kind == WORM_UI_METADATA_EDIT_SONG);
+    expect_tag(applied.get().metadata.search_tags.size() == 3);
+    expect_tag(std::string_view{*applied.get().metadata.search_tags[0]} == "beta");
+    expect_tag(std::string_view{*applied.get().metadata.search_tags[2]} == "alpha");
     (void)fixture.click("Revert");
     expect_tag(std::string_view{state.search_tags[0].data()} == "alpha");
 }
@@ -153,7 +153,7 @@ TEST_CASE("Tag remove icon stages removal with a tooltip and read-only grips sta
     expect_tag(fixture.harness.drawn_text().find("Remove tag 2") != std::string::npos);
     const auto down = tag_button(true, x, row.second);
     const auto action = fixture.harness.frame({&down, 1});
-    expect_tag(action.get().metadata_edit == WORM_UI_METADATA_EDIT_NONE);
+    expect_tag(action.get().metadata.kind == WORM_UI_METADATA_EDIT_NONE);
     const auto up = tag_button(false, x, row.second);
     (void)fixture.harness.frame({&up, 1});
     auto& state = worm_ui_nuklear_metadata_state();

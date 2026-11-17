@@ -83,7 +83,7 @@ TEST_CASE("BGA remove unused keeps referenced resources and rejects stale action
         {.id = object_id_t{12}, .position = {measure_id_t{1}, 0}, .resource = kept});
     wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA;
-    action.compose_input_document_revision = 0;
+    action.stamp.document_revision = 0;
     require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1}, sink)));
     check_bga(fixture.history.document.resources.size() == 2);
     center.drain_inbox(notification_time_t{0});
@@ -91,7 +91,7 @@ TEST_CASE("BGA remove unused keeps referenced resources and rejects stale action
     require_bga(entries.size() == 1);
     check_bga(entries[0].severity == notification_severity_t::warning);
     check_bga(entries[0].source == notification_source_t::edit);
-    action.compose_input_document_revision = fixture.history.document.revision;
+    action.stamp.document_revision = fixture.history.document.revision;
     const auto before = fixture.history.undo.size();
     require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1}, sink)));
     require_bga(static_cast<bool>(fixture.history.document.resources.size() == 1));

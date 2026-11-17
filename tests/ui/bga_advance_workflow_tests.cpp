@@ -56,8 +56,8 @@ void check_bga_request(const wormedit::ui::bga_dock_request_t& request) {
 auto find_resource_place(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames)
-        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
-            const auto& input = frame.get().compose_inputs[index];
+        for (std::size_t index = 0; index < frame.get().input.compose_inputs.size(); ++index) {
+            const auto& input = frame.get().input.compose_inputs[index];
             if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) return &input;
         }
     return nullptr;

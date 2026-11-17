@@ -138,11 +138,11 @@ TEST_CASE("Sound row audition and protected deletion use the standard actions", 
     for (const auto& snapshot : actions) {
         const auto& action = snapshot.get();
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS) continue;
-        require_resource_table(action.compose_sound_resource_ids.size() == 1);
+        require_resource_table(action.resource.sound_resource_ids.size() == 1);
 
-        check_resource_table(action.compose_sound_resource_ids[0].value == 12);
-        check_resource_table(action.compose_input_project_id.value == fixture.harness.view().compose.project_id.value);
-        check_resource_table(action.compose_input_document_revision == fixture.harness.view().compose.document_revision);
+        check_resource_table(action.resource.sound_resource_ids[0].value == 12);
+        check_resource_table(action.stamp.project_id.value == fixture.harness.view().compose.project_id.value);
+        check_resource_table(action.stamp.document_revision == fixture.harness.view().compose.document_revision);
     }
 }
 
@@ -184,11 +184,11 @@ TEST_CASE("Images row deletion protects references and stamps the unused resourc
     for (const auto& snapshot : actions) {
         const auto& action = snapshot.get();
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS) continue;
-        require_resource_table(action.compose_sound_resource_ids.size() == 1);
+        require_resource_table(action.resource.sound_resource_ids.size() == 1);
 
-        check_resource_table(action.compose_sound_resource_ids[0].value == 22);
-        check_resource_table(action.compose_input_project_id.value == fixture.harness.view().compose.project_id.value);
-        check_resource_table(action.compose_input_chart_id.value == fixture.harness.view().compose.chart_id.value);
-        check_resource_table(action.compose_input_document_revision == fixture.harness.view().compose.document_revision);
+        check_resource_table(action.resource.sound_resource_ids[0].value == 22);
+        check_resource_table(action.stamp.project_id.value == fixture.harness.view().compose.project_id.value);
+        check_resource_table(action.stamp.chart_id.value == fixture.harness.view().compose.chart_id.value);
+        check_resource_table(action.stamp.document_revision == fixture.harness.view().compose.document_revision);
     }
 }

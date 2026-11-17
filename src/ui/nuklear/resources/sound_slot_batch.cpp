@@ -1,4 +1,5 @@
 #include "ui/nuklear/resources/sound_slot_batch.h"
+#include <wormedit/core/bms36.h>
 
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/dialog.h"
@@ -108,11 +109,11 @@ void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,
     state.revision = revision;
     state.first_slot = first_slot;
     if (reason) state.reason = reason;
-    if (first_slot == 0 || first_slot > 1295 || item_count == 0 || !items) {
+    if (first_slot == 0 || first_slot > wormedit::bms_max_slot || item_count == 0 || !items) {
         if (state.reason.empty()) state.reason = "Choose a valid WAV slot and at least one file.";
         return;
     }
-    if (item_count > 1295 || item_count - 1 > static_cast<std::size_t>(1295 - first_slot)) {
+    if (item_count > wormedit::bms_max_slot || item_count - 1 > static_cast<std::size_t>(wormedit::bms_max_slot - first_slot)) {
         state.reason = "The selected files exceed the remaining WAV slots through ZZ.";
     }
     state.items.reserve(item_count);
@@ -158,8 +159,8 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
     constexpr float row_height = 36.0f;
     const auto list_height = std::clamp(static_cast<float>(state.items.size()) * row_height + 4.0f,
                                         70.0f, 10.0f * row_height + 4.0f);
-    const auto valid_count = !state.items.empty() && state.items.size() <= 1295 &&
-        static_cast<std::size_t>(state.first_slot) + state.items.size() - 1 <= 1295;
+    const auto valid_count = !state.items.empty() && state.items.size() <= wormedit::bms_max_slot &&
+        static_cast<std::size_t>(state.first_slot) + state.items.size() - 1 <= wormedit::bms_max_slot;
     const auto can_confirm = !state.commit_pending && state.reason.empty() && valid_count && replacements_ready(state) &&
         std::ranges::none_of(state.items, [](const auto& item) { return item.ambiguous; }) &&
         action.compose_action == WORM_UI_COMPOSE_ACTION_NONE;
@@ -181,15 +182,14 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
         if (chrome::dialog_button(dialog, context, "Assign files", chrome::DialogButtonRole::primary,
                                   can_confirm)) {
             action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-            action.compose_input_chart_id.value = state.chart_id;
-            action.compose_input_document_revision = state.revision;
-            action.sound_import_project_id = wormedit::song_id_t{state.project_id};
+            action.stamp = {.chart_id = {state.chart_id}, .project_id = {state.project_id},
+                            .document_revision = state.revision};
             for (const auto& item : state.items)
-                action.sound_import_items.push_back({.path = item.path, .name = item.name,
+                action.sound_import.items.push_back({.path = item.path, .name = item.name,
                     .kind = wormedit::sound_kind_t::keysound});
 
-            action.compose_sound_slot = state.first_slot;
-            action.compose_sound_slot_confirmed = has_occupants(state);
+            action.resource.sound_slot = state.first_slot;
+            action.resource.sound_slot_confirmed = has_occupants(state);
             state.commit_pending = true;
         }
     }

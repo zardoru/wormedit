@@ -359,18 +359,18 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedi
     const auto assignments = reviewed_assignments(state);
     if (!assignments.empty()) {
         action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
-        action.compose_input_chart_id.value = view.chart_id.value;
-        action.compose_input_document_revision = view.document_revision;
+        action.stamp.chart_id.value = view.chart_id.value;
+        action.stamp.document_revision = view.document_revision;
         for (const auto& assignment : assignments) {
             auto payload = wormedit::ui::sound_group_assignment_t{
                 .group_id = wormedit::sound_group_id_t{assignment.existing_group_id},
                 .name = assignment.name};
             for (const auto id : assignment.sound_ids)
                 payload.sound_ids.push_back(wormedit::resource_id_t{id});
-            action.compose_sound_group_assignments.push_back(std::move(payload));
+            action.resource.sound_group_assignments.push_back(std::move(payload));
         }
 
-        action.compose_sound_group_keep_ids_together = state.keep_ids_together;
+        action.resource.sound_group_keep_ids_together = state.keep_ids_together;
         state.open = false;
         release_pending = true;
     } else if (!state.manual && state.message.empty()) {

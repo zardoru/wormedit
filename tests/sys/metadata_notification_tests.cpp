@@ -44,10 +44,10 @@ struct metadata_notification_fixture_t {
 
 auto song_edit(const metadata_notification_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = WORM_UI_METADATA_EDIT_SONG;
-    action.metadata_document_revision = fixture.history.document.revision;
-    action.metadata_title = "New title";
-    action.metadata_artist = "New artist";
+    action.metadata.kind = WORM_UI_METADATA_EDIT_SONG;
+    action.metadata.document_revision = fixture.history.document.revision;
+    action.metadata.title = "New title";
+    action.metadata.artist = "New artist";
     return action;
 }
 
@@ -85,10 +85,10 @@ auto redivision_song(std::uint64_t row) -> song_document_t {
 auto redivision_action(const metadata_notification_fixture_t& fixture, std::uint64_t resolution)
     -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
-    action.metadata_document_revision = fixture.history.document.revision;
-    action.metadata_chart_id = chart_id_t{1};
-    action.metadata_redivision_resolution = resolution;
+    action.metadata.kind = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
+    action.metadata.document_revision = fixture.history.document.revision;
+    action.metadata.chart_id = chart_id_t{1};
+    action.metadata.redivision_resolution = resolution;
     return action;
 }
 
@@ -117,9 +117,9 @@ struct channel_map_request_t {
     wormedit::ui::workspace_action_t action{};
 
     void point() {
-        action.metadata_channel_map_lanes.clear();
+        action.metadata.channel_map_lanes.clear();
         for (std::size_t index = 0; index < lane_ids.size(); ++index) {
-            action.metadata_channel_map_lanes.push_back({
+            action.metadata.channel_map_lanes.push_back({
                 .lane = lane_id_t{lane_ids[index]},
                 .visible = texts[index * 4], .invisible = texts[index * 4 + 1],
                 .long_note = texts[index * 4 + 2], .mine = texts[index * 4 + 3]});
@@ -141,10 +141,10 @@ void prepare_channel_map_request(channel_map_request_t& request,
         request.texts[lane * 4 + 2] = channels.long_note.value_or("");
         request.texts[lane * 4 + 3] = channels.mine.value_or("");
     }
-    request.action.metadata_edit = kind;
-    request.action.metadata_document_revision = fixture.history.document.revision;
-    request.action.metadata_chart_id = chart_id_t{2};
-    request.action.metadata_channel_map_layout_segment_id = object_id_t{10};
+    request.action.metadata.kind = kind;
+    request.action.metadata.document_revision = fixture.history.document.revision;
+    request.action.metadata.chart_id = chart_id_t{2};
+    request.action.metadata.channel_map_layout_segment_id = object_id_t{10};
     request.point();
 }
 
@@ -179,7 +179,7 @@ TEST_CASE("metadata edit notifications preserve success and no-op outcomes", "[u
     require_metadata_notification(entries.size() == 1);
     expect_edit_entry(entries[0], notification_severity_t::success, "Metadata updated.");
     const auto revision = fixture.history.document.revision;
-    action.metadata_document_revision = revision;
+    action.metadata.document_revision = revision;
     require_metadata_notification(fixture.dispatch(action) == "No metadata changes.");
     entries = fixture.entries();
     require_metadata_notification(entries.size() == 2);
@@ -192,14 +192,14 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
     metadata_notification_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
     auto action = song_edit(fixture);
-    action.metadata_title = std::nullopt;
+    action.metadata.title = std::nullopt;
     const auto invalid = fixture.dispatch(action);
     require_metadata_notification(static_cast<bool>(invalid));
     auto entries = fixture.entries();
     require_metadata_notification(entries.size() == 1);
     expect_edit_entry(entries[0], notification_severity_t::warning, *invalid);
     action = song_edit(fixture);
-    action.metadata_document_revision = revision - 1;
+    action.metadata.document_revision = revision - 1;
     const auto stale = fixture.dispatch(action);
     require_metadata_notification(static_cast<bool>(stale));
     check_metadata_notification(*stale == stale_action_message("Metadata edit"));
@@ -262,9 +262,9 @@ TEST_CASE("channel-map preview with a conflict keeps apply rejected and the docu
         channel_map_preview_view_t::from(*fixture.drop.channel_map_preview).report->conflict_count > 0);
 
     wormedit::ui::workspace_action_t apply{};
-    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
-    apply.metadata_document_revision = revision;
-    apply.metadata_chart_id = chart_id_t{2};
+    apply.metadata.kind = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata.document_revision = revision;
+    apply.metadata.chart_id = chart_id_t{2};
     const auto rejected = fixture.dispatch(apply);
     require_metadata_notification(rejected.has_value());
     check_metadata_notification(fixture.history.document.revision == revision);
@@ -290,9 +290,9 @@ TEST_CASE("channel-map preview then apply swaps two lanes as one undoable comman
     check_metadata_notification(fixture.drop.channel_map_preview->value->payload.report.conflict_count == 0);
 
     wormedit::ui::workspace_action_t apply{};
-    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
-    apply.metadata_document_revision = fixture.history.document.revision;
-    apply.metadata_chart_id = chart_id_t{2};
+    apply.metadata.kind = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata.document_revision = fixture.history.document.revision;
+    apply.metadata.chart_id = chart_id_t{2};
     const auto applied = fixture.dispatch(apply);
     require_metadata_notification(applied == "Channel maps updated.");
     check_metadata_notification(visible_channel(fixture, 0) == second);
@@ -319,9 +319,9 @@ TEST_CASE("stale channel-map preview rejects apply without touching the document
     const auto revision = fixture.history.document.revision;
 
     wormedit::ui::workspace_action_t apply{};
-    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
-    apply.metadata_document_revision = revision;
-    apply.metadata_chart_id = chart_id_t{2};
+    apply.metadata.kind = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata.document_revision = revision;
+    apply.metadata.chart_id = chart_id_t{2};
     const auto rejected = fixture.dispatch(apply);
     require_metadata_notification(rejected.has_value());
     check_metadata_notification(rejected->find("changed") != std::string::npos);
@@ -340,20 +340,20 @@ TEST_CASE("batch metadata edit writes every selected difficulty in one undo step
     const auto undo_before = fixture.history.undo.size();
 
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = WORM_UI_METADATA_EDIT_BATCH_CHART;
-    for (const auto id : ids) action.metadata_batch_chart_ids.push_back(chart_id_t{id});
-    action.metadata_batch_edit_author = true;
-    action.metadata_chart_author = "Shared mapper";
+    action.metadata.kind = WORM_UI_METADATA_EDIT_BATCH_CHART;
+    for (const auto id : ids) action.metadata.batch_chart_ids.push_back(chart_id_t{id});
+    action.metadata.batch_edit_author = true;
+    action.metadata.chart_author = "Shared mapper";
 
     // A stale revision rejects everything.
-    action.metadata_document_revision = fixture.history.document.revision - 1;
+    action.metadata.document_revision = fixture.history.document.revision - 1;
     const auto stale = fixture.dispatch(action);
     require_metadata_notification(stale.has_value());
     check_metadata_notification(fixture.history.undo.size() == undo_before);
     for (const auto& chart : fixture.history.document.charts)
         check_metadata_notification(chart.metadata.author != "Shared mapper");
 
-    action.metadata_document_revision = fixture.history.document.revision;
+    action.metadata.document_revision = fixture.history.document.revision;
     const auto applied = fixture.dispatch(action);
     check_metadata_notification(applied == "Metadata updated for 2 difficulties.");
     check_metadata_notification(fixture.history.undo.size() == undo_before + 1);
@@ -382,12 +382,12 @@ wormedit::ui::workspace_action_t typed_format_action(const metadata_notification
                                           const char* name, const char* value,
                                           std::size_t index) {
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = kind;
-    action.metadata_document_revision = fixture.history.document.revision;
-    action.metadata_format_family = family;
-    action.metadata_format_index = index;
-    action.metadata_format_name = name;
-    action.metadata_format_value = value;
+    action.metadata.kind = kind;
+    action.metadata.document_revision = fixture.history.document.revision;
+    action.metadata.format_family = family;
+    action.metadata.format_index = index;
+    action.metadata.format_name = name;
+    action.metadata.format_value = value;
     return action;
 }
 } // namespace
@@ -445,10 +445,10 @@ auto lane_profile_index_for_other_profile(const metadata_notification_fixture_t&
 auto lane_profile_preview_action(const metadata_notification_fixture_t& fixture, std::size_t index)
     -> wormedit::ui::workspace_action_t {
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE;
-    action.metadata_document_revision = fixture.history.document.revision;
-    action.metadata_chart_id = chart_id_t{2};
-    action.metadata_lane_profile_index = index;
+    action.metadata.kind = WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE;
+    action.metadata.document_revision = fixture.history.document.revision;
+    action.metadata.chart_id = chart_id_t{2};
+    action.metadata.lane_profile_index = index;
     return action;
 }
 }
@@ -465,9 +465,9 @@ TEST_CASE("key-count preview then apply changes the family profile as one undoab
     require_metadata_notification(fixture.drop.lane_profile_preview->value.has_value());
 
     wormedit::ui::workspace_action_t apply{};
-    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
-    apply.metadata_document_revision = fixture.history.document.revision;
-    apply.metadata_chart_id = chart_id_t{2};
+    apply.metadata.kind = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+    apply.metadata.document_revision = fixture.history.document.revision;
+    apply.metadata.chart_id = chart_id_t{2};
     const auto applied = fixture.dispatch(apply);
     require_metadata_notification(applied == "Key-count profile changed.");
     check_metadata_notification(fixture.history.document.charts.front().lane_layouts.front().layout.profile_id ==
@@ -490,9 +490,9 @@ TEST_CASE("stale key-count preview rejects apply without touching the document",
     const auto revision = fixture.history.document.revision;
 
     wormedit::ui::workspace_action_t apply{};
-    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
-    apply.metadata_document_revision = revision;
-    apply.metadata_chart_id = chart_id_t{2};
+    apply.metadata.kind = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+    apply.metadata.document_revision = revision;
+    apply.metadata.chart_id = chart_id_t{2};
     const auto rejected = fixture.dispatch(apply);
     require_metadata_notification(rejected.has_value());
     check_metadata_notification(fixture.history.document.revision == revision);
@@ -516,8 +516,8 @@ TEST_CASE("Malformed metadata payload keeps precedence over its stale stamp",
           "[unit][sys][metadata-notification][metadata-stamp-order]") {
     metadata_notification_fixture_t fixture;
     auto action = song_edit(fixture);
-    action.metadata_title = std::nullopt;
-    --action.metadata_document_revision;
+    action.metadata.title = std::nullopt;
+    --action.metadata.document_revision;
     const auto revision = fixture.history.document.revision;
     const auto response = fixture.dispatch(action);
     require_metadata_notification(response.has_value());
@@ -534,10 +534,10 @@ namespace {
 void check_metadata_timing_boundary(WormUiMetadataEditKind kind, bool timing_locked) {
     metadata_notification_fixture_t fixture;
     auto action = redivision_action(fixture, 192);
-    action.metadata_edit = kind;
-    action.metadata_audio_offset_numerator_text = "1";
-    action.metadata_audio_offset_denominator_text = "4";
-    --action.metadata_document_revision;
+    action.metadata.kind = kind;
+    action.metadata.audio_offset_numerator_text = "1";
+    action.metadata.audio_offset_denominator_text = "4";
+    --action.metadata.document_revision;
     const auto revision = fixture.history.document.revision;
     const auto response = fixture.dispatch(action, timing_locked);
     require_metadata_notification(response.has_value());
@@ -572,12 +572,12 @@ namespace {
 void check_fresh_inheritance_dispatch(metadata_notification_fixture_t& fixture, const wormedit::ui::workspace_action_t& action) {
     REQUIRE(fixture.dispatch(action));
     CHECK(fixture.history.undo.size() == 1);
-    CHECK(fixture.history.document.charts.front().metadata.overrides == action.metadata_overrides);
+    CHECK(fixture.history.document.charts.front().metadata.overrides == action.metadata.overrides);
     CHECK(undo_document_command(fixture.history));
     CHECK_FALSE(fixture.history.document.charts.front().metadata.overrides.has_values());
 }
 void check_stale_inheritance_dispatch(metadata_notification_fixture_t& fixture, wormedit::ui::workspace_action_t action) {
-    --action.metadata_document_revision;
+    --action.metadata.document_revision;
     const auto message = fixture.dispatch(action);
     REQUIRE(message);
     CHECK(*message == stale_action_message("Metadata edit"));
@@ -588,11 +588,11 @@ void check_stale_inheritance_dispatch(metadata_notification_fixture_t& fixture, 
 TEST_CASE("Metadata inheritance dispatch is stamped atomic and undoable", "[sys][metadata-inheritance]") {
     metadata_notification_fixture_t fixture;
     wormedit::ui::workspace_action_t action{};
-    action.metadata_edit = WORM_UI_METADATA_EDIT_INHERITANCE;
-    action.metadata_document_revision = fixture.history.document.revision;
-    action.metadata_chart_id = fixture.history.document.charts.front().id;
-    action.metadata_overrides.value(inherited_metadata_field_t::title) = "Local title";
-    action.metadata_overrides.value(inherited_metadata_field_t::artist) = "";
+    action.metadata.kind = WORM_UI_METADATA_EDIT_INHERITANCE;
+    action.metadata.document_revision = fixture.history.document.revision;
+    action.metadata.chart_id = fixture.history.document.charts.front().id;
+    action.metadata.overrides.value(inherited_metadata_field_t::title) = "Local title";
+    action.metadata.overrides.value(inherited_metadata_field_t::artist) = "";
     SECTION("fresh") { check_fresh_inheritance_dispatch(fixture, action); }
     SECTION("stale") { check_stale_inheritance_dispatch(fixture, action); }
 }

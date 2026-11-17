@@ -1809,12 +1809,12 @@ auto batch_slot_files(assign_bms_wav_slot_batch_action_t action,
                       std::size_t first_slot,
                       document_command_result_t& result)
     -> std::optional<std::vector<import_resource_asset_action_t>> {
-    if (action.imported_files.empty() || action.imported_files.size() > 1295) {
+    if (action.imported_files.empty() || action.imported_files.size() > bms_max_slot) {
         reject(result, diagnostic_code_t::invalid_id,
                "BMS WAV slot batch needs between 1 and 1295 files");
         return std::nullopt;
     }
-    if (action.imported_files.size() - 1 > 1295 - first_slot) {
+    if (action.imported_files.size() - 1 > bms_max_slot - first_slot) {
         reject(result, diagnostic_code_t::invalid_id,
                "BMS WAV slot batch would continue beyond ZZ");
         return std::nullopt;

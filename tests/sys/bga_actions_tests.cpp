@@ -1,4 +1,4 @@
-#include "sys/compose/actions/compose_bga_actions.h"
+#include "compose_window_overloads_sound.h"
 #include <wormedit/core/resource_assignment.h>
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>

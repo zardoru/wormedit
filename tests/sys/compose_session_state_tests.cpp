@@ -278,8 +278,10 @@ TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
 }
 
 namespace {
-void verify_timing_partition(std::uint8_t mask, double right) {
+void verify_timing_partition(std::uint8_t requested, double right) {
     using namespace wormedit::ui;
+    // The view layout fits the mask to the region first; lanes it drops have no extent.
+    const auto mask = compose_timing_fit_mask(requested, right - compose_measure_rail_width);
     wormedit::ui::compose_view_t view{};
     view.timing_lane_visibility_mask = mask;
     view.playable_field_left_pixels = right + 48;

@@ -219,7 +219,14 @@ void check_wheel_displacement(bool downscroll, double delta,
         state, viewport, navigation, fixture.application, fixture.cache, 0.016);
     const bool forward = (delta > 0.0) != downscroll;
     if (playing) {
-        expect_compose_test(fixture.application.project.transport.preview_playhead_absolute_row == (forward ? 1200.0 : 720.0));
+        const auto playhead = fixture.application.project.transport.preview_playhead_absolute_row.value_or(960.0);
+        if (kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL) {
+            expect_compose_test(playhead == (forward ? 1200.0 : 720.0));
+        } else {
+            // Smooth scrolling moves the playing playhead by its pixels, less than one snap.
+            expect_compose_test((playhead > 960.0) == forward);
+            expect_compose_test(playhead != 960.0 && playhead > 720.0 && playhead < 1200.0);
+        }
         expect_compose_test(seeks == 1);
         expect_compose_test(state.viewport_scroll_pixels == 1000.0);
     } else {

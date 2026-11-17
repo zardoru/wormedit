@@ -92,6 +92,15 @@ auto seek_point_count_for(std::uint64_t source_frames, std::uint32_t source_rate
                : 0;
 }
 
+// miniaudio's resampler low-pass cuts at min(in, out) / 2 while running at max(in, out). For a
+// source within 1% of the output rate that cutoff sits at Nyquist, filters nothing audible, and
+// the biquads diverge to Inf/NaN (a 44099 Hz Vorbis file blew up ten seconds in).
+auto is_near_output_rate(std::uint32_t source_rate) -> bool {
+    const auto low = std::min<std::uint64_t>(source_rate, output_sample_rate);
+    const auto high = std::max<std::uint64_t>(source_rate, output_sample_rate);
+    return low * 100U >= high * 99U;
+}
+
 auto skip_decoder_frames(ma_decoder& decoder, std::uint64_t count) -> bool {
     std::vector<float> discard(maximum_read_frames * output_channel_count);
     while (count != 0) {
@@ -182,6 +191,7 @@ auto decoder_t::open(const std::filesystem::path& path, std::string* error_messa
 
     auto candidate = std::make_unique<impl_t>();
     auto config = ma_decoder_config_init(ma_format_f32, output_channel_count, output_sample_rate);
+    if (is_near_output_rate(source_rate)) config.resampling.linear.lpfOrder = 0;
     if (index == decoder_index_t::build)
         config.seekPointCount = seek_point_count_for(source_frames, source_rate);
     result = decoder_init_file(path, &config, &candidate->decoder);

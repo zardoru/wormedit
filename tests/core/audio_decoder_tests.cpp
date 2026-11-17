@@ -1,4 +1,5 @@
 #include <wormedit/audio/decoder.h>
+#include <wormedit/audio/slice_render.h>
 #include <wormedit/core/resource_file_copy.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -10,6 +11,8 @@
 #include <cstdint>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <numbers>
 #include <span>
 #include <string>
@@ -308,4 +311,39 @@ auto expected_decoder_reads_keep_eof_and_positioned_counts() -> bool {
 TEST_CASE("decoder expected reads keep EOF payloads and positioned cursor behavior",
           "[unit][audio][decoder][result][eof]") {
     CHECK(expected_decoder_reads_keep_eof_and_positioned_counts());
+}
+
+namespace {
+// Peak of a fully decoded 44099 Hz sine; resampling it to 44100 Hz once diverged to Inf/NaN.
+auto near_output_rate_resampled_peak() -> float {
+    using namespace wormedit::audio;
+    constexpr std::uint32_t source_rate = 44'099;
+    std::vector<float> pcm(static_cast<std::size_t>(source_rate) * output_channel_count);
+    for (std::size_t index = 0; index < pcm.size(); ++index)
+        pcm[index] = 0.9F * static_cast<float>(std::sin(static_cast<double>(index / 2) * 0.05));
+    const auto path = std::filesystem::temp_directory_path() / "wormedit-near-rate-source.wav";
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << encode_wav_pcm16(pcm, source_rate);
+    }
+    decoder_t decoder;
+    if (!decoder.open(path)) return std::numeric_limits<float>::infinity();
+    std::vector<float> block(maximum_read_frames * output_channel_count);
+    float peak{};
+    for (;;) {
+        const auto read = decoder.read_frames(block, maximum_read_frames);
+        for (std::size_t index = 0; index < read.frames_read * output_channel_count; ++index)
+            peak = std::isfinite(block[index]) ? std::max(peak, std::abs(block[index]))
+                                               : std::numeric_limits<float>::infinity();
+        if (read.status != read_phase_t::success || read.frames_read == 0) break;
+    }
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    return peak;
+}
+} // namespace
+
+TEST_CASE("a source one hertz off the output rate resamples without diverging",
+          "[unit][audio][decoder][resample]") {
+    CHECK(near_output_rate_resampled_peak() < 1.0F);
 }

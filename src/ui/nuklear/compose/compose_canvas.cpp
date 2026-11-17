@@ -2871,16 +2871,22 @@ static void draw_compose_note(const ComposePaintContext& paint,
     const auto full = nk_rect(raw.x + 1.0f, raw.y, std::max(1.0f, raw.w - 2.0f),
                               std::max(2.0f, raw.h));
     auto& field = paint_field(paint.context);
-    const auto clipped_artwork = [&](auto&& draw) {
-        const auto previous = field.push_clip({tile.x, tile.y, tile.w, tile.h});
+    const auto clipped_artwork = [&](struct nk_rect clip, auto&& draw) {
+        const auto previous = field.push_clip({clip.x, clip.y, clip.w, clip.h});
         draw();
         field.pop_clip(previous);
     };
+    // Arrows are square, so they overhang a short note; cut them at the view edge only.
+    const auto artwork = compose_note_artwork_rect(raw, note.glyph);
+    const auto arrow_clip = wormedit::ui::rect_intersection(
+        {artwork.x, artwork.y, artwork.w, artwork.h},
+        {paint.viewport.x, paint.viewport.y, paint.viewport.w, paint.viewport.h});
+    const auto arrow_bounds = nk_rect(arrow_clip.x, arrow_clip.y, arrow_clip.w, arrow_clip.h);
     auto arrow = false;
-    clipped_artwork([&] { arrow = draw_compose_note_glyph(paint, note, full); });
+    clipped_artwork(arrow_bounds, [&] { arrow = draw_compose_note_glyph(paint, note, full); });
     if (arrow) {
         if (!note.proposal_ghost)
-            clipped_artwork([&] { draw_compose_note_hitsound(paint, note, full, style.fill); });
+            clipped_artwork(arrow_bounds, [&] { draw_compose_note_hitsound(paint, note, full, style.fill); });
         return;
     }
     field_rect(paint, tile, 0.0f, style.fill, 2);
@@ -2890,7 +2896,7 @@ static void draw_compose_note(const ComposePaintContext& paint,
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105), 2);
-    clipped_artwork([&] { draw_compose_note_sound_label(paint, note, full, style.fill); });
+    clipped_artwork(tile, [&] { draw_compose_note_sound_label(paint, note, full, style.fill); });
 }
 
 static void draw_compose_paint_ghost(const ComposePaintContext& paint) {

@@ -347,3 +347,33 @@ TEST_CASE("a source one hertz off the output rate resamples without diverging",
           "[unit][audio][decoder][resample]") {
     CHECK(near_output_rate_resampled_peak() < 1.0F);
 }
+
+namespace {
+// Decodes a float WAV whose data holds NaN and both infinities; returns the samples read.
+auto decoded_non_finite_wav() -> std::vector<float> {
+    using namespace wormedit::audio;
+    const std::vector<float> pcm{0.5F, std::numeric_limits<float>::quiet_NaN(),
+                                 std::numeric_limits<float>::infinity(), -0.25F,
+                                 -std::numeric_limits<float>::infinity(), 0.75F};
+    const auto path = std::filesystem::temp_directory_path() / "wormedit-non-finite-source.wav";
+    {
+        // encode_wav_float32 refuses non-finite data, so the samples follow its header raw.
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << encode_wav_float32_header(pcm.size() / output_channel_count, output_sample_rate);
+        out.write(reinterpret_cast<const char*>(pcm.data()),
+                  static_cast<std::streamsize>(pcm.size() * sizeof(float)));
+    }
+    decoder_t decoder;
+    std::vector<float> samples(maximum_read_frames * output_channel_count);
+    const auto read = decoder.open(path) ? decoder.read_frames(samples, maximum_read_frames)
+                                         : read_result_t::from(wormedit::failure_code_t::unavailable, 0);
+    samples.resize(read.frames_read * output_channel_count);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    return samples;
+}
+} // namespace
+
+TEST_CASE("decoded samples are never NaN or infinite", "[unit][audio][decoder]") {
+    CHECK(decoded_non_finite_wav() == std::vector<float>{0.5F, 0.0F, 0.0F, -0.25F, 0.0F, 0.75F});
+}

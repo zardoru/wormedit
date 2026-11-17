@@ -3,10 +3,12 @@
 #include <miniaudio.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -112,6 +114,24 @@ auto skip_decoder_frames(ma_decoder& decoder, std::uint64_t count) -> bool {
         count -= chunk;
     }
     return true;
+}
+
+// Reads normalized PCM and never returns a non-finite sample: one NaN or Inf would reach playback
+// at full scale and invalidate a whole waveform analysis.
+auto read_decoded_frames(ma_decoder& decoder, std::span<float> interleaved_stereo,
+                         std::size_t requested_frames) -> read_result_t {
+    ma_uint64 frames_read{};
+    const auto result = ma_decoder_read_pcm_frames(&decoder, interleaved_stereo.data(),
+                                                   requested_frames, &frames_read);
+    if (frames_read > requested_frames) {
+        return read_result_t::from(wormedit::failure_code_t::decode_failed, 0);
+    }
+    const auto frames = static_cast<std::size_t>(frames_read);
+    std::ranges::replace_if(interleaved_stereo.first(frames * output_channel_count),
+                            [](float sample) { return !std::isfinite(sample); }, 0.0F);
+    if (result == MA_SUCCESS) return read_result_t::from(read_phase_t::success, frames);
+    if (result == MA_AT_END) return read_result_t::from(read_phase_t::end_of_stream, frames);
+    return read_result_t::from(wormedit::failure_code_t::decode_failed, frames);
 }
 
 auto position_decoder(ma_decoder& decoder, std::uint64_t frame) -> bool {
@@ -305,20 +325,7 @@ auto decoder_t::read_frames(std::span<float> interleaved_stereo,
                                                               : read_phase_t::end_of_stream,
                                    frames);
     }
-    ma_uint64 frames_read{};
-    const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
-                                                   requested_frames, &frames_read);
-    if (frames_read > requested_frames) {
-        return read_result_t::from(wormedit::failure_code_t::decode_failed, 0);
-    }
-    if (result == MA_SUCCESS) {
-        return read_result_t::from(read_phase_t::success, static_cast<std::size_t>(frames_read));
-    }
-    if (result == MA_AT_END) {
-        return read_result_t::from(read_phase_t::end_of_stream,
-                                   static_cast<std::size_t>(frames_read));
-    }
-    return read_result_t::from(wormedit::failure_code_t::decode_failed, static_cast<std::size_t>(frames_read));
+    return read_decoded_frames(impl_->decoder, interleaved_stereo, requested_frames);
 }
 
 auto decoder_t::read_frames_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
@@ -355,20 +362,7 @@ auto decoder_t::read_frames_at(std::uint64_t output_frame, std::span<float> inte
     if (requested_frames == 0) {
         return read_result_t::from(read_phase_t::success, 0);
     }
-    ma_uint64 frames_read{};
-    const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
-                                                   requested_frames, &frames_read);
-    if (frames_read > requested_frames) {
-        return read_result_t::from(wormedit::failure_code_t::decode_failed, 0);
-    }
-    if (result == MA_SUCCESS) {
-        return read_result_t::from(read_phase_t::success, static_cast<std::size_t>(frames_read));
-    }
-    if (result == MA_AT_END) {
-        return read_result_t::from(read_phase_t::end_of_stream,
-                                   static_cast<std::size_t>(frames_read));
-    }
-    return read_result_t::from(wormedit::failure_code_t::decode_failed, static_cast<std::size_t>(frames_read));
+    return read_decoded_frames(impl_->decoder, interleaved_stereo, requested_frames);
 }
 
 auto decoder_t::read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,

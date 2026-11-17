@@ -1,0 +1,17 @@
+# file line-count; files over 1500 lines may only shrink (see check_test_file_size.py)
+tests/core/bmson_sound_channel_editor_tests.cpp 1904
+tests/core/editor_scene_tests.cpp 2415
+tests/core/interaction_tests.cpp 8527
+tests/core/resource_assignment_tests.cpp 2450
+tests/core/sv_recipe_tests.cpp 1696
+tests/core/timing_tests.cpp 1943
+tests/formats/bms_writer_tests.cpp 2297
+tests/formats/native_project_tests.cpp 1950
+tests/formats/osu_mania_tests.cpp 2463
+tests/formats/stepmania_tests.cpp 1515
+tests/sys/application_commands_tests.cpp 3974
+tests/sys/compose_action_notification_tests.cpp 3415
+tests/sys/frame_projection_arena_tests.cpp 1741
+tests/sys/sdl_preview_output_tests.cpp 2011
+tests/ui/bga_lane_event_harness_tests.cpp 1774
+tests/ui/nuklear_event_harness_tests.cpp 9915

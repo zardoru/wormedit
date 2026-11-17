@@ -1,5 +1,6 @@
 #define NK_IMPLEMENTATION
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/compose/compose_ui_window_of.h"
 #include "compose_ui_window_overloads.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
 #include "ui/nuklear/render/arrow_glyph.h"

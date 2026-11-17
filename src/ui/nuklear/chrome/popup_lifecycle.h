@@ -1,7 +1,9 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
-#include "ui/frontend.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/request_stamp.h"
 
 #include <algorithm>
 #include <cstdint>

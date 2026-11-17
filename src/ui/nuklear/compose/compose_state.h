@@ -3,7 +3,10 @@
 #include "ui/nuklear/dock.h"
 #include "ui/nuklear/chrome/file_dialog_slot.h"
 
-#include "ui/frontend.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include "ui/nuklear/compose/compose_drag_capture.h"
 #include "ui/nuklear/resources/keysound_list_state.h"
 #include "ui/nuklear/compose/compose_bookmark_chooser.h"

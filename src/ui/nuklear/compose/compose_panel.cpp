@@ -1484,7 +1484,7 @@ void render_dock_images(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_bga(panel.context, panel.view, panel.action, &state);
 }
 void render_dock_measures(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_measures(panel.context, panel.view, panel.action, &state);
+    worm_ui_nuklear_render_compose_measures(panel.context, panel.view, &panel.action->compose, &panel.action->stamp, &state);
 }
 void render_dock_layers(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_layers(panel.context, panel.view, panel.action, &state);

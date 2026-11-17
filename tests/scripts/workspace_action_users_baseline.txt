@@ -17,6 +17,7 @@ src/ui/nuklear/app/frontend.cpp
 src/ui/nuklear/audio/audio_panel.cpp
 src/ui/nuklear/audio/audio_panel.h
 src/ui/nuklear/compose/compose_ui_window.h
+src/ui/nuklear/compose/compose_ui_window_of.h
 src/ui/nuklear/metadata/metadata_audio_section.cpp
 src/ui/nuklear/metadata/metadata_panel.cpp
 src/ui/nuklear/metadata/metadata_panel.h

@@ -1,7 +1,10 @@
 #pragma once
 
 #include "ui/nuklear/compose/compose_ui_window.h"
-#include "ui/frontend.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/compose.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/timing_preview.h"
 #include "wormedit/nuklear_config.h"
 
 #include <cstdint>

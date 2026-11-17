@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose/compose_generator_form.h"
+#include "ui/nuklear/compose/compose_ui_window_of.h"
 #include <wormedit/core/bms36.h>
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"

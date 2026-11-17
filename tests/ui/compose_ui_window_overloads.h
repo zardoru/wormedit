@@ -2,6 +2,7 @@
 
 // Test-only adapters: tests build the whole workspace_action_t while the Compose Nuklear panels
 // take their narrower window. The frontend builds the window explicitly in app/frontend.cpp.
+#include "ui/nuklear/compose/compose_ui_window_of.h"
 #include "ui/nuklear/compose/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose/compose_sound_picker.h"
 #include "ui/nuklear/compose/compose_state.h"

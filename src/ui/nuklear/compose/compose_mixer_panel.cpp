@@ -4,6 +4,7 @@
 #include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/render/theme.h"
 
+#include <wormedit/core/ui_layout_preferences.h>
 #include "wormedit/nuklear_config.h"
 
 #include <cmath>

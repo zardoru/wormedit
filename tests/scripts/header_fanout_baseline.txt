@@ -64,10 +64,7 @@ src/sys/resources/resource_action_context.h 67
 src/sys/resources/sound_import_staging.h 81
 src/sys/resources/sound_usage_actions.h 79
 src/sys/timing/timing_view.h 115
-src/ui/nuklear/audio/preview_audio_dialog.h 61
 src/ui/nuklear/chrome/catalog_confirmation.h 81
-src/ui/nuklear/chrome/dialog.h 60
-src/ui/nuklear/compose/compose_area_menu.h 64
 src/ui/nuklear/compose/compose_bmson_tab.h 81
 src/ui/nuklear/compose/compose_input_internal.h 86
 src/ui/nuklear/compose/compose_input_panel.h 89
@@ -82,13 +79,12 @@ src/ui/nuklear/compose/compose_sounds_panel.h 81
 src/ui/nuklear/compose/compose_state.h 80
 src/ui/nuklear/compose/compose_timing_input.h 85
 src/ui/nuklear/compose/compose_viewport_input.h 85
-src/ui/nuklear/metadata/metadata_audio_section.h 65
-src/ui/nuklear/metadata/metadata_difficulty_section.h 65
-src/ui/nuklear/metadata/metadata_format_fields.h 65
-src/ui/nuklear/metadata/metadata_inheritance_section.h 65
-src/ui/nuklear/metadata/metadata_panel_internal.h 64
-src/ui/nuklear/metadata/metadata_song_section.h 65
-src/ui/nuklear/metadata/metadata_state.h 63
+src/ui/nuklear/metadata/metadata_audio_section.h 62
+src/ui/nuklear/metadata/metadata_difficulty_section.h 62
+src/ui/nuklear/metadata/metadata_format_fields.h 62
+src/ui/nuklear/metadata/metadata_inheritance_section.h 62
+src/ui/nuklear/metadata/metadata_panel_internal.h 61
+src/ui/nuklear/metadata/metadata_song_section.h 62
 src/ui/nuklear/resources/sound_import_dialog.h 71
 src/ui/nuklear/resources/sound_import_runtime.h 63
 tests/sys/application_dispatch_fixture.h 244
@@ -98,4 +94,4 @@ tests/sys/compose_window_overloads_input.h 195
 tests/sys/compose_window_overloads_sound.h 190
 tests/sys/compose_window_overloads_view.h 209
 tests/sys/frame_timing_fixtures.h 282
-tests/ui/compose_ui_window_overloads.h 81
+tests/ui/compose_ui_window_overloads.h 82

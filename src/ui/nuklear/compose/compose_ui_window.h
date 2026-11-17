@@ -1,5 +1,21 @@
 #pragma once
-#include "ui/frontend/actions.h"
+// Deliberately not actions.h: a window's users must not depend on (or recompile with) the whole
+// workspace_action_t. Only the request headers of the members below. compose_ui_window_of lives in
+// compose_ui_window_of.h for the composition root.
+#include "ui/frontend/audio_slicer.h"
+#include "ui/frontend/bga_usage.h"
+#include "ui/frontend/compose_request.h"
+#include "ui/frontend/frame_input.h"
+#include "ui/frontend/preview_audio.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/request_stamp.h"
+#include "ui/frontend/session_requests.h"
+#include "ui/frontend/sound_requests.h"
+#include "ui/frontend/timing_edit.h"
+#include "ui/frontend/timing_preview.h"
+#include <wormedit/core/preview_mix.h>
+#include <optional>
+#include <string>
 
 namespace wormedit::ui {
 /* What the Compose UI may write (or read) of the frame: its own request and stamp, the sampled
@@ -25,9 +41,4 @@ struct compose_ui_window_t {
     timing_settings_action_t& timing_settings;
 };
 
-[[nodiscard]] inline auto compose_ui_window_of(workspace_action_t& action) -> compose_ui_window_t {
-    return {action.compose, action.stamp, action.input, action.timing, action.audio_offset_drag,
-            action.sound_import, action.kind, action.menu_command_id, action.bga_usage,
-            action.preview_mix, action.preview_audio_export, action.timing_settings};
-}
 } // namespace wormedit::ui

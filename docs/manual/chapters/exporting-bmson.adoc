@@ -44,6 +44,132 @@ playable note and a BGM note play the same slice at the same pulse, the BMSON sp
 to drop the BGM note, and the importer does. Moving a linked playable note to BGM
 (kbd:[`]) puts it back on its stem, with its timing and slice point.
 
+[#bmson-authoring-sounds]
+== Authoring BMSON sounds: keysounds and stems
+
+Everything in <<exporting-bmson>> about stems and keysounds also applies when you build a BMSON
+chart from scratch. Each sound in a BMSON chart is one of two kinds, and you choose the kind
+when you add the sound (and can change it later).
+
+=== What "stem" means here
+
+In Wormedit, _stem_ is a name for how a sound behaves, not for what the audio is. A stem is any
+sound whose file is cut into slices or played on with continue markers (`c: true`). It can be
+a full-mix stem such as drums or vocals, but it can just as well be a loop you have to chop, a
+sample you play in sections, or a whole song cut into parts. If you will cut it or continue it,
+make it a stem, whatever the audio is.
+
+The reverse also holds: a sound that is only ever started from its beginning is a keysound,
+even if it is long or came from a stem-like source.
+
+=== The problem keysounds solve
+
+A stem is built for one long audio file that you cut into slices. Every stem gets its own BGM
+lane, and its events are slice points (`c: true` or `c: false`) on that lane.
+
+Many sounds are not like that. An impact, a crash, a vocal chop or a drum hit is a one-shot: it
+plays from its start every time and will never have a continue marker. Giving each of them its
+own stem lane would fill the chart with lanes that do nothing a stem is for, and for the export
+it would mean slice bookkeeping for a sound that is never sliced.
+
+A *keysound* (also called a packed sound) is the kind for these sounds. Its events carry no
+slice points, and Wormedit packs the events of all keysounds into the fewest shared BGM columns
+(*BGM 1*, *BGM 2*...), so a hundred different one-shots take a few columns, not a hundred
+lanes. Because a keysound is never cut, it exports as exactly one file however many times you
+use it.
+
+Use a stem only when the sound will have `c: true` markers, that is, when you will cut one
+file and play it on from slice to slice, whatever kind of audio it is.
+
+[cols="1,2,2",options="header"]
+|===
+| |Keysound (packed) |Stem
+|What it is |A short sound, used as a whole. Every note that plays it starts it from the beginning.
+|One long audio file that the chart cuts into slices at its marker points.
+|Where its BGM events live |Packed into the fewest *BGM 1*, *BGM 2*... columns that avoid overlaps. |Its own BGM lane, named after the file.
+|Markers |Restart only. |Restart (`c: false`) or continue (`c: true`).
+|Added from |*Add keysound...* in the Sounds dock. |*Add stem...* in the Sounds dock.
+|===
+
+=== Adding and placing keysounds
+
+. Open the Sounds dock and press *Add keysound...* in its Keysounds section. Choose the
+files. The sounds are registered and no notes are placed.
+. Arm a sound (double-click its row, or kbd:[Ctrl+K]) and place notes with it, on playable
+lanes or on a BGM column, as described in <<arming-sounds>>.
+. Keysound events on BGM columns are packed automatically: you never create or name a packed
+column yourself.
+
+A packed event always plays its whole file. It has no slice points, so two events of the
+same keysound produce one file when the chart is exported (see below).
+
+=== Adding and cutting stems
+
+. Press *Add stem...* in the Stems section. This creates the sound, an empty channel and a stem
+lane, and places nothing.
+. Select the stem lane and cut it. *Insert continue at cursor* and *Insert restart at cursor*
+place a marker at the cursor, and *Razor continue* and *Razor restart* cut by clicking the
+lane. A _continue_ marker (`c: true`) plays on from where the previous slice stopped. A
+_restart_ marker (`c: false`) plays the file again from its start.
+. Playable notes you link to a slice keep their sound. kbd:[`] returns a linked playable note
+to its stem.
+
+=== Changing a sound between stem and keysound
+
+Right-click a stem lane header and choose *Pack into columns*, right-click a packed event
+and choose *Make stem*, or use the *Kind* button in the Sounds tab's Properties column. Each
+is one undo step, and a round trip leaves the chart unchanged.
+
+A stem that has any continue marker cannot be packed: the reason shown is
+"continuation points need a stem lane". A packed channel plays its whole file at every event,
+so continue markers have no meaning there. If you want to pack it anyway, choose
+*Convert continue points to restarts and pack*. This changes the audio: every marker now
+restarts the file from the beginning, instead of continuing where the previous slice
+stopped. It is meant for a stem that really was a single sound hit many times, not for a
+long track cut into parts. Undo restores the stem lane and its markers in one step.
+
+=== What this means for export
+
+* A keysound (packed) channel is never cut. Every event plays the whole file, and the file is
+shared by all events and, when you export several charts together, by all charts.
+* Each distinct slice of a stem becomes its own WAV file. Two slices share a file only when
+they cut exactly the same range of the same source. Repeats of the same rhythm share files,
+but a different tempo or different spacing before the next marker gives a different file.
+* Sharing works across the charts of a project. When you export several charts of one project
+together, a slice that two charts cut identically (the same source file, the same first and
+last frame) is rendered once, and both charts use that one file. It counts once against the BMS
+limit. Charts that cut the same stem differently, for example at another tempo, get separate
+files. Charts exported on their own, one export at a time, share nothing.
+* The number of exported files, and for BMS the sound limit of 1295, therefore depends on how
+many different slices you cut. A chart that reuses one sound many times as a keysound costs one
+sound. Cutting the same file as a stem into many slices costs one per slice.
+* For StepMania and osu!mania, slice files are not limited in number but are written as float32
+WAV, so a heavily sliced chart makes a large folder. *Preview* lists the sounds and losses
+before you export.
+
+[TIP]
+====
+Rule of thumb: if a sound will never have a continue marker, make it a keysound. If a stem
+turns out to be only ever restarted, pack it: it exports as one file instead of one per
+slice, and stops taking a lane.
+====
+
+=== Known limitation: BMS slots are counted per export, not per chart
+
+When you export several charts of one project to BMS together, the sound limit of 1295 is
+counted over the union of every sound any of those charts uses. Each BMS file then declares all
+of them, with the same slot numbers, even sounds that its own chart never plays. A sound that
+only chart A uses still takes a slot in chart B's file.
+
+For example, chart A cuts beats 1-4 of a stem and chart B cuts beats 1-2 of the same stem and
+never 1-4. These are two different slices, so they are two files. Exported together, both
+files declare both slices. Exported one at a time, each file declares only its own.
+
+Sounds are shared between the charts, as described above, but unused ones are not yet released
+from the slot count. If a project is close to the limit, export the charts one at a time, and
+use *Preview* to check the count first. This is planned to change: sounds will stay shared
+while the slots an individual chart does not use are left free.
+
 == What changes in other formats
 
 osu!mania, StepMania and BMS cannot play part of a file. For these targets, Wormedit:

@@ -57,6 +57,10 @@ if [[ ! -x $tools_dir/bin/cmake ]] || ! "$tools_dir/bin/cmake" --version | grep 
     "$tools_dir/bin/pip" install -q cmake==4.2.3
 fi
 
+if [[ $cmd == app ]]; then
+    "$tools_dir/bin/pip" install -q pillow   # scripts/compare-ui-captures.py, render snapshots
+fi
+
 mkdir -p "$deps_dir"
 if [[ ! -f $ogg_dir/CMakeLists.txt ]]; then
     git clone -q --depth 1 --branch v1.3.6 https://github.com/xiph/ogg.git "$ogg_dir"

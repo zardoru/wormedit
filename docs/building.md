@@ -85,6 +85,18 @@ through `WORMEDIT_OGG_SOURCE_DIR` and `WORMEDIT_VORBIS_SOURCE_DIR`. In a new she
 `scripts/setup-cloud-env.sh app` additionally installs the X11, Xvfb and Vulkan (lavapipe)
 packages for the real application and `scripts/smoke-compose-virtual-x.sh`.
 
+### Render snapshots (Linux)
+
+`scripts/visual-snapshots.sh` renders the real app under an isolated Xvfb (Mesa lavapipe, no GPU)
+and compares five screens (landing, wizard, UI gallery, Compose, Audio) with the PNGs in
+`tests/visual/linux/`. In the app build it is `ctest -L render-snapshot`
+(`visual.linux-render-snapshots`; skipped if Xvfb, xdotool, ImageMagick or Pillow are missing).
+Two runs on the same machine are bit-exact (Audio shows a few animated pixels, so the
+tolerance is 8 per channel and 200 pixels). The references are valid only for lavapipe: after
+an intended visual change, regenerate them with `scripts/visual-snapshots.sh --update` and
+review the PNG diff; do not compare against Metal or a real GPU. Failing captures stay in
+`build/visual-snapshots`.
+
 ## Crash backtraces on Linux and macOS
 
 The application installs fatal-signal and C++ termination handlers before SDL

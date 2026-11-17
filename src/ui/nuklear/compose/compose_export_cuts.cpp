@@ -63,14 +63,14 @@ auto compose_export_cut_handle_t::at(const compose_view_t& view, double x, doubl
 namespace {
 using editor_t = worm_ui_nuklear_compose_state_t::export_cut_editor_t;
 
-auto raise(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view,
+auto raise(wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind, const editor_t& editor) -> bool {
-    if (!wormedit::ui::raise_compose_action(action, view, kind,
+    if (!wormedit::ui::raise_compose_action(compose, stamp, view, kind,
             wormedit::ui::compose_project_stamp_t::preserve)) return false;
-    action.compose.marker.export_cut_id = editor.selected;
-    action.compose.marker.label = editor.label.data();
-    action.compose.marker.audio_begin = editor.begin.data();
-    action.compose.marker.audio_end = editor.end.data();
+    compose.marker.export_cut_id = editor.selected;
+    compose.marker.label = editor.label.data();
+    compose.marker.audio_begin = editor.begin.data();
+    compose.marker.audio_end = editor.end.data();
     return true;
 }
 
@@ -132,7 +132,7 @@ void editor_t::synchronize(const wormedit::ui::compose_view_t& view) {
 }
 
 void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
-    const wormedit::ui::compose_view_t& view, wormedit::ui::compose_ui_window_t& action) {
+    const wormedit::ui::compose_view_t& view, wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp) {
     auto& editor = worm_ui_nuklear_compose_state().export_cut_editor;
     editor.synchronize(view);
     if (!nk_tree_push(context, NK_TREE_TAB, "Export cuts", NK_MINIMIZED)) return;
@@ -147,14 +147,14 @@ void worm_ui_nuklear_render_compose_export_cuts(nk_context* context,
     const auto create = wormedit::ui::chrome::button_label(context, "Create from selection");
     if (!can_create) nk_widget_disable_end(context);
     if (create && can_create)
-        (void)raise(action, view, WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION, editor);
+        (void)raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION, editor);
     if (!editor.selected.value) nk_widget_disable_begin(context);
     render_cut_fields(context, editor);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
     const auto apply = wormedit::ui::chrome::button_label(context, "Apply cut");
     const auto remove = wormedit::ui::chrome::button_label(context, "Delete cut");
     if (!editor.selected.value) nk_widget_disable_end(context);
-    if (editor.selected.value && apply) (void)raise(action, view, WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT, editor);
-    if (editor.selected.value && remove) (void)raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT, editor);
+    if (editor.selected.value && apply) (void)raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT, editor);
+    if (editor.selected.value && remove) (void)raise(compose, stamp, view, WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT, editor);
     nk_tree_pop(context);
 }

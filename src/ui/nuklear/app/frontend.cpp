@@ -2504,7 +2504,7 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (layout.show_rate) render_transport_rate(*view, action);
     if (layout.show_snap) {
         auto compose_window = wormedit::ui::compose_ui_window_of(*action);
-        render_compose_snap_badge(g_context, view->compose, compose_window, snap_badge_available(*view));
+        render_compose_snap_badge(g_context, view->compose, compose_window.compose, compose_window.stamp, snap_badge_available(*view));
     }
     if (layout.show_zoom)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
@@ -2819,8 +2819,8 @@ static void retire_bookmark_editors(const wormedit::ui::workspace_view_t& view, 
     cancel_compose_bookmark_rename(state.bookmark_ui.bookmark_rename);
     auto compose_window = wormedit::ui::compose_ui_window_of(action);
     (void)worm_ui_nuklear_render_compose_bookmark_chooser(g_context, view.compose.bookmark_chooser,
-        &compose_window, false, &state.bookmark_ui.bookmark_chooser);
-    render_compose_bookmark_rename(g_context, view.compose, compose_window, state.bookmark_ui.bookmark_rename,
+        &compose_window.compose, &compose_window.stamp, false, &state.bookmark_ui.bookmark_chooser);
+    render_compose_bookmark_rename(g_context, view.compose, compose_window.compose, compose_window.stamp, state.bookmark_ui.bookmark_rename,
         nk_rect(0, 0, 0, 0), false);
 }
 

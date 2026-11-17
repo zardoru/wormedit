@@ -342,7 +342,7 @@ void render_bookmarks(struct nk_context* context, const wormedit::ui::compose_vi
     apply_bookmark_header(view, action, render_group_header(context, spec));
     const auto previous_action = action.compose.kind;
     if (view.input_occluded) nk_widget_disable_begin(context);
-    worm_ui_nuklear_render_bookmark_list(context, view.bookmark_chooser, &action,
+    worm_ui_nuklear_render_bookmark_list(context, view.bookmark_chooser, &action.compose, &action.stamp,
         worm_ui_nuklear_compose_state().dock_layout.markers);
     if (view.input_occluded) nk_widget_disable_end(context);
     if (previous_action == WORM_UI_COMPOSE_ACTION_NONE &&
@@ -646,7 +646,7 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
         return;
     }
     synchronize(*view);
-    worm_ui_nuklear_render_compose_export_cuts(context, *view, *action);
+    worm_ui_nuklear_render_compose_export_cuts(context, *view, action->compose, action->stamp);
     render_bookmarks(context, *view, *action);
     render_sections(context, *view, *action);
     render_audio_bookmarks(context, *view, *action);

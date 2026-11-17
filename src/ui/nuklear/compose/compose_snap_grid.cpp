@@ -9,11 +9,11 @@
 namespace {
 using namespace wormedit::ui::chrome;
 void emit_snap(nk_context* context, const wormedit::ui::compose_view_t& view,
-               wormedit::ui::compose_ui_window_t& action, std::uint64_t denominator) {
-    if (action.compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action.compose.kind = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
-    action.stamp = wormedit::ui::request_stamp_t::of(view);
-    action.compose.quantize.snap_denominator = denominator;
+               wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, std::uint64_t denominator) {
+    if (compose.kind != WORM_UI_COMPOSE_ACTION_NONE) return;
+    compose.kind = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
+    stamp = wormedit::ui::request_stamp_t::of(view);
+    compose.quantize.snap_denominator = denominator;
     context_menu_close(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, context);
 }
 void move_choice(nk_context* context, int count, int& selected) {
@@ -25,7 +25,7 @@ void move_choice(nk_context* context, int count, int& selected) {
     selected = std::clamp(selected + delta, 0, count - 1);
 }
 void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& view,
-                       wormedit::ui::compose_ui_window_t& action, bool available) {
+                       wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
     auto& menu = state.snap_grid.snap_grid_menu;
     const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominators.size(), 32));
@@ -43,15 +43,15 @@ void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& 
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label(context, "Editing grid", NK_TEXT_LEFT);
     const auto chosen = ChipGrid{labels.data(), count, state.snap_grid.snap_grid_choice, 4}.render(context).chosen;
-    if (chosen >= 0) emit_snap(context, view, action, view.supported_snap_denominators[chosen]);
+    if (chosen >= 0) emit_snap(context, view, compose, stamp, view.supported_snap_denominators[chosen]);
     else if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
-        emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid.snap_grid_choice]);
+        emit_snap(context, view, compose, stamp, view.supported_snap_denominators[state.snap_grid.snap_grid_choice]);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (Button{"Find fitting snap", ButtonKind::secondary, nullptr,
                view.selected_note_count + view.selected_bgm_event_count != 0}.render(context)) {
-        emit_snap(context, view, action, 0);
-        if (action.compose.kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
-            action.compose.kind = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
+        emit_snap(context, view, compose, stamp, 0);
+        if (compose.kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
+            compose.kind = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "Arrows · Enter · Esc", NK_TEXT_LEFT);
@@ -60,7 +60,7 @@ void render_grid_popup(nk_context* context, const wormedit::ui::compose_view_t& 
 }
 
 void render_compose_snap_badge(nk_context* context, const wormedit::ui::compose_view_t& view,
-                               wormedit::ui::compose_ui_window_t& action, bool available) {
+                               wormedit::ui::compose_request_t& compose, wormedit::ui::request_stamp_t& stamp, bool available) {
     auto& state = worm_ui_nuklear_compose_state();
     auto& menu = state.snap_grid.snap_grid_menu;
     (void)context_menu_update(menu, context);
@@ -80,5 +80,5 @@ void render_compose_snap_badge(nk_context* context, const wormedit::ui::compose_
         context_menu_open(menu, nk_vec2(bounds.x, bounds.y), wormedit::ui::chrome::PopupContextStamp::from(view));
         menu.shared_keyboard_navigation = false;
     }
-    render_grid_popup(context, view, action, available);
+    render_grid_popup(context, view, compose, stamp, available);
 }

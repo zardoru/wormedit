@@ -3,7 +3,6 @@
 // Test-only adapters: tests build the whole workspace_action_t while the Compose Nuklear panels
 // take their narrower window. The frontend builds the window explicitly in app/frontend.cpp.
 #include "ui/nuklear/compose/compose_ui_window_of.h"
-#include "ui/nuklear/compose/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose/compose_sound_picker.h"
 #include "ui/nuklear/compose/compose_state.h"
 
@@ -44,11 +43,4 @@ inline void render_compose_sound_picker(nk_context* context, const wormedit::ui:
     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state, bool focused) {
     auto window = wormedit::ui::compose_ui_window_of(action);
     render_compose_sound_picker(context, view, window, state, focused);
-}
-
-[[nodiscard]] inline auto worm_ui_nuklear_render_compose_bookmark_chooser(nk_context* context,
-    const wormedit::ui::bookmark_chooser_view_t& view, wormedit::ui::workspace_action_t* action,
-    bool window_focused, bookmark_chooser_state_t* state) -> bool {
-    auto window = wormedit::ui::compose_ui_window_of(*action);
-    return worm_ui_nuklear_render_compose_bookmark_chooser(context, view, &window, window_focused, state);
 }

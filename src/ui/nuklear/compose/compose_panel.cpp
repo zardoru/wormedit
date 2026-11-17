@@ -1192,7 +1192,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     if (view->input_occluded || owned_popup || compose_input_queries_t{state}.is_canvas_input_blocked()) {
         discard_occluded_compose_input(panel);
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
     const auto pointer_focus = update_compose_pointer_focus(
@@ -1204,7 +1204,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
     if (state.dialogs.go_to_measure_open) {
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-        render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+        render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
         return;
     }
 
@@ -1303,7 +1303,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
-    render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
+    render_compose_bookmark_rename(context, *view, action->compose, action->stamp, state.bookmark_ui.bookmark_rename, viewport, window_focused);
     render_compose_inline_timing_editor(panel, viewport);
 }
 
@@ -1487,7 +1487,7 @@ void render_dock_measures(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_measures(panel.context, panel.view, &panel.action->compose, &panel.action->stamp, &state);
 }
 void render_dock_layers(const ComposePanelRenderContext& panel) {
-    worm_ui_nuklear_render_compose_layers(panel.context, panel.view, panel.action, &state);
+    worm_ui_nuklear_render_compose_layers(panel.context, panel.view, &panel.action->compose, &panel.action->stamp, &state);
 }
 void render_dock_markers(const ComposePanelRenderContext& panel) {
     if (state.bookmark_ui.bookmark_chooser.open) {
@@ -1611,7 +1611,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_compose_hitsound_menu({context, view, action});
     render_go_to_measure(context, *view, *action, window_focused);
-    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_ui.bookmark_chooser);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, &action->compose, &action->stamp, window_focused, &state.bookmark_ui.bookmark_chooser);
     render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 

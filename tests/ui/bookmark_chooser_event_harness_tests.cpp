@@ -283,7 +283,7 @@ struct chooser_host_fixture_t {
             nk_popup_end(&context);
         }
         owned = worm_ui_nuklear_render_compose_bookmark_chooser(
-            &context, view, &action, true, &state);
+            &context, view, &action.compose, &action.stamp, true, &state);
         require_chooser_lifecycle(context.current == host);
         require_chooser_lifecycle(host->popup.win != nullptr);
         require_chooser_lifecycle(host->popup.active);

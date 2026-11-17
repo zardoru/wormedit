@@ -11,6 +11,7 @@
 #include <variant>
 
 namespace wormedit {
+struct timing_index_t;
 
 // Stores the supplied visible order, retaining identities from inactive scopes.
 [[nodiscard]] auto apply_bookmark_order_edit(document_history_t&, chart_id_t,
@@ -30,6 +31,12 @@ struct bookmark_edit_value_t {
     marker_anchor_t anchor{marker_anchor_t::beat};
     std::optional<local_position_t> position;
     std::optional<std::int64_t> audio_milliseconds;
+    [[nodiscard]] static auto from(const bookmark_t& bookmark) -> bookmark_edit_value_t;
+    // The same place under `anchor`. A beat position becomes its time rounded up to the next
+    // millisecond, which still lies in that row unless rows are under a millisecond apart; a time
+    // becomes the row that contains it. Empty when the place has no counterpart in this timing.
+    [[nodiscard]] auto with_anchor(marker_anchor_t anchor, const measure_index_t& measures,
+        const timing_index_t& timing) const -> std::optional<bookmark_edit_value_t>;
     auto operator==(const bookmark_edit_value_t&) const -> bool = default;
 };
 

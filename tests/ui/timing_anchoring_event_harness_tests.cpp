@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose/compose_state.h"
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
+#include <array>
 namespace {
 void begin_timing(nuklear_event_harness_t& harness) {
     auto& timing = harness.view().timing;
@@ -38,7 +39,7 @@ TEST_CASE("Inline BPM anchoring controls retain the draft and emit stamped polic
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     begin_timing(harness);
-    const auto audio = click_anchoring(harness, "Keep audio time of notes");
+    const auto audio = click_anchoring(harness, "Keep audio times");
     check_audio_action(audio.get());
     CHECK(worm_ui_nuklear_compose_state().inline_timing.inline_timing_open);
     auto& view = harness.view().timing;
@@ -72,4 +73,16 @@ TEST_CASE("Rejected audio-time preview stays in the existing inline timing popup
     }));
     CHECK(state.inline_timing_open);
     CHECK(harness.drawn_text().find("Allow quantization") != std::string::npos);
+}
+
+TEST_CASE("Inline anchoring checkbox explains what keeps its audio time", "[event-harness][timing-anchoring][tooltip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    begin_timing(harness);
+    CHECK(harness.drawn_text().find("Anchoring") == std::string::npos);
+    const auto control = harness.drawn_text_center("Keep audio times");
+    REQUIRE(control);
+    const std::array events{wormedit::test::mouse_motion(control->first, control->second)};
+    (void)harness.frame(events);
+    CHECK(harness.drawn_text().find("later BPM changes and stops") != std::string::npos);
 }

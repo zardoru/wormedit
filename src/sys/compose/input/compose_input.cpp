@@ -1315,15 +1315,21 @@ auto move_compose_bookmark(const wormedit::ui::compose_input_action_t& input,
         return stale_action_message("Bookmark move");
     const auto found = std::ranges::find(chart->bookmarks, input.object_id,
                                          &bookmark_t::id);
-    if (found == chart->bookmarks.end() || found->anchor != marker_anchor_t::beat || !found->position)
-        return "That beat-anchored bookmark is no longer available.";
-    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
-    const auto* index = measures ? &*measures : nullptr;
+    if (found == chart->bookmarks.end())
+        return "That bookmark is no longer available.";
+    const auto* indices = context.environment.document.history.indices(chart->id);
+    const auto* index = indices && indices->measures ? &*indices->measures : nullptr;
     const auto row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
                            : std::nullopt;
     const auto position = row ? (*index).position_at( *row) : std::nullopt;
-    if (!position) return "Bookmark move has no valid destination row.";
-    if (*position == *found->position) {
+    // The destination row, kept under the bookmark's own anchor.
+    const auto current = bookmark_edit_value_t::from(*found);
+    const bookmark_edit_value_t beat{.label = found->label, .anchor = marker_anchor_t::beat, .position = position};
+    const auto destination = !position ? std::nullopt
+        : found->anchor == marker_anchor_t::beat ? std::optional{beat}
+        : indices->timing.value ? beat.with_anchor(found->anchor, *index, *indices->timing.value) : std::nullopt;
+    if (!destination) return "Bookmark move has no valid destination row.";
+    if (*destination == current) {
         result.accepted = true;
         accepted = "Bookmark stayed on its row.";
         return std::nullopt;
@@ -1331,12 +1337,7 @@ auto move_compose_bookmark(const wormedit::ui::compose_input_action_t& input,
     const auto moved = apply_marker_edit(
         context.environment.document.history,
         marker_edit_action_t{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
-            .chart = chart->id,
-            .id = found->id,
-            .value = {.label = found->label,
-                      .anchor = marker_anchor_t::beat,
-                      .position = *position,
-                      .audio_milliseconds = std::nullopt}}});
+            .chart = chart->id, .id = found->id, .value = *destination}});
     result.accepted = moved.applied;
     result.document_changed = moved.applied;
     result.diagnostics = moved.diagnostics;

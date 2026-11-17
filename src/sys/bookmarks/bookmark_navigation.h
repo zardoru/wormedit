@@ -43,20 +43,24 @@ struct bookmark_navigation_t {
         project.last_playing_bookmark_seek = bookmark_seek_record_t{.chart = chart, .row = row, .at = now()};
     }
     [[nodiscard]] auto preserve_preview_revision(chart_id_t, std::uint64_t previous, std::uint64_t next) -> bool;
-    [[nodiscard]] auto navigate_beat_bookmark(document_history_t&, editor_interaction_state_t&,
+    // Beat- and time-anchored bookmarks alike; a time maps to the row that contains it.
+    [[nodiscard]] auto navigate_bookmark(document_history_t&, editor_interaction_state_t&,
                                               application_command_state_t&,
                                               marker_navigation_direction_t)
         -> compose_action_outcome_t;
     [[nodiscard]] auto navigate_to_bookmark(document_history_t&, editor_interaction_state_t&,
                                             application_command_state_t&, std::uint64_t, chart_id_t,
                                             object_id_t) -> compose_action_outcome_t;
-    [[nodiscard]] auto add_beat_bookmark_here(document_history_t&, editor_interaction_state_t&,
-                                              application_command_state_t&)
+    // New bookmarks keep their time in the song, so timing edits leave them in place.
+    [[nodiscard]] auto add_bookmark_here(document_history_t&, editor_interaction_state_t&,
+                                         application_command_state_t&)
         -> compose_action_outcome_t;
     [[nodiscard]] auto reorder_bookmark(document_history_t&, std::uint64_t, chart_id_t,
         const bookmark_reorder_t&) -> compose_action_outcome_t;
+    // Relabels the bookmark and, when `anchor` differs, converts it to that anchor in place.
     [[nodiscard]] auto rename_bookmark(document_history_t&, std::uint64_t, chart_id_t, object_id_t,
-                                       std::string_view) -> compose_action_outcome_t;
+                                       std::string_view, std::optional<marker_anchor_t> anchor = std::nullopt)
+        -> compose_action_outcome_t;
 
 };
 } // namespace wormedit::sys

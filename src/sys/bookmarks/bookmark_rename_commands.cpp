@@ -23,7 +23,8 @@ auto find_bookmark(document_history_t& history, chart_id_t chart_id, object_id_t
 
 auto bookmark_navigation_t::rename_bookmark(document_history_t& history,
                                             std::uint64_t expected_revision, chart_id_t chart_id,
-                                            object_id_t bookmark_id, std::string_view label)
+                                            object_id_t bookmark_id, std::string_view label,
+                                            std::optional<marker_anchor_t> anchor)
     -> compose_action_outcome_t {
     if (!document_stamp_t{.project = history.document.id, .revision = expected_revision}.is_current(
             history.document))
@@ -33,17 +34,27 @@ auto bookmark_navigation_t::rename_bookmark(document_history_t& history,
     const auto* bookmark = find_bookmark(history, chart_id, bookmark_id);
     if (!bookmark)
         return compose_action_outcome_t::blocked("That bookmark is no longer available.");
+    auto value = bookmark_edit_value_t::from(*bookmark);
+    value.label = std::string(label);
+    const bool reanchor = anchor && *anchor != value.anchor;
+    if (reanchor) {
+        const auto* indices = history.indices(chart_id);
+        auto anchored = indices && indices->measures && indices->timing.value
+            ? value.with_anchor(*anchor, *indices->measures, *indices->timing.value) : std::nullopt;
+        if (!anchored)
+            return compose_action_outcome_t::blocked(*anchor == marker_anchor_t::audio_time
+                ? "This bookmark's beat has no time in the chart timing."
+                : "This bookmark's time has no beat in the chart.");
+        value = std::move(*anchored);
+    }
     const marker_edit_action_t action{wormedit::update_edit_t<wormedit::bookmark_edit_value_t>{
-        .chart = chart_id,
-        .id = bookmark_id,
-        .value = {.label = std::string(label),
-                  .anchor = bookmark->anchor,
-                  .position = bookmark->position,
-                  .audio_milliseconds = bookmark->audio_milliseconds}}};
+        .chart = chart_id, .id = bookmark_id, .value = std::move(value)}};
 
     return run_native_chart_edit<marker_edit_action_t>(
         history, action,
-        compose_action_description_t{.success = "Bookmark renamed.",
+        compose_action_description_t{.success = reanchor ? (*anchor == marker_anchor_t::audio_time
+                                         ? "Bookmark now keeps its audio time." : "Bookmark now keeps its beat.")
+                                         : "Bookmark renamed.",
                                      .unchanged = "Bookmark label was unchanged.",
                                      .rebind_failure =
                                          "Bookmark renamed, but workspace rebinding failed.",

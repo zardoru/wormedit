@@ -30,6 +30,16 @@ inline constexpr float text_prompt_height =
     2.0f * text_prompt_padding + title_row_height + metrics::control_default + metrics::row_text +
     2.0f * metrics::gap_small;
 
+// One optional checkbox between the field and the hint, applied with the text on Enter.
+struct TextPromptOption {
+    const char* label{};
+    const char* tooltip{};
+    nk_bool* value{};  // No row when null.
+};
+
+// The prompt with its option row, when it has one.
+inline constexpr float text_prompt_option_height = metrics::control_compact + metrics::gap_small;
+
 struct TextPromptContent {
     const char* title{};
     const char* placeholder{};  // Shown in the empty field.
@@ -39,6 +49,7 @@ struct TextPromptContent {
     int capacity{};
     nk_plugin_filter filter{nk_filter_default};
     nk_flags flags{static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT};
+    TextPromptOption option{};
 };
 
 // Starts the popup in the current window's content-region coordinates. Returns false when
@@ -77,6 +88,14 @@ inline auto text_prompt_body(nk_context* context, const TextPromptContent& conte
                              std::max(0.0f, field.w - 2.0f * inset), text_height),
                      content.placeholder, static_cast<int>(std::strlen(content.placeholder)), font,
                      nk_rgba(0, 0, 0, 0), text_faint());
+    }
+
+    if (content.option.value) {
+        nk_layout_row_dynamic(context, metrics::control_compact, 1);
+        const auto bounds = nk_widget_bounds(context);
+        (void)checkbox_label(context, content.option.label ? content.option.label : "", content.option.value);
+        if (content.option.tooltip && nuklear::tooltip::hovered(context, bounds))
+            nuklear::tooltip::text(context, content.option.tooltip);
     }
 
     nk_layout_row_dynamic(context, metrics::row_text, 1);

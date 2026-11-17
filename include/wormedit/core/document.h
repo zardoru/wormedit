@@ -503,11 +503,6 @@ struct timing_anchor_t {
     auto operator==(const timing_anchor_t&) const -> bool = default;
 };
 
-enum class marker_anchor_t {
-    beat,
-    audio_time,
-};
-
 struct bookmark_t {
     object_id_t id;
     std::string label;

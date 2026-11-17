@@ -1015,11 +1015,6 @@ static auto update_bookmark_move_capture(const ComposePointerEventContext& input
     return moved || input.view->note_paint_mode_active;
 }
 
-static auto is_beat_bookmark(const wormedit::ui::compose_view_t& view, std::uint64_t id) -> bool {
-    return std::ranges::any_of(std::span(view.beat_bookmarks),
-                               [id](const auto& item) { return item.bookmark_id == wormedit::object_id_t{id}; });
-}
-
 // A press that a full-width marker line (a bookmark or the song preview) may not claim: another
 // capture owns the pointer, or an object under the press keeps priority.
 static auto is_marker_line_press_blocked(const ComposePointerEventContext& input,
@@ -1044,7 +1039,7 @@ static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     if (is_marker_line_press_blocked(input, paint_pointer_consumed)) return false;
     const auto id = compose_bookmark_at(view, input.pointer_started_x, input.pointer_started_y);
-    if (!id || !is_beat_bookmark(view, *id)) return false;
+    if (!id) return false;
     state.bookmark_ui.bookmark_move_candidate_active = true;
     state.bookmark_ui.bookmark_move_active = false;
     state.bookmark_ui.bookmark_move_id = *id;

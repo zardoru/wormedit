@@ -974,19 +974,35 @@ static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
     }
 }
 
+static constexpr const char* inline_timing_hint = "Enter to apply · Esc to cancel";
+
 static auto inline_audio_timing_status(const wormedit::ui::timing_view_t& view) -> const char* {
     if (state.inline_timing.inline_timing_error[0]) return state.inline_timing.inline_timing_error.data();
     if (view.stage_rounded_positions && !view.stage_anchoring.allow_quantization)
         return "Allow quantization is required to apply.";
     if (!view.stage_status_text.empty()) return view.stage_status_text.c_str();
-    return "Enter to apply · Esc to cancel";
+    return inline_timing_hint;
 }
 
-static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_rect viewport)
-    -> struct nk_rect {
+// Messages may wrap to a second line; the plain key hint fits on one.
+static auto inline_audio_timing_status_height(const wormedit::ui::timing_view_t& view) -> float {
+    return inline_audio_timing_status(view) == inline_timing_hint ? wormedit::ui::metrics::row_text : 36.0f;
+}
+
+// Text field, anchoring rows, Apply and status, so the popup ends at its last row.
+static auto inline_audio_timing_popup_height(nk_context* context, const wormedit::ui::timing_view_t& view)
+    -> float {
+    const auto spacing = context->style.window.spacing.y;
+    return wormedit::ui::metrics::control_compact + spacing + worm_ui_nuklear_timing_anchoring_height(context, view) +
+        wormedit::ui::metrics::control_default + spacing + inline_audio_timing_status_height(view);
+}
+
+static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_rect viewport,
+    const wormedit::ui::timing_view_t& view) -> struct nk_rect {
     const bool audio_timing = is_inline_audio_timing(state.inline_timing.inline_timing_lane);
     const float popup_width = audio_timing ? 310.0f : 196.0f;
-    const float popup_height = (audio_timing ? 224.0f : 75.0f) + 2.0f * wormedit::ui::chrome::menu_padding;
+    const float popup_height = (audio_timing ? inline_audio_timing_popup_height(context, view) : 75.0f) +
+        2.0f * wormedit::ui::chrome::menu_padding;
     const auto popup_x = std::clamp(state.inline_timing.inline_timing_anchor_screen_x,
                                     viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
     const auto popup_y = std::clamp(state.inline_timing.inline_timing_anchor_screen_y - 24.0f,
@@ -998,9 +1014,10 @@ static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_re
 
 }
 
-static void dismiss_compose_inline_timing_popup(nk_context* context, struct nk_rect viewport) {
+static void dismiss_compose_inline_timing_popup(nk_context* context, struct nk_rect viewport,
+    const wormedit::ui::timing_view_t& view) {
     wormedit::ui::chrome::dismiss_popup(
-        context, "Compose timing value", compose_inline_timing_popup_bounds(context, viewport));
+        context, "Compose timing value", compose_inline_timing_popup_bounds(context, viewport, view));
     state.inline_timing.inline_timing_popup_close_pending = false;
     state.inline_timing.inline_timing_open = false;
     state.inline_timing.inline_timing_focus_pending = false;
@@ -1012,27 +1029,27 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         state, *panel.timing_view, *panel.action,
         viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f));
     if (state.inline_timing.inline_timing_popup_close_pending) {
-        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        dismiss_compose_inline_timing_popup(panel.context, viewport, *panel.timing_view);
         return;
     }
     if (!state.inline_timing.inline_timing_open) return;
     if (!panel.window_focused) {
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
-        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        dismiss_compose_inline_timing_popup(panel.context, viewport, *panel.timing_view);
         return;
     }
     const auto& timing = *panel.timing_view;
     if (!timing.stage_active) {
         // The opening double-click reaches the application after this frame.
         if (panel.action->timing.stage_action == wormedit::ui::timing_stage_action_t::begin) return;
-        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        dismiss_compose_inline_timing_popup(panel.context, viewport, *panel.timing_view);
         return;
     }
     if (timing.chart_id.value != state.inline_timing.inline_timing_chart_id ||
         timing.document_revision != state.inline_timing.inline_timing_revision ||
         timing.stage_existing_object_id.value != state.inline_timing.inline_timing_object_id ||
         timing.stage_lane != state.inline_timing.inline_timing_lane) {
-        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        dismiss_compose_inline_timing_popup(panel.context, viewport, *panel.timing_view);
         return;
     }
     if (state.inline_timing.inline_timing_focus_pending && state.inline_timing.inline_timing_error[0] == '\0')
@@ -1042,7 +1059,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     wormedit::ui::chrome::MenuSurface surface{};
     if (!wormedit::ui::chrome::surface_popup_begin(
             panel.context, "Compose timing value",
-            compose_inline_timing_popup_bounds(panel.context, viewport), surface)) {
+            compose_inline_timing_popup_bounds(panel.context, viewport, timing), surface)) {
         worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         return;
     }
@@ -1062,7 +1079,8 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         nk_popup_close(panel.context);
         state.inline_timing.inline_timing_popup_close_pending = false;
     }
-    nk_layout_row_dynamic(panel.context, is_inline_audio_timing(timing.stage_lane) ? 36.0f : 17.0f, 1);
+    nk_layout_row_dynamic(panel.context,
+        is_inline_audio_timing(timing.stage_lane) ? inline_audio_timing_status_height(timing) : 17.0f, 1);
     nk_label_wrap(panel.context, inline_audio_timing_status(timing));
     wormedit::ui::chrome::surface_popup_end(panel.context, surface);
 }

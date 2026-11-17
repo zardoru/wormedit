@@ -29,6 +29,10 @@ struct inline_label_editor_t {
     std::uint64_t chart_id{};
     std::uint64_t document_revision{};
     std::uint64_t bookmark_id{};  // Also the section id for kind section_label.
+    // Bookmarks only: keep the time in the song (else the beat), applied with the label.
+    nk_bool keep_audio_time{};
+    // A click on the checkbox takes focus from the field; it returns on the next frame.
+    bool refocus_pending{};
     float popup_bounds[4]{};
     char label[WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1]{};
 };

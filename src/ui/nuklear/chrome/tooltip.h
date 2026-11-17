@@ -52,6 +52,12 @@ void text(nk_context* context, std::string_view value,
 // True when the pointer is over `bounds` and the window being drawn is the topmost window under
 // the pointer. A window drawn over `bounds` (another dialog, a popup) hides the tooltip, while
 // the widget underneath keeps its own hover feedback. An open popup in the same window hides it.
+// Inside a popup, the pointer must be over `bounds` within that popup.
 [[nodiscard]] auto hovered(const nk_context* context, struct nk_rect bounds) -> bool;
+
+// A popup holds its window's only popup slot, so a tooltip asked for inside one cannot open
+// there: text() keeps it for this call to draw in a window of its own on `overlay`, a context
+// drawn after the editor's. The frontend calls it once per frame; nothing pending draws nothing.
+void render_deferred(nk_context* overlay);
 
 } // namespace wormedit::ui::nuklear::tooltip

@@ -1143,13 +1143,13 @@ auto run_bookmark_command(application_command_context_t& context, editor_interac
                           const chart_document_t& chart, bool previous)
     -> compose_action_outcome_t {
     if (context.command.kind == command_kind_t::markers_add_bookmark)
-        return context.environment.editor.commands.bookmarks.add_beat_bookmark_here(
+        return context.environment.editor.commands.bookmarks.add_bookmark_here(
             context.environment.document.history, state, context.environment.editor.commands);
     const auto downscroll = compose_field_downscroll(
         chart, context.environment.editor.commands.preferences.editor_preferences);
     // Commands are bound to screen directions; a flipped field reverses the jump.
     const auto direction = compose_visual_navigation_direction(downscroll, previous);
-    return context.environment.editor.commands.bookmarks.navigate_beat_bookmark(
+    return context.environment.editor.commands.bookmarks.navigate_bookmark(
         context.environment.document.history, state, context.environment.editor.commands,
         direction == interaction_direction_t::backward ? marker_navigation_direction_t::previous
                                                        : marker_navigation_direction_t::next);

@@ -33,7 +33,8 @@ auto begin_compose_note_label_inline(inline_label_editor_t& editor,
 auto note_label_inline_bounds(const inline_label_editor_t& editor, struct nk_rect content)
     -> struct nk_rect {
     const auto width = wormedit::ui::chrome::text_prompt_width_for(content);
-    const auto popup_height = wormedit::ui::chrome::text_prompt_height;
+    const auto popup_height = wormedit::ui::chrome::text_prompt_height +
+        (editor.kind == inline_label_kind_t::bookmark ? wormedit::ui::chrome::text_prompt_option_height : 0.0f);
     const auto x = std::clamp(editor.anchor_x - content.x - width * 0.5f, 0.0f,
                               std::max(0.0f, content.w - width));
     const auto y = std::clamp(editor.anchor_y - content.y - popup_height - gap_above_note, 0.0f,

@@ -5,6 +5,7 @@
 #include "timing_event_internal.h"
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/timing.h>
 
 #include <algorithm>
 #include <limits>
@@ -18,6 +19,27 @@ namespace wormedit {
 namespace {
 
 using text_util::is_valid_utf8;
+
+auto milliseconds_rounded_up(signed_rational_t seconds) -> std::optional<std::int64_t> {
+    if (seconds.numerator == std::numeric_limits<std::int64_t>::min()) return std::nullopt;
+    // ceil(x) is -floor(-x), and sample frames count non-negative time.
+    const bool negative = seconds.numerator < 0;
+    const signed_rational_t magnitude{negative ? -seconds.numerator : seconds.numerator, seconds.denominator};
+    const auto frame = sample_frame_result_t::from(sample_frame_t::from(magnitude, 1000,
+        negative ? sample_rounding_t::floor : sample_rounding_t::ceil));
+    if (!frame.frame || *frame.frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        return std::nullopt;
+    const auto value = static_cast<std::int64_t>(*frame.frame);
+    return negative ? -value : value;
+}
+
+auto position_at_milliseconds(std::int64_t milliseconds, const measure_index_t& measures,
+    const timing_index_t& timing) -> std::optional<local_position_t> {
+    const auto row = timing.row_at({milliseconds, 1000});
+    if (!row.absolute_row || row.absolute_row->numerator < 0 || row.absolute_row->denominator == 0)
+        return std::nullopt;
+    return measures.position_at(static_cast<std::uint64_t>(row.absolute_row->numerator) / row.absolute_row->denominator);
+}
 
 auto is_valid_label(std::string_view label, const marker_edit_limits_t& limits, bool allow_empty)
     -> bool {
@@ -597,6 +619,29 @@ auto apply_bookmark_order_edit(document_history_t& history, chart_id_t chart_id,
             .options = {.preserve_retained_source_flags = true}}};
     });
     return transaction.finish_execution(std::move(staged));
+}
+
+auto bookmark_edit_value_t::from(const bookmark_t& bookmark) -> bookmark_edit_value_t {
+    return {.label = bookmark.label, .anchor = bookmark.anchor, .position = bookmark.position,
+            .audio_milliseconds = bookmark.audio_milliseconds};
+}
+
+auto bookmark_edit_value_t::with_anchor(marker_anchor_t target, const measure_index_t& measures,
+    const timing_index_t& timing) const -> std::optional<bookmark_edit_value_t> {
+    if (target == anchor) return *this;
+    auto result = *this;
+    result.anchor = target;
+    if (target == marker_anchor_t::audio_time) {
+        const auto row = position ? measures.row_of(*position) : std::nullopt;
+        const auto seconds = row ? timing.seconds_at(*row) : timing_query_result_t{};
+        result.audio_milliseconds = seconds.seconds ? milliseconds_rounded_up(*seconds.seconds) : std::nullopt;
+        result.position.reset();
+        return result.audio_milliseconds ? std::optional{result} : std::nullopt;
+    }
+    result.position = audio_milliseconds ? position_at_milliseconds(*audio_milliseconds, measures, timing)
+                                         : std::nullopt;
+    result.audio_milliseconds.reset();
+    return result.position ? std::optional{result} : std::nullopt;
 }
 
 } // namespace wormedit

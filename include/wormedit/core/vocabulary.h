@@ -170,6 +170,12 @@ enum class lane_glyph_t {
     arrow_center,
 };
 
+// Whether a bookmark or section stays on its beat or at its time in the song.
+enum class marker_anchor_t {
+    beat,
+    audio_time,
+};
+
 enum class pause_unit_t {
     seconds,
     milliseconds,

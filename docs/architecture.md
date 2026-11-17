@@ -334,7 +334,7 @@ measures.
 | Workflow/session owner | Project-lifetime state for a multi-frame workflow, or the gesture/proposal owner for a bounded edit. |
 | Completion | The typed transaction result plus any domain report, mapped once into shared command/interaction feedback. |
 
-Timing edits may retain musical positions or preserve sound-object audio times through
+Timing edits may retain musical positions or preserve the audio times of every timed object (later timing events included) through
 `stage_timing_reposition` in `core/timing_reposition.h`, composed before the shared transaction
 publishes. Its report counts moved objects and positions requiring explicit quantization.
 `document_command_transaction_t::preview` runs that same command boundary on an isolated

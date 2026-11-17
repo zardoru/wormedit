@@ -328,3 +328,28 @@ TEST_CASE("double-clicking empty space does not open a bookmark rename editor",
     require_rename(double_click_at(harness, right * 0.3, bookmark.projected_y_pixels + 80.0));
     check_rename(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 }
+
+TEST_CASE("bookmark rename popup switches the anchor without closing and applies it with Enter",
+          "[unit][frontend-state][event-harness][bookmark-rename]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_rename(harness.ready());
+    wormedit::ui::compose_bookmark_view_t bookmark{};
+    seed_bookmark(harness, bookmark);
+    open_bookmark_editor(harness, bookmark);
+    (void)harness.frame();
+    auto& editor = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename;
+    check_rename(!editor.keep_audio_time);
+    const auto checkbox = harness.drawn_text_center("Keep audio time");
+    require_rename(checkbox.has_value());
+    const auto [x, y] = *checkbox;
+    (void)click_bookmark(harness, x, y);
+    (void)harness.frame();
+    require_rename(editor.active);
+    check_rename(editor.keep_audio_time != 0);
+    const std::array enter{press_enter()};
+    const auto applied = harness.frame(enter).get();
+    check_rename(applied.compose.kind == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK);
+    require_rename(applied.compose.marker.bookmark_anchor.has_value());
+    check_rename(*applied.compose.marker.bookmark_anchor == wormedit::marker_anchor_t::audio_time);
+    check_rename(std::string_view{applied.compose.marker.label} == "Intro");
+}

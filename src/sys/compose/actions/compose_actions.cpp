@@ -106,7 +106,7 @@ auto compose_bookmark_action_t::perform(compose_action_context_t& context) const
     return context.environment.editor.commands.bookmarks.rename_bookmark(
         context.environment.document.history, action.stamp.document_revision,
         context.state.chart, action.compose.marker.bookmark_id,
-        action.compose.marker.label);
+        action.compose.marker.label, action.compose.marker.bookmark_anchor);
 }
 
 struct navigate_compose_measure_action_t {

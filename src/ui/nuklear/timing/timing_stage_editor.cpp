@@ -1,5 +1,6 @@
 #include "ui/nuklear/timing/timing_stage_editor.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/timing/timing_state.h"
 
 #include "wormedit/nuklear_config.h"
@@ -378,33 +379,46 @@ static void commit_stage_action(TimingStageEditor& editor, wormedit::ui::timing_
     copy_timing_form_to_action(editor.action);
 }
 
+static auto has_stage_anchoring(const wormedit::ui::timing_view_t& view) -> bool {
+    using wormedit::timing_lane_kind_t;
+    return view.stage_lane == timing_lane_kind_t::bpm || view.stage_lane == timing_lane_kind_t::stop ||
+        view.stage_lane == timing_lane_kind_t::delay || view.stage_lane == timing_lane_kind_t::warp;
+}
+
+static auto anchoring_checkbox(nk_context* context, const char* label, const char* tooltip, nk_bool* value)
+    -> bool {
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+    const auto bounds = nk_widget_bounds(context);
+    const bool changed = wormedit::ui::chrome::checkbox_label(context, label, value);
+    if (wormedit::ui::nuklear::tooltip::hovered(context, bounds))
+        wormedit::ui::nuklear::tooltip::text(context, tooltip);
+    return changed;
+}
+
 static void render_stage_anchoring(TimingStageEditor& editor) {
     const auto& view = *editor.view;
-    using wormedit::timing_lane_kind_t;
-    if (view.stage_lane != timing_lane_kind_t::bpm && view.stage_lane != timing_lane_kind_t::stop &&
-        view.stage_lane != timing_lane_kind_t::delay && view.stage_lane != timing_lane_kind_t::warp) return;
-    if (!wormedit::ui::chrome::section_push(editor.context, NK_TREE_NODE, "Anchoring", NK_MAXIMIZED, true)) return;
+    if (!has_stage_anchoring(view)) return;
     auto settings = view.stage_anchoring;
     nk_bool keep_audio = settings.positions == wormedit::timing_position_policy_t::audio;
-    nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
-    bool changed = wormedit::ui::chrome::checkbox_label(editor.context, "Keep audio time of notes", &keep_audio) != 0;
+    bool changed = anchoring_checkbox(editor.context, "Keep audio times",
+        "Notes, BGM, later BPM changes and stops, SV, kiai and other timed objects keep their "
+        "time in the song and move to new beats. Off: everything keeps its beat. Beat-anchored "
+        "bookmarks and sections always keep their beat.", &keep_audio);
     settings.positions = keep_audio ? wormedit::timing_position_policy_t::audio : wormedit::timing_position_policy_t::musical;
     if (keep_audio) {
         nk_bool quantize = settings.allow_quantization;
-        nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::control_compact, 1);
-        changed = (wormedit::ui::chrome::checkbox_label(editor.context, "Allow quantization", &quantize) != 0) || changed;
+        changed = anchoring_checkbox(editor.context, "Allow quantization",
+            "Snap objects whose kept time falls between grid rows to the nearest row. "
+            "Without it, an edit that needs rounding is rejected.", &quantize) || changed;
         settings.allow_quantization = quantize != 0;
-        nk_layout_row_dynamic(editor.context, 36, 1);
-        char counts[128]{};
-        std::snprintf(counts, sizeof(counts), "%zu objects move; %zu positions need rounding",
+        nk_layout_row_dynamic(editor.context, wormedit::ui::metrics::row_text, 1);
+        nk_labelf(editor.context, NK_TEXT_LEFT, "%zu objects move, %zu need rounding",
             view.stage_moved_objects, view.stage_rounded_positions);
-        nk_label_wrap(editor.context, counts);
     }
     if (changed && editor.action) {
         set_timing_action(editor.action, &view, wormedit::ui::timing_stage_action_t::update);
         editor.action->anchoring = settings;
     }
-    wormedit::ui::chrome::section_pop(editor.context);
 }
 
 static void render_stage_actions(TimingStageEditor& editor) {
@@ -462,4 +476,13 @@ void worm_ui_nuklear_render_timing_anchoring(nk_context* context,
     const wormedit::ui::timing_view_t& view, wormedit::ui::timing_edit_request_t& action) {
     TimingStageEditor editor{context, &view, &action, 0, 0};
     render_stage_anchoring(editor);
+}
+
+auto worm_ui_nuklear_timing_anchoring_height(const nk_context* context, const wormedit::ui::timing_view_t& view)
+    -> float {
+    if (!has_stage_anchoring(view)) return 0.0f;
+    const auto spacing = context->style.window.spacing.y;
+    const auto checkbox = wormedit::ui::metrics::control_compact + spacing;
+    if (view.stage_anchoring.positions != wormedit::timing_position_policy_t::audio) return checkbox;
+    return 2.0f * checkbox + wormedit::ui::metrics::row_text + spacing;
 }

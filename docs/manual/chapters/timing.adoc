@@ -88,9 +88,14 @@ changes coincident with BPM/SV points share their sample fields. Addition sample
 per-note overrides in the hitsound toolbar.
 
 For BPM, stop, delay and warp edits, musical positions stay fixed by default.
-*Keep audio time of notes* instead repositions playable notes, both hold ends,
-BGM spans and retained sound-channel events to preserve their existing audio times.
-Audio-time bookmarks and sections already store times and stay unchanged.
+*Keep audio times* instead keeps everything after the edit at its existing time in the song.
+Later BPM changes, stops, delays and warps keep their audio times and values, so the tempo map
+after them is unchanged; playable notes and both hold ends, BGM spans, retained sound-channel
+events, SV, SPEEDS, kiai, volume and sample-set changes, BGA events, timing anchors and SV recipe
+ranges move to the rows at their old times. The event you are editing keeps the position you gave it.
+Audio-time bookmarks and sections already store times and stay unchanged; beat-anchored bookmarks,
+sections and lane layout changes keep their beat. Categories linked from another chart are not moved.
+Hover the checkbox for a summary.
 The edit preview reports how many objects move and how many positions need rounding.
 Enable *Allow quantization* explicitly to accept that rounding; otherwise the edit
 is rejected without changing the chart. New collisions and invalid lane layouts

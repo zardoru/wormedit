@@ -19,18 +19,20 @@ auto is_playing(const application_command_state_t& application) -> bool {
     return application.services.transport_preview_playing && application.services.transport_preview_playing();
 }
 
-auto beat_position_for_audio_milliseconds(const chart_indices_t& indices,
-                                          std::int64_t milliseconds)
-    -> std::optional<local_position_t> {
-    if (!indices.measures || !indices.timing.value)
-        return std::nullopt;
-    const auto query = indices.timing.value->query_position(signed_rational_t{milliseconds, 1'000});
-    if (!query || query->value.numerator < 0 ||
-        query->value.denominator == 0)
-        return std::nullopt;
-    const auto row = static_cast<std::uint64_t>(query->value.numerator) /
-                     query->value.denominator;
-    return indices.measures->position_at(row);
+// The row a bookmark sits on under either anchor.
+auto beat_position_of(const chart_indices_t& indices, const bookmark_t& bookmark) -> std::optional<local_position_t> {
+    if (bookmark.anchor == marker_anchor_t::beat) return bookmark.position;
+    if (!indices.measures || !indices.timing.value) return std::nullopt;
+    const auto value = bookmark_edit_value_t::from(bookmark).with_anchor(
+        marker_anchor_t::beat, *indices.measures, *indices.timing.value);
+    return value ? value->position : std::nullopt;
+}
+
+// New bookmarks keep their time; a chart with no usable timing keeps the beat instead.
+auto new_bookmark_value(const chart_indices_t& indices, local_position_t position) -> bookmark_edit_value_t {
+    const bookmark_edit_value_t beat{.anchor = marker_anchor_t::beat, .position = position};
+    if (!indices.measures || !indices.timing.value) return beat;
+    return beat.with_anchor(marker_anchor_t::audio_time, *indices.measures, *indices.timing.value).value_or(beat);
 }
 
 } // namespace
@@ -100,7 +102,7 @@ void record_playing_seek(const chart_indices_t& indices, chart_id_t chart_id,
 
 } // namespace
 
-auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
+auto bookmark_navigation_t::navigate_bookmark(document_history_t& history,
                                                    editor_interaction_state_t& state,
                                                    application_command_state_t& application,
                                                    marker_navigation_direction_t direction)
@@ -118,11 +120,16 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
     if (!origin)
         return compose_action_outcome_t::blocked("The playhead row is not available yet.",
                                                  notification_source_t::input);
+    // Time-anchored bookmarks project onto rows; ones outside the timing only warn.
     auto marker = marker_navigation_match_t::from(history.document, history.document.revision,
                                                   state.chart, *origin, direction,
                                                   {.include_bookmarks = true,
                                                    .include_section_begins = false,
-                                                   .include_section_ends = false});
+                                                   .include_section_ends = false},
+                                                  {}, indices.timing.value ? &*indices.timing.value : nullptr);
+    std::erase_if(marker.diagnostics, [](const diagnostic_t& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::warning;
+    });
     if (marker.value.status == marker_navigation_phase_t::no_result)
         return compose_action_outcome_t::from(
             previous ? "No previous bookmark." : "No next bookmark.", notification_severity_t::hint,
@@ -173,7 +180,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history,
     } else if (bookmark->anchor == marker_anchor_t::audio_time && bookmark->audio_milliseconds) {
         target.audio_milliseconds = bookmark->audio_milliseconds;
         if (!is_playing(application)) {
-            const auto position = beat_position_for_audio_milliseconds(*history.indices(chart_id), *bookmark->audio_milliseconds);
+            const auto position = beat_position_of(*history.indices(chart_id), *bookmark);
             if (!position)
                 return compose_action_outcome_t::blocked(
                     "Audio-time bookmark has no musical position in this chart.",
@@ -189,7 +196,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history,
     return outcome;
 }
 
-auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
+auto bookmark_navigation_t::add_bookmark_here(document_history_t& history,
                                                    editor_interaction_state_t& state,
                                                    application_command_state_t& application)
     -> compose_action_outcome_t {
@@ -217,19 +224,16 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
             "Bookmarks can only go inside existing measures. Add measures up to the cursor first.",
             notification_source_t::edit);
     }
+    const auto& indices = *history.indices(state.chart);
     const auto exists = std::ranges::any_of(chart->bookmarks, [&](const bookmark_t& bookmark) {
-        return bookmark.anchor == marker_anchor_t::beat && bookmark.position == position;
+        return beat_position_of(indices, bookmark) == position;
     });
     if (exists)
         return compose_action_outcome_t::blocked("A bookmark already exists on this row.",
                                                  notification_source_t::edit);
     auto applied = apply_marker_edit(
         history, marker_edit_action_t{wormedit::insert_edit_t<wormedit::bookmark_edit_value_t>{
-                     .chart = state.chart,
-                     .value = {.label = {},
-                               .anchor = marker_anchor_t::beat,
-                               .position = position,
-                               .audio_milliseconds = std::nullopt}}});
+                     .chart = state.chart, .value = new_bookmark_value(indices, position)}});
     if (!applied.applied) {
         auto outcome = compose_action_outcome_t::from(
             applied.diagnostics.empty() ? "Bookmark edit made no changes."

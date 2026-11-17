@@ -90,7 +90,10 @@ beat-based and audio-time groups. Click a beat marker to navigate and double-cli
 rename it. Expand *Find marker* for the searchable navigation list; Ctrl+Shift+G still opens the
 bookmark chooser. Marker editing controls live in this dock.
 
-Double-click a bookmark's line or label to rename it.
+New bookmarks keep their time in the song, so BPM and stop edits leave them where the music is.
+Double-click a bookmark's line or label to rename it. The same popup has *Keep audio time*:
+clear it to pin the bookmark to its beat instead, so it moves with the grid; the change applies
+with the name when you press Enter. Previous/next bookmark reaches both kinds.
 
 [#export-cuts]
 == Audio cuts (export cuts)

@@ -12,6 +12,11 @@ namespace wormedit::ui::nuklear::tooltip {
 namespace {
 
 struct nk_rect app_viewport{};
+struct deferred_text_t {
+    std::string value;
+    float preferred_outer_width{};
+};
+std::optional<deferred_text_t> deferred_text;
 // Space between the popup's clip edge and its text. Nuklear scissors popup content at the
 // layout edge, so text starting exactly there loses the left side of its first glyph. The same
 // gap is kept on the right so the text sits centered between the borders.
@@ -225,6 +230,9 @@ auto covered_by_popup(const nk_context* context) -> bool {
 
 auto hovered(const nk_context* context, struct nk_rect bounds) -> bool {
     if (!context || !context->current) return false;
+    if (chrome::inside_popup(context))
+        return nk_input_is_mouse_hovering_rect(&context->input, bounds) &&
+            nk_input_is_mouse_hovering_rect(&context->input, context->current->bounds);
     // A tooltip would take the window's only popup slot from the open menu every other frame.
     if (open_popup(context)) return false;
     if (!nk_input_is_mouse_hovering_rect(&context->input, bounds)) return false;
@@ -232,12 +240,35 @@ auto hovered(const nk_context* context, struct nk_rect bounds) -> bool {
 }
 
 void text(nk_context* context, std::string_view value, float preferred_outer_width) {
+    if (chrome::inside_popup(context)) {
+        deferred_text = deferred_text_t{std::string{value}, preferred_outer_width};
+        return;
+    }
     const auto plan = plan_text(context, value, preferred_outer_width);
     if (!plan) return;
     const auto placement = place(context, plan->outer_width, plan->content_height);
     if (!placement || !begin(context, *placement)) return;
     draw_text(context, *plan);
     end(context);
+}
+
+void render_deferred(nk_context* overlay) {
+    const auto pending = std::exchange(deferred_text, std::nullopt);
+    if (!overlay || !pending || app_viewport.w <= 0.0F || app_viewport.h <= 0.0F) return;
+    // The carrier window spans the viewport so the tooltip is placed exactly as in the editor,
+    // and paints nothing itself.
+    auto& window = overlay->style.window;
+    const auto saved = window;
+    window.fixed_background = nk_style_item_hide();
+    window.border = 0.0F;
+    window.padding = nk_vec2(0.0F, 0.0F);
+    if (nk_begin(overlay, "Popup tooltip", app_viewport,
+            NK_WINDOW_NO_INPUT | NK_WINDOW_NO_SCROLLBAR)) {
+        window = saved;
+        text(overlay, pending->value, pending->preferred_outer_width);
+    }
+    window = saved;
+    nk_end(overlay);
 }
 
 } // namespace wormedit::ui::nuklear::tooltip

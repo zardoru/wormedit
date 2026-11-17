@@ -7,9 +7,13 @@ struct timing_reposition_report_t {
     std::size_t moved_objects{}, rounded_positions{};
     auto operator==(const timing_reposition_report_t&) const -> bool = default;
 };
-// Repositions sound-bearing objects, including hold tails, by exact old audio times.
-// Audio-time bookmarks/sections already own seconds and remain untouched. The caller
-// stages this on its timing edit's working chart and publishes through one transaction.
+// Repositions every timed object by its exact old audio time: unchanged BPM, stop, delay and
+// warp events first (in time order, so each maps through the tempo already placed before it),
+// then notes and hold tails, BGM, sound-channel events, SV/speed/kiai, sample controls, BGA,
+// timing anchors and SV recipe ranges. Events the edit itself changed keep their new position.
+// Audio-time markers already own seconds; beat-anchored markers and lane layout segments keep
+// their musical position. Categories linked from another chart are left to that chart. The
+// caller stages this on its timing edit's working chart and publishes through one transaction.
 [[nodiscard]] auto preserve_audio_positions(const chart_document_t& before,
     chart_document_t& after, timing_anchoring_t) -> diagnosed_t<timing_reposition_report_t>;
 [[nodiscard]] auto stage_timing_reposition(document_command_transaction_t&, chart_id_t,

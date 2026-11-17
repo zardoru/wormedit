@@ -71,6 +71,28 @@ void check_stale_compose_navigation(fixture_t& fixture) {
     CHECK_FALSE(navigation.accepted);
 }
 
+
+// The row a bookmark sits on, under either anchor, through the chart's current timing.
+auto bookmark_row_position(const chart_document_t& chart, const bookmark_t& bookmark)
+    -> std::optional<local_position_t> {
+    const auto measures = measure_index_t::from(chart);
+    const auto timing = timing_index_t::from(chart);
+    if (!measures || !timing.value) return std::nullopt;
+    const auto beat = bookmark_edit_value_t::from(bookmark).with_anchor(marker_anchor_t::beat, *measures, *timing.value);
+    return beat ? beat->position : std::nullopt;
+}
+
+void check_time_anchored(const bookmark_t& bookmark, std::int64_t milliseconds) {
+    CHECK(bookmark.anchor == marker_anchor_t::audio_time);
+    CHECK(bookmark.audio_milliseconds == milliseconds);
+    CHECK_FALSE(bookmark.position);
+}
+
+void check_beat_anchored(const bookmark_t& bookmark, local_position_t position) {
+    CHECK(bookmark.anchor == marker_anchor_t::beat);
+    CHECK(bookmark.position == position);
+    CHECK_FALSE(bookmark.audio_milliseconds);
+}
 } // namespace
 
 TEST_CASE("nearest snap row picks the closest row and ties go earlier",
@@ -97,18 +119,18 @@ TEST_CASE("Go To Bookmark shortcut maps to its application command",
 TEST_CASE("bookmark navigation moves the cursor over bookmarks only",
           "[unit][sys][bookmark-commands]") {
     fixture_t fixture{{measure_id_t{3}, 0}};
-    const auto next = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    const auto next = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                              marker_navigation_direction_t::next);
     REQUIRE(next.accepted);
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{4}, 480}));
 
-    const auto beyond = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    const auto beyond = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     CHECK(beyond.accepted);
     CHECK(beyond.message == "No next bookmark.");
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{4}, 480}));
 
-    const auto previous = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state,
+    const auto previous = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state,
                                                  fixture.application,
                                                  marker_navigation_direction_t::previous);
     CHECK(previous.accepted);
@@ -129,7 +151,7 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
                                               notification_source_t::input);
     };
     const auto before = fixture.state.cursor;
-    const auto result = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    const auto result = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     REQUIRE(result.accepted);
     CHECK(seeks == 1);
@@ -148,14 +170,14 @@ TEST_CASE("playing bookmark navigation retains producer feedback metadata",
                                               notification_severity_t::hint,
                                               notification_source_t::input);
     };
-    const auto result = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    const auto result = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                                marker_navigation_direction_t::next);
     CHECK(result.accepted);
     CHECK(result.severity == notification_severity_t::hint);
     CHECK(result.source == notification_source_t::input);
     CHECK(result.message == "Opaque producer feedback.");
     fixture.application.services.transport_seek = {};
-    const auto rejected = fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    const auto rejected = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                                  marker_navigation_direction_t::next);
     CHECK_FALSE(rejected.accepted);
     CHECK(rejected.severity == notification_severity_t::warning);
@@ -164,12 +186,12 @@ TEST_CASE("playing bookmark navigation retains producer feedback metadata",
 TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses duplicates",
           "[unit][sys][bookmark-commands]") {
     fixture_t fixture{{measure_id_t{3}, 240}};
-    const auto added = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    const auto added = fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(added.accepted);
     CHECK(added.mutated);
     CHECK(fixture.history.document.charts.front().bookmarks.size() == 2);
 
-    const auto duplicate = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state,
+    const auto duplicate = fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state,
                                                   fixture.application);
     CHECK_FALSE(duplicate.accepted);
     CHECK(duplicate.message == "A bookmark already exists on this row.");
@@ -179,12 +201,40 @@ TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses dupl
 
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 1000.0;
-    const auto playing = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    const auto playing = fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(playing.accepted);
     const auto& bookmarks = fixture.history.document.charts.front().bookmarks;
     REQUIRE(bookmarks.size() == 2);
-    // Absolute row 1000 snaps to 960, which is the first row of the second measure.
-    CHECK((bookmarks.back().position == local_position_t{measure_id_t{4}, 0}));
+    // Absolute row 1000 snaps to 960, the first row of the second measure: one second at 240 BPM.
+    check_time_anchored(bookmarks.back(), 1000);
+}
+
+TEST_CASE("time-anchored bookmarks are reached by bookmark navigation and refuse duplicates",
+          "[unit][sys][bookmark-commands]") {
+    // Row 300 at 240 BPM is 312.5 ms; the bookmark keeps 313 ms, which is still in row 300.
+    fixture_t fixture{{measure_id_t{3}, 300}};
+    REQUIRE(fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application).accepted);
+    CHECK(fixture.history.document.charts.front().bookmarks.back().audio_milliseconds == 313);
+    CHECK_FALSE(fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application).accepted);
+    fixture.state.cursor = {measure_id_t{3}, 0};
+    const auto next = fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state,
+        fixture.application, marker_navigation_direction_t::next);
+    REQUIRE(next.accepted);
+    CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 300}));
+}
+
+TEST_CASE("renaming a bookmark can switch its anchor in place", "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& bookmarks = fixture.application.bookmarks;
+    const auto to_time = bookmarks.rename_bookmark(fixture.history, fixture.history.document.revision,
+        chart_id_t{2}, object_id_t{30}, "Drop", marker_anchor_t::audio_time);
+    REQUIRE(to_time.accepted);
+    CHECK(fixture.history.document.charts.front().bookmarks.front().label == "Drop");
+    check_time_anchored(fixture.history.document.charts.front().bookmarks.front(), 1500);
+    const auto to_beat = bookmarks.rename_bookmark(fixture.history, fixture.history.document.revision,
+        chart_id_t{2}, object_id_t{30}, "Drop", marker_anchor_t::beat);
+    REQUIRE(to_beat.accepted);
+    check_beat_anchored(fixture.history.document.charts.front().bookmarks.front(), {measure_id_t{4}, 480});
 }
 
 TEST_CASE("bookmark frames clamp to the preview end", "[unit][sys][bookmark-commands]") {
@@ -286,10 +336,10 @@ TEST_CASE("playing bookmark jumps advance from the live playhead and preserve th
     };
     const auto cursor = fixture.state.cursor;
     fixture.application.project.transport.preview_playhead_absolute_row = 0.0;
-    REQUIRE(fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    REQUIRE(fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::next).accepted);
     fixture.application.project.transport.preview_playhead_absolute_row = 240.0;
-    REQUIRE(fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    REQUIRE(fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::next).accepted);
     REQUIRE(seeks.size() == 2);
     CHECK(seeks[1] > seeks[0]);
@@ -310,7 +360,7 @@ TEST_CASE("previous playing bookmark includes the row below a fractional playhea
         return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
                                               notification_source_t::input);
     };
-    REQUIRE(fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+    REQUIRE(fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                    marker_navigation_direction_t::previous).accepted);
     CHECK(sought == audio::output_sample_rate / 4);
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 0}));
@@ -334,7 +384,7 @@ TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookm
                                               notification_source_t::input);
     };
     const auto previous = [&] {
-        return fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+        return fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                       marker_navigation_direction_t::previous);
     };
     constexpr auto quarter = audio::output_sample_rate / 4;
@@ -360,7 +410,7 @@ TEST_CASE("adding a bookmark past the last measure explains it in plain words an
     fixture_t fixture{{measure_id_t{3}, 0}};
     fixture.state.virtual_bms_cursor_row = 5000;
     const auto revision = fixture.history.document.revision;
-    const auto outcome = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    const auto outcome = fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application);
     CHECK_FALSE(outcome.accepted);
     CHECK(outcome.message == "Bookmarks can only go inside existing measures. "
                              "Add measures up to the cursor first.");
@@ -394,7 +444,7 @@ struct mixed_navigation_fixture_t {
     }
     auto previous_bookmark(double live_row) -> bool {
         fixture.application.project.transport.preview_playhead_absolute_row = live_row;
-        return fixture.application.bookmarks.navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+        return fixture.application.bookmarks.navigate_bookmark(fixture.history, fixture.state, fixture.application,
                                       marker_navigation_direction_t::previous).accepted;
     }
 };
@@ -466,10 +516,10 @@ TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
     CHECK(nearest_snap_row(chart, index, 441, {4}) == 560);
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 441;
-    const auto added = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    const auto added = fixture.application.bookmarks.add_bookmark_here(fixture.history, fixture.state, fixture.application);
     REQUIRE(added.accepted);
-    CHECK(fixture.history.document.charts.front().bookmarks.back().position ==
-          local_position_t{measure_id_t{4}, 240});
+    const auto& edited = fixture.history.document.charts.front();
+    CHECK(bookmark_row_position(edited, edited.bookmarks.back()) == local_position_t{measure_id_t{4}, 240});
 }
 
 TEST_CASE("Following playhead cursor rounds on the current measure grid",

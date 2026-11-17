@@ -3889,6 +3889,8 @@ static void render_notification_frame(const wormedit::ui::notification_view_t& v
     wormedit::ui::nuklear::render_notification_overlay(g_context,
         g_notification_context_initialized ? &g_notification_context : nullptr,
         visible, g_notification_state, width, height);
+    wormedit::ui::nuklear::tooltip::render_deferred(
+        g_notification_context_initialized ? &g_notification_context : nullptr);
     const auto pending = wormedit::ui::nuklear::notification_take_action(g_notification_state);
     if (pending.kind != WORM_UI_NOTIFICATION_ACTION_NONE &&
         action.notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE) action.notifications = pending;

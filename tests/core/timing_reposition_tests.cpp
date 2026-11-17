@@ -178,3 +178,67 @@ TEST_CASE("Audio anchoring rejects sound objects with no playable time inside a 
     REQUIRE_FALSE(result.diagnostics.empty());
     CHECK(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
 }
+namespace {
+// Every timed class at a distinct row of the first measure, after a later tempo change and a stop.
+auto song_with_later_timing() -> song_document_t {
+    auto song = anchored_song();
+    auto& chart = song.charts.front();
+    const auto measure = chart.measures.front().id;
+    const auto at = [&](std::uint64_t numerator, std::uint64_t denominator) {
+        return local_position_t{measure, chart.divisions_per_standard_measure * numerator / denominator};
+    };
+    chart.bpms.push_back({.id = object_id_t{960}, .position = at(3, 4), .beats_per_minute = {180, 1}});
+    chart.pauses.push_back({.id = object_id_t{961}, .position = at(7, 8), .duration = {1, 10}});
+    chart.scrolls.push_back({.id = object_id_t{962}, .position = at(13, 16), .multiplier = {2, 1}});
+    chart.speeds.push_back({.id = object_id_t{963}, .position = at(15, 16)});
+    chart.kiai.push_back({.id = object_id_t{964}, .position = at(7, 8), .enabled = true});
+    chart.volumes.push_back({.id = object_id_t{965}, .position = at(13, 16), .value = 50});
+    chart.timing_anchors.push_back({.id = object_id_t{966}, .position = at(15, 16), .source_sample_frame = 80000});
+    chart.bookmarks.push_back({.id = object_id_t{967}, .label = "Beat", .position = at(7, 8)});
+    chart.sv_recipes.push_back({.id = recipe_id_t{968}, .name = "Ramp", .range = {at(13, 16), at(15, 16)}});
+    const auto diagnostics = validate_document(song);
+    for (const auto& diagnostic : diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(diagnostics.empty());
+    return song;
+}
+auto timed_positions(const chart_document_t& chart) -> std::vector<signed_rational_t> {
+    const auto timing = timing_index_t::from(chart);
+    const auto measures = measure_index_t::from(chart);
+    REQUIRE(timing.value);
+    REQUIRE(measures);
+    const auto seconds = [&](local_position_t position) { return audio_time(*timing.value, *measures, position); };
+    return {seconds(chart.bpms.back().position), seconds(chart.pauses.front().position),
+        seconds(chart.scrolls.front().position), seconds(chart.speeds.front().position),
+        seconds(chart.kiai.front().position), seconds(chart.volumes.front().position),
+        seconds(chart.timing_anchors.front().position), seconds(chart.sv_recipes.front().range.begin),
+        seconds(chart.sv_recipes.front().range.end)};
+}
+void check_every_audio_time_kept(const chart_document_t& before, const chart_document_t& chart) {
+    CHECK(timed_positions(chart) == timed_positions(before));
+    CHECK(audio_points(chart) == audio_points(before));
+    CHECK(chart.bpms.back().position != before.bpms.back().position);
+    CHECK(chart.bpms.back().beats_per_minute == signed_rational_t{180, 1});
+    CHECK(chart.bpms.front().id == before.bpms.front().id);
+    CHECK(chart.bookmarks.back().position == before.bookmarks.back().position);
+}
+}
+TEST_CASE("Keeping audio time also keeps later tempo changes, stops and every timed object", "[core][timing-anchoring]") {
+    const auto song = song_with_later_timing();
+    auto history = document_history_t::from(song);
+    const auto result = apply_bpm_edit(history, initial_bpm_edit(history.document, {60, 1}), {},
+        {.positions = timing_position_policy_t::audio});
+    REQUIRE(result.applied);
+    const auto& before = song.charts.front();
+    check_every_audio_time_kept(before, history.document.charts.front());
+    REQUIRE(undo_document_command(history));
+    CHECK(timed_positions(history.document.charts.front()) == timed_positions(before));
+    CHECK(history.document.charts.front().bpms == before.bpms);
+}
+TEST_CASE("Keeping audio time leaves the musical default unchanged for later timing", "[core][timing-anchoring]") {
+    const auto song = song_with_later_timing();
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_edit(history, initial_bpm_edit(history.document, {60, 1}), {}, {}).applied);
+    const auto& chart = history.document.charts.front();
+    CHECK(chart.bpms.back().position == song.charts.front().bpms.back().position);
+    CHECK(chart.scrolls.front().position == song.charts.front().scrolls.front().position);
+}

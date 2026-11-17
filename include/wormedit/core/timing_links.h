@@ -8,6 +8,8 @@ struct timing_category_info_t {
     timing_category_t kind;
     std::string_view label;
     bool changes_retained_bms_timing;
+    // Its events define the row-to-seconds map rather than sitting on it.
+    bool shapes_audio_time;
     [[nodiscard]] auto requires_link_confirmation(const chart_document_t&) const -> bool;
     [[nodiscard]] static constexpr auto for_recipe(sv_recipe_output_t output) -> timing_category_t {
         switch (output) {
@@ -18,16 +20,16 @@ struct timing_category_info_t {
     }
 };
 inline constexpr std::array timing_categories{
-    timing_category_info_t{timing_category_t::bpm, "BPM", true},
-    timing_category_info_t{timing_category_t::scroll, "SV / scroll", false},
-    timing_category_info_t{timing_category_t::speed, "SPEEDS", false},
-    timing_category_info_t{timing_category_t::kiai, "Kiai", false},
-    timing_category_info_t{timing_category_t::stop, "Stops", true},
-    timing_category_info_t{timing_category_t::delay, "Delays", true},
-    timing_category_info_t{timing_category_t::warp, "Warps", true},
-    timing_category_info_t{timing_category_t::anchor, "Timing anchors", false},
-    timing_category_info_t{timing_category_t::offset, "Audio offset", false},
-    timing_category_info_t{timing_category_t::measures, "Measure layout", true},
+    timing_category_info_t{timing_category_t::bpm, "BPM", true, true},
+    timing_category_info_t{timing_category_t::scroll, "SV / scroll", false, false},
+    timing_category_info_t{timing_category_t::speed, "SPEEDS", false, false},
+    timing_category_info_t{timing_category_t::kiai, "Kiai", false, false},
+    timing_category_info_t{timing_category_t::stop, "Stops", true, true},
+    timing_category_info_t{timing_category_t::delay, "Delays", true, true},
+    timing_category_info_t{timing_category_t::warp, "Warps", true, true},
+    timing_category_info_t{timing_category_t::anchor, "Timing anchors", false, false},
+    timing_category_info_t{timing_category_t::offset, "Audio offset", false, true},
+    timing_category_info_t{timing_category_t::measures, "Measure layout", true, true},
 };
 static_assert(is_catalog_exhaustive(timing_categories, timing_category_count));
 

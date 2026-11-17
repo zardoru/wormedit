@@ -82,6 +82,8 @@ struct compose_marker_request_t {
     bool note_label_focus_consumed;
     std::string note_label;
     wormedit::object_id_t bookmark_id;
+    // Rename converts the bookmark to this anchor when set; empty keeps its anchor.
+    std::optional<wormedit::marker_anchor_t> bookmark_anchor;
     wormedit::bookmark_reorder_t bookmark_reorder;
     wormedit::object_id_t section_id;
     wormedit::object_id_t export_cut_id;

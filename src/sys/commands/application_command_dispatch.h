@@ -1,6 +1,9 @@
 #pragma once
 
 #include "sys/app/application_edit_inputs.h"
+#include "ui/frontend/compose_request.h"
+#include "ui/frontend/frame_input.h"
+#include "ui/frontend/request_stamp.h"
 
 #include "sys/commands/application_commands.h"
 #include "sys/app/application_command_state.h"
@@ -57,14 +60,15 @@ auto reject_application_command(
 
 
 // Stamped Compose activations must be checked before refreshing/invoking the registry.
-inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action_t& action,
+inline auto compose_menu_command_is_current(const wormedit::ui::compose_request_t& compose,
+    const wormedit::ui::shortcut_input_t& shortcuts, const wormedit::ui::request_stamp_t& stamp,
     const document_history_t& history, const workspace_controller_t& workspace) -> bool {
-    return !action.compose.menu_command ||
-        (action.input.shortcuts.window_focused && !action.input.shortcuts.ime_composition_active &&
+    return !compose.menu_command ||
+        (shortcuts.window_focused && !shortcuts.ime_composition_active &&
          workspace.active_tab == workspace_tab_t::compose &&
-         action.stamp.project_id == history.document.id &&
-         workspace.selected_chart && action.stamp.chart_id == *workspace.selected_chart &&
-         action.stamp.document_revision == history.document.revision);
+         stamp.project_id == history.document.id &&
+         workspace.selected_chart && stamp.chart_id == *workspace.selected_chart &&
+         stamp.document_revision == history.document.revision);
 }
 
 // External-player, play/pause, play-from-start, and cancel/restore callbacks own

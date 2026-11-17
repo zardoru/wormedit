@@ -15,6 +15,7 @@
 #include "sys/compose/compose_playhead_cursor.h"
 #include "sys/audio/inline_preview_cursor.h"
 #include "sys/audio/transport_player_actions.h"
+#include "../sys/session_window_overloads.h"
 #include "sys/compose/compose_clipboard_selection.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
@@ -41,7 +42,6 @@
 #include <wormedit/formats/native_project.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
-
 #include <algorithm>
 #include <array>
 #include <cstdio>

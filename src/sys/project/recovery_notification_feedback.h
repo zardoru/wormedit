@@ -1,11 +1,12 @@
 #pragma once
-#include "ui/frontend.h"
+#include "ui/frontend/project.h"
+#include "ui/frontend/session_requests.h"
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>
 namespace wormedit::sys {
-auto dispatch_recovery_ui_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_recovery_ui_action(WormUiWorkspaceActionKind kind, const wormedit::ui::recovery_request_t& recovery,
     native_project_recovery_controller_t& controller, document_history_t& history,
     workspace_controller_t& workspace,
     std::optional<native_project_document_version_t> scanned_primary_version,

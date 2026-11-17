@@ -20,6 +20,7 @@
 #include "sys/commands/native_chart_edit_action.h"
 #include "sys/project/output_group_export.h"
 #include "sys/audio/transport_player_actions.h"
+#include "session_window_overloads.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>

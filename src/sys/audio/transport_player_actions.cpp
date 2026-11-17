@@ -22,25 +22,26 @@ auto toggle_metronome_status(application_command_state_t& state,
 
 } // namespace
 
-auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& action,
+auto dispatch_transport_player_action(WormUiWorkspaceActionKind kind,
+    const wormedit::ui::transport_request_t& transport, wormedit::player_preview_skin_t player_preview_skin,
                                       application_command_state_t& application_state,
                                       notification_sink_t notifications)
     -> std::optional<std::string> {
-    switch (action.kind) {
+    switch (kind) {
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:
         return toggle_metronome_status(application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
-        if (set_transport_rate(application_state, action.transport.rate_id))
+        if (set_transport_rate(application_state, transport.rate_id))
             return publish_transport_feedback(notifications, notification_severity_t::success, "Playback rate changed.");
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Playback rate unchanged.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
         if (!application_state.preferences.transport_keep_pitch_available ||
             !application_state.services.transport_set_keep_pitch ||
-            !application_state.services.transport_set_keep_pitch(action.transport.keep_pitch))
+            !application_state.services.transport_set_keep_pitch(transport.keep_pitch))
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Keep pitch is unavailable.");
-        application_state.preferences.transport_keep_pitch = action.transport.keep_pitch;
+        application_state.preferences.transport_keep_pitch = transport.keep_pitch;
         return publish_transport_feedback(notifications, notification_severity_t::success,
-            action.transport.keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
+            transport.keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
         if (application_state.services.transport_play_pause) return application_state.services.transport_play_pause();
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview is unavailable.");
@@ -55,7 +56,7 @@ auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& ac
         if (application_state.services.transport_seek) {
             auto outcome = finish_compose_action(
                 notifications,
-                application_state.services.transport_seek(action.transport.seek_frame));
+                application_state.services.transport_seek(transport.seek_frame));
             return std::move(outcome.message);
         }
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview seek is unavailable.");
@@ -64,11 +65,11 @@ auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& ac
         return publish_transport_feedback(notifications, notification_severity_t::info,
             application_state.project.compose_view.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
     case WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN:
-        if (action.player_preview_skin > wormedit::player_preview_skin_t::arrows) {
+        if (player_preview_skin > wormedit::player_preview_skin_t::arrows) {
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview skin ignored.");
         }
         application_state.project.compose_view.player_preview_skin =
-            static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
+            static_cast<wormedit::player_preview_skin_t>(player_preview_skin);
         return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview skin changed.");
     default:
         return std::nullopt;

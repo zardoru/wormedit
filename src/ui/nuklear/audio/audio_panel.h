@@ -1,6 +1,9 @@
 #pragma once
 
-#include "ui/frontend.h"
+#include "ui/nuklear/audio/audio_ui_window.h"
+#include "ui/frontend/audio_slicer.h"
+#include "ui/frontend/common.h"
+#include "ui/frontend/project.h"
 #include <span>
 
 struct nk_context;
@@ -9,6 +12,6 @@ struct nk_context;
 
 void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
                                          const wormedit::ui::audio_slices_view_t* view,
-                                         wormedit::ui::workspace_action_t* action, bool show_asset_catalog,
+                                         wormedit::ui::audio_ui_window_t* action, bool show_asset_catalog,
                                          bool window_focused,
                                          std::span<const wormedit::ui::audio_waveform_column_view_t> columns = {});

@@ -1,11 +1,6 @@
 # files that name workspace_action_t; may only go down (see check_workspace_action_users.py)
 src/core/workspace.cpp
 src/sys/app/application.cpp
-src/sys/audio/transport_player_actions.cpp
-src/sys/audio/transport_player_actions.h
-src/sys/commands/application_command_dispatch.h
-src/sys/project/recovery_notification_feedback.cpp
-src/sys/project/recovery_notification_feedback.h
 src/ui/frontend/actions.h
 src/ui/frontend/compose_request.h
 src/ui/frontend/request_stamp.h
@@ -14,15 +9,10 @@ src/ui/frontend/sound_requests.h
 src/ui/nuklear/app/command_menu.cpp
 src/ui/nuklear/app/command_menu.h
 src/ui/nuklear/app/frontend.cpp
-src/ui/nuklear/audio/audio_panel.cpp
-src/ui/nuklear/audio/audio_panel.h
+src/ui/nuklear/audio/audio_ui_window.h
+src/ui/nuklear/audio/audio_ui_window_of.h
 src/ui/nuklear/compose/compose_ui_window.h
 src/ui/nuklear/compose/compose_ui_window_of.h
-src/ui/nuklear/metadata/metadata_audio_section.cpp
-src/ui/nuklear/metadata/metadata_panel.cpp
-src/ui/nuklear/metadata/metadata_panel.h
-src/ui/nuklear/metadata/metadata_panel_internal.h
-src/ui/nuklear/metadata/metadata_timing_links_section.h
 src/ui/nuklear/project/setup_panel.cpp
 src/ui/nuklear/project/setup_panel.h
 tests/core/workspace_tests.cpp
@@ -58,6 +48,7 @@ tests/sys/metadata_notification_tests.cpp
 tests/sys/minimap_center_tests.cpp
 tests/sys/recovery_notification_tests.cpp
 tests/sys/resource_notification_tests.cpp
+tests/sys/session_window_overloads.h
 tests/sys/sound_properties_actions_tests.cpp
 tests/sys/sound_usage_actions_tests.cpp
 tests/sys/timing_lane_ui_tests.cpp

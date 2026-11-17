@@ -32,7 +32,7 @@ static auto metadata_audio_offset_value() -> std::optional<metadata_rating_value
     return metadata_rating_value_t{true, parsed->numerator, parsed->denominator};
 }
 
-static void set_metadata_audio_offset_action(wormedit::ui::workspace_action_t* action,
+static void set_metadata_audio_offset_action(wormedit::ui::audio_ui_window_t* action,
                                              const wormedit::ui::metadata_view_t* metadata) {
     if (!action || !metadata || action->metadata.kind != WORM_UI_METADATA_EDIT_NONE ||
         !metadata->has_chart || !metadata->audio_offset_editable || metadata->timing_locked ||
@@ -187,7 +187,7 @@ static void metadata_read_only_path(struct nk_context* context, const char* labe
 }
 
 // Requests setting or replacing the song audio; false when the action slot is busy.
-static auto set_metadata_music_import_action(wormedit::ui::workspace_action_t* action,
+static auto set_metadata_music_import_action(wormedit::ui::audio_ui_window_t* action,
                                              const wormedit::ui::metadata_view_t* metadata, const char* path)
     -> bool {
     if (!metadata->has_chart || !path || !path[0] ||
@@ -206,7 +206,7 @@ static auto set_metadata_music_import_action(wormedit::ui::workspace_action_t* a
 
 static void metadata_copy_inspection_button(struct nk_context* context,
                                             const wormedit::ui::metadata_view_t* metadata,
-                                            wormedit::ui::workspace_action_t* action, bool export_copy,
+                                            wormedit::ui::audio_ui_window_t* action, bool export_copy,
                                             size_t group_index) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     if (metadata->copy_preview_pending)
@@ -332,7 +332,7 @@ static void request_external_copy(const MetadataPanel& panel, const char* source
 
 static void
 metadata_external_copy_button(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
-                              wormedit::ui::workspace_action_t* action, const char* source_path,
+                              wormedit::ui::audio_ui_window_t* action, const char* source_path,
                               const wormedit::ui::compose_output_group_view_t* export_group = nullptr) {
     if (!source_path || !source_path[0] || !metadata->project_directory.c_str() ||
         !metadata->project_directory.c_str()[0] ||

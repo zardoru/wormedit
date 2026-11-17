@@ -35,12 +35,13 @@ auto first_recovery_diagnostic(
 }
 
 auto recovery_action_request(
-    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
+    WormUiWorkspaceActionKind kind, const wormedit::ui::recovery_request_t& recovery,
+    const wormedit::document_history_t& history,
     const std::optional<wormedit::native_project_document_version_t>& scanned_primary_version,
     const wormedit::native_project_recovery_action_target_t& target,
     std::string& error) -> wormedit::native_project_recovery_controller_action_t {
     using namespace wormedit;
-    switch (action.kind) {
+    switch (kind) {
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
         return native_project_recovery_target_action_t{
             .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
@@ -67,7 +68,7 @@ auto recovery_action_request(
             },
         };
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS: {
-        const auto& destination = action.recovery.save_as_destination;
+        const auto& destination = recovery.save_as_destination;
         if (destination.empty()) {
             error = "Choose a new project path before using Save as.";
             return native_project_recovery_target_action_t{
@@ -97,7 +98,7 @@ auto recovery_action_request(
 
 auto load_recovered_document(
     const wormedit::native_project_recovery_action_outcome_t& result,
-    const wormedit::ui::workspace_action_t& action, wormedit::native_project_recovery_controller_t& controller,
+    const wormedit::ui::recovery_request_t& recovery, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered,
     const wormedit::notification_sink_t& notifications) -> std::string {
@@ -115,8 +116,8 @@ auto load_recovered_document(
     const auto& recovery_view = controller.view();
     std::optional<native_project_document_version_t> recovered_save_baseline;
     auto recovered_sequence = std::uint64_t{};
-    if (action.recovery.row_index < recovery_view.rows.size()) {
-        const auto& row = recovery_view.rows[action.recovery.row_index];
+    if (recovery.row_index < recovery_view.rows.size()) {
+        const auto& row = recovery_view.rows[recovery.row_index];
         if (row.last_explicit_save_revision) {
             recovered_save_baseline = native_project_document_version_t{
                 .project_id = result.value.document->id,
@@ -141,19 +142,20 @@ auto load_recovered_document(
 } // namespace
 
 auto dispatch_recovery_ui_action(
-    const wormedit::ui::workspace_action_t& action, wormedit::native_project_recovery_controller_t& controller,
+    WormUiWorkspaceActionKind kind, const wormedit::ui::recovery_request_t& recovery,
+    wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::native_project_document_version_t> scanned_primary_version,
     wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered,
     const wormedit::notification_sink_t& notifications) -> std::string {
     using namespace wormedit;
     const native_project_recovery_action_target_t target{
-        .scan_generation = action.recovery.scan_generation,
-        .row_index = action.recovery.row_index,
-        .candidate_index = action.recovery.candidate_index,
+        .scan_generation = recovery.scan_generation,
+        .row_index = recovery.row_index,
+        .candidate_index = recovery.candidate_index,
     };
     std::string request_error;
-    const auto request = recovery_action_request(action, history, scanned_primary_version,
+    const auto request = recovery_action_request(kind, recovery, history, scanned_primary_version,
                                                  target, request_error);
     if (!request_error.empty())
         return post_recovery_feedback(notifications, notification_severity_t::warning, request_error);
@@ -176,7 +178,7 @@ auto dispatch_recovery_ui_action(
             diagnostic.empty() ? "Recovery action did not complete." : diagnostic);
     }
 
-    switch (action.kind) {
+    switch (kind) {
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
         if (result.value.document) {
             return post_recovery_feedback(notifications, notification_severity_t::info,
@@ -185,7 +187,7 @@ auto dispatch_recovery_ui_action(
         }
         return post_recovery_feedback(notifications, notification_severity_t::info, "Recovery candidate inspected read-only.");
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
-        return load_recovered_document(result, action, controller, history, workspace,
+        return load_recovered_document(result, recovery, controller, history, workspace,
                                        autosave_loop, recovered, notifications);
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS:
         return post_recovery_feedback(notifications, notification_severity_t::success, "Recovery candidate saved as a new project; the current workspace was unchanged.");

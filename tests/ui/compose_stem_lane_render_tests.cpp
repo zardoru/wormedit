@@ -1,4 +1,5 @@
 #include "pixel_comparison.h"
+#include "ui/nuklear/audio/audio_ui_window_of.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/project/workspace_view.h"
 #include "ui/compose_timing_geometry.h"
@@ -314,7 +315,8 @@ TEST_CASE("Audio overview rendering guards a zero sample rate", "[ui][shared-tex
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
     REQUIRE(nk_begin(fixture.context, "audio overview", nk_rect(0, 0, 1280, 900), NK_WINDOW_NO_SCROLLBAR));
-    worm_ui_nuklear_render_audio_slices(fixture.context, &view, &action, false, false);
+    auto audio_window = wormedit::ui::audio_ui_window_of(action);
+    worm_ui_nuklear_render_audio_slices(fixture.context, &view, &audio_window, false, false);
     nk_end(fixture.context);
     bool has_zero_seconds{};
     const nk_command* command;

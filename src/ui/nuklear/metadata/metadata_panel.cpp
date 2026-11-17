@@ -199,7 +199,7 @@ void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_
 
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                                            const wormedit::ui::metadata_view_t* metadata,
-                                           wormedit::ui::workspace_action_t* action, bool window_focused) {
+                                           wormedit::ui::audio_ui_window_t* action, bool window_focused) {
     if (!context || !metadata || !action || !metadata->visible) {
         worm_ui_nuklear_cancel_metadata_tag_drag();
         return;

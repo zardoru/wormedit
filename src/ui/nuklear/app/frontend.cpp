@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/compose/compose_ui_window_of.h"
+#include "ui/nuklear/audio/audio_ui_window_of.h"
 #include <wormedit/core/bms36.h>
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
@@ -2868,12 +2869,13 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
     if (!open) return;
     retire_sound_picker(view, action);
     retire_bookmark_editors(view, action);
+    auto audio_window = wormedit::ui::audio_ui_window_of(action);
     if (view.setup.visible) {
         (void)render_recovery_panel(view, action);
         worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
     } else if (view.metadata.visible) {
         (void)render_recovery_panel(view, action);
-        worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
+        worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &audio_window,
                                               metadata_interactive);
     } else if (view.compose.visible) {
         auto& compose = view.compose;
@@ -2883,7 +2885,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
             g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
             g_shortcut_event_count);
     } else if (view.audio_slices.visible) {
-        worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
+        worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &audio_window, true,
                                             audio_content_interactive(view));
     } else if (view.compare.visible) {
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action.compare, &action.kind);

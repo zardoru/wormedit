@@ -2578,7 +2578,7 @@ struct application_t::implementation_t {
         }
         bool recovered = false;
         (void)wormedit::sys::dispatch_recovery_ui_action(
-            action, session.recovery_controller, session.history, session.workspace,
+            action.kind, action.recovery, session.recovery_controller, session.history, session.workspace,
             session.project_identity.scanned_primary_version, session.autosave_loop, recovered,
             platform.notification_sink);
         if (recovered) {
@@ -2733,7 +2733,8 @@ struct application_t::implementation_t {
             static_cast<void>(dispatch_audio_offset_drag_action(
                 action, commands.audio_offset_edits_locked(), sample_rate));
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action, commands, platform.notification_sink)) {
+                       action.kind, action.transport, action.player_preview_skin, commands,
+                       platform.notification_sink)) {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
             dispatch_bga_usage_jump(
@@ -3294,8 +3295,9 @@ struct application_t::implementation_t {
              action.stamp.document_revision != session.history.document.revision ||
              static_cast<int>(action.tab) != static_cast<int>(session.workspace.active_tab)))
             return;
-        if (!wormedit::sys::compose_menu_command_is_current(action, session.history,
-                                                            session.workspace))
+        if (!wormedit::sys::compose_menu_command_is_current(
+                action.compose, action.input.shortcuts, action.stamp, session.history,
+                session.workspace))
             return;
         // SDL forwards key events before AppKit invokes key equivalents. Retire that
         // same chord so a menu shortcut cannot run the registry command twice.

@@ -172,6 +172,7 @@ private:
             : job(sources, blocks, waveforms, scheduler, 1) {}
         audio::waveform_job_t job;
         std::optional<asset_id_t> asset;
+        bool upgrading{}; // replacing an existing coarser analysis
     };
     static constexpr std::size_t stem_slot_count = 3;
     std::vector<std::unique_ptr<stem_slot_t>> stem_slots_;
@@ -185,7 +186,11 @@ private:
     std::size_t stem_budget_bytes_{};
     stem_waveform_cache_stats_t stem_cache_stats_;
     std::uint64_t stem_viewport_sequence_{};
-    std::set<asset_id_t> stem_visible_, stem_budget_rejected_;
+    std::set<asset_id_t> stem_visible_, stem_budget_rejected_, stem_fine_rejected_;
+    // Zoomed in enough that stems (and the selected channel) need the 32-frame analysis.
+    bool stem_fine_mode_{};
+    std::optional<asset_id_t> channel_fine_asset_;
+    void update_stem_detail_mode(const compose_scene_cache_t& cache);
     std::map<asset_id_t, audio::audio_source_identity_t> stem_oversized_;
     void erase_stem_analysis(stem_analysis_map_t::iterator entry, bool eviction);
     auto evict_offscreen_stem_analysis() -> bool;

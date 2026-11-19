@@ -131,6 +131,9 @@ void waveform_analysis_t::reset_sources() {
     stem_cache_stats_ = {};
     stem_visible_.clear();
     stem_budget_rejected_.clear();
+    stem_fine_rejected_.clear();
+    stem_fine_mode_ = false;
+    channel_fine_asset_.reset();
     stem_oversized_.clear();
     stem_attempted_.clear();
     attempted_waveform_asset_.reset();
@@ -153,8 +156,30 @@ void waveform_analysis_t::service(const song_document_t& document,
                                   compose_scene_cache_t& compose_scene_cache,
                                   const editor_interaction_state_t* compose_interaction_state) {
     service_workspace_waveform(workspace);
+    update_stem_detail_mode(compose_scene_cache);
     service_channel_waveform(document, workspace, compose_scene_cache,
                              compose_interaction_state);
+}
+
+namespace {
+// Stems are analyzed at 256 frames per bin; zoomed in far enough that a screen row covers fewer
+// frames than that, the finer 32-frame analysis is what shows more detail (same thresholds as
+// the song's detail level, with hysteresis).
+constexpr std::uint32_t coarse_stem_frames_per_bin = 256;
+constexpr std::uint32_t fine_stem_frames_per_bin = 32;
+constexpr double assumed_stem_sample_rate = 44100.0;
+}
+
+void waveform_analysis_t::update_stem_detail_mode(const compose_scene_cache_t& cache) {
+    const auto& table = cache.waveform.waveform_row_table;
+    if (!table.viewport.has_value()) return;
+    for (const auto& row : table.viewport.value().rows) {
+        if (!row.valid || !(row.end_seconds > row.begin_seconds)) continue;
+        const auto frames_per_pixel = (row.end_seconds - row.begin_seconds) * assumed_stem_sample_rate;
+        if (stem_fine_mode_ && frames_per_pixel > 280.0) stem_fine_mode_ = false;
+        else if (!stem_fine_mode_ && frames_per_pixel < 230.0) stem_fine_mode_ = true;
+        return;
+    }
 }
 
 void waveform_analysis_t::service_compose_stem_waveforms(
@@ -171,7 +196,7 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
     std::optional<asset_id_t>& attempted, const char* failure_message) {
     if (attempted != asset) attempted.reset();
     if (!asset || attempted == asset) return;
-    const auto started = job.request(*asset, 256);
+    const auto started = job.request(*asset, stem_fine_mode_ ? fine_stem_frames_per_bin : coarse_stem_frames_per_bin);
     if (started) {
         accepted = asset;
         return;
@@ -356,6 +381,7 @@ void waveform_analysis_t::service_channel_waveform(
     if (waveform_source_recovered(selected_channel_waveform_asset, channel_waveform_analysis_, sources_))
         channel_waveform_job_asset_.reset();
     if (attempted_channel_asset_ != selected_channel_waveform_asset) attempted_channel_asset_.reset();
+    if (channel_fine_asset_ != selected_channel_waveform_asset) channel_fine_asset_.reset();
     if (selected_channel_waveform_asset != channel_waveform_job_asset_) {
         channel_waveform_job_.cancel();
         channel_waveform_job_asset_.reset();
@@ -369,6 +395,14 @@ void waveform_analysis_t::service_channel_waveform(
         if (channel_waveform_job_asset_ != asset) return;
         if (*completed && completed->value().payload) channel_waveform_analysis_ = completed->value().payload;
         report_waveform_completion(*completed, "Selected BMSON channel waveform could not be analyzed.");
+    }
+    // Zoomed in, replace the coarse analysis with the fine one; the coarse keeps showing until then.
+    if (stem_fine_mode_ && selected_channel_waveform_asset && channel_fine_asset_ != selected_channel_waveform_asset &&
+        selected_channel_waveform_asset == channel_waveform_job_asset_ && !channel_waveform_job_.is_busy() &&
+        channel_waveform_analysis_ && channel_waveform_analysis_->waveform &&
+        channel_waveform_analysis_->waveform->key.frames_per_bin > fine_stem_frames_per_bin) {
+        channel_fine_asset_ = selected_channel_waveform_asset;
+        static_cast<void>(channel_waveform_job_.request(*selected_channel_waveform_asset, fine_stem_frames_per_bin));
     }
 }
 
@@ -425,6 +459,24 @@ void waveform_analysis_t::retain_stem_analysis(asset_id_t asset,
     // Charge result plus conservative shared-control/map-node bookkeeping and key.
     const auto bytes = charge_waveform_capacity(stem_result_capacity(*analysis),
         sizeof(stem_analysis_entry_t) + sizeof(asset_id_t) + 8U * sizeof(void*));
+    const auto existing = stem_analyses_.find(asset);
+    if (existing != stem_analyses_.end() && existing->second.analysis && existing->second.analysis->waveform &&
+        analysis->waveform &&
+        analysis->waveform->key.frames_per_bin < existing->second.analysis->waveform->key.frames_per_bin) {
+        // A finer analysis replaces the coarse one; if it does not fit, the coarse one stays.
+        const auto old_bytes = existing->second.bytes;
+        if (bytes <= stem_budget_bytes_)
+            while (stem_cache_stats_.resident_bytes - old_bytes > stem_budget_bytes_ - bytes)
+                if (!evict_offscreen_stem_analysis()) break;
+        if (bytes > stem_budget_bytes_ || stem_cache_stats_.resident_bytes - old_bytes > stem_budget_bytes_ - bytes) {
+            stem_fine_rejected_.insert(asset);
+            ++stem_cache_stats_.rejected_results;
+            return;
+        }
+        existing->second = stem_analysis_entry_t{std::move(analysis), bytes, stem_viewport_sequence_};
+        stem_cache_stats_.resident_bytes = stem_cache_stats_.resident_bytes - old_bytes + bytes;
+        return;
+    }
     if (bytes > stem_budget_bytes_) {
         const auto binding = sources_.binding(asset);
         stem_oversized_[asset] = binding ? binding->source : audio::audio_source_identity_t{};
@@ -490,6 +542,7 @@ void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& 
         // source registers (the decoder-unavailable case); only a missing result is not.
         const auto asset = *completed ? completed->value().identity : completed->error().identity;
         if (*completed && completed->value().payload) retain_stem_analysis(asset, completed->value().payload);
+        else if (slot->upgrading && stem_analyses_.contains(asset)) stem_fine_rejected_.insert(asset);
         else stem_attempted_.insert(asset);
         report_waveform_completion(*completed, "A BMSON stem waveform could not be analyzed.");
     }
@@ -510,6 +563,10 @@ auto waveform_analysis_t::stem_needs_analysis(asset_id_t asset) -> bool {
     // A failed start is retried once the source has a binding (it registers in the background).
     if (stem_attempted_.contains(asset) && sources_.binding(asset)) stem_attempted_.erase(asset);
     const auto running = std::ranges::any_of(stem_slots_, [&](const auto& slot) { return slot->asset == asset; });
+    if (found != stem_analyses_.end() && stem_fine_mode_ && !running && !stem_fine_rejected_.contains(asset) &&
+        found->second.analysis && found->second.analysis->waveform &&
+        found->second.analysis->waveform->key.frames_per_bin > fine_stem_frames_per_bin)
+        return true;
     return !stem_analyses_.contains(asset) && !stem_attempted_.contains(asset) &&
            !stem_budget_rejected_.contains(asset) && !running;
 }
@@ -519,11 +576,14 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
         if (!stem_needs_analysis(asset)) continue;
         const auto free_slot = std::ranges::find_if(stem_slots_, [](const auto& slot) { return !slot->asset; });
         if (free_slot == stem_slots_.end()) return;
-        const auto started = (*free_slot)->job.request(asset, 256);
+        const auto upgrading = stem_analyses_.contains(asset);
+        const auto started = (*free_slot)->job.request(asset, stem_fine_mode_ ? fine_stem_frames_per_bin : coarse_stem_frames_per_bin);
         if (started) {
             (*free_slot)->asset = asset;
+            (*free_slot)->upgrading = upgrading;
         } else if (started.error().code != failure_code_t::capacity_exceeded) {
-            stem_attempted_.insert(asset);
+            if (upgrading) stem_fine_rejected_.insert(asset);
+            else stem_attempted_.insert(asset);
             sink_.post(notification_severity_t::error, notification_source_t::audio,
                        started.error().message.empty() ? "A BMSON stem waveform could not start."
                                                : started.error().message);
@@ -566,6 +626,7 @@ void waveform_analysis_t::service_stem_waveforms(
     compose_scene_cache_t& compose_scene_cache,
     const editor_interaction_state_t* compose_interaction_state,
     std::span<const sound_channel_t* const> visible_stems) {
+    update_stem_detail_mode(compose_scene_cache);
     const auto selected = selected_channel_asset(document, workspace, compose_scene_cache,
                                                  compose_interaction_state);
     auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state,
@@ -576,7 +637,7 @@ void waveform_analysis_t::service_stem_waveforms(
     wanted_ids.reserve(wanted.size());
     for (const auto asset : wanted) wanted_ids.insert(asset.value);
     const std::set<asset_id_t> visible(wanted.begin(), wanted.end());
-    if (visible != stem_visible_) stem_budget_rejected_.clear();
+    if (visible != stem_visible_) { stem_budget_rejected_.clear(); stem_fine_rejected_.clear(); }
     stem_visible_ = visible;
     ++stem_viewport_sequence_;
     for (auto& [asset, entry] : stem_analyses_)

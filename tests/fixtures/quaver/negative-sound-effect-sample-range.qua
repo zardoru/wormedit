@@ -1,0 +1,11 @@
+Mode: Keys4
+CustomAudioSamples:
+- Path: accent.wav
+SoundEffects:
+- StartTime: 250
+  Sample: 2
+TimingPoints:
+- Bpm: 120
+HitObjects:
+- StartTime: 500
+  Lane: 1

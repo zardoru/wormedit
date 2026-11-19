@@ -64,6 +64,23 @@ constexpr std::array fixture_paths{
     "bmson/zero-resolution-default.bmson",
 };
 
+constexpr std::array quaver_fixture_paths{
+    "quaver/four-key-denormalized.qua",
+    "quaver/seven-key-scratch-normalized.qua",
+    "quaver/samples-layers-mines.qua",
+    "quaver/scroll-groups-unsorted.qua",
+    "quaver/negative-no-hit-objects.qua",
+    "quaver/negative-no-timing-points.qua",
+    "quaver/negative-hold-equal.qua",
+    "quaver/negative-hold-before.qua",
+    "quaver/negative-version.qua",
+    "quaver/negative-mode.qua",
+    "quaver/negative-keysound-sample-zero.qua",
+    "quaver/negative-keysound-sample-range.qua",
+    "quaver/negative-sound-effect-sample-zero.qua",
+    "quaver/negative-sound-effect-sample-range.qua",
+};
+
 constexpr std::array byte_fixture_paths{
     "bms/encoding/utf8-bom.bms",
     "bms/encoding/cp932-shift-jis.bms",
@@ -78,6 +95,22 @@ constexpr std::array byte_fixture_paths{
 auto read_binary_file(const std::filesystem::path& path) -> std::string {
     std::ifstream stream(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+auto has_only_crlf_lines(std::string_view bytes) -> bool {
+    if (!bytes.ends_with("\r\n")) {
+        return false;
+    }
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        if (bytes[index] == '\r' &&
+            (index + 1 == bytes.size() || bytes[index + 1] != '\n')) {
+            return false;
+        }
+        if (bytes[index] == '\n' && (index == 0 || bytes[index - 1] != '\r')) {
+            return false;
+        }
+    }
+    return true;
 }
 
 auto decode_lowercase_hex(std::string_view source) -> std::optional<std::string> {
@@ -143,5 +176,20 @@ TEST_CASE("Stage 0 BMS encoding fixtures are inventoried as byte streams",
         const auto recipe = decode_lowercase_hex(read_binary_file(recipe_path));
         REQUIRE(recipe.has_value());
         CHECK(bytes == *recipe);
+    }
+}
+
+TEST_CASE("Stage 0 Quaver fixtures have semantic expectations and CRLF bytes",
+          "[unit][fixture][format][quaver]") {
+    const auto root = std::filesystem::path(WORMEDIT_FIXTURE_DIR);
+    const auto inventory = read_binary_file(root / "README.md");
+    REQUIRE_FALSE(inventory.empty());
+
+    for (const std::string_view relative_path : quaver_fixture_paths) {
+        CAPTURE(relative_path);
+        const auto bytes = read_binary_file(root / relative_path);
+        REQUIRE_FALSE(bytes.empty());
+        CHECK(inventory.find(relative_path) != std::string::npos);
+        CHECK(has_only_crlf_lines(bytes));
     }
 }

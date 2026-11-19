@@ -2,7 +2,7 @@
 
 [Back to the task-card index](../tasks.md).
 
-> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Cards still marked `deferred` require explicit selection by ID. T-173 was selected by the owner on 2026-10-28.
 
 Stage 8 from [later work](../stages/later.md). The `.qua` format is documented in the [Quaver format reference](../../references/quaver-qua-format.md). The document model already has a
 `roll` note kind and the SM/SSC codec reads and writes rolls; authoring and
@@ -46,10 +46,11 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-173 Add paired Quaver `.qua` fixtures
 
-- **Status:** deferred (stage 7–8 ambition; was: ready)
+- **Status:** done (owner approved 2026-10-28; fixtures and focused verification complete)
+- **Completion evidence (2026-10-28):** Four original positive and ten negative CRLF fixtures with per-file expectations. Newly compiled fixture-inventory translation unit: 3 cases / 179 assertions passed; LF mutation rejected and restored. Existing Stage 0 CTest registrations: 3/3 passed; documentation: 5/5 passed after building the manual-reference tool. All 14 files parse as YAML; each negative isolates its documented constraint. clang-tidy 23.1.3 reports only the unchanged BMS-test complexity 29; baseline comparison passed with locally adapted Python bindings. Full core rebuild was not completed; the new test was compiled and linked separately against the existing Catch2 libraries. Parser implementation remains T-174.
 - **Outcome:** hand-written positive and negative `.qua` fixtures with expected semantics in the fixture README, covering every construct in the format reference.
 - **Read first:** `docs/references/quaver-qua-format.md`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
-- **Files owned:** new `tests/fixtures/quaver/` (fixtures), `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`, `.gitattributes` (add `*.qua -text` so CRLF survives).
+- **Files owned:** new `tests/fixtures/quaver/` (fixtures), `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`, `.gitattributes` (add `*.qua -text` so CRLF survives), this card.
 - **Steps:**
   1. Positive: 4K with BPM change and 3/4 signature; 7K+scratch with long notes; keysounds + `CustomAudioSamples` + `SoundEffects`; denormalized and normalized SV with `InitialScrollVelocity`; `ScrollSpeedFactors`; a `TimingGroups` map with `$Global` and one custom `!ScrollGroup`; bookmarks; editor layers; mines with `QuaVersion: 1`; every `HitSound` flag.
   2. Negative: no hit objects; no timing points; sample index 0 and out of range; `EndTime <= StartTime`; `QuaVersion: 2`; unknown `Mode`.

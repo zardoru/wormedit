@@ -55,6 +55,7 @@ const browserStatus = document.getElementById('browser-status');
 function editorStatus(message, state) { browserStatus.textContent = message; browserStatus.dataset.state = state; }
 function installEditorInput(module) {
   const canvas = module.canvas;
+  canvas.addEventListener('contextmenu', event => event.preventDefault());
   canvas.addEventListener('pointerdown', () => canvas.focus({preventScroll: true}), {capture: true});
   canvas.addEventListener('blur', () => module.ccall('wormedit_browser_reset_keyboard', null, [], []));
   // SDL runs on a worker. Cancel the DOM default synchronously and let the same event reach SDL.

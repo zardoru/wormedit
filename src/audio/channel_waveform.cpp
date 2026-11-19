@@ -381,6 +381,34 @@ auto build_display_channel_row_view(const waveform_t& waveform, const waveform_l
 }
 } // namespace
 
+auto channel_detail_demand(const waveform_t& waveform, const display_row_table_t& table,
+    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source,
+    aligned_waveform_request_t request) -> std::optional<channel_detail_demand_t> {
+    if (!is_valid_channel_waveform_request(request) || !table.viewport.has_value() || !slices ||
+        table.cut_axis || table.zoom() != request.pixels_per_standard_measure ||
+        source.sample_rate == 0 || waveform.sample_rate == 0)
+        return std::nullopt;
+    double first_seconds = std::numeric_limits<double>::infinity(), last_seconds = -first_seconds, rate = 0;
+    for (const auto& row : table.viewport.value().rows) {
+        const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
+        if (!row.valid || y < 0 || y >= request.viewport_height_pixels || !(row.end_seconds > row.begin_seconds)) continue;
+        first_seconds = std::min(first_seconds, row.begin_seconds);
+        last_seconds = std::max(last_seconds, row.end_seconds);
+        if (rate == 0) rate = (row.end_seconds - row.begin_seconds) * waveform.sample_rate;
+    }
+    if (!(first_seconds < last_seconds) || rate <= 0) return std::nullopt;
+    std::uint64_t begin = std::numeric_limits<std::uint64_t>::max(), end = 0;
+    for (const auto& slice : visible_display_slices(waveform, table, slices, source)) {
+        const auto low = std::max(slice.origin_seconds, first_seconds);
+        const auto high = std::min(slice.end_seconds, last_seconds);
+        if (low >= high) continue;
+        begin = std::min(begin, display_source_frame(low, slice, waveform, false, false));
+        end = std::max(end, display_source_frame(high, slice, waveform, true, false));
+    }
+    if (begin >= end) return std::nullopt;
+    return channel_detail_demand_t{begin, end, rate};
+}
+
 auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const sound_channel_t& channel,
     const display_row_table_t& table, aligned_waveform_request_t request,
     const sound_slice_result_t& slices, channel_waveform_source_geometry_t source,

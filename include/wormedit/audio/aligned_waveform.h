@@ -155,6 +155,19 @@ struct layered_column_t {
     const waveform_layers_t& layers, std::uint64_t begin, std::uint64_t end,
     std::size_t& sampled_bins) -> std::optional<layered_column_t>;
 
+// What a projected channel needs from the detail layer: the source frames visible in the
+// viewport (across its visible slices) and the zoom, as source frames per screen row. Empty when
+// nothing of the channel is in view, or when the display runs on a cut axis.
+struct channel_detail_demand_t {
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    double frames_per_pixel{};
+    auto operator==(const channel_detail_demand_t&) const -> bool = default;
+};
+[[nodiscard]] auto channel_detail_demand(const waveform_t& waveform, const display_row_table_t& table,
+    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source,
+    aligned_waveform_request_t request) -> std::optional<channel_detail_demand_t>;
+
 struct aligned_waveform_detail_range_t {
     std::uint64_t begin_frame{};
     std::uint64_t end_frame{};

@@ -138,6 +138,23 @@ struct aligned_waveform_style_t {
     bool detail_level{};
     auto operator==(const aligned_waveform_style_t&) const -> bool = default;
 };
+// The finer sources a display column may read besides the overview pyramid: a 32-frame detail
+// analysis covering the view and exact cached PCM. The song and BMSON stems share this reader.
+struct waveform_layers_t {
+    const waveform_t* detail{};
+    decoded_block_cache_t* blocks{};
+    aligned_waveform_style_t style{};
+};
+struct layered_column_t {
+    waveform_column_t column;
+    std::uint32_t source_level{}; // 1 = PCM, 32 = detail analysis, 256 = overview
+};
+// The finest layer that covers [begin, end): PCM when the span is short and cached, then the
+// detail analysis, then the overview. Layers apply only at the styles that ask for them.
+[[nodiscard]] auto sample_layered_waveform_span(const waveform_t& overview,
+    const waveform_layers_t& layers, std::uint64_t begin, std::uint64_t end,
+    std::size_t& sampled_bins) -> std::optional<layered_column_t>;
+
 struct aligned_waveform_detail_range_t {
     std::uint64_t begin_frame{};
     std::uint64_t end_frame{};
@@ -192,7 +209,8 @@ struct aligned_waveform_view_result_t {
     [[nodiscard]] static auto from(const waveform_t& waveform,
                                    const sound_channel_t& channel, const display_row_table_t& table,
                                    aligned_waveform_request_t request, const sound_slice_result_t& slices,
-                                   channel_waveform_source_geometry_t source)
+                                   channel_waveform_source_geometry_t source,
+                                   const waveform_layers_t& layers = {})
         -> aligned_waveform_view_result_t;
 
     // Projects one retained BMSON sound channel into the chart viewport. Source

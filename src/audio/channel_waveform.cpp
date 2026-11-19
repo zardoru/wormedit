@@ -332,23 +332,26 @@ auto display_source_frame(double seconds, const display_channel_slice_t& slice,
     return static_cast<std::uint64_t>(std::clamp(frame, static_cast<double>(slice.begin_frame),
                                                 static_cast<double>(slice.end_frame)));
 }
-auto display_slice_span(const waveform_t& waveform,
+auto display_slice_span(const waveform_t& waveform, const waveform_layers_t& layers,
     const display_row_time_t& row, const display_channel_slice_t& slice, std::size_t& sampled_bins, bool physical = false)
     -> std::optional<waveform_column_t> {
     const auto low = std::max(row.begin_seconds, slice.origin_seconds);
     const auto high = std::min(row.end_seconds, slice.end_seconds);
     if (low >= high) return std::nullopt;
-    return sample_display_waveform_span(waveform, display_source_frame(low, slice, waveform, false, physical),
+    const auto layered = sample_layered_waveform_span(waveform, layers,
+        display_source_frame(low, slice, waveform, false, physical),
         display_source_frame(high, slice, waveform, true, physical), sampled_bins);
+    if (!layered) return std::nullopt;
+    return layered->column;
 }
-auto display_slice_column(const waveform_t& waveform, const export_cut_frame_timeline_t* frames,
+auto display_slice_column(const waveform_t& waveform, const waveform_layers_t& layers, const export_cut_frame_timeline_t* frames,
     const display_row_time_t& row, const display_channel_slice_t& slice, std::size_t& sampled_bins)
     -> std::optional<waveform_column_t> {
-    if (!frames) return display_slice_span(waveform, row, slice, sampled_bins);
+    if (!frames) return display_slice_span(waveform, layers, row, slice, sampled_bins);
     std::optional<waveform_column_t> output;
     std::uint64_t cursor{};
     while (const auto span = next_display_audio_span(row, *frames, waveform.sample_rate, cursor)) {
-        const auto column = display_slice_span(waveform, *span, slice, sampled_bins, true);
+        const auto column = display_slice_span(waveform, layers, *span, slice, sampled_bins, true);
         if (!column) continue;
         if (!output) { output = column; continue; }
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
@@ -358,7 +361,7 @@ auto display_slice_column(const waveform_t& waveform, const export_cut_frame_tim
     }
     return output;
 }
-auto build_display_channel_row_view(const waveform_t& waveform,
+auto build_display_channel_row_view(const waveform_t& waveform, const waveform_layers_t& layers,
     const display_row_time_t& row, const export_cut_frame_timeline_t* frames, std::span<const display_channel_slice_t> slices,
     std::size_t& cursor, aligned_waveform_view_result_t& result) -> std::optional<aligned_waveform_row_t> {
     while (cursor < slices.size() && slices[cursor].end_seconds <= row.begin_seconds) ++cursor;
@@ -366,7 +369,7 @@ auto build_display_channel_row_view(const waveform_t& waveform,
     aligned_waveform_row_t output;
     for (auto index = cursor; index < slices.size() && slices[index].origin_seconds < row.end_seconds; ++index) {
         ++result.visited_slices;
-        const auto column = display_slice_column(waveform, frames, row, slices[index], result.sampled_bins);
+        const auto column = display_slice_column(waveform, layers, frames, row, slices[index], result.sampled_bins);
         if (!column) continue;
         occupied = true;
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
@@ -380,7 +383,8 @@ auto build_display_channel_row_view(const waveform_t& waveform,
 
 auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const sound_channel_t& channel,
     const display_row_table_t& table, aligned_waveform_request_t request,
-    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_view_result_t {
+    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source,
+    const waveform_layers_t& layers) -> aligned_waveform_view_result_t {
     aligned_waveform_view_result_t result;
     if (!is_valid_channel_waveform_request(request)) return result;
     if (!table.viewport.has_value() || !slices) { result.status = failure_code_t::invalid_data; return result; }
@@ -401,7 +405,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const soun
     for (const auto& row : table.viewport.value().rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
         if (!row.valid || y < 0 || y >= request.viewport_height_pixels) continue;
-        if (auto projected = build_display_channel_row_view(waveform, row, frames, visible, cursor, result)) {
+        if (auto projected = build_display_channel_row_view(waveform, layers, row, frames, visible, cursor, result)) {
             projected->y_pixels = y;
             result.rows.push_back(*projected);
         }

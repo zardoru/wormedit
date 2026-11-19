@@ -7,13 +7,6 @@
 namespace wormedit::ui {
 namespace {
 
-// StepMania/ITG snap palette (4th red, 8th blue, 12th purple, 16th yellow, 24th pink,
-// 32nd orange, 48th cyan, 64th green); the last color is every other division.
-constexpr std::array<std::uint8_t, 8> snap_classes{4, 8, 12, 16, 24, 32, 48, 64};
-constexpr std::array<color_t, 9> snap_colors{{
-    {235, 73, 79}, {75, 139, 240}, {170, 98, 223}, {242, 218, 74},
-    {239, 118, 191}, {241, 154, 65}, {80, 200, 220}, {96, 200, 110}, {155, 163, 175}}};
-
 auto rotate_arrow_point(arrow_point_t point, std::uint8_t direction) -> arrow_point_t {
     switch (direction) {
     case 2: return {point.y, -point.x};
@@ -87,13 +80,6 @@ auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
         if (fraction == 0 ? remainder == 0 : remainder == divisor - fraction) return snap;
     }
     return 0;
-}
-
-auto arrow_snap_color(std::uint8_t snap_class) -> color_t {
-    for (std::size_t index = 0; index < snap_classes.size(); ++index) {
-        if (snap_class == snap_classes[index]) return snap_colors[index];
-    }
-    return snap_colors.back();
 }
 
 } // namespace wormedit::ui

@@ -122,6 +122,17 @@
       "lane_label": "#f0f4fa"
     }
   },
+  "snap_colors": {
+    "4": "#eb494f",
+    "8": "#4b8bf0",
+    "12": "#aa62df",
+    "16": "#f2da4a",
+    "24": "#ef76bf",
+    "32": "#f19a41",
+    "48": "#50c8dc",
+    "64": "#60c86e",
+    "other": "#9ba3af"
+  },
   "note_accents": [
     "#f2be66",
     "#b1ce81",

@@ -168,6 +168,68 @@ TEST_CASE("Snap grid uses note hues and stronger beats with immediate style inva
     set_snap_colored_grid(true);
 }
 
+TEST_CASE("Bundled snap palette preserves the confirmed hues and other fallback", "[theme][snap-grid]") {
+    theme_fixture_t fixture;
+    load(source_themes());
+    const std::array<std::uint8_t, 9> classes{4, 8, 12, 16, 24, 32, 48, 64, 0};
+    const std::array expected{
+        nk_rgb(235, 73, 79), nk_rgb(75, 139, 240), nk_rgb(170, 98, 223),
+        nk_rgb(242, 218, 74), nk_rgb(239, 118, 191), nk_rgb(241, 154, 65),
+        nk_rgb(80, 200, 220), nk_rgb(96, 200, 110), nk_rgb(155, 163, 175)};
+    for (std::size_t index = 0; index < classes.size(); ++index)
+        check_color(compose_snap_color(classes[index]), expected[index]);
+    check_color(compose_snap_color(255), expected.back());
+}
+
+TEST_CASE("Field snap palette overrides notes and grid and inherits missing subdivisions", "[theme][snap-grid]") {
+    theme_fixture_t fixture;
+    fixture.write("snaps", R"({"version":2,"name":"Snaps","scales":{"custom":{"note":"#123456"}},
+        "snap_colors":{"8":"$custom.note","other":"#abcdef"}})");
+    load(fixture.directory);
+    const auto generation = field_generation();
+    REQUIRE(select_field_scheme("snaps"));
+    CHECK(field_generation() > generation);
+    check_color(compose_snap_color(8), nk_rgb(18, 52, 86));
+    check_color(compose_snap_color(4), nk_rgb(235, 73, 79));
+    check_color(compose_snap_color(255), nk_rgb(171, 205, 239));
+    check_color(compose_snap_color(0), compose_snap_color(255));
+    const wormedit::ui::compose_note_view_t note{.snap_class = 8};
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::snap, note),
+                compose_snap_color(8));
+    set_snap_colored_grid(true);
+    set_snap_grid_opacity(35);
+    check_color(compose_grid_line_style(0, 0, 8).color, nk_rgba(18, 52, 86, 89));
+    REQUIRE(select_field_scheme("wormedit"));
+    check_color(compose_snap_color(8), nk_rgb(75, 139, 240));
+    check_color(compose_snap_color(0), nk_rgb(155, 163, 175));
+}
+
+TEST_CASE("Malformed snap palettes reject without leaking partial colors", "[theme][snap-grid]") {
+    theme_fixture_t fixture;
+    fixture.write("bad-color", R"({"version":2,"name":"Bad","snap_colors":{"4":"#010203","8":"invalid"}})");
+    fixture.write("bad-type", R"({"version":2,"name":"Bad type","snap_colors":[]})");
+    diagnostic_capture_t diagnostics;
+    load(fixture.directory);
+    REQUIRE(field_schemes().size() == 1);
+    CHECK_FALSE(select_field_scheme("bad-color"));
+    CHECK_FALSE(select_field_scheme("bad-type"));
+    check_color(compose_snap_color(4), nk_rgb(235, 73, 79));
+    CHECK(diagnostics.output.str().find("bad-color.json") != std::string::npos);
+    CHECK(diagnostics.output.str().find("bad-type.json") != std::string::npos);
+}
+
+TEST_CASE("Snap palettes inherit the loaded default and fall back without theme files", "[theme][snap-grid]") {
+    theme_fixture_t fixture;
+    fixture.write("wormedit", R"({"version":2,"name":"Default","snap_colors":{"48":"#102030"}})");
+    fixture.write("inherited", R"({"version":2,"name":"Inherited"})");
+    load(fixture.directory);
+    REQUIRE(select_field_scheme("inherited"));
+    check_color(compose_snap_color(48), nk_rgb(16, 32, 48));
+    check_color(compose_snap_color(64), nk_rgb(96, 200, 110));
+    load(fixture.directory / "missing");
+    check_color(compose_snap_color(48), nk_rgb(80, 200, 220));
+}
+
 TEST_CASE("Snap grid opacity spans zero to full and invalidates styles only on changes", "[theme][snap-grid][opacity]") {
     set_snap_colored_grid(true);
     set_snap_grid_opacity(35);

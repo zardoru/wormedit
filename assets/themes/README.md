@@ -40,6 +40,12 @@ black/pms_blue, and red colors scratch/pms_red. Missing classes inherit Wormedit
 Colors follow each authored lane's class and ID on every layout, regardless of
 source file family, scratch side, stage count or visual ordering.
 
+`snap_colors` supplies the shared note and colored-grid palette. Its optional
+keys are `4`, `8`, `12`, `16`, `24`, `32`, `48`, `64`, and `other`; omitted entries
+inherit Wormedit's StepMania/ITG colors. Unknown subdivisions use `other`.
+The grid retains its independent opacity setting. Invalid colors reject the
+scheme through the same validation as other field colors.
+
 A genuinely numbered palette must declare an exact compatibility guard:
 
 ```json

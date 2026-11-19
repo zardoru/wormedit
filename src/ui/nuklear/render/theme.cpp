@@ -220,6 +220,10 @@ std::array<nk_color, 8> note_accents{
     nk_rgb(207, 153, 104), nk_rgb(176, 142, 218), nk_rgb(244, 116, 174), nk_rgb(130, 219, 206)};
 
 struct field_palette_t {
+    std::array<nk_color, snap_classes.size() + 1> snaps{
+        nk_rgb(235, 73, 79), nk_rgb(75, 139, 240), nk_rgb(170, 98, 223),
+        nk_rgb(242, 218, 74), nk_rgb(239, 118, 191), nk_rgb(241, 154, 65),
+        nk_rgb(80, 200, 220), nk_rgb(96, 200, 110), nk_rgb(155, 163, 175)};
     decltype(compose_colors) roles = compose_colors;
     decltype(key_colors) keys = key_colors;
     decltype(note_accents) accents = note_accents;
@@ -487,7 +491,7 @@ void validate_scheme(const nlohmann::json& document) {
         throw std::runtime_error("ungated positional keys are unsupported; use lane_classes or numbered_layout");
     if (document.contains("rotate_dp5") && !document["rotate_dp5"].is_boolean())
         throw std::runtime_error("rotate_dp5 must be boolean");
-    for (const auto* section : {"roles", "key_colors", "lane_classes", "bgm", "timing"}) {
+    for (const auto* section : {"roles", "key_colors", "lane_classes", "bgm", "timing", "snap_colors"}) {
         if (!document.contains(section)) continue;
         if (!document[section].is_object()) throw std::runtime_error("expected color-role object");
         validate_colors(document, document[section]);
@@ -516,6 +520,11 @@ auto parse_palette(const nlohmann::json& document, field_palette_t base) -> fiel
     base.roles = compose_colors;
     base.keys = key_colors;
     base.accents = note_accents;
+    const auto snaps = document.value("snap_colors", nlohmann::json::object());
+    for (std::size_t index = 0; index < snap_classes.size(); ++index)
+        resolve(document, snaps.value(std::to_string(snap_classes[index]), nlohmann::json{}),
+                base.snaps[index]);
+    resolve(document, snaps.value("other", nlohmann::json{}), base.snaps.back());
     base.document = document;
     base.scratch_sides = parse_scratch_sides(document);
     base.rotate_dp5 = document.value("rotate_dp5", false);
@@ -745,7 +754,7 @@ auto field_waveform_color(nk_color color) -> nk_color {
 auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
     -> grid_line_style_t {
     if (colored_grid) {
-        const auto rgb = wormedit::ui::arrow_snap_color(snap_class);
+        const auto rgb = compose_snap_color(snap_class);
         const auto thickness = kind == 3 ? 2.0f : snap_class == 4 ? 1.6f : 1.0f;
         return {nk_rgba(rgb.r, rgb.g, rgb.b,
             chrome::percent_to_alpha(grid_opacity_percent)), thickness};
@@ -779,6 +788,11 @@ auto select_field_scheme(std::string_view id) -> bool {
 }
 auto compose_note_accent(size_t index) -> nk_color {
     return note_accents[index % note_accents.size()];
+}
+
+auto compose_snap_color(std::uint8_t snap_class) -> nk_color {
+    const auto found = std::ranges::find(snap_classes, snap_class);
+    return active.snaps[static_cast<std::size_t>(found - snap_classes.begin())];
 }
 
 } // namespace wormedit::ui::theme

@@ -10,6 +10,7 @@ endfunction()
 
 # Core: explicit stress sizes, the full format matrix, and the 4096+1 selection bound.
 wormedit_label_slow_tests(wormedit_core_tests_TESTS
+    "core.Extended seeded measure geometry edit sequences"
     "core.BMSON lane_mode packs a whole channel beyond the interactive selection bound"
     "core.lane assignment remains bounded for fifty thousand selected notes"
     "core.loss matrix classifies every diagnostic for every fixture and writer")

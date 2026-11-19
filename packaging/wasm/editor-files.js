@@ -195,11 +195,20 @@ function installWormeditBrowserFiles(module, report) {
     try { downloadTree([['/outputs', 'outputs/'], ['/imports', 'imports/']], 'wormedit-workspace.zip'); }
     catch (error) { report(String(error), 'failed'); }
   });
-  function showManual() {
-    const link = document.getElementById('browser-manual');
+  function revealLink(id) {
+    const link = document.getElementById(id);
     link.hidden = false;
     link.focus();
+    return link;
   }
 
-  module.browserFiles = {showDialog, downloadProject, showManual, stageFiles};
+  function showNativeDownloads() {
+    const link = revealLink('browser-native-downloads');
+    if (navigator.userActivation?.isActive) link.click();
+  }
+
+  module.browserFiles = {
+    showDialog, downloadProject, showManual: () => revealLink('browser-manual'),
+    showNativeDownloads, stageFiles,
+  };
 }

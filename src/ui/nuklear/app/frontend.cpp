@@ -2014,6 +2014,9 @@ static void apply_workspace_menu_action(MenuAction chosen,
     }
     switch (chosen) {
     case MenuAction::manual: open_user_manual(); break;
+#ifdef __EMSCRIPTEN__
+    case MenuAction::download_native: wormedit::platform::show_browser_native_downloads(); break;
+#endif
     case MenuAction::open: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE); break;
     case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
     case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;

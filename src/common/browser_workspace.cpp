@@ -146,6 +146,10 @@ void show_browser_manual() {
     MAIN_THREAD_ASYNC_EM_ASM({ Module.browserFiles.showManual(); });
 }
 
+void show_browser_native_downloads() {
+    MAIN_THREAD_ASYNC_EM_ASM({ Module.browserFiles.showNativeDownloads(); });
+}
+
 void service_browser_assets(document_history_t& history, const std::filesystem::path& asset_base,
                             std::uint64_t session, bool loaded, bool busy) {
     if (!watching.load()) return;

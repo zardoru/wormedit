@@ -18,13 +18,14 @@ canvas {display:block;width:100%;height:100%;outline:none}
 #asset-rows label {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center}
 #asset-rows span {overflow-wrap:anywhere}
 #asset-rows select {width:100%;min-width:0}
-#browser-status-bar {min-height:20px} #browser-manual {margin-inline-start:12px} #browser-status[data-state=failed] {color:#ffb3aa}
+#browser-status-bar {min-height:20px} #browser-status-bar a {margin-inline-start:12px} #browser-status[data-state=failed] {color:#ffb3aa}
 </style>
 <header><strong>Wormedit · experimental browser editor</strong>
 <span>Temporary workspace. File → Save project downloads current edits as a ZIP. Confirm it in your browser. Reload discards this session.</span>
 <button id="download-workspace" disabled>Download workspace files</button></header>
 <div id="browser-status-bar"><span role="status" data-state="loading" id="browser-status">Loading editor…</span>
-<a id="browser-manual" href="https://github.com/zardoru/wormedit/tree/main/docs/manual" target="_blank" rel="noopener" hidden>Open user manual ↗</a></div>
+<a id="browser-manual" href="https://github.com/zardoru/wormedit/tree/main/docs/manual" target="_blank" rel="noopener" hidden>Open user manual ↗</a>
+<a id="browser-native-downloads" href="https://github.com/zardoru/wormedit/releases" target="_blank" rel="noopener" hidden>Download native app ↗</a></div>
 <section id="browser-picker" hidden aria-label="Browser file operation">
 <strong id="picker-title"></strong>
 <label id="upload-label">Choose files (include referenced audio/images, or a project ZIP)

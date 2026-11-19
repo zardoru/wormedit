@@ -514,7 +514,8 @@ relative names with the project paths. A unique match is preselected and
 ambiguous matches require a choice. **Relink selected sounds** stages the
 selected files and updates their asset paths in one undoable edit. Save the
 project to include those files in its ZIP. **Help → User manual** reveals a link
-to the online manual beside the browser status.
+to the online manual beside the browser status. **Help → Download native app**
+opens the official GitHub releases and exposes their link beside the status.
 
 **File → Save project / Save project as** runs the normal project save and asset
 copy. After successful publication, it requests a ZIP download containing the

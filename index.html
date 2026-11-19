@@ -46,16 +46,17 @@ canvas {display:block;width:100%;height:100%;outline:none}
 <div id="asset-rows"></div>
 </details>
 <script src="enable-isolation.js"></script>
-<script src="fflate.js?v=f626fba7055c"></script>
-<script src="editor-files.js?v=f626fba7055c"></script>
-<script src="editor-assets.js?v=f626fba7055c"></script>
-<script src="wormedit.js?v=f626fba7055c"></script>
+<script src="fflate.js?v=0725603dc1f2"></script>
+<script src="editor-files.js?v=0725603dc1f2"></script>
+<script src="editor-assets.js?v=0725603dc1f2"></script>
+<script src="wormedit.js?v=0725603dc1f2"></script>
 <script>
 'use strict';
 const browserStatus = document.getElementById('browser-status');
 function editorStatus(message, state) { browserStatus.textContent = message; browserStatus.dataset.state = state; }
 function installEditorInput(module) {
   const canvas = module.canvas;
+  canvas.addEventListener('contextmenu', event => event.preventDefault());
   canvas.addEventListener('pointerdown', () => canvas.focus({preventScroll: true}), {capture: true});
   canvas.addEventListener('blur', () => module.ccall('wormedit_browser_reset_keyboard', null, [], []));
   // SDL runs on a worker. Cancel the DOM default synchronously and let the same event reach SDL.
@@ -79,7 +80,7 @@ function installEditorInput(module) {
     const module = await createWormedit({
       canvas: document.getElementById('canvas'),
       editorStatus,
-      locateFile: (file, prefix) => prefix + file + "?v=f626fba7055c",
+      locateFile: (file, prefix) => prefix + file + "?v=0725603dc1f2",
       print: text => console.log(text), printErr: text => console.error(text),
       onAbort: message => editorStatus('Editor stopped: ' + message, 'failed'),
       preRun: [module => {

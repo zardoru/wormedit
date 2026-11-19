@@ -1,0 +1,89 @@
+name: Publish release to Pages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish browser release from gh-pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+      - name: Prepare the released browser ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          source_check=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '[.build_type, .source.branch, .source.path] | join(" ")')
+          if [[ "$source_check" != "legacy gh-pages /" ]]; then
+            echo 'Configure Settings → Pages to deploy from the root of gh-pages.' >&2
+            exit 1
+          fi
+          version=${RELEASE_TAG#v}
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+[-.0-9A-Za-z]*$ ]]; then
+            echo "Unsupported release version: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          name="wormedit-${version}-wasm"
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$name.zip" --dir "$RUNNER_TEMP/release"
+          unzip -q "$RUNNER_TEMP/release/$name.zip" -d "$RUNNER_TEMP/release"
+          python3 scripts/stage-wasm-pages.py "$RUNNER_TEMP/release/$name" "$RUNNER_TEMP/site" "$GITHUB_SHA"
+          printf 'Release: %s\nSource: %s/%s/commit/%s\n' \
+            "$RELEASE_TAG" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" >"$RUNNER_TEMP/site/build.txt"
+      - name: Update gh-pages
+        id: update
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          rsync -a --delete --exclude='/.git' --exclude='/CNAME' "$RUNNER_TEMP/site/" pages/
+          git -C pages config user.name 'github-actions[bot]'
+          git -C pages config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C pages add -A
+          if ! git -C pages diff --cached --quiet; then
+            git -C pages commit -m "Publish Wormedit $RELEASE_TAG"
+            git -C pages push origin HEAD:refs/heads/gh-pages
+          fi
+          echo "revision=$(git -C pages rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Request and verify the Pages build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_REVISION: ${{ steps.update.outputs.revision }}
+        run: |
+          endpoint="repos/$GITHUB_REPOSITORY/pages/builds"
+          gh api --method POST "$endpoint" --jq '.status'
+          for attempt in {1..90}; do
+            result=$(gh api "$endpoint/latest")
+            if [[ $(jq -r '.commit' <<<"$result") == "$PAGES_REVISION" ]]; then
+              case $(jq -r '.status' <<<"$result") in
+                built) exit 0 ;;
+                errored)
+                  jq -r '.error.message' <<<"$result" >&2
+                  exit 1
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for Pages to build $PAGES_REVISION" >&2
+          exit 1

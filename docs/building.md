@@ -471,8 +471,7 @@ The `wasm` preset builds the **main application**: its SDL/Nuklear frontend,
 workspace, commands, transactions, Undo/Redo, import/export services, audio/image
 adapters and Lua runtime. It uses SDL's `opengles2` renderer over WebGL on an
 OffscreenCanvas. Native builds still require their existing SDL GPU backend.
-This is a post-1.0 draft, separate from the 1.0 release; no public deployment or
-browser release packaging is supplied.
+The browser build is experimental and has a standalone ZIP package.
 
 Activate Emscripten with C++23 libc++ support (verified: Emscripten 6.0.5 / Clang
 21.1.8), then use CMake 3.25+ and Ninja:
@@ -496,6 +495,25 @@ Output includes `index.html`, `wormedit.js`, `wormedit.wasm`, `wormedit.data`,
 `editor-files.js`, `editor-assets.js`, `fflate.js` and `fflate-LICENSE.txt`. Keep these together.
 The `.data` file contains the bundled fonts, themes, icons and default hitsounds;
 there is no dependency on host-installed fonts or a desktop display.
+
+### Browser release and nightly packages
+
+The Nightly workflow uploads the optimized browser ZIP as `wormedit-nightly-wasm`.
+A manual run with the release option attaches the ZIP to the draft pre-release.
+Publishing that release deploys the same WASM binary to GitHub Pages. The workflow
+takes the ZIP from the release, adds the isolation service worker and updates
+the root of `gh-pages`. The Pages source must point to that branch and folder.
+Every package in that run uses the same source commit. The `wasm` preset compiles
+C++ with `-O2` and uses `-O2` at the final link.
+
+To package the output of `cmake --build --preset wasm` locally:
+
+```sh
+cpack --config build/wasm/CPackConfig.cmake -B dist
+```
+
+Extract the ZIP and run `python3 serve-wasm.py . --port 8000` inside its
+directory. The package includes its runtime assets and third-party notices.
 
 ### Browser files and saves
 
@@ -556,7 +574,7 @@ overrides documented above.
 | Lua | The pinned sandbox/runtime is built. Scripts use selected/uploaded virtual files, not arbitrary host files. This does not certify every generator/recipe workflow or its timing budget in the browser. |
 | Files/threads | Normal import, save, asset-copy and worker services use volatile MEMFS. Blocking application waits occur off the browser's event thread. MEMFS lacks hard links and native directory exchange, so shared browser-only helpers perform no-replace moves and directory exchange in synchronous filesystem-thread callbacks. This retains publication exclusivity within the tab; fsync is not host durability. |
 | External tools | OS process launch, revealing a host folder and a bundled offline manual are unavailable. Open project folder explains the workspace download alternative. Help → User manual offers the online manual. External preview programs cannot be offered as browser processes. |
-| Deployment | Local development only. Later hosting needs HTTPS, the same isolation headers, correct Wasm MIME, same-origin worker/assets, consistent cache versions and a reviewed offline/storage policy. |
+| Deployment | Published releases update GitHub Pages. The release ZIP also runs locally with the included server. Hosting elsewhere needs HTTPS, cross-origin isolation, correct Wasm MIME and same-origin worker/assets. |
 
 The toolchain wrapper resolves an activated emsdk or installed `emcc` and includes
 Emscripten's own CMake toolchain. Use a fresh build directory when changing SDKs.

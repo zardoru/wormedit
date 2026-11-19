@@ -2,6 +2,8 @@
 
 #include "core/resource_asset_relinks.h"
 
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_keyboard.h>
 #include <atomic>
 #include <charconv>
 #include <emscripten.h>
@@ -123,6 +125,10 @@ void process_repair(const std::string& payload, document_history_t& history,
 }
 
 } // namespace
+
+extern "C" EMSCRIPTEN_KEEPALIVE void wormedit_browser_reset_keyboard() {
+    SDL_RunOnMainThread([](void*) { SDL_ResetKeyboard(); }, nullptr, false);
+}
 
 extern "C" EMSCRIPTEN_KEEPALIVE void wormedit_browser_watch_assets(int enabled) {
     watching.store(enabled != 0);

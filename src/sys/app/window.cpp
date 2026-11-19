@@ -3,6 +3,7 @@
 #include "sys/app/frame_timing.h"
 
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_video.h>
@@ -55,6 +56,9 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
+#endif
     window->handle = SDL_CreateWindow(
         desc->title,
         desc->width,

@@ -1,3 +1,4 @@
 Wormedit experimental browser editor
 Source commit: https://github.com/zardoru/wormedit/commit/0725603dc1f2591c2b34b3b1359d9e99703251f1
-Toolchain: Emscripten 6.0.5 (wasm preset, C++ -O0, final link -O2)
+Toolchain: Emscripten 6.0.5 (wasm preset, C++ -O2, final link -O2)
+Build workflow: https://github.com/zardoru/wormedit/actions/runs/44610223027

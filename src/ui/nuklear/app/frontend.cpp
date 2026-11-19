@@ -1,4 +1,7 @@
 #include "common/file_dialog.h"
+#ifdef __EMSCRIPTEN__
+#include "common/browser_workspace.h"
+#endif
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/compose/compose_ui_window_of.h"
 #include "ui/nuklear/audio/audio_ui_window_of.h"
@@ -1984,12 +1987,16 @@ static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& v
 }
 
 static void open_user_manual() {
+#ifdef __EMSCRIPTEN__
+    wormedit::platform::show_browser_manual();
+#else
     const auto* base = SDL_GetBasePath();
     const auto manual = wormedit::ui::nuklear::manual_location_t::from(base ? base : "");
     if (manual && manual->open()) return;
     const auto* message = manual ? SDL_GetError() :
         "The user manual is not installed. Build or install Wormedit with WORMEDIT_INSTALL_MANUAL enabled.";
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not open user manual", message, SDL_GetKeyboardFocus());
+#endif
 }
 
 static void apply_workspace_menu_action(MenuAction chosen,

@@ -88,7 +88,7 @@ if(EMSCRIPTEN)
     set_source_files_properties(src/core/atomic_file_storage.cpp src/core/resource_file_copy.cpp
         src/formats/native_project_storage.cpp src/formats/slice_span_render.cpp
         src/formats/conversion_publication_storage.cpp
-        src/common/browser_files.cpp src/sys/app/main.cpp tests/wasm/storage.cpp
+        src/common/browser_files.cpp src/common/browser_workspace.cpp src/sys/app/main.cpp tests/wasm/storage.cpp
         PROPERTIES COMPILE_OPTIONS "-Wno-dollar-in-identifier-extension")
     include(CheckCXXSourceCompiles)
     include(CMakePushCheckState)
@@ -870,7 +870,7 @@ if(WORMEDIT_BUILD_APP)
         target_link_libraries(wormedit PRIVATE otoworm::otoworm)
     endif()
     if(EMSCRIPTEN)
-        target_sources(wormedit PRIVATE src/common/browser_files.cpp)
+        target_sources(wormedit PRIVATE src/common/browser_files.cpp src/common/browser_workspace.cpp)
         set_target_properties(wormedit PROPERTIES SUFFIX ".js")
         target_link_options(wormedit PRIVATE
             -sMODULARIZE=1 -sEXPORT_NAME=createWormedit -sENVIRONMENT=web,worker
@@ -879,11 +879,12 @@ if(WORMEDIT_BUILD_APP)
             -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sMAXIMUM_MEMORY=1073741824
             -sSTACK_SIZE=5242880 -sFORCE_FILESYSTEM=1 -sMAX_WEBGL_VERSION=2
             "-sEXPORTED_RUNTIME_METHODS=['FS','ccall']"
-            "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_wormedit_browser_dialog_complete']"
+            "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_wormedit_browser_dialog_complete','_wormedit_browser_watch_assets','_wormedit_browser_repair_assets']"
             "--preload-file=${CMAKE_SOURCE_DIR}/assets@/assets"
         )
         configure_file(packaging/wasm/editor.html "${CMAKE_BINARY_DIR}/index.html" COPYONLY)
         configure_file(packaging/wasm/editor-files.js "${CMAKE_BINARY_DIR}/editor-files.js" COPYONLY)
+        configure_file(packaging/wasm/editor-assets.js "${CMAKE_BINARY_DIR}/editor-assets.js" COPYONLY)
         include(cmake/dependencies/fflate.cmake)
         file(GLOB_RECURSE WORMEDIT_BROWSER_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/*")
         set_property(TARGET wormedit APPEND PROPERTY LINK_DEPENDS ${WORMEDIT_BROWSER_ASSETS})

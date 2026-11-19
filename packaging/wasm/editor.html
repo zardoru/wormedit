@@ -5,17 +5,26 @@
 <link rel="icon" href="data:,">
 <title>Wormedit — browser editor (experimental)</title>
 <style>
-body {margin:0;background:#171b24;color:#e8ecf3;font:14px/1.4 system-ui,sans-serif;user-select:none}
-header, #browser-picker, #browser-status {padding:8px 14px} header {background:#252d3b;display:flex;gap:16px;align-items:center}
+body {margin:0;height:100dvh;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;background:#171b24;color:#e8ecf3;font:14px/1.4 system-ui,sans-serif;user-select:none}
+header, #browser-picker, #browser-status-bar {padding:8px 14px} header {background:#252d3b;display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap}
 button,input,select {font:inherit} input,select {user-select:text} button {padding:5px 12px} a {color:#9fc8ff}
 #browser-picker {background:#31405b} [hidden] {display:none!important}
-canvas {display:block;margin:0 auto;max-width:100%;outline:none}
-#browser-status {margin:0;min-height:20px} #browser-status[data-state=failed] {color:#ffb3aa}
+#editor-view {grid-row:4;min-width:0;min-height:0}
+canvas {display:block;width:100%;height:100%;outline:none}
+#browser-assets {grid-row:5;background:#252d3b;padding:6px 14px;max-height:35dvh;overflow:auto}
+#browser-assets summary {cursor:pointer;width:fit-content}
+#asset-controls {display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:8px 0}
+#asset-rows {display:grid;gap:6px;user-select:text}
+#asset-rows label {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center}
+#asset-rows span {overflow-wrap:anywhere}
+#asset-rows select {width:100%;min-width:0}
+#browser-status-bar {min-height:20px} #browser-manual {margin-inline-start:12px} #browser-status[data-state=failed] {color:#ffb3aa}
 </style>
 <header><strong>Wormedit · experimental browser editor</strong>
 <span>Temporary workspace. File → Save project downloads current edits as a ZIP. Confirm it in your browser. Reload discards this session.</span>
 <button id="download-workspace" disabled>Download workspace files</button></header>
-<p id="browser-status" role="status" data-state="loading">Loading editor…</p>
+<div id="browser-status-bar"><span role="status" data-state="loading" id="browser-status">Loading editor…</span>
+<a id="browser-manual" href="https://github.com/zardoru/wormedit/tree/main/docs/manual" target="_blank" rel="noopener" hidden>Open user manual ↗</a></div>
 <section id="browser-picker" hidden aria-label="Browser file operation">
 <strong id="picker-title"></strong>
 <label id="upload-label">Choose files (include referenced audio/images, or a project ZIP)
@@ -25,9 +34,19 @@ canvas {display:block;margin:0 auto;max-width:100%;outline:none}
 <select id="browser-entry" hidden aria-label="Project or chart to open"></select>
 <button id="browser-confirm" hidden>Continue</button><button id="browser-cancel">Cancel</button>
 </section>
-<canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Wormedit main editor"></canvas>
+<div id="editor-view"><canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Wormedit main editor"></canvas></div>
+<details id="browser-assets">
+<summary id="asset-summary">Assets</summary>
+<div id="asset-controls">
+<label>Find sounds in folder <input id="asset-folder" type="file" webkitdirectory disabled></label>
+<button id="asset-apply" disabled>Relink selected sounds</button>
+<span id="asset-status" role="status"></span>
+</div>
+<div id="asset-rows"></div>
+</details>
 <script src="fflate.js"></script>
 <script src="editor-files.js"></script>
+<script src="editor-assets.js"></script>
 <script src="wormedit.js"></script>
 <script>
 'use strict';
@@ -44,9 +63,25 @@ function editorStatus(message, state) { browserStatus.textContent = message; bro
       editorStatus,
       print: text => console.log(text), printErr: text => console.error(text),
       onAbort: message => editorStatus('Editor stopped: ' + message, 'failed'),
-      preRun: [module => installWormeditBrowserFiles(module, editorStatus)]
+      preRun: [module => {
+        installWormeditBrowserFiles(module, editorStatus);
+        installWormeditBrowserAssets(module);
+      }]
     });
     window.wormedit = module;
+    // SDL's Emscripten backend reads the CSS canvas size on window resize.
+    // A dock or file picker can resize the canvas without changing the viewport.
+    function observeCanvasSize() {
+      if (module.editorStarted) {
+        const observer = new ResizeObserver(() => window.dispatchEvent(new Event('resize')));
+        observer.observe(document.getElementById('editor-view'));
+        const panel = document.getElementById('browser-assets');
+        if (panel.open) panel.dispatchEvent(new Event('toggle'));
+      } else if (browserStatus.dataset.state === 'loading') {
+        requestAnimationFrame(observeCanvasSize);
+      }
+    }
+    observeCanvasSize();
     document.getElementById('canvas').focus();
     document.getElementById('download-workspace').disabled = false;
   } catch (error) { editorStatus('Startup failed: ' + String(error), 'failed'); }

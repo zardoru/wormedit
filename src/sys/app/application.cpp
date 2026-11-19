@@ -1,4 +1,7 @@
 #include "common/file_dialog.h"
+#ifdef __EMSCRIPTEN__
+#include "common/browser_workspace.h"
+#endif
 #include "common/window_presentation.h"
 #include "sys/request_stamp_check.h"
 #include "common/local_file_location.h"
@@ -4753,6 +4756,11 @@ struct application_t::implementation_t {
         update_caret_phase();
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();
+#ifdef __EMSCRIPTEN__
+        wormedit::platform::service_browser_assets(session.history, session.project_identity.asset_base,
+            views.project_chart_runtime.session_generation, session.project_identity.session_loaded,
+            jobs.is_file_job_busy() || jobs.project_open_runtime.is_busy());
+#endif
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         service_frame_audio(wormedit::sys::frame_timing().expected_presentation_ns(frame_start_ns));
         const auto field_skin_lanes = configure_frame_field_skin();

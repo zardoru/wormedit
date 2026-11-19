@@ -493,7 +493,7 @@ Safari, mobile browsers and memory/performance limits on other machines need
 separate verification.
 
 Output includes `index.html`, `wormedit.js`, `wormedit.wasm`, `wormedit.data`,
-`editor-files.js`, `fflate.js` and `fflate-LICENSE.txt`. Keep these together.
+`editor-files.js`, `editor-assets.js`, `fflate.js` and `fflate-LICENSE.txt`. Keep these together.
 The `.data` file contains the bundled fonts, themes, icons and default hitsounds;
 there is no dependency on host-installed fonts or a desktop display.
 
@@ -507,6 +507,14 @@ paths. When a selection contains several charts/projects, choose the entry to
 open; all selected companions remain available. Files enter an isolated virtual
 folder, then the normal asynchronous native importer validates them. Rejected
 imports leave the active document unchanged.
+
+The canvas fills the available browser viewport. Open the **Assets** panel below
+it to inspect missing sounds. **Find sounds in folder** compares the files'
+relative names with the project paths. A unique match is preselected and
+ambiguous matches require a choice. **Relink selected sounds** stages the
+selected files and updates their asset paths in one undoable edit. Save the
+project to include those files in its ZIP. **Help → User manual** reveals a link
+to the online manual beside the browser status.
 
 **File → Save project / Save project as** runs the normal project save and asset
 copy. After successful publication, it requests a ZIP download containing the
@@ -546,7 +554,7 @@ overrides documented above.
 | BMS text | Only the target libc's built-in iconv is admitted; no host iconv library is linked. UTF-8 and that implementation's supported legacy mappings are available. Full vendor-codepage parity requires its own fixture/browser coverage. |
 | Lua | The pinned sandbox/runtime is built. Scripts use selected/uploaded virtual files, not arbitrary host files. This does not certify every generator/recipe workflow or its timing budget in the browser. |
 | Files/threads | Normal import, save, asset-copy and worker services use volatile MEMFS. Blocking application waits occur off the browser's event thread. MEMFS lacks hard links and native directory exchange, so shared browser-only helpers perform no-replace moves and directory exchange in synchronous filesystem-thread callbacks. This retains publication exclusivity within the tab; fsync is not host durability. |
-| External tools | OS process launch, revealing a host folder and a bundled offline manual are unavailable. Open project folder explains the workspace download alternative. External preview programs cannot be offered as browser processes. |
+| External tools | OS process launch, revealing a host folder and a bundled offline manual are unavailable. Open project folder explains the workspace download alternative. Help → User manual offers the online manual. External preview programs cannot be offered as browser processes. |
 | Deployment | Local development only. Later hosting needs HTTPS, the same isolation headers, correct Wasm MIME, same-origin worker/assets, consistent cache versions and a reviewed offline/storage policy. |
 
 The toolchain wrapper resolves an activated emsdk or installed `emcc` and includes

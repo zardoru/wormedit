@@ -72,51 +72,73 @@ function installWormeditBrowserFiles(module, report) {
     report('Choose which project or chart to open. All selected companion files are available.', 'ready');
   }
 
-  async function upload(files) {
-    if (!pending || !files.length) return;
-    const request = pending;
-    input.disabled = true;
-    try {
-      const extracted = Object.create(null);
-      let total = 0;
-      for (const file of files) {
-        if (file.size > maxFile) throw new Error('A selected file exceeds 64 MiB. Current project unchanged.');
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        if (pending !== request) return;
-        if (/\.zip$/i.test(file.name)) {
-          const seen = new Set();
-          const archive = fflate.unzipSync(bytes, {filter: item => {
-            const name = relativePath(item.name);
-            if (seen.has(name) || seen.size >= maxFiles) throw new Error('Duplicate path or too many ZIP entries.');
-            seen.add(name);
-            total += item.originalSize;
-            if (item.originalSize > maxFile || total > maxTotal) throw new Error('ZIP exceeds the browser upload budget.');
-            return !item.name.endsWith('/');
-          }});
-          for (const [name, data] of Object.entries(archive)) {
-            const path = relativePath(name);
-            if (extracted[path]) throw new Error('Duplicate upload path: ' + path);
-            extracted[path] = data;
-          }
-        } else {
-          const path = relativePath(file.webkitRelativePath || file.name);
+  function discardStagedTree(directory) {
+    for (const name of FS.readdir(directory)) {
+      if (name === '.' || name === '..') continue;
+      const path = directory + '/' + name;
+      if (FS.isDir(FS.stat(path).mode)) discardStagedTree(path);
+      else FS.unlink(path);
+    }
+    FS.rmdir(directory);
+  }
+
+  async function stageFiles(files, isCurrent) {
+    if (!files.length) return [];
+    const extracted = Object.create(null);
+    let total = 0;
+    for (const file of files) {
+      if (file.size > maxFile) throw new Error('A selected file exceeds 64 MiB. Current project unchanged.');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!isCurrent()) return [];
+      if (/\.zip$/i.test(file.name)) {
+        const seen = new Set();
+        const archive = fflate.unzipSync(bytes, {filter: item => {
+          const name = relativePath(item.name);
+          if (seen.has(name) || seen.size >= maxFiles) throw new Error('Duplicate path or too many ZIP entries.');
+          seen.add(name);
+          total += item.originalSize;
+          if (item.originalSize > maxFile || total > maxTotal) throw new Error('ZIP exceeds the browser upload budget.');
+          return !item.name.endsWith('/');
+        }});
+        for (const [name, data] of Object.entries(archive)) {
+          const path = relativePath(name);
           if (extracted[path]) throw new Error('Duplicate upload path: ' + path);
-          extracted[path] = bytes;
-          total += bytes.length;
+          extracted[path] = data;
         }
-        if (Object.keys(extracted).length > maxFiles || total > maxTotal || importedBytes + total > maxTotal)
-          throw new Error('Browser upload budget exceeded (256 MiB / 4096 files). Download and reload to begin a new session.');
+      } else {
+        const path = relativePath(file.webkitRelativePath || file.name);
+        if (extracted[path]) throw new Error('Duplicate upload path: ' + path);
+        extracted[path] = bytes;
+        total += bytes.length;
       }
-      const root = '/imports/selection-' + (++sequence);
-      const paths = [];
+      if (Object.keys(extracted).length > maxFiles || total > maxTotal || importedBytes + total > maxTotal)
+        throw new Error('Browser upload budget exceeded (256 MiB / 4096 files). Download and reload to begin a new session.');
+    }
+    const root = '/imports/selection-' + (++sequence);
+    FS.mkdir(root);
+    const paths = [];
+    try {
       for (const [relative, bytes] of Object.entries(extracted)) {
         const path = root + '/' + relative;
         FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
         FS.writeFile(path, bytes);
         paths.push(path);
       }
-      importedBytes += total;
-      chooseEntry(paths);
+    } catch (error) {
+      discardStagedTree(root);
+      throw error;
+    }
+    importedBytes += total;
+    return paths;
+  }
+
+  async function upload(files) {
+    if (!pending || !files.length) return;
+    const request = pending;
+    input.disabled = true;
+    try {
+      const paths = await stageFiles(files, () => pending === request);
+      if (pending === request) chooseEntry(paths);
     } catch (error) { if (pending === request) complete([], String(error)); }
     finally { if (pending === request) input.disabled = false; }
   }
@@ -173,5 +195,11 @@ function installWormeditBrowserFiles(module, report) {
     try { downloadTree([['/outputs', 'outputs/'], ['/imports', 'imports/']], 'wormedit-workspace.zip'); }
     catch (error) { report(String(error), 'failed'); }
   });
-  module.browserFiles = {showDialog, downloadProject};
+  function showManual() {
+    const link = document.getElementById('browser-manual');
+    link.hidden = false;
+    link.focus();
+  }
+
+  module.browserFiles = {showDialog, downloadProject, showManual, stageFiles};
 }

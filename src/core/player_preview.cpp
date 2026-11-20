@@ -28,7 +28,7 @@ auto timing_error(const timing_diagnostic_t& source) -> diagnostic_t {
 
 auto is_valid_skin(player_preview_skin_t skin) -> bool {
     return skin == player_preview_skin_t::neutral || skin == player_preview_skin_t::mania ||
-           skin == player_preview_skin_t::arrows;
+           skin == player_preview_skin_t::arrows || skin == player_preview_skin_t::squared;
 }
 
 auto is_valid_direction(player_preview_scroll_direction_t direction) -> bool {
@@ -43,6 +43,9 @@ auto is_visible_lane(const lane_definition_t& lane) -> bool {
 auto glyph_for_skin(const lane_definition_t& lane, player_preview_skin_t skin) -> lane_glyph_t {
     if (skin == player_preview_skin_t::neutral) {
         return lane_glyph_t::square;
+    }
+    if (skin == player_preview_skin_t::squared) {
+        return lane_glyph_t::bar;
     }
     if (skin == player_preview_skin_t::mania) {
         return lane.role == lane_role_t::scratch ? lane_glyph_t::square : lane_glyph_t::bar;

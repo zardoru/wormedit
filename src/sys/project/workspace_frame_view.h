@@ -7,6 +7,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/player_preview.h>
+#include <wormedit/core/preferences.h>
 #include <wormedit/core/workspace.h>
 
 #include <cstdint>
@@ -53,7 +54,8 @@ struct workspace_frame_view_args_t {
     workspace_frame_transport_t transport;
     player_preview_presenter_t& player_preview_presenter;
     bool player_preview_visible{};
-    player_preview_skin_t player_preview_skin{};
+    player_preview_settings_t player_preview_settings{};
+    const editor_preferences_t* editor_preferences{};
     const std::filesystem::path& asset_base;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     visual::image_job_t& player_image_job;

@@ -80,7 +80,10 @@ namespace {
 
 auto player_preview_header_valid(const wormedit::ui::player_preview_view_t* view) -> bool {
     if (!view || view->skin < wormedit::player_preview_skin_t::neutral ||
-        view->skin > wormedit::player_preview_skin_t::arrows ||
+        view->skin > wormedit::player_preview_skin_t::squared ||
+        view->layout > wormedit::player_preview_layout_t::focus ||
+        view->content > wormedit::player_preview_content_t::bga_only ||
+        view->bga_side > wormedit::player_preview_bga_side_t::right ||
         view->visual_fit < wormedit::visual_fit_policy_t::stretch ||
         view->visual_fit > wormedit::visual_fit_policy_t::cover) {
         return false;
@@ -205,28 +208,121 @@ struct PreviewCanvas {
     struct SDL_Renderer* renderer;
     const wormedit::ui::player_preview_view_t* view;
     struct nk_rect viewport;
+    // Where the note field and the BGA are drawn inside `viewport`. They coincide in the floating
+    // window; elsewhere the field keeps the scene's aspect ratio so notes keep their proportions.
+    struct nk_rect field;
+    struct nk_rect bga;
+    bool draw_field{true};
 };
 
-void render_preview_skin_buttons(struct nk_context* context,
-                                 const wormedit::ui::player_preview_view_t* view,
-                                 WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request) {
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 4);
-    const struct {
-        const char* label;
-        wormedit::player_preview_skin_t skin;
-    } skins[] = {{"Neutral", wormedit::player_preview_skin_t::neutral},
-                 {"Mania", wormedit::player_preview_skin_t::mania},
-                 {"Arrows", wormedit::player_preview_skin_t::arrows}};
-    for (const auto& skin : skins) {
-        if (wormedit::ui::chrome::button_label(context, skin.label) && view->skin != skin.skin && kind &&
-            *kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-            *kind = WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN;
-            *skin_request = skin.skin;
+auto aspect_field_width(const wormedit::ui::player_preview_view_t& view, float height) -> float {
+    return height * static_cast<float>(view.viewport_width_pixels / view.viewport_height_pixels);
+}
+
+auto make_preview_canvas(struct nk_context* context, struct SDL_Renderer* renderer,
+                         const wormedit::ui::player_preview_view_t* view, struct nk_rect area)
+    -> PreviewCanvas {
+    PreviewCanvas canvas{context, renderer, view, area, area, area, true};
+    if (view->content == wormedit::player_preview_content_t::bga_only) {
+        canvas.draw_field = false;
+        return canvas;
+    }
+    if (view->layout == wormedit::player_preview_layout_t::floating) return canvas;
+    const auto field_width = std::min(area.w, aspect_field_width(*view, area.h));
+    if (view->layout == wormedit::player_preview_layout_t::focus) {
+        canvas.field = nk_rect(area.x + (area.w - field_width) * 0.5f, area.y, field_width, area.h);
+        return canvas;
+    }
+    const auto bga_width = std::max(0.0f, area.w - field_width);
+    const auto bga_right = view->bga_side == wormedit::player_preview_bga_side_t::right;
+    canvas.field = nk_rect(bga_right ? area.x : area.x + bga_width, area.y, field_width, area.h);
+    canvas.bga = nk_rect(bga_right ? area.x + field_width : area.x, area.y, bga_width, area.h);
+    return canvas;
+}
+
+// Corner rounding of note and receptor outlines; the Square skin has none.
+auto preview_outline_radius(const wormedit::ui::player_preview_view_t& view, float rounded) -> float {
+    return view.skin == wormedit::player_preview_skin_t::squared ? 0.0f : rounded;
+}
+
+// The four skins, layouts, contents and BGA sides, in the order of their enum values.
+constexpr const char* skin_labels[] = {"Rounded", "Mania", "Arrows", "Square"};
+constexpr const char* layout_labels[] = {"Window", "Full screen", "Focus"};
+constexpr const char* content_labels[] = {"Play", "BGA only"};
+constexpr const char* side_labels[] = {"BGA left", "BGA right"};
+
+auto preview_settings_of(const wormedit::ui::player_preview_view_t& view)
+    -> wormedit::player_preview_settings_t {
+    wormedit::player_preview_settings_t settings{view.skin};
+    settings.layout = view.layout;
+    settings.content = view.content;
+    settings.bga_side = view.bga_side;
+    return settings;
+}
+
+struct PreviewControls {
+    struct nk_context* context;
+    const wormedit::ui::player_preview_view_t* view;
+    WormUiWorkspaceActionKind* kind;
+    wormedit::player_preview_settings_t* request;
+    wormedit::player_preview_settings_t chosen;
+    bool changed{};
+
+    template <typename Value, std::size_t Count>
+    void segmented(const char* const (&labels)[Count], Value& field) {
+        const auto selected = static_cast<int>(field);
+        const auto picked = wormedit::ui::chrome::Segmented{labels, static_cast<int>(Count), selected}
+                                .render(context);
+        if (picked != selected) {
+            field = static_cast<Value>(picked);
+            changed = true;
         }
     }
-    if (wormedit::ui::chrome::button_label(context, "Hide") && kind &&
-        *kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        *kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+
+    void hide_button() {
+        if (wormedit::ui::chrome::button_label(context, "Hide") && kind &&
+            *kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            *kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    }
+
+    void publish() const {
+        if (changed && kind && *kind == WORM_UI_WORKSPACE_ACTION_NONE && request) {
+            *kind = WORM_UI_WORKSPACE_ACTION_SET_PLAYER_PREVIEW_SETTINGS;
+            *request = chosen;
+        }
+    }
+};
+
+void render_preview_controls(struct nk_context* context,
+                             const wormedit::ui::player_preview_view_t* view,
+                             WormUiWorkspaceActionKind* kind,
+                             wormedit::player_preview_settings_t* settings_request) {
+    PreviewControls controls{context, view, kind, settings_request, preview_settings_of(*view)};
+    const auto compact = view->layout != wormedit::player_preview_layout_t::floating;
+    if (compact) {
+        // One row over the picture, so a full-screen preview keeps almost all of its height.
+        nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_compact, 5);
+        nk_layout_row_push(context, 0.30f);
+        controls.segmented(skin_labels, controls.chosen.skin);
+        nk_layout_row_push(context, 0.26f);
+        controls.segmented(layout_labels, controls.chosen.layout);
+        nk_layout_row_push(context, 0.16f);
+        controls.segmented(content_labels, controls.chosen.content);
+        nk_layout_row_push(context, 0.18f);
+        controls.segmented(side_labels, controls.chosen.bga_side);
+        nk_layout_row_push(context, 0.10f);
+        controls.hide_button();
+        nk_layout_row_end(context);
+    } else {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        controls.segmented(skin_labels, controls.chosen.skin);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
+        controls.segmented(layout_labels, controls.chosen.layout);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
+        controls.segmented(content_labels, controls.chosen.content);
+        controls.hide_button();
+    }
+    controls.publish();
 }
 
 const char* preview_visual_label(wormedit::visual_event_kind_t kind) {
@@ -317,7 +413,7 @@ void merge_preview_result(worm_ui_nuklear_preview_visual_result_t& result,
 void draw_preview_lanes(const PreviewCanvas& canvas, bool background_visible) {
     const auto* view = canvas.view;
     for (std::size_t index = 0; index < view->lanes.size(); ++index) {
-        const auto rect = screen_rect(&view->lanes[index].bounds, view, canvas.viewport);
+        const auto rect = screen_rect(&view->lanes[index].bounds, view, canvas.field);
         const auto alternate = (view->lanes[index].display_order & 1U) != 0;
         const auto alpha = static_cast<nk_byte>(background_visible ? 196 : 255);
         nk_fill_rect(canvas.context ? nk_window_get_canvas(canvas.context) : nullptr, rect, 0.0f,
@@ -330,7 +426,7 @@ void draw_preview_lanes(const PreviewCanvas& canvas, bool background_visible) {
 void draw_preview_holds(struct nk_command_buffer* target, const PreviewCanvas& canvas) {
     for (std::size_t index = 0; index < canvas.view->hold_bodies.size(); ++index) {
         const auto& hold = canvas.view->hold_bodies[index];
-        const auto rect = screen_rect(&hold.bounds, canvas.view, canvas.viewport);
+        const auto rect = screen_rect(&hold.bounds, canvas.view, canvas.field);
         const auto color = hold.semantic_color_visible
                                ? nk_rgba(hold.semantic_red, hold.semantic_green,
                                          hold.semantic_blue, hold.semantic_alpha)
@@ -342,22 +438,22 @@ void draw_preview_holds(struct nk_command_buffer* target, const PreviewCanvas& c
 void draw_preview_receptors(struct nk_command_buffer* target, const PreviewCanvas& canvas) {
     for (std::size_t index = 0; index < canvas.view->receptors.size(); ++index) {
         const auto& receptor = canvas.view->receptors[index];
-        const auto rect = screen_rect(&receptor.bounds, canvas.view, canvas.viewport);
+        const auto rect = screen_rect(&receptor.bounds, canvas.view, canvas.field);
         draw_glyph(target, rect, static_cast<std::uint8_t>(receptor.glyph), nk_rgb(94, 108, 137));
-        nk_stroke_rect(target, rect, 2.0f, 1.5f, nk_rgb(218, 226, 242));
+        nk_stroke_rect(target, rect, preview_outline_radius(*canvas.view, 2.0f), 1.5f, nk_rgb(218, 226, 242));
     }
 }
 
 void draw_preview_notes(struct nk_command_buffer* target, const PreviewCanvas& canvas) {
     for (std::size_t index = 0; index < canvas.view->note_endpoints.size(); ++index) {
         const auto& note = canvas.view->note_endpoints[index];
-        const auto rect = screen_rect(&note.bounds, canvas.view, canvas.viewport);
+        const auto rect = screen_rect(&note.bounds, canvas.view, canvas.field);
         const auto color = note.semantic_color_visible
                                ? nk_rgba(note.semantic_red, note.semantic_green,
                                          note.semantic_blue, note.semantic_alpha)
                                : (note.tail ? nk_rgb(114, 205, 220) : nk_rgb(231, 184, 86));
         draw_glyph(target, rect, static_cast<std::uint8_t>(note.glyph), color);
-        nk_stroke_rect(target, rect, 1.5f, 1.0f, nk_rgb(239, 245, 255));
+        nk_stroke_rect(target, rect, preview_outline_radius(*canvas.view, 1.5f), 1.0f, nk_rgb(239, 245, 255));
     }
 }
 
@@ -379,17 +475,19 @@ void draw_preview_warning(struct nk_command_buffer* target, const PreviewCanvas&
 
 void draw_preview_scene(const PreviewCanvas& canvas) {
     auto result = worm_ui_nuklear_draw_player_preview_visual_layers(
-        nk_window_get_canvas(canvas.context), canvas.viewport, canvas.renderer, canvas.view);
+        nk_window_get_canvas(canvas.context), canvas.bga, canvas.renderer, canvas.view);
     merge_preview_result(result, worm_ui_nuklear_draw_player_preview_storyboard_sprites(
-                                    nk_window_get_canvas(canvas.context), canvas.viewport,
+                                    nk_window_get_canvas(canvas.context), canvas.bga,
                                     canvas.renderer, canvas.view, false));
     auto* target = nk_window_get_canvas(canvas.context);
-    draw_preview_lanes(canvas, result.drew_image);
-    draw_preview_holds(target, canvas);
-    draw_preview_receptors(target, canvas);
-    draw_preview_notes(target, canvas);
+    if (canvas.draw_field) {
+        draw_preview_lanes(canvas, result.drew_image);
+        draw_preview_holds(target, canvas);
+        draw_preview_receptors(target, canvas);
+        draw_preview_notes(target, canvas);
+    }
     merge_preview_result(result, worm_ui_nuklear_draw_player_preview_storyboard_sprites(
-                                    target, canvas.viewport, canvas.renderer, canvas.view, true));
+                                    target, canvas.bga, canvas.renderer, canvas.view, true));
     draw_preview_warning(target, canvas, result);
 }
 
@@ -401,14 +499,15 @@ void draw_preview_canvas(struct nk_context* context, struct SDL_Renderer* render
     nk_push_scissor(target, viewport);
     nk_fill_rect(target, viewport, 2.0f, nk_rgb(14, 17, 24));
     if (view->scene_available)
-        draw_preview_scene({context, renderer, view, viewport});
+        draw_preview_scene(make_preview_canvas(context, renderer, view, viewport));
     nk_push_scissor(target, previous_clip);
 }
 
 void render_preview_window_content(struct nk_context* context, struct SDL_Renderer* renderer,
                                    const wormedit::ui::player_preview_view_t* view,
-                                   WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request, float panel_height) {
-    render_preview_skin_buttons(context, view, kind, skin_request);
+                                   WormUiWorkspaceActionKind* kind,
+                                   wormedit::player_preview_settings_t* settings_request, float panel_height) {
+    render_preview_controls(context, view, kind, settings_request);
     render_preview_status(context, view);
     struct nk_rect viewport{};
     nk_layout_row_dynamic(context, preview_viewport_height(*view, panel_height), 1);
@@ -416,21 +515,59 @@ void render_preview_window_content(struct nk_context* context, struct SDL_Render
         draw_preview_canvas(context, renderer, view, viewport);
 }
 
+// Full-screen and focus layouts: the picture fills the window and one row of controls floats
+// over its top edge.
+void render_preview_immersive_content(struct nk_context* context, struct SDL_Renderer* renderer,
+                                      const wormedit::ui::player_preview_view_t* view,
+                                      WormUiWorkspaceActionKind* kind,
+                                      wormedit::player_preview_settings_t* settings_request,
+                                      struct nk_rect area) {
+    draw_preview_canvas(context, renderer, view, area);
+    render_preview_controls(context, view, kind, settings_request);
+    if (!view->scene_available) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+        nk_label(context, !view->status_text.empty() ? view->status_text.c_str() : "Preview unavailable",
+                 NK_TEXT_LEFT);
+    }
+}
+
 } // namespace
 
 void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            struct SDL_Renderer* renderer,
                                            const wormedit::ui::player_preview_view_t* view,
-                                           WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request, int window_width,
-                                           int window_height) {
+                                           WormUiWorkspaceActionKind* kind,
+                                           wormedit::player_preview_settings_t* settings_request,
+                                           int window_width, int window_height) {
     if (!context || !view || !view->visible) return;
+    static constexpr const char* window_name = "Player preview";
+    // The floating window keeps its own place while a full-window layout borrows the same window.
+    static struct nk_rect floating_bounds{};
+    static bool had_floating_bounds{};
+    static bool was_immersive{};
+    const auto immersive = view->layout != wormedit::player_preview_layout_t::floating;
+    if (immersive) {
+        const auto area = nk_rect(0.0f, 0.0f, static_cast<float>(window_width),
+                                  static_cast<float>(window_height));
+        nk_window_set_bounds(context, window_name, area);
+        if (nk_begin(context, window_name, area, NK_WINDOW_NO_SCROLLBAR))
+            render_preview_immersive_content(context, renderer, view, kind, settings_request, area);
+        nk_end(context);
+        was_immersive = true;
+        return;
+    }
     const auto panel_width = std::min(360.0f, std::max(260.0f, window_width * 0.32f));
     const auto panel_height = std::min(580.0f, std::max(300.0f, window_height - 90.0f));
-    if (nk_begin(context, "Player preview",
-                 nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f,
-                         panel_width, panel_height),
-                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE))
-        render_preview_window_content(context, renderer, view, kind, skin_request, panel_height);
+    const auto default_bounds = nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f,
+                                        panel_width, panel_height);
+    if (was_immersive && had_floating_bounds) nk_window_set_bounds(context, window_name, floating_bounds);
+    was_immersive = false;
+    if (nk_begin(context, window_name, default_bounds,
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE)) {
+        render_preview_window_content(context, renderer, view, kind, settings_request, panel_height);
+        floating_bounds = nk_window_get_bounds(context);
+        had_floating_bounds = true;
+    }
     nk_end(context);
 }
 

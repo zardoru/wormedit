@@ -3620,7 +3620,7 @@ TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[s
     view.compose_timing_focus = true;
     view.compose_timing_lane_visibility_mask = 1;
     view.player_preview_visible = true;
-    view.player_preview_skin = wormedit::player_preview_skin_t::mania;
+    view.player_preview_settings = wormedit::player_preview_skin_t::mania;
     view.compose_editor_right_pixels = 720;
     view.requested_snap_denominators.emplace(7, 8);
     view.bgm_horizontal_scroll_pixels.emplace(7, 120);
@@ -3631,7 +3631,7 @@ TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[s
     check_transient_transport(!view.compose_timing_focus);
     check_transient_transport(view.compose_timing_lane_visibility_mask == wormedit::default_timing_lane_mask);
     check_transient_transport(!view.player_preview_visible);
-    check_transient_transport(view.player_preview_skin == wormedit::player_preview_skin_t::neutral);
+    check_transient_transport(view.player_preview_settings == wormedit::player_preview_settings_t{});
     check_transient_transport(view.compose_editor_right_pixels == 0);
     check_transient_transport(view.requested_snap_denominators.empty());
     check_transient_transport(view.bgm_horizontal_scroll_pixels.empty());

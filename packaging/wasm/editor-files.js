@@ -174,6 +174,7 @@ function installWormeditBrowserFiles(module, report) {
       report(String(error), 'failed');
     } finally {
       if (!sendDrop(x, y, paths)) report('Could not finish the file drop. Try again.', 'failed');
+      else if (paths.length) report('Dropped files are available in the temporary workspace.', 'ready');
       dropping = false;
     }
   }

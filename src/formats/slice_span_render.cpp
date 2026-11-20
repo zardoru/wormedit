@@ -3,6 +3,7 @@
 #include <wormedit/formats/export_cut_audio.h>
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/atomic_file_storage.h>
+#include "../core/browser_file_publication.h"
 
 #include <algorithm>
 #include <array>
@@ -152,7 +153,12 @@ auto publish(const slice_span_render_input_t& plan, const slice_span_render_opti
         std::error_code error;
         // The staging and output directories share a filesystem. An exclusive hard link
         // publishes complete WAV bytes and refuses destination races without overwriting.
+#ifdef __EMSCRIPTEN__
+        if (platform::browser_move_no_replace(staged[index], path) != 0)
+            error = std::error_code(errno, std::generic_category());
+#else
         std::filesystem::create_hard_link(staged[index], path, error);
+#endif
         if (error) return slice_span_render_payload_t::from("Cannot exclusively publish " + path.string() + ": " + error.message(), plan.spans[index].asset);
         publication.published.push_back(std::move(path));
     }

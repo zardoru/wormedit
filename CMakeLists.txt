@@ -879,7 +879,7 @@ if(WORMEDIT_BUILD_APP)
             -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sMAXIMUM_MEMORY=1073741824
             -sSTACK_SIZE=5242880 -sFORCE_FILESYSTEM=1 -sMAX_WEBGL_VERSION=2
             "-sEXPORTED_RUNTIME_METHODS=['FS','ccall']"
-            "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_wormedit_browser_dialog_complete','_wormedit_browser_watch_assets','_wormedit_browser_repair_assets','_wormedit_browser_reset_keyboard']"
+            "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_wormedit_browser_dialog_complete','_wormedit_browser_drop_files','_wormedit_browser_watch_assets','_wormedit_browser_repair_assets','_wormedit_browser_reset_keyboard']"
             "--preload-file=${CMAKE_SOURCE_DIR}/assets@/assets"
         )
         configure_file(packaging/wasm/editor.html "${CMAKE_BINARY_DIR}/index.html" COPYONLY)

@@ -11,6 +11,7 @@ function installWormeditBrowserFiles(module, report) {
   const maxFile = 64 * 1024 * 1024, maxTotal = 256 * 1024 * 1024, maxFiles = 4096;
   let pending, sequence = 0, importedBytes = 0;
   let interacted = false;
+  let dropping = false;
   module.canvas.addEventListener('pointerdown', () => { interacted = true; });
   module.canvas.addEventListener('keydown', () => { interacted = true; });
   window.addEventListener('beforeunload', event => {
@@ -82,7 +83,7 @@ function installWormeditBrowserFiles(module, report) {
     FS.rmdir(directory);
   }
 
-  async function stageFiles(files, isCurrent) {
+  async function stageFiles(files, isCurrent, {expandArchives = true} = {}) {
     if (!files.length) return [];
     const extracted = Object.create(null);
     let total = 0;
@@ -90,7 +91,7 @@ function installWormeditBrowserFiles(module, report) {
       if (file.size > maxFile) throw new Error('A selected file exceeds 64 MiB. Current project unchanged.');
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (!isCurrent()) return [];
-      if (/\.zip$/i.test(file.name)) {
+      if (expandArchives && /\.zip$/i.test(file.name)) {
         const seen = new Set();
         const archive = fflate.unzipSync(bytes, {filter: item => {
           const name = relativePath(item.name);
@@ -143,6 +144,41 @@ function installWormeditBrowserFiles(module, report) {
     finally { if (pending === request) input.disabled = false; }
   }
 
+  function captureCanvasFileDrag(event) {
+    if (!dropping && !event.dataTransfer?.types.includes('Files')) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  }
+
+  function sendDrop(x, y, paths) {
+    return module.ccall('wormedit_browser_drop_files', 'boolean', ['number', 'number', 'string'],
+      [x, y, paths === null ? null : JSON.stringify(paths)]);
+  }
+
+  async function dropOnCanvas(event) {
+    if (!captureCanvasFileDrag(event) || dropping) return;
+    const files = [...event.dataTransfer.files];
+    if (!files.length) return;
+    const {left, top} = module.canvas.getBoundingClientRect();
+    const x = event.clientX - left, y = event.clientY - top;
+    if (!sendDrop(x, y, null)) {
+      report('Could not start the file drop. Try again.', 'failed');
+      return;
+    }
+    dropping = true;
+    let paths = [];
+    try {
+      paths = await stageFiles(files, () => dropping, {expandArchives: false});
+    } catch (error) {
+      report(String(error), 'failed');
+    } finally {
+      if (!sendDrop(x, y, paths)) report('Could not finish the file drop. Try again.', 'failed');
+      else if (paths.length) report('Dropped files are available in the temporary workspace.', 'ready');
+      dropping = false;
+    }
+  }
+
   function downloadTree(roots, name) {
     const archive = Object.create(null);
     let total = 0;
@@ -176,6 +212,10 @@ function installWormeditBrowserFiles(module, report) {
   }
 
   input.addEventListener('change', () => upload([...input.files]));
+  // SDL's stock browser drop handler ends the drag before its async reads finish.
+  for (const event of ['dragover', 'dragleave', 'dragend'])
+    module.canvas.addEventListener(event, captureCanvasFileDrag, {capture: true});
+  module.canvas.addEventListener('drop', dropOnCanvas, {capture: true});
   folder.addEventListener('change', () => { input.value = ''; input.webkitdirectory = folder.checked; });
   document.getElementById('browser-cancel').addEventListener('click', () => complete([]));
   confirm.addEventListener('click', () => {

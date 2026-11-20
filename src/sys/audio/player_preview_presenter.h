@@ -35,7 +35,7 @@ class player_preview_presenter_t {
 
     void populate(wormedit::ui::player_preview_view_t& view, const document_history_t& history,
                   std::optional<chart_id_t> selected_chart, bool visible,
-                  player_preview_skin_t skin, std::uint64_t sample_frame, std::uint32_t sample_rate,
+                  const player_preview_settings_t& settings, std::uint64_t sample_frame, std::uint32_t sample_rate,
                   const std::filesystem::path& project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                   ,

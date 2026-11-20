@@ -2733,7 +2733,7 @@ struct application_t::implementation_t {
             static_cast<void>(dispatch_audio_offset_drag_action(
                 action, commands.audio_offset_edits_locked(), sample_rate));
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action.kind, action.transport, action.player_preview_skin, commands,
+                       action.kind, action.transport, action.player_preview_settings, commands,
                        platform.notification_sink)) {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {

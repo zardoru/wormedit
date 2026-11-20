@@ -256,7 +256,8 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
                 .transport = frame_transport,
                 .player_preview_presenter = context.player_preview_presenter,
                 .player_preview_visible = context.application_command_state.project.compose_view.player_preview_visible,
-                .player_preview_skin = context.application_command_state.project.compose_view.player_preview_skin,
+                .player_preview_settings = context.application_command_state.project.compose_view.player_preview_settings,
+                .editor_preferences = &context.application_command_state.preferences.editor_preferences,
                 .asset_base = context.asset_base,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 .player_image_job = context.player_image_job,

@@ -115,6 +115,8 @@ auto interrupt_ffmpeg(void* opaque) -> int {
     return session && session->active_stop.stop_requested() ? 1 : 0;
 }
 
+constexpr std::int64_t forward_seek_threshold_seconds = 1;
+
 auto timestamp_of(const AVFrame* frame) -> std::int64_t {
     return frame ? frame->best_effort_timestamp : AV_NOPTS_VALUE;
 }
@@ -184,7 +186,19 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
 auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t target,
                     std::stop_token stop) -> std::optional<video_frame_decode_result_t> {
     const auto current_timestamp = timestamp_of(session.current.get());
-    const bool seek_required = !session.positioned ||
+    // A resume far ahead of the decoder (playback started mid-song, seek bar jump) must seek to
+    // the previous keyframe instead of decoding every frame in between.
+    const auto lookahead_timestamp = timestamp_of(session.lookahead.get());
+    const auto decoder_position = lookahead_timestamp != AV_NOPTS_VALUE ? lookahead_timestamp
+                                  : current_timestamp != AV_NOPTS_VALUE ? current_timestamp
+                                  : session.last_target.value_or(AV_NOPTS_VALUE);
+    const auto forward_gap = av_rescale_q(forward_seek_threshold_seconds, AVRational{1, 1},
+                                          session.time_base);
+    const bool far_ahead = session.positioned && decoder_position != AV_NOPTS_VALUE &&
+                           target > decoder_position &&
+                           static_cast<std::uint64_t>(target) - static_cast<std::uint64_t>(decoder_position) >
+                               static_cast<std::uint64_t>(forward_gap);
+    const bool seek_required = !session.positioned || far_ahead ||
                                (session.last_target && target < *session.last_target) ||
                                (current_timestamp != AV_NOPTS_VALUE && target < current_timestamp);
     if (!seek_required) {

@@ -36,6 +36,7 @@ struct bmson_projection_cache_t {
     struct analysis_t {
         asset_id_t asset;
         std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+        std::uint64_t detail_generation{}; // the asset's detail layer these rows were built from
     };
     std::optional<basis_t> basis;
     std::vector<audio::decoded_source_binding_t> bindings;
@@ -206,14 +207,20 @@ auto stem_analysis_for(const bmson_waveform_projection_context_t& context, asset
     return context.stem_analysis ? context.stem_analysis(asset) : nullptr;
 }
 
+auto detail_generation_of(const bmson_waveform_projection_context_t& context, asset_id_t asset)
+    -> std::uint64_t {
+    return context.stem_detail ? context.stem_detail(asset).generation : 0;
+}
+
 // Retain evidence already requested by projection; do not query producers twice.
 void retain_bmson_analysis(const bmson_waveform_projection_context_t& context, asset_id_t asset,
     const std::shared_ptr<const audio::waveform_analysis_result_t>& analysis) {
     auto& retained = *context.cache.stems.rows;
+    const auto generation = detail_generation_of(context, asset);
     const auto found = std::ranges::find(retained.analyses, asset,
         &bmson_projection_cache_t::analysis_t::asset);
-    if (found == retained.analyses.end()) retained.analyses.push_back({asset, analysis});
-    else found->analysis = analysis;
+    if (found == retained.analyses.end()) retained.analyses.push_back({asset, analysis, generation});
+    else { found->analysis = analysis; found->detail_generation = generation; }
 }
 
 // Retained slice-point event → the note or BGM marker that stands for it.
@@ -661,10 +668,17 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
 void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
     context.flattened.view.compose.channel_waveform_rows.clear();
     context.flattened.view.compose.channel_waveform_source_lane_id = {};
+    // The selected channel's ask of the detail layer holds only while it is projected below.
+    const auto drop_channel_detail = [&cache = context.cache] {
+        cache.waveform.channel_detail_demand.reset();
+        cache.waveform.channel_detail_asset = {};
+    };
     populate_stem_waveforms(context);
     populate_packed_waveforms(context);
-    if (!projection_ready(context))
+    if (!projection_ready(context)) {
+        drop_channel_detail();
         return;
+    }
 
     auto& flattened = context.flattened;
     auto& history = context.history;
@@ -673,8 +687,10 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
     auto& cache = context.cache;
 
     const auto chart = history.read_chart(*workspace.selected_chart);
-    if (chart == nullptr)
+    if (chart == nullptr) {
+        drop_channel_detail();
         return;
+    }
 
     const auto selection = selected_bmson_waveform_source(
         cache, *chart, history.document.revision,
@@ -683,8 +699,10 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
                                                        &wormedit::sound_channel_t::id)
                                    : chart->sound_channels.end();
     if (!selection || channel == chart->sound_channels.end() ||
-        !stem_lane_for_channel(*chart, channel->id))
+        !stem_lane_for_channel(*chart, channel->id)) {
+        drop_channel_detail();
         return;
+    }
 
     const auto asset = selection->asset;
     const auto binding = context.audition_sources.binding(context.history.document, asset);
@@ -698,8 +716,12 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
             : std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>{};
     if (!binding || stored_asset == nullptr ||
         !stored_source_matches(*stored_asset, *binding) ||
-        !analysis_matches_binding(analysis, *binding))
+        !analysis_matches_binding(analysis, *binding)) {
+        drop_channel_detail();
         return;
+    }
+    // Record the selected channel's sources, so a change of its detail layer rebuilds these rows.
+    retain_bmson_analysis(context, asset, analysis);
 
     const auto& waveform = *analysis->waveform;
     const wormedit::audio::channel_waveform_source_geometry_t source{
@@ -783,7 +805,8 @@ auto can_reuse_bmson_rows(const bmson_waveform_projection_context_t& context,
     if (context.visible_stems && !std::ranges::equal(retained.visible, *context.visible_stems))
         return false;
     return std::ranges::all_of(retained.analyses, [&context](const auto& source) {
-        return stem_analysis_for(context, source.asset) == source.analysis;
+        return stem_analysis_for(context, source.asset) == source.analysis &&
+               detail_generation_of(context, source.asset) == source.detail_generation;
     });
 }
 

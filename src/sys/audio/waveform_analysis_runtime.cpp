@@ -607,12 +607,17 @@ auto waveform_analysis_t::stem_detail(asset_id_t asset) -> stem_detail_view_t {
 // (update_aligned_waveform_style) as the song's own detail.
 void waveform_analysis_t::service_stem_details(const compose_scene_cache_t& cache) {
     std::map<asset_id_t, audio::channel_detail_demand_t> demands;
+    // Pieces of one asset share a single window; a piece whose frames would stretch it past what
+    // one detail analysis can hold (far-apart clips) is left on the overview.
     const auto add = [&demands](asset_id_t asset, const audio::channel_detail_demand_t& demand) {
         const auto [found, inserted] = demands.try_emplace(asset, demand);
         if (inserted) return;
-        found->second.begin_frame = std::min(found->second.begin_frame, demand.begin_frame);
-        found->second.end_frame = std::max(found->second.end_frame, demand.end_frame);
-        found->second.frames_per_pixel = std::min(found->second.frames_per_pixel, demand.frames_per_pixel);
+        auto merged = found->second;
+        merged.begin_frame = std::min(merged.begin_frame, demand.begin_frame);
+        merged.end_frame = std::max(merged.end_frame, demand.end_frame);
+        merged.frames_per_pixel = std::min(merged.frames_per_pixel, demand.frames_per_pixel);
+        if (audio::padded_aligned_waveform_range({merged.begin_frame, merged.end_frame, merged.frames_per_pixel}, 1))
+            found->second = merged;
     };
     for (const auto* entries : {&cache.stems.stem_waveforms, &cache.stems.packed_waveforms})
         for (const auto& entry : *entries)

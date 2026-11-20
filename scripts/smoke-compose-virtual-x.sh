@@ -16,7 +16,7 @@ set -euo pipefail
 # Xvfb uses an authenticated loopback listener because this machine's shared
 # /tmp/.X11-unix directory is not owned by root and rejects new Unix sockets.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-app="$root_dir/build/wormedit"
+app=${WORMEDIT_APP:-$root_dir/build/wormedit}
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
 project=${3:-}

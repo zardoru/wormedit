@@ -7,6 +7,8 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", type=Path, help="BEFORE AFTER pairs, or two directories with matching relative image names")
+    parser.add_argument("--channel-tolerance", type=int, default=0, help="largest per-channel difference still counted as equal (default 0: exact)")
+    parser.add_argument("--max-different-pixels", type=int, default=0, help="pixels allowed to exceed the tolerance before FAIL (default 0)")
     args = parser.parse_args()
     if len(args.paths) % 2:
         parser.error("provide an even number of paired paths")
@@ -39,11 +41,14 @@ def main():
                     mismatch = True
                     continue
                 delta = ImageChops.difference(a, b)
+                if args.channel_tolerance:
+                    delta = delta.point(lambda value: value if value > args.channel_tolerance else 0)
                 bbox = delta.getbbox()
                 channels = delta.tobytes()
                 pixels = sum(any(channels[index:index + 3]) for index in range(0, len(channels), 3))
-                print(f"{'FAIL' if bbox else 'PASS'} {before} / {after}: different pixels={pixels}, bbox={bbox}")
-                mismatch |= bbox is not None
+                failed = pixels > args.max_different_pixels
+                print(f"{'FAIL' if failed else 'PASS'} {before} / {after}: different pixels={pixels}, bbox={bbox}")
+                mismatch |= failed
         if not count:
             raise ValueError("no paired captures found")
         print(f"Compared {count} capture pairs")

@@ -36,6 +36,7 @@ struct bmson_projection_cache_t {
     struct analysis_t {
         asset_id_t asset;
         std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+        std::uint64_t detail_generation{}; // the asset's detail layer these rows were built from
     };
     std::optional<basis_t> basis;
     std::vector<audio::decoded_source_binding_t> bindings;
@@ -84,6 +85,8 @@ struct channel_ring_context_t {
     double scroll{}, height{}, zoom{};
     channel_projection_target_t target;
     const audio::display_row_table_t* table{};
+    audio::waveform_layers_t layers{};
+    std::uint64_t detail_generation{};
 };
 auto channel_ring_slot(std::int64_t row, std::size_t count) -> std::size_t {
     const auto remainder = row % static_cast<std::int64_t>(count);
@@ -99,7 +102,7 @@ void build_channel_ring_range_view(const channel_ring_context_t& context, std::i
          .viewport_height_pixels = static_cast<double>(count),
          .pixels_per_standard_measure = context.zoom,
          .maximum_rows = audio::maximum_aligned_waveform_rows},
-        *context.target.slices, context.source);
+        *context.target.slices, context.source, context.layers);
     ring.value().projected_rows += count;
     ++ring.value().projection_calls;
     for (std::size_t index = 0; index < count; ++index) {
@@ -131,7 +134,8 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
     const auto geometry = envelope_projection_geometry_t::from(
         {.document = {.project = wormedit::song_id_t{project}, .revision = revision},
          .chart = wormedit::chart_id_t{chart}},
-        channel, context.application.audition_source_generation, context.zoom, false, count);
+        channel, context.application.audition_source_generation ^ (context.detail_generation * 0x9E3779B97F4A7C15ULL),
+        context.zoom, false, count);
     static_cast<void>(ring.get_or_build(envelope_projection_lookup_t{context.waveform.key, &context.waveform, geometry},
         [count](auto& data) { data.rows.assign(count, {}); },
         [count](const auto& data) { return data.rows.size() == count; }));
@@ -203,14 +207,20 @@ auto stem_analysis_for(const bmson_waveform_projection_context_t& context, asset
     return context.stem_analysis ? context.stem_analysis(asset) : nullptr;
 }
 
+auto detail_generation_of(const bmson_waveform_projection_context_t& context, asset_id_t asset)
+    -> std::uint64_t {
+    return context.stem_detail ? context.stem_detail(asset).generation : 0;
+}
+
 // Retain evidence already requested by projection; do not query producers twice.
 void retain_bmson_analysis(const bmson_waveform_projection_context_t& context, asset_id_t asset,
     const std::shared_ptr<const audio::waveform_analysis_result_t>& analysis) {
     auto& retained = *context.cache.stems.rows;
+    const auto generation = detail_generation_of(context, asset);
     const auto found = std::ranges::find(retained.analyses, asset,
         &bmson_projection_cache_t::analysis_t::asset);
-    if (found == retained.analyses.end()) retained.analyses.push_back({asset, analysis});
-    else found->analysis = analysis;
+    if (found == retained.analyses.end()) retained.analyses.push_back({asset, analysis, generation});
+    else { found->analysis = analysis; found->detail_generation = generation; }
 }
 
 // Retained slice-point event → the note or BGM marker that stands for it.
@@ -281,6 +291,38 @@ void build_stem_channel_projection(const channel_ring_context_t& projection,
     split_stem_by_lane(split);
 }
 
+auto cache_row_table(const bmson_waveform_projection_context_t& context) -> const audio::display_row_table_t& {
+    return context.cache.waveform.waveform_row_table;
+}
+
+// The detail layer of one asset, with the generation the projection caches key on.
+struct stem_detail_layers_t {
+    bmson_stem_detail_t detail;
+    audio::waveform_layers_t layers;
+};
+auto stem_detail_layers(const bmson_waveform_projection_context_t& context, asset_id_t asset)
+    -> stem_detail_layers_t {
+    stem_detail_layers_t result;
+    if (!context.stem_detail) return result;
+    result.detail = context.stem_detail(asset);
+    result.layers = {result.detail.analysis && result.detail.analysis->waveform
+                         ? &*result.detail.analysis->waveform : nullptr,
+                     result.detail.blocks, result.detail.style};
+    return result;
+}
+
+// Tells the analysis runtime which frames of this asset the rows being built need finely.
+void publish_detail_demand(compose_scene_cache_t::stem_waveform_cache_t& entry, asset_id_t asset,
+                           const audio::waveform_t& waveform,
+                           const audio::channel_waveform_source_geometry_t& source,
+                           const audio::display_row_table_t& table,
+                           const audio::aligned_waveform_request_t& request) {
+    entry.detail_asset = asset;
+    const auto& slices = entry.slices.value();
+    entry.detail_demand = slices ? audio::channel_detail_demand(waveform, table, *slices, source, request)
+                                 : std::nullopt;
+}
+
 // Projects one stem whose audio is decoded; false leaves it as a placeholder.
 auto build_stem_view(const bmson_waveform_projection_context_t& context, const chart_document_t& chart,
                   const sound_channel_t& channel, compose_scene_cache_t::stem_waveform_cache_t& entry) -> bool {
@@ -306,10 +348,17 @@ auto build_stem_view(const bmson_waveform_projection_context_t& context, const c
     const auto height = context.flattened.view.compose.viewport_height_pixels;
     const auto zoom = context.flattened.view.compose.pixels_per_standard_measure;
     const auto downscroll = compose_field_downscroll(chart);
+    const auto detail = stem_detail_layers(context, asset);
     const channel_ring_context_t projection{context, waveform, channel, source, scroll, height, zoom,
-                                            {entry.projection.ring, entry.slices.value()}};
+                                            {entry.projection.ring, entry.slices.value()}, nullptr,
+                                            detail.layers, detail.detail.generation};
     const stem_split_context_t split{chart, entry, scroll, height, zoom, downscroll, context.interaction_state->cut_axis.get()};
-    static_cast<void>(entry.projection.view.get_or_build(std::tuple{scroll, height, zoom},
+    const auto key = std::tuple{scroll, height, zoom, detail.detail.generation};
+    if (!entry.projection.view.is_bound_to(key))
+        publish_detail_demand(entry, asset, waveform, source, cache_row_table(context),
+            {.viewport_scroll_pixels = scroll, .viewport_height_pixels = height,
+             .pixels_per_standard_measure = zoom, .maximum_rows = audio::maximum_aligned_waveform_rows});
+    static_cast<void>(entry.projection.view.get_or_build(key,
         std::bind_front(build_stem_channel_projection, std::cref(projection), std::cref(split))));
     return true;
 }
@@ -514,15 +563,21 @@ auto build_packed_piece_view(const bmson_waveform_projection_context_t& context,
         std::bind_front(packed_slice_matches, std::cref(piece))));
     const auto& view = context.flattened.view.compose;
     const auto scroll = context.interaction_state->viewport_scroll_pixels;
-    const auto key = std::tuple{scroll, view.viewport_height_pixels, view.pixels_per_standard_measure};
+    const auto detail = stem_detail_layers(context, piece.clip.source);
+    const auto key = std::tuple{scroll, view.viewport_height_pixels, view.pixels_per_standard_measure,
+                                detail.detail.generation};
+    const audio::channel_waveform_source_geometry_t source{binding->source_sample_rate, binding->source_frame_count};
+    if (!entry.projection.view.is_bound_to(key))
+        publish_detail_demand(entry, piece.clip.source, waveform, source, table,
+            {.viewport_scroll_pixels = scroll, .viewport_height_pixels = view.viewport_height_pixels,
+             .pixels_per_standard_measure = view.pixels_per_standard_measure,
+             .maximum_rows = audio::maximum_aligned_waveform_rows});
     static_cast<void>(entry.projection.view.get_or_build(key,
-        [&context, &piece, &entry, &table, &binding, &waveform, &view, scroll, downscroll](auto& data) {
+        [&context, &piece, &entry, &table, &source, &waveform, &view, &detail, scroll, downscroll](auto& data) {
             const sound_channel_t channel{.id = piece.event, .source_clip = piece.clip};
-            const audio::channel_waveform_source_geometry_t source{
-                binding->source_sample_rate, binding->source_frame_count};
             const channel_ring_context_t projection{context, waveform, channel, source,
                 scroll, view.viewport_height_pixels, view.pixels_per_standard_measure,
-                {entry.projection.ring, entry.slices.value()}, &table};
+                {entry.projection.ring, entry.slices.value()}, &table, detail.layers, detail.detail.generation};
             return build_retained_channel_rows(projection, downscroll,
                                                channel_projection_failure_t::retry, data);
         }));
@@ -613,10 +668,17 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
 void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
     context.flattened.view.compose.channel_waveform_rows.clear();
     context.flattened.view.compose.channel_waveform_source_lane_id = {};
+    // The selected channel's ask of the detail layer holds only while it is projected below.
+    const auto drop_channel_detail = [&cache = context.cache] {
+        cache.waveform.channel_detail_demand.reset();
+        cache.waveform.channel_detail_asset = {};
+    };
     populate_stem_waveforms(context);
     populate_packed_waveforms(context);
-    if (!projection_ready(context))
+    if (!projection_ready(context)) {
+        drop_channel_detail();
         return;
+    }
 
     auto& flattened = context.flattened;
     auto& history = context.history;
@@ -625,8 +687,10 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
     auto& cache = context.cache;
 
     const auto chart = history.read_chart(*workspace.selected_chart);
-    if (chart == nullptr)
+    if (chart == nullptr) {
+        drop_channel_detail();
         return;
+    }
 
     const auto selection = selected_bmson_waveform_source(
         cache, *chart, history.document.revision,
@@ -635,8 +699,10 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
                                                        &wormedit::sound_channel_t::id)
                                    : chart->sound_channels.end();
     if (!selection || channel == chart->sound_channels.end() ||
-        !stem_lane_for_channel(*chart, channel->id))
+        !stem_lane_for_channel(*chart, channel->id)) {
+        drop_channel_detail();
         return;
+    }
 
     const auto asset = selection->asset;
     const auto binding = context.audition_sources.binding(context.history.document, asset);
@@ -650,8 +716,12 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
             : std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>{};
     if (!binding || stored_asset == nullptr ||
         !stored_source_matches(*stored_asset, *binding) ||
-        !analysis_matches_binding(analysis, *binding))
+        !analysis_matches_binding(analysis, *binding)) {
+        drop_channel_detail();
         return;
+    }
+    // Record the selected channel's sources, so a change of its detail layer rebuilds these rows.
+    retain_bmson_analysis(context, asset, analysis);
 
     const auto& waveform = *analysis->waveform;
     const wormedit::audio::channel_waveform_source_geometry_t source{
@@ -663,9 +733,21 @@ void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& 
     const auto scroll = interaction_state->viewport_scroll_pixels;
     const auto height = flattened.view.compose.viewport_height_pixels;
     const auto scale = flattened.view.compose.pixels_per_standard_measure;
+    const auto detail = stem_detail_layers(context, asset);
     const channel_ring_context_t projection{context, waveform, *channel, source, scroll, height, scale,
-        {cache.waveform.channel_projection.ring, cache.waveform.channel_waveform_slices.value()}};
-    static_cast<void>(cache.waveform.channel_projection.view.get_or_build(std::tuple{scroll, height, scale},
+        {cache.waveform.channel_projection.ring, cache.waveform.channel_waveform_slices.value()}, nullptr,
+        detail.layers, detail.detail.generation};
+    const auto key = std::tuple{scroll, height, scale, detail.detail.generation};
+    if (!cache.waveform.channel_projection.view.is_bound_to(key)) {
+        const auto& slices = cache.waveform.channel_waveform_slices.value();
+        cache.waveform.channel_detail_asset = asset;
+        cache.waveform.channel_detail_demand = slices ? audio::channel_detail_demand(waveform,
+            cache_row_table(context), *slices, source,
+            {.viewport_scroll_pixels = scroll, .viewport_height_pixels = height,
+             .pixels_per_standard_measure = scale, .maximum_rows = audio::maximum_aligned_waveform_rows})
+            : std::nullopt;
+    }
+    static_cast<void>(cache.waveform.channel_projection.view.get_or_build(key,
         std::bind_front(build_retained_channel_rows, std::cref(projection), compose_field_downscroll(*chart),
                         channel_projection_failure_t::cache_empty)));
 
@@ -723,7 +805,8 @@ auto can_reuse_bmson_rows(const bmson_waveform_projection_context_t& context,
     if (context.visible_stems && !std::ranges::equal(retained.visible, *context.visible_stems))
         return false;
     return std::ranges::all_of(retained.analyses, [&context](const auto& source) {
-        return stem_analysis_for(context, source.asset) == source.analysis;
+        return stem_analysis_for(context, source.asset) == source.analysis &&
+               detail_generation_of(context, source.asset) == source.detail_generation;
     });
 }
 

@@ -21,6 +21,14 @@ struct waveform_analysis_slot_t {
     const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& analysis;
 };
 
+// The detail layer of one audio asset as the analysis runtime holds it.
+struct bmson_stem_detail_t {
+    std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> analysis;
+    wormedit::audio::decoded_block_cache_t* blocks{};
+    wormedit::audio::aligned_waveform_style_t style;
+    std::uint64_t generation{};
+};
+
 struct bmson_waveform_projection_context_t {
     frontend_workspace_view_t& flattened;
     wormedit::document_history_t& history;
@@ -35,6 +43,8 @@ struct bmson_waveform_projection_context_t {
     std::function<std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>(wormedit::asset_id_t)>
         stem_analysis{};
     std::optional<std::span<const wormedit::sound_channel_t* const>> visible_stems{};
+    // Detail layer per asset (32-frame window, cached PCM, style); empty draws the overview only.
+    std::function<bmson_stem_detail_t(wormedit::asset_id_t)> stem_detail{};
 };
 
 void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context);

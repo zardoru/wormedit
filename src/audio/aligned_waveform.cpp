@@ -192,10 +192,7 @@ struct composed_waveform_context_t {
     row_frame_cursor_t& clock;
 };
 
-struct composed_column_t {
-    waveform_column_t column;
-    std::uint32_t source_level{};
-};
+using composed_column_t = layered_column_t;
 
 auto composed_pixel_column(const composed_waveform_context_t& context, double first_pixel,
                             double last_pixel) -> std::optional<composed_column_t> {
@@ -444,6 +441,20 @@ auto sample_display_waveform_span(const waveform_t& waveform, std::uint64_t begi
     for (auto index = first; index <= last; ++index)
         if (!collect_display_bin(waveform, depth, index, result, sampled_bins)) return std::nullopt;
     return result;
+}
+
+auto sample_layered_waveform_span(const waveform_t& overview, const waveform_layers_t& layers,
+    std::uint64_t begin, std::uint64_t end, std::size_t& sampled_bins) -> std::optional<layered_column_t> {
+    if (layers.blocks && layers.style.detail_level && end - begin <= 512) {
+        if (auto pcm = pcm_span(*layers.blocks, overview.key.source, begin, end))
+            return layered_column_t{*pcm, 1};
+    }
+    if (layers.detail && layers.style.detail_level && layers.detail->key.source == overview.key.source) {
+        if (auto column = sample_display_waveform_span(*layers.detail, begin, end, sampled_bins))
+            return layered_column_t{*column, 32};
+    }
+    const auto column = sample_display_waveform_span(overview, begin, end, sampled_bins);
+    return column ? std::optional<layered_column_t>{{*column, 256}} : std::nullopt;
 }
 
 auto aligned_waveform_detail_range_t::is_covering_window(aligned_waveform_window_t window) const noexcept -> bool {
@@ -703,15 +714,7 @@ auto display_song_span(const waveform_t& overview, const waveform_t* detail,
     if (first >= last) return std::nullopt;
     const auto begin = static_cast<std::uint64_t>(first);
     const auto end = static_cast<std::uint64_t>(last);
-    if (blocks && style.detail_level && end - begin <= 512) {
-        if (auto pcm = pcm_span(*blocks, overview.key.source, begin, end)) return composed_column_t{*pcm, 1};
-    }
-    if (detail && style.detail_level && detail->key.source == overview.key.source) {
-        if (auto column = sample_display_waveform_span(*detail, begin, end, result.sampled_bins))
-            return composed_column_t{*column, 32};
-    }
-    const auto column = sample_display_waveform_span(overview, begin, end, result.sampled_bins);
-    return column ? std::optional<composed_column_t>{{*column, 256}} : std::nullopt;
+    return sample_layered_waveform_span(overview, {detail, blocks, style}, begin, end, result.sampled_bins);
 }
 auto display_song_column(const waveform_t& overview, const waveform_t* detail,
     const export_cut_frame_timeline_t* frames, const display_row_time_t& row, decoded_block_cache_t* blocks,

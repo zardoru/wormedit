@@ -281,6 +281,44 @@ enum class player_preview_skin_t : std::uint8_t {
     neutral,
     mania,
     arrows,
+    // Appended so stored values keep their meaning: plain square-cornered note heads.
+    squared,
+};
+
+// Where the preview is drawn and what it shows. Layout only changes the drawing rectangle: the
+// scene itself (scroll, SV, direction) is the same in every layout.
+enum class player_preview_layout_t : std::uint8_t {
+    floating,
+    full_screen,
+    // The BGA fills the window and the note field is drawn centered over it.
+    focus,
+};
+
+enum class player_preview_content_t : std::uint8_t {
+    play,
+    bga_only,
+};
+
+// Which side of the note field the BGA takes in the full-screen layout.
+enum class player_preview_bga_side_t : std::uint8_t {
+    left,
+    right,
+};
+
+// What the person chose for the preview plus the scroll direction the caller resolved for the
+// chart (editor preference, else the layout's default). Converts from a skin so call sites that
+// only care about the skin stay terse.
+struct player_preview_settings_t {
+    player_preview_skin_t skin{player_preview_skin_t::neutral};
+    player_preview_layout_t layout{player_preview_layout_t::floating};
+    player_preview_content_t content{player_preview_content_t::play};
+    player_preview_bga_side_t bga_side{player_preview_bga_side_t::right};
+    bool downscroll{};
+
+    constexpr player_preview_settings_t() = default;
+    constexpr player_preview_settings_t(player_preview_skin_t value) : skin(value) {}
+
+    auto operator==(const player_preview_settings_t&) const -> bool = default;
 };
 
 enum class native_project_recovery_action_t {

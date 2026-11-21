@@ -161,10 +161,50 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(64.0));
 }
 
+TEST_CASE("player preview square skin uses bar heads and downscroll mirrors note positions",
+          "[unit][core][player-preview][skin][direction]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    REQUIRE(built.diagnostics.empty());
+    auto up_request = request(frame_at(*built.value, 240));
+    up_request.skin = player_preview_skin_t::squared;
+    const auto up = player_preview_scene_view_t::from(*built.value, up_request);
+    require_preview_scene(up);
+    for (const auto& note : up.value->note_endpoints) CHECK(note.glyph == lane_glyph_t::bar);
+
+    auto down_request = up_request;
+    down_request.direction = player_preview_scroll_direction_t::toward_bottom;
+    down_request.receptor_y_pixels = down_request.viewport_height_pixels - up_request.receptor_y_pixels;
+    const auto down = player_preview_scene_view_t::from(*built.value, down_request);
+    require_preview_scene(down);
+    REQUIRE(down.value->note_endpoints.size() == up.value->note_endpoints.size());
+    // Mirroring the field about its horizontal axis maps every head onto its upscroll position.
+    for (std::size_t index = 0; index < up.value->note_endpoints.size(); ++index) {
+        const auto& a = up.value->note_endpoints[index].bounds;
+        const auto& b = down.value->note_endpoints[index].bounds;
+        CHECK(b.top == Catch::Approx(up_request.viewport_height_pixels - a.bottom));
+        CHECK(b.bottom == Catch::Approx(up_request.viewport_height_pixels - a.top));
+    }
+    CHECK(down.value->direction == player_preview_scroll_direction_t::toward_bottom);
+}
+
 namespace {
 void check_preview_scene_rejected(const player_preview_scene_view_outcome_t& result) {
     CHECK_FALSE((result.value && result.diagnostics.empty()));
 }
+}
+
+TEST_CASE("player preview without notes survives a note cap that would discard the frame",
+          "[unit][core][player-preview]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    auto capped = request(frame_at(*built.value, 240));
+    capped.maximum_visible_notes = 1;
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.value, capped));
+    capped.include_notes = false;
+    const auto scene = player_preview_scene_view_t::from(*built.value, capped);
+    require_preview_scene(scene);
+    CHECK(scene.value->note_endpoints.empty());
 }
 
 TEST_CASE("player preview validates Layer 2 identities, kind and frame bounds", "[player-preview][bga][layer2]") {

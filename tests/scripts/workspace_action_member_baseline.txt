@@ -27,7 +27,7 @@ tab
 audio_slicer
 bga_usage
 sound_usage
-player_preview_skin
+player_preview_settings
 metadata
 input
 stamp

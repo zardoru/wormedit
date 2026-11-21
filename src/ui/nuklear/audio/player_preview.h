@@ -12,7 +12,7 @@ worm_ui_nuklear_player_preview_view_valid(const wormedit::ui::player_preview_vie
 void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            struct SDL_Renderer* renderer,
                                            const wormedit::ui::player_preview_view_t* view,
-                                           WormUiWorkspaceActionKind* kind, wormedit::player_preview_skin_t* skin_request, int window_width,
+                                           WormUiWorkspaceActionKind* kind, wormedit::player_preview_settings_t* settings_request, int window_width,
                                            int window_height);
 
 // Releases backend-owned textures before the SDL renderer is destroyed.

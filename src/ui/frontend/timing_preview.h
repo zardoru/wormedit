@@ -233,6 +233,10 @@ struct player_preview_view_t {
     bool pre_zero{};
     bool split_stage{};
     wormedit::player_preview_skin_t skin{};
+    wormedit::player_preview_layout_t layout{};
+    wormedit::player_preview_content_t content{};
+    wormedit::player_preview_bga_side_t bga_side{};
+    bool downscroll{};
     wormedit::visual_fit_policy_t visual_fit{};
     wormedit::song_id_t project_id{};
     wormedit::chart_id_t chart_id{};
@@ -253,6 +257,10 @@ struct player_preview_view_t {
         pre_zero = {};
         split_stage = {};
         skin = {};
+        layout = {};
+        content = {};
+        bga_side = {};
+        downscroll = {};
         visual_fit = {};
         project_id = {};
         chart_id = {};

@@ -1,5 +1,7 @@
 #include "sys/project/workspace_frame_view.h"
 
+#include "sys/compose/views/compose_view.h"
+
 #include <algorithm>
 #include <ranges>
 
@@ -52,9 +54,14 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
     flattened.view.transport_clocks_differ = args.transport.clocks_differ;
     flattened.view.transport_time_is_source = args.transport.time_is_source;
 
+    auto player_preview_settings = args.player_preview_settings;
+    if (args.selected_chart && args.editor_preferences) {
+        if (const auto* chart = args.history.read_chart(*args.selected_chart))
+            player_preview_settings.downscroll = compose_field_downscroll(*chart, *args.editor_preferences);
+    }
     args.player_preview_presenter.populate(
         flattened.view.player_preview, args.history, args.selected_chart,
-        args.player_preview_visible, args.player_preview_skin, args.transport.source_frame(),
+        args.player_preview_visible, player_preview_settings, args.transport.source_frame(),
         flattened.view.transport_sample_rate, args.asset_base
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         , args.player_image_job

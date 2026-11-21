@@ -26,6 +26,9 @@
 namespace wormedit::sys {
 namespace {
 
+// Distance from the receptor line to the edge notes arrive from, in preview-space pixels.
+constexpr double preview_receptor_inset_pixels = 52.0;
+
 using wormedit::ui::maximum_preview_notes;
 using wormedit::ui::maximum_preview_storyboard_instances;
 
@@ -343,7 +346,7 @@ struct player_preview_projection_context_t {
     wormedit::ui::player_preview_view_t& view;
     const document_history_t& history;
     const chart_document_t& chart;
-    player_preview_skin_t skin;
+    player_preview_settings_t settings;
     std::uint64_t sample_frame;
     std::uint32_t sample_rate;
     const std::filesystem::path& project_directory;
@@ -667,12 +670,18 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,
                        .viewport_height_pixels = view.viewport_height_pixels,
-                       .receptor_y_pixels = 52.0,
+                       .receptor_y_pixels = context.settings.downscroll
+                           ? view.viewport_height_pixels - preview_receptor_inset_pixels
+                           : preview_receptor_inset_pixels,
                        .pixels_per_beat = 82.0,
-                       .skin = context.skin,
+                       .skin = context.settings.skin,
+                       .direction = context.settings.downscroll
+                           ? player_preview_scroll_direction_t::toward_bottom
+                           : player_preview_scroll_direction_t::toward_top,
                        .visual_fit = visual_fit_policy_t::contain,
                        .visual_layers = frame.visual,
                        .storyboard_instances = frame.storyboard_instances,
+                       .include_notes = context.settings.content != player_preview_content_t::bga_only,
                        .maximum_visible_notes = maximum_preview_notes,
                        .maximum_storyboard_instances = maximum_preview_storyboard_instances});
     if (!scene.value || !scene.diagnostics.empty()) {
@@ -703,7 +712,7 @@ auto player_preview_presenter_t::operator=(player_preview_presenter_t&&) noexcep
 void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& view,
                                           const document_history_t& history,
                                           std::optional<chart_id_t> selected_chart, bool visible,
-                                          player_preview_skin_t skin, std::uint64_t sample_frame,
+                                          const player_preview_settings_t& settings, std::uint64_t sample_frame,
                                           std::uint32_t sample_rate,
                                           const std::filesystem::path& project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
@@ -719,7 +728,11 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     auto& state = *impl_;
     view.reset();
     view.visible = visible;
-    view.skin = static_cast<wormedit::player_preview_skin_t>(skin);
+    view.skin = settings.skin;
+    view.layout = settings.layout;
+    view.content = settings.content;
+    view.bga_side = settings.bga_side;
+    view.downscroll = settings.downscroll;
     view.visual_fit = wormedit::visual_fit_policy_t::contain;
     view.viewport_width_pixels = 300.0;
     view.viewport_height_pixels = 420.0;
@@ -755,7 +768,7 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     view.document_revision = history.document.revision;
     view.sample_frame = sample_frame;
     player_preview_projection_context_t preview_context{
-        state, view, history, *chart, skin, sample_frame, sample_rate, project_directory
+        state, view, history, *chart, settings, sample_frame, sample_rate, project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         , image_job
 #endif

@@ -514,7 +514,6 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
         return;
     }
     view.bga_lane_visible = scene.bga_lane.has_value();
-    view.bga_revealed_lane_mask = projection.inputs.scope.interaction_view.bga_revealed_lane_mask;
     view.bga_lane_count = std::min<std::size_t>(scene.bga_lanes.size(), 4);
     for (std::size_t index = 0; index < view.bga_lane_count; ++index) {
         const auto& lane = scene.bga_lanes[index];
@@ -627,7 +626,7 @@ bool initialize_compose_view_state(
                             !application_state.project.bgm.bgm_bar_hidden.value_or(default_bgm_bar_hidden);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
-    view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
+    view.bga_visible_lane_mask = 0;
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.same_sound_selection_available = false;

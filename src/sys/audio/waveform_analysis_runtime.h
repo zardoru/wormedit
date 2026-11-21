@@ -106,6 +106,17 @@ public:
         -> std::shared_ptr<const audio::waveform_analysis_result_t>;
     [[nodiscard]] auto stem_waveform_cache_stats() const -> stem_waveform_cache_stats_t;
 
+    // The detail layer of one stem asset (song, stem or selected channel alike): a 32-frame
+    // analysis of the window being viewed, the cached PCM, and the style the zoom selects.
+    // `generation` changes whenever any of these change, so projections can key on it.
+    struct stem_detail_view_t {
+        std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+        audio::decoded_block_cache_t* blocks{};
+        audio::aligned_waveform_style_t style;
+        std::uint64_t generation{};
+    };
+    [[nodiscard]] auto stem_detail(asset_id_t asset) -> stem_detail_view_t;
+
 private:
     bool shutdown_started_{};
     void request_selected_waveform(std::optional<asset_id_t> asset,
@@ -174,6 +185,18 @@ private:
         std::optional<asset_id_t> asset;
     };
     static constexpr std::size_t stem_slot_count = 3;
+    static constexpr std::size_t stem_detail_slot_count = 2;
+    // Detail windows per asset, requested from what the visible stems ask for (their
+    // `detail_demand`); the style per asset uses the same hysteresis as the song's detail.
+    struct stem_detail_entry_t {
+        std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+        audio::aligned_waveform_style_t style;
+        std::uint64_t generation{};
+    };
+    std::vector<std::unique_ptr<stem_slot_t>> stem_detail_slots_;
+    std::map<asset_id_t, stem_detail_entry_t> stem_details_;
+    std::uint64_t stem_detail_counter_{};
+    void service_stem_details(const compose_scene_cache_t& cache);
     std::vector<std::unique_ptr<stem_slot_t>> stem_slots_;
     struct stem_analysis_entry_t {
         std::shared_ptr<const audio::waveform_analysis_result_t> analysis;

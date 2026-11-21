@@ -149,7 +149,7 @@ struct compose_channel_projection_data_t {
     std::vector<wormedit::ui::compose_stem_cut_view_t> cuts;
 };
 struct compose_channel_projection_t {
-    wormedit::keyed_cache_t<std::tuple<double, double, double>, compose_channel_projection_data_t> view;
+    wormedit::keyed_cache_t<std::tuple<double, double, double, std::uint64_t>, compose_channel_projection_data_t> view;
     envelope_projection_ring_t ring;
     void invalidate(bool clear_rows) {
         view.invalidate([clear_rows](auto& data) { if (clear_rows) data.rows.clear(); });
@@ -191,7 +191,7 @@ struct compose_static_layout_key_t {
         return {view.project_id.value, view.chart_id.value, view.document_revision, view.viewport_width_pixels,
                 view.pixels_per_standard_measure, view.playable_field_left_pixels,
                 view.playable_field_right_pixels, view.bgm_horizontal_scroll_pixels,
-                view.bga_lane_visible, view.bga_revealed_lane_mask, view.timing_lane_visibility_mask,
+                view.bga_lane_visible, view.bga_visible_lane_mask, view.timing_lane_visibility_mask,
                 view.timing_focus, view.downscroll, view.lane_key_legend_visible};
     }
 };
@@ -303,6 +303,10 @@ struct compose_scene_cache_t {
         using point_refs_t = std::unordered_map<std::uint64_t, point_ref_t>;
         wormedit::keyed_cache_t<std::uint64_t, point_refs_t> refs;
         bool pending{}, is_selected{};
+        // What this stem asks of the detail layer, set when its rows are rebuilt; the analysis
+        // runtime reads it to decide which window of the audio to analyze finely.
+        wormedit::asset_id_t detail_asset;
+        std::optional<audio::channel_detail_demand_t> detail_demand;
     };
     struct bgm_bar_cache_t {
         wormedit::keyed_cache_t<
@@ -443,6 +447,9 @@ struct compose_scene_cache_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::keyed_cache_t<std::tuple<wormedit::object_id_t, const void*, std::uint64_t>,
             std::optional<wormedit::sound_slice_result_t>> channel_waveform_slices;
+        // The selected channel's own ask of the detail layer (see stem_waveform_cache_t).
+        wormedit::asset_id_t channel_detail_asset;
+        std::optional<audio::channel_detail_demand_t> channel_detail_demand;
         compose_channel_projection_t channel_projection;
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;

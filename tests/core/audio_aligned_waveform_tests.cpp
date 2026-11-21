@@ -1047,6 +1047,25 @@ TEST_CASE("channel_waveform display RMS uses matching pyramid bins and refines c
     CHECK(base_only_low_zoom_keeps_channel_peaks());
 }
 
+TEST_CASE("layered waveform span reads the detail analysis only when the style asks for it",
+          "[audio][waveform][display][layers]") {
+    const auto overview = numeric_display_pyramid();
+    const auto detail = overview;
+    std::size_t sampled{};
+    const auto plain = wormedit::audio::sample_layered_waveform_span(
+        overview, {.detail = &detail}, 0, 1024, sampled);
+    REQUIRE(plain);
+    CHECK(plain->source_level == 256);
+    const auto fine = wormedit::audio::sample_layered_waveform_span(
+        overview, {.detail = &detail, .style = {.detail_level = true}}, 0, 1024, sampled);
+    REQUIRE(fine);
+    CHECK(fine->source_level == 32);
+    CHECK(fine->column.absolute_peak == plain->column.absolute_peak);
+    const auto direct = wormedit::audio::sample_display_waveform_span(overview, 0, 1024, sampled);
+    REQUIRE(direct);
+    CHECK(plain->column.absolute_peak == direct->absolute_peak);
+}
+
 TEST_CASE("song overview clamps a viewport that extends past the audio end",
           "[unit][audio][waveform][aligned]") {
     const auto chart = chart_fixture();

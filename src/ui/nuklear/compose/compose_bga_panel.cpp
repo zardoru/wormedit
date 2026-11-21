@@ -101,16 +101,19 @@ auto thumbnail(const wormedit::ui::compose_view_t& view, const wormedit::ui::com
     entry.project = view.project_id.value;
     return entry.value;
 }
-void reveal_bga_lane(wormedit::ui::compose_ui_window_t& action, std::uint8_t kind) {
-    append_compose_input(&action, WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL);
-    if (action.input.compose_inputs.size() == 0) return;
+void set_bga_lane_visibility(wormedit::ui::compose_ui_window_t& action, std::uint8_t kind,
+                             bool visible) {
+    const auto previous_count = action.input.compose_inputs.size();
+    append_compose_input(&action, visible ? WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL
+                                         : WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE);
+    if (action.input.compose_inputs.size() == previous_count) return;
     auto& output = action.input.compose_inputs[action.input.compose_inputs.size() - 1];
     output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(kind);
     output.bga_lane_kind_valid = true;
 }
 
 void reveal_empty_base_lane(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view, bool was_active) {
-    if (!was_active && view.bga_lane_count == 0) reveal_bga_lane(action, 0);
+    if (!was_active && view.bga_lane_count == 0) set_bga_lane_visibility(action, 0, true);
 }
 
 void bga_lane_picker(nk_context* context, const wormedit::ui::compose_view_t& view,
@@ -122,18 +125,18 @@ void bga_lane_picker(nk_context* context, const wormedit::ui::compose_view_t& vi
     constexpr std::array kinds{wormedit::visual_event_kind_t::background, wormedit::visual_event_kind_t::layer,
         wormedit::visual_event_kind_t::layer2, wormedit::visual_event_kind_t::poor};
     constexpr std::array descriptions{
-        "Show the background image/video lane",
-        "Show the first overlay lane",
-        "Show the second overlay lane (BMS channel 0A)",
-        "Show the miss/Poor image lane; normal preview keeps its miss-only policy"};
+        "Show or hide the background image/video lane",
+        "Show or hide the first overlay lane",
+        "Show or hide the second overlay lane (BMS channel 0A)",
+        "Show or hide the miss/Poor image lane (used on misses during preview)"};
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 2);
-    for (size_t index = 0; index < labels.size(); ++index) {
+    const auto visible_kinds = std::span(view.bga_lane_kinds,
+                                        std::min<std::size_t>(view.bga_lane_count, 4));
+    for (std::size_t index = 0; index < labels.size(); ++index) {
         const auto kind = static_cast<std::uint8_t>(kinds[index]);
-        const auto count = std::min<std::size_t>(view.bga_lane_count, 4);
-        const auto visible = std::ranges::find(std::span(view.bga_lane_kinds, count), kind) !=
-                             std::span(view.bga_lane_kinds, count).end();
-        if (nk_select_label(context, labels[index], NK_TEXT_CENTERED, visible))
-            reveal_bga_lane(action, kind);
+        nk_bool visible = std::ranges::find(visible_kinds, kind) != visible_kinds.end();
+        if (nk_selectable_label(context, labels[index], NK_TEXT_CENTERED, &visible))
+            set_bga_lane_visibility(action, kind, visible);
         if (!blocked && nk_widget_is_hovered(context))
             wormedit::ui::nuklear::tooltip::text(context, descriptions[index]);
     }

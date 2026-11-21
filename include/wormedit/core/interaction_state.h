@@ -131,6 +131,7 @@ struct editor_interaction_state_t {
     // View-only BGA event lane visibility; hidden lanes have no hit geometry.
     bool bga_lane_visible{true};
     std::uint8_t bga_revealed_lane_mask{};
+    std::uint8_t bga_hidden_lane_mask{};
     std::shared_ptr<const export_cut_axis_t> cut_axis;
 };
 
@@ -163,6 +164,7 @@ struct editor_interaction_view_model_t {
     bool y_lock{false};
     bool bga_lane_visible{true};
     std::uint8_t bga_revealed_lane_mask{};
+    std::uint8_t bga_hidden_lane_mask{};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};

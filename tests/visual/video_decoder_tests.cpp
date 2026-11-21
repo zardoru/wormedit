@@ -137,3 +137,18 @@ TEST_CASE("video decoder enforces geometry packet and declaration bounds",
     packets.maximum_packets = 1;
     check_video_error(decode_video_frame_rgba(video_source(), video_clock(5, 2), packets), failure_code_t::decode_failed);
 }
+
+TEST_CASE("video decoder session seeks instead of decoding through a far forward resume",
+          "[unit][visual][video][session][resume]") {
+    auto opened = open_video_decoder_session(video_source());
+    REQUIRE(opened);
+
+    check_decoded_pixel((*opened)->decode(video_clock(1, 2)), 0);
+    // More than the forward-seek threshold ahead: must land on the right frame via a seek.
+    const auto blue = (*opened)->decode(video_clock(5, 2));
+    check_primary_pixel(blue, 2);
+    // And a fresh session resumed mid-clip gets the same frame.
+    auto fresh = open_video_decoder_session(video_source());
+    REQUIRE(fresh);
+    check_primary_pixel((*fresh)->decode(video_clock(5, 2)), 2);
+}

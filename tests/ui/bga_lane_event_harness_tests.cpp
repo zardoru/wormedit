@@ -787,7 +787,7 @@ TEST_CASE("BGA lane controls reveal every kind without a hidden dropdown", "[eve
     }
 }
 
-TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][bga][bga-discovery]") {
+TEST_CASE("Clicking a populated BGA lane control requests hiding that lane", "[event-harness][bga][bga-discovery]") {
     nuklear_event_harness_t harness{1280, 600};
     REQUIRE(harness.ready());
     hide_compose_docks();
@@ -798,7 +798,15 @@ TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][b
     (void)harness.frame();
     worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
-    REQUIRE(harness.drawn_text_center("Layer 2"));
+    const auto control = harness.drawn_text_center("Layer 2");
+    REQUIRE(control);
+    const auto actions = click(harness, control->first, control->second);
+    check_bga(std::ranges::any_of(actions, [](const auto& snapshot) {
+        return std::ranges::any_of(std::span(snapshot.get().input.compose_inputs), [](const auto& input) {
+            return input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE &&
+                input.bga_lane_kind_valid && input.bga_lane_kind == wormedit::visual_event_kind_t::layer2;
+        });
+    }));
     REQUIRE(harness.drawn_text_center("Poor (miss)"));
 }
 

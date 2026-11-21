@@ -391,6 +391,10 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
                 return runtime.stem_waveform_analysis(asset);
             },
             .visible_stems = std::span<const sound_channel_t* const>(frame_visible_stems),
+            .stem_detail = [&runtime = context.waveform_runtime](asset_id_t asset) {
+                auto detail = runtime.stem_detail(asset);
+                return bmson_stem_detail_t{std::move(detail.analysis), detail.blocks, detail.style, detail.generation};
+            },
         });
     }
 #endif

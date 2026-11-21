@@ -42,6 +42,8 @@ waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sourc
       stem_budget_bytes_(stem_budget_bytes) {
     for (std::size_t slot = 0; slot < stem_slot_count; ++slot)
         stem_slots_.push_back(std::make_unique<stem_slot_t>(sources_, coarse_blocks_, waveform_cache_, scheduler_));
+    for (std::size_t slot = 0; slot < stem_detail_slot_count; ++slot)
+        stem_detail_slots_.push_back(std::make_unique<stem_slot_t>(sources_, decoded_blocks_, waveform_cache_, scheduler_));
 }
 
 waveform_analysis_t::~waveform_analysis_t() {
@@ -56,6 +58,7 @@ void waveform_analysis_t::shutdown() noexcept {
     channel_waveform_job_.cancel();
     detail_job_.cancel();
     for (auto& slot : stem_slots_) slot->job.cancel();
+    for (auto& slot : stem_detail_slots_) slot->job.cancel();
     scheduler_.shutdown();
     if (detail_worker_) static_cast<void>(detail_worker_.wait());
 }
@@ -127,6 +130,11 @@ void waveform_analysis_t::reset_sources() {
         slot->job.cancel();
         slot->asset.reset();
     }
+    for (auto& slot : stem_detail_slots_) {
+        slot->job.cancel();
+        slot->asset.reset();
+    }
+    stem_details_.clear();
     stem_analyses_.clear();
     stem_cache_stats_ = {};
     stem_visible_.clear();
@@ -584,6 +592,86 @@ void waveform_analysis_t::service_stem_waveforms(
     std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !wanted_ids.contains(asset.value); });
     collect_stem_waveforms(wanted);
     start_stem_waveforms(wanted);
+    service_stem_details(compose_scene_cache);
+}
+
+auto waveform_analysis_t::stem_detail(asset_id_t asset) -> stem_detail_view_t {
+    const auto found = stem_details_.find(asset);
+    if (found == stem_details_.end()) return {nullptr, &decoded_blocks_, {}, 0};
+    return {found->second.style.detail_level ? found->second.analysis : nullptr, &decoded_blocks_,
+            found->second.style, found->second.generation};
+}
+
+// Requests the 32-frame window each zoomed-in stem asset needs. The song, the stems and the
+// selected channel all read their detail from here, and choose it with the same style policy
+// (update_aligned_waveform_style) as the song's own detail.
+void waveform_analysis_t::service_stem_details(const compose_scene_cache_t& cache) {
+    std::map<asset_id_t, audio::channel_detail_demand_t> demands;
+    // Pieces of one asset share a single window; a piece whose frames would stretch it past what
+    // one detail analysis can hold (far-apart clips) is left on the overview.
+    const auto add = [&demands](asset_id_t asset, const audio::channel_detail_demand_t& demand) {
+        const auto [found, inserted] = demands.try_emplace(asset, demand);
+        if (inserted) return;
+        auto merged = found->second;
+        merged.begin_frame = std::min(merged.begin_frame, demand.begin_frame);
+        merged.end_frame = std::max(merged.end_frame, demand.end_frame);
+        merged.frames_per_pixel = std::min(merged.frames_per_pixel, demand.frames_per_pixel);
+        if (audio::padded_aligned_waveform_range({merged.begin_frame, merged.end_frame, merged.frames_per_pixel}, 1))
+            found->second = merged;
+    };
+    for (const auto* entries : {&cache.stems.stem_waveforms, &cache.stems.packed_waveforms})
+        for (const auto& entry : *entries)
+            if (entry.detail_demand && entry.detail_asset) add(entry.detail_asset, *entry.detail_demand);
+    if (cache.waveform.channel_detail_demand && cache.waveform.channel_detail_asset)
+        add(cache.waveform.channel_detail_asset, *cache.waveform.channel_detail_demand);
+    for (auto& slot : stem_detail_slots_) {
+        if (!slot->asset) continue;
+        if (!demands.contains(*slot->asset)) {
+            slot->job.cancel();
+            slot->asset.reset();
+            continue;
+        }
+        const auto completed = slot->job.poll();
+        if (!completed) continue;
+        const auto asset = *slot->asset;
+        slot->asset.reset();
+        const auto entry = stem_details_.find(asset);
+        if (!*completed || !completed->value().payload || !completed->value().payload->waveform ||
+            entry == stem_details_.end()) continue;
+        entry->second.analysis = completed->value().payload;
+        entry->second.generation = ++stem_detail_counter_;
+    }
+    std::erase_if(stem_details_, [&demands](const auto& item) { return !demands.contains(item.first); });
+    for (const auto& [asset, demand] : demands) {
+        auto& entry = stem_details_.try_emplace(asset).first->second;
+        const auto before = entry.style;
+        audio::update_aligned_waveform_style(entry.style, demand.frames_per_pixel);
+        if (entry.style != before) {
+            entry.generation = ++stem_detail_counter_;
+            if (!entry.style.detail_level) entry.analysis.reset();
+        }
+        if (!entry.style.detail_level) continue;
+        const auto binding = sources_.binding(asset);
+        if (!binding) continue;
+        const audio::aligned_waveform_window_t window{demand.begin_frame, demand.end_frame, demand.frames_per_pixel};
+        std::optional<audio::aligned_waveform_detail_range_t> retained;
+        if (entry.analysis && entry.analysis->waveform && entry.analysis->waveform->key.source == binding->source)
+            retained = audio::aligned_waveform_detail_range_t{entry.analysis->waveform->key.begin_frame,
+                                                              entry.analysis->waveform->key.end_frame};
+        const bool pcm_ready = !entry.style.sample_points || cached_detail_window({binding->source, 32}, window);
+        if (retained && pcm_ready && !retained->is_refill_needed(window, 1)) continue;
+        if (std::ranges::any_of(stem_detail_slots_, [&](const auto& slot) { return slot->asset == asset; })) continue;
+        const auto free_slot = std::ranges::find_if(stem_detail_slots_, [](const auto& slot) { return !slot->asset; });
+        if (free_slot == stem_detail_slots_.end()) continue;
+        auto range = audio::padded_aligned_waveform_range(window, 1);
+        if (!range) continue;
+        range->end_frame = std::min(range->end_frame, binding->output_frame_count);
+        if (retained == range && retained->is_covering_window(window) && pcm_ready) continue;
+        const auto started = (*free_slot)->job.request(asset, 32,
+            {.begin_frame = range->begin_frame, .end_frame = range->end_frame,
+             .require_cached_pcm = entry.style.sample_points});
+        if (started) (*free_slot)->asset = asset; // A busy scheduler retries next frame.
+    }
 }
 
 } // namespace wormedit::sys::runtime

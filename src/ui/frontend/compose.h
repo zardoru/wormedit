@@ -1337,7 +1337,7 @@ struct compose_view_t {
     bool bga_lane_visible{};
     std::vector<wormedit::ui::compose_bga_event_view_t> bga_events;
     wormedit::ui::compose_rect_t bga_lane_bounds{};
-    uint8_t bga_revealed_lane_mask{};
+    uint8_t bga_visible_lane_mask{};
     size_t bga_lane_count{};
     wormedit::ui::compose_rect_t bga_lane_rects[4]{};
     uint8_t bga_lane_kinds[4]{};

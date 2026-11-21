@@ -236,6 +236,21 @@ TEST_CASE("BGA lane reveal is view-only and rejects an unsupported kind", "[bga]
     check_action(fixture.history.undo.empty());
 }
 
+TEST_CASE("BGA lane visibility can hide and restore an authored lane", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    const auto& chart = fixture.history.document.charts.front();
+    auto hide = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE, 2);
+    fixture.dispatch_input(hide);
+    check_action(editor_bga_visible_lane_mask(chart, fixture.state.bga_revealed_lane_mask,
+                                             fixture.state.bga_hidden_lane_mask) == 4);
+    auto reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 2);
+    fixture.dispatch_input(reveal);
+    check_action(editor_bga_visible_lane_mask(chart, fixture.state.bga_revealed_lane_mask,
+                                             fixture.state.bga_hidden_lane_mask) == 6);
+    fixture.check_unchanged(revision);
+}
+
 TEST_CASE("BGA production invalid and stale move payloads preserve state", "[bga][compose-input]") {
     bga_input_fixture_t fixture;
     const auto revision = fixture.history.document.revision;

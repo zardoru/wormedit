@@ -3814,7 +3814,7 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action.timing_settings,
                                                   frame.action.compose);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
-                                          &frame.action.kind, &frame.action.player_preview_settings, frame.width, frame.height);
+                                          &frame.action.kind, &frame.action.player_preview_settings, frame.width, worm_ui_frontend_title_bar_height(), frame.height);
 }
 
 static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {

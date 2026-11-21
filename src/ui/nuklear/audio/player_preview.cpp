@@ -555,7 +555,7 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            const wormedit::ui::player_preview_view_t* view,
                                            WormUiWorkspaceActionKind* kind,
                                            wormedit::player_preview_settings_t* settings_request,
-                                           int window_width, int window_height) {
+                                           int window_width, int top_inset, int window_height) {
     if (!context || !view || !view->visible) return;
     static constexpr const char* window_name = "Player preview";
     // The floating window keeps its own place while a full-window layout borrows the same window.
@@ -565,7 +565,7 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
     const auto immersive = view->layout != wormedit::player_preview_layout_t::floating;
     if (immersive) {
         // Below the title bar: SDL claims clicks in its drag zone before Nuklear sees them.
-        const auto top = static_cast<float>(worm_ui_frontend_title_bar_height());
+        const auto top = static_cast<float>(top_inset);
         const auto area = nk_rect(0.0f, top, static_cast<float>(window_width),
                                   std::max(1.0f, static_cast<float>(window_height) - top));
         nk_window_set_bounds(context, window_name, area);

@@ -66,9 +66,13 @@ TEST_CASE("BGA usage reveals the event lane while retaining an existing chart vi
     usage_fixture_t f;
     REQUIRE_FALSE(f.activate());
     f.interaction->bga_lane_visible = false;
+    f.interaction->bga_hidden_lane_mask = editor_bga_lane_mask_all;
+    const auto lane = editor_bga_lane_index(f.action.bga_usage.target.kind);
+    REQUIRE(lane);
     f.interaction->active_snap_denominator = 8;
     REQUIRE_FALSE(f.activate());
     CHECK(f.interaction->bga_lane_visible);
+    CHECK(f.interaction->bga_hidden_lane_mask == (editor_bga_lane_mask_all & ~(1U << *lane)));
     CHECK(f.interaction->active_snap_denominator == 8);
 }
 TEST_CASE("BGA use activation selects every modeled event lane ", "[sys][bga-usage]") {

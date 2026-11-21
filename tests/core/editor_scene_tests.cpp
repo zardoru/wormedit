@@ -1583,6 +1583,30 @@ TEST_CASE("cached BGA projection returns each event once with fresh geometry par
     }
 }
 
+TEST_CASE("Cached scene removes and restores a hidden BGA lane", "[editor-scene][scene-window][bga]") {
+    using namespace wormedit;
+    auto chart = window_chart();
+    chart.bga_events = {{.id = object_id_t{900}, .position = {measure_id_t{1}, 720},
+                         .resource = resource_id_t{90}}};
+    const auto index = std::get<editor_field_scene_index_t>(build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    const editor_field_scene_request_t request{
+        .field_width_pixels = 200.0, .bga_pane_left_pixels = 220.0, .bga_pane_width_pixels = 48.0};
+    editor_field_scene_window_t window;
+    const auto shown = editor_field_scene_view_t::from(chart, index, current, request, window);
+    REQUIRE(shown);
+    CHECK(shown.scene->bga_lanes.size() == 1);
+    current.bga_hidden_lane_mask = 1;
+    const auto hidden = editor_field_scene_view_t::from(chart, index, current, request, window);
+    REQUIRE(hidden);
+    CHECK(hidden.scene->bga_lanes.empty());
+    CHECK(hidden.scene->bga_events.empty());
+    current.bga_hidden_lane_mask = 0;
+    const auto restored = editor_field_scene_view_t::from(chart, index, current, request, window);
+    REQUIRE(restored);
+    CHECK(restored.scene->bga_lanes.size() == 1);
+}
+
 namespace {
 void check_window_rejection(const wormedit::editor_field_scene_view_result_t& reused,
                             const wormedit::editor_field_scene_view_result_t& fresh) {

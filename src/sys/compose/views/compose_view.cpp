@@ -1455,7 +1455,7 @@ auto make_compose_static_view(const wormedit::ui::compose_view_t& view,
     retained.bmson_tools_available = view.bmson_tools_available;
     retained.downscroll = view.downscroll;
     retained.bga_lane_visible = view.bga_lane_visible;
-    retained.bga_revealed_lane_mask = view.bga_revealed_lane_mask;
+    retained.bga_visible_lane_mask = view.bga_visible_lane_mask;
     retained.lane_key_legend_visible = view.lane_key_legend_visible;
     retained.project_id.value = view.project_id.value;
     retained.chart_id.value = view.chart_id.value;
@@ -1865,16 +1865,17 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
             : 0;
     build_compose_lane_key_view(input);
 
-    view.bga_lane_visible = interaction_view.bga_lane_visible &&
-        wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;
+    view.bga_visible_lane_mask = interaction_view.bga_lane_visible
+        ? wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask,
+                                                interaction_view.bga_hidden_lane_mask)
+        : 0;
+    view.bga_lane_visible = view.bga_visible_lane_mask != 0;
     const auto horizontal_layout =
         compose_horizontal_layout(compose_editor_layout_width(view.viewport_width_pixels,
                                       application_state.project.compose_view.compose_editor_right_pixels),
                                   maximum_layout_lane_count(chart),
                                   compose_has_bgm_pane(chart, interaction_view),
-                                  interaction_view.bga_lane_visible ? std::popcount(
-                                      wormedit::editor_bga_visible_lane_mask(chart,
-                                          interaction_view.bga_revealed_lane_mask)) : 0,
+                                  std::popcount(view.bga_visible_lane_mask),
                                   effective_compose_timing_lane_mask(application_state),
                                   application_state.project.compose_view.compose_timing_region_width_pixels);
     // The region can be too narrow for every requested lane; geometry, drawing and picking all

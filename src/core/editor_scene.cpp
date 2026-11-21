@@ -2234,7 +2234,8 @@ auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Cons
                       YForRow&& y_for_row) -> bool {
     const auto& request = context.request;
     if (!context.view.bga_lane_visible || request.bga_pane_width_pixels <= 0.0) return true;
-    const auto mask = editor_bga_visible_lane_mask(context.chart, context.view.bga_revealed_lane_mask);
+    const auto mask = editor_bga_visible_lane_mask(context.chart, context.view.bga_revealed_lane_mask,
+                                                  context.view.bga_hidden_lane_mask);
     if (!mask) return true;
     const editor_field_rect_t bounds{request.bga_pane_left_pixels, 0.0,
         request.bga_pane_left_pixels + request.bga_pane_width_pixels, context.view.viewport_height_pixels};
@@ -2630,6 +2631,7 @@ auto is_window_key_current(const editor_field_scene_window_t& window,
         previous.viewport_height_pixels == scene_window_height(view, request) &&
         previous.bga_lane_visible == view.bga_lane_visible &&
         previous.bga_revealed_lane_mask == view.bga_revealed_lane_mask &&
+        previous.bga_hidden_lane_mask == view.bga_hidden_lane_mask &&
         window.request.retained_window_minimum_margin_pixels ==
             request.retained_window_minimum_margin_pixels &&
         previous.active_snap_denominator == view.active_snap_denominator &&

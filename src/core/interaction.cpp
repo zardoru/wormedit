@@ -77,13 +77,14 @@ auto editor_bga_lane_index(visual_event_kind_t kind) -> std::optional<std::size_
     return std::nullopt;
 }
 
-auto editor_bga_visible_lane_mask(const chart_document_t& chart, std::uint8_t revealed)
+auto editor_bga_visible_lane_mask(const chart_document_t& chart, std::uint8_t revealed,
+                                  std::uint8_t hidden)
     -> std::uint8_t {
     auto mask = static_cast<std::uint8_t>(revealed & editor_bga_lane_mask_all);
     for (const auto& event : chart.bga_events)
         if (const auto lane = editor_bga_lane_index(event.kind))
             mask |= static_cast<std::uint8_t>(1U << *lane);
-    return mask;
+    return static_cast<std::uint8_t>(mask & ~hidden);
 }
 
 auto editor_selection_targets(const editor_interaction_state_t& state)
@@ -417,6 +418,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .bga_lane_visible = state.bga_lane_visible,
         .bga_revealed_lane_mask =
             static_cast<std::uint8_t>(state.bga_revealed_lane_mask & editor_bga_lane_mask_all),
+        .bga_hidden_lane_mask = state.bga_hidden_lane_mask,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
         .pixels_per_standard_measure = state.pixels_per_standard_measure,

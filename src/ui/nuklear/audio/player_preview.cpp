@@ -233,9 +233,13 @@ auto make_preview_canvas(struct nk_context* context, struct SDL_Renderer* render
         canvas.field = nk_rect(area.x + (area.w - field_width) * 0.5f, area.y, field_width, area.h);
         return canvas;
     }
-    const auto bga_width = std::max(0.0f, area.w - field_width);
+    // Tall windows: keep a quarter of the width for the BGA and shrink the field in proportion.
+    const auto full_width = std::min(field_width, area.w * 0.75f);
+    const auto full_height = full_width < field_width ? area.h * full_width / field_width : area.h;
+    const auto bga_width = std::max(0.0f, area.w - full_width);
     const auto bga_right = view->bga_side == wormedit::player_preview_bga_side_t::right;
-    canvas.field = nk_rect(bga_right ? area.x : area.x + bga_width, area.y, field_width, area.h);
+    canvas.field = nk_rect(bga_right ? area.x : area.x + bga_width,
+                           area.y + (area.h - full_height) * 0.5f, full_width, full_height);
     canvas.bga = nk_rect(bga_right ? area.x + field_width : area.x, area.y, bga_width, area.h);
     return canvas;
 }

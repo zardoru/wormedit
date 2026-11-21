@@ -1,4 +1,5 @@
 #include <wormedit/core/atomic_file_storage.h>
+#include "browser_file_publication.h"
 
 #include <algorithm>
 #include <atomic>
@@ -178,7 +179,11 @@ auto atomic_replace(const std::filesystem::path& temporary,
     }
 #else
     if (!replace_existing) {
+#ifdef __EMSCRIPTEN__
+        if (platform::browser_move_no_replace(temporary, destination) == 0) return true;
+#else
         if (::link(temporary.c_str(), destination.c_str()) == 0) return true;
+#endif
         error = "atomic file publication failed: " + std::error_code(errno, std::generic_category()).message();
         return false;
     }

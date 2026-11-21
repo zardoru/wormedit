@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <span>
 #include <vector>
 
 namespace {
@@ -204,4 +205,31 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     // End-of-order notifications retain the last valid resource and stop mode.
     worm_ui_frontend_resource_placed(1700, 0);
     check_order_exhausted(state);
+}
+
+TEST_CASE("Clicking a populated BGA lane control requests hiding that lane", "[event-harness][bga][bga-discovery]") {
+    nuklear_event_harness_t harness{1280, 600};
+    REQUIRE(harness.ready());
+    auto& layout = worm_ui_nuklear_compose_state().dock_layout.layout;
+    for (const auto panel : {wormedit::dock_panel_t::inspector, wormedit::dock_panel_t::sounds,
+                             wormedit::dock_panel_t::layers, wormedit::dock_panel_t::images})
+        layout.show(panel, false);
+    auto& view = harness.view().compose;
+    view.bga_lane_count = 4;
+    constexpr std::array<std::uint8_t, 4> kinds{0, 2, 5, 1};
+    std::ranges::copy(kinds, view.bga_lane_kinds);
+    (void)harness.frame();
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::images, true);
+    (void)harness.frame();
+    const auto control = harness.drawn_text_center("Layer 2");
+    REQUIRE(control);
+    const auto actions = click(harness, control->first, control->second);
+    const auto hides_lane = std::ranges::any_of(actions, [](const auto& snapshot) {
+        return std::ranges::any_of(std::span(snapshot.get().input.compose_inputs), [](const auto& input) {
+            return input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE &&
+                input.bga_lane_kind_valid && input.bga_lane_kind == wormedit::visual_event_kind_t::layer2;
+        });
+    });
+    CHECK(hides_lane);
+    REQUIRE(harness.drawn_text_center("Poor (miss)"));
 }

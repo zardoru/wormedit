@@ -1,7 +1,7 @@
 name: Nightly
 
-# Builds the Linux AppImage, the Windows zip and the unsigned macOS zips (arm64, Intel) from main and keeps them as workflow
-# artifacts. A manual run with "release" ticked builds with the version in CMakeLists.txt
+# Builds the Linux AppImage, Windows and unsigned macOS zips, and the browser
+# zip from main and keeps them as workflow artifacts. A manual run with "release" ticked builds with the version in CMakeLists.txt
 # (for example 1.0.0-rc3) and attaches the packages to a DRAFT pre-release with the notes
 # from docs/release-notes. The draft creates its tag only when the owner publishes it.
 on:
@@ -32,6 +32,7 @@ jobs:
     outputs:
       build: ${{ steps.decide.outputs.build }}
       suffix: ${{ steps.decide.outputs.suffix }}
+      revision: ${{ steps.decide.outputs.revision }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +40,9 @@ jobs:
           fetch-depth: 50
       - id: decide
         run: |
-          sha=$(git rev-parse --short=8 HEAD)
+          revision=$(git rev-parse HEAD)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          sha=${revision:0:8}
           if [[ '${{ inputs.release }}' == 'true' ]]; then
             suffix=$(sed -n 's/^set(WORMEDIT_VERSION_SUFFIX "\([^"]*\)".*/\1/p' CMakeLists.txt)
             [[ -n $suffix ]] || { echo 'CMakeLists.txt has no release suffix' >&2; exit 1; }
@@ -63,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.check.outputs.revision }}
           submodules: true
       - name: Build AppImage
         env:
@@ -98,7 +101,7 @@ jobs:
           xz-utils tar zstd python3 python3-venv asciidoctor
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.check.outputs.revision }}
           submodules: true
       # libotoworm needs CMake 4.2; Debian 13 ships 3.31. Same pin as the CI workflow.
       - name: Install CMake 4.2
@@ -169,7 +172,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.check.outputs.revision }}
           submodules: true
       # The default Xcode on some images has a libc++ without std::stop_token (the Intel
       # image's Xcode 16.4 failed on it), so use the newest installed Xcode.
@@ -202,9 +205,42 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  wasm-zip:
+    name: browser WASM zip
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.revision }}
+      - name: Install Emscripten 6.0.5
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.5
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.5
+      - name: Build and package the browser editor
+        env:
+          SUFFIX: ${{ needs.check.outputs.suffix }}
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          git clone --depth 1 --branch v1.3.6 https://github.com/xiph/ogg.git "$RUNNER_TEMP/ogg"
+          git clone --depth 1 --branch v1.3.7 https://github.com/xiph/vorbis.git "$RUNNER_TEMP/vorbis"
+          cmake --preset wasm "-DWORMEDIT_VERSION_SUFFIX=$SUFFIX" \
+            "-DWORMEDIT_OGG_SOURCE_DIR=$RUNNER_TEMP/ogg" "-DWORMEDIT_VORBIS_SOURCE_DIR=$RUNNER_TEMP/vorbis"
+          cmake --build --preset wasm
+          cpack --config build/wasm/CPackConfig.cmake -B dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wormedit-nightly-wasm
+          path: dist/wormedit-*-wasm.zip
+          retention-days: 14
+          if-no-files-found: error
+
   draft-release:
     name: draft pre-release
-    needs: [check, linux-appimage, windows-zip, macos-zip]
+    needs: [check, linux-appimage, windows-zip, macos-zip, wasm-zip]
     if: inputs.release
     runs-on: ubuntu-24.04
     permissions:
@@ -212,7 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.check.outputs.revision }}
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -220,9 +256,13 @@ jobs:
       - name: Create the draft
         env:
           GH_TOKEN: ${{ github.token }}
-          SUFFIX: ${{ needs.check.outputs.suffix }}
         run: |
-          version="1.0.0${SUFFIX}"
+          shopt -s nullglob
+          wasm_packages=(dist/wormedit-*-wasm.zip)
+          (( ${#wasm_packages[@]} == 1 )) || { echo 'Expected one browser ZIP' >&2; exit 1; }
+          name=${wasm_packages[0]##*/}
+          version=${name#wormedit-}
+          version=${version%-wasm.zip}
           notes="docs/release-notes/${version}.md"
           [[ -f $notes ]] || { echo "Missing $notes" >&2; exit 1; }
           gh release create "v${version}" dist/* \

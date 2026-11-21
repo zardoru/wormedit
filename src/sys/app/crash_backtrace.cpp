@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <exception>
 
-#if defined(__unix__) || defined(__APPLE__)
+#if (defined(__unix__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
 #include <execinfo.h>
 #include <signal.h>
 #include <unistd.h>
@@ -16,7 +16,7 @@
 namespace wormedit::sys {
 namespace {
 
-#if defined(__unix__) || defined(__APPLE__)
+#if (defined(__unix__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
 
 alignas(std::max_align_t) std::array<std::byte, 64 * 1024> alternate_signal_stack{};
 volatile sig_atomic_t handling_fatal_signal = 0;
@@ -119,7 +119,7 @@ void terminate_with_context() noexcept {
 } // namespace
 
 void install_crash_backtrace_handlers() noexcept {
-#if defined(__unix__) || defined(__APPLE__)
+#if (defined(__unix__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
     install_fatal_signals();
 #endif
     std::set_terminate(terminate_with_context);

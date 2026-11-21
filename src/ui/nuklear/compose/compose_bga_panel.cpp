@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/nuklear/chrome/catalog_chrome.h"
 #include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/nuklear/chrome/content_layout.h"
@@ -54,7 +55,7 @@ void open_picker(const wormedit::ui::compose_view_t& view) {
       picker.origin = wormedit::ui::chrome::PopupContextStamp::from(view);
       picker.paths.clear(); }
     static const SDL_DialogFileFilter filter{"Images", "png;jpg;jpeg;bmp;gif;tga;ppm"};
-    SDL_ShowOpenFileDialog(picked, nullptr, SDL_GetKeyboardFocus(), &filter, 1, nullptr, true);
+    wormedit::platform::show_open_file_dialog(picked, nullptr, SDL_GetKeyboardFocus(), &filter, 1, nullptr, true);
 }
 auto raise(wormedit::ui::compose_ui_window_t& action, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind) -> bool {

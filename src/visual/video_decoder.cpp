@@ -101,6 +101,7 @@ struct video_decoder_session_t::impl_t {
     AVRational time_base{1, 1};
     std::int64_t stream_start{};
     std::optional<std::int64_t> last_target;
+    std::optional<std::int64_t> forward_seek_origin;
     bool positioned{};
     bool input_eof{};
     bool flush_sent{};
@@ -114,6 +115,8 @@ auto interrupt_ffmpeg(void* opaque) -> int {
     const auto* session = static_cast<const video_decoder_session_t::impl_t*>(opaque);
     return session && session->active_stop.stop_requested() ? 1 : 0;
 }
+
+constexpr std::int64_t forward_seek_threshold_seconds = 1;
 
 auto timestamp_of(const AVFrame* frame) -> std::int64_t {
     return frame ? frame->best_effort_timestamp : AV_NOPTS_VALUE;
@@ -181,15 +184,20 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
     return output;
 }
 
-auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t target,
-                    std::stop_token stop) -> std::optional<video_frame_decode_result_t> {
-    const auto current_timestamp = timestamp_of(session.current.get());
-    const bool seek_required = !session.positioned ||
-                               (session.last_target && target < *session.last_target) ||
-                               (current_timestamp != AV_NOPTS_VALUE && target < current_timestamp);
-    if (!seek_required) {
-        return std::nullopt;
-    }
+void reposition_decoder(video_decoder_session_t::impl_t& session) {
+    avcodec_flush_buffers(session.decoder.get());
+    av_frame_unref(session.scratch.get());
+    av_frame_unref(session.current.get());
+    av_frame_unref(session.lookahead.get());
+    av_packet_unref(session.packet.get());
+    session.positioned = true;
+    session.input_eof = false;
+    session.flush_sent = false;
+    session.decoder_eof = false;
+}
+
+auto seek_stream(video_decoder_session_t::impl_t& session, std::int64_t target, std::stop_token stop)
+    -> std::optional<video_frame_decode_result_t> {
     const auto result = avformat_seek_file(session.format.get(), session.stream_index,
                                            std::numeric_limits<std::int64_t>::min(), target,
                                            target, AVSEEK_FLAG_BACKWARD);
@@ -201,16 +209,49 @@ auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t targe
                        "video stream could not seek to the requested time: " +
                            ffmpeg_message(result)});
     }
-    avcodec_flush_buffers(session.decoder.get());
-    av_frame_unref(session.scratch.get());
-    av_frame_unref(session.current.get());
-    av_frame_unref(session.lookahead.get());
-    av_packet_unref(session.packet.get());
-    session.positioned = true;
-    session.input_eof = false;
-    session.flush_sent = false;
-    session.decoder_eof = false;
+    reposition_decoder(session);
     return std::nullopt;
+}
+
+// A forward seek pays off only when the demuxer index shows a keyframe between the decoder's
+// position and the target. Without an index entry (or with only an earlier keyframe) decoding
+// straight through is cheaper than rewinding to the previous keyframe.
+auto forward_seek_reaches_new_keyframe(const video_decoder_session_t::impl_t& session,
+                                       std::int64_t position, std::int64_t target) -> bool {
+    auto* stream = session.format->streams[session.stream_index];
+    const auto index = av_index_search_timestamp(stream, target, AVSEEK_FLAG_BACKWARD);
+    if (index < 0) return false;
+#if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(59, 6, 100)
+    const auto* entry = avformat_index_get_entry(stream, index);
+    return entry != nullptr && entry->timestamp > position;
+#else
+    return stream->index_entries[index].timestamp > position;
+#endif
+}
+
+auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t target,
+                    std::stop_token stop) -> std::optional<video_frame_decode_result_t> {
+    session.forward_seek_origin.reset();
+    const auto current_timestamp = timestamp_of(session.current.get());
+    const auto lookahead_timestamp = timestamp_of(session.lookahead.get());
+    const auto decoder_position = lookahead_timestamp != AV_NOPTS_VALUE ? lookahead_timestamp
+                                  : current_timestamp != AV_NOPTS_VALUE ? current_timestamp
+                                  : session.last_target.value_or(AV_NOPTS_VALUE);
+    const auto forward_gap = av_rescale_q(forward_seek_threshold_seconds, AVRational{1, 1},
+                                          session.time_base);
+    const bool far_ahead = session.positioned && decoder_position != AV_NOPTS_VALUE &&
+                           target > decoder_position &&
+                           static_cast<std::uint64_t>(target) - static_cast<std::uint64_t>(decoder_position) >
+                               static_cast<std::uint64_t>(forward_gap) &&
+                           forward_seek_reaches_new_keyframe(session, decoder_position, target);
+    const bool seek_required = !session.positioned || far_ahead ||
+                               (session.last_target && target < *session.last_target) ||
+                               (current_timestamp != AV_NOPTS_VALUE && target < current_timestamp);
+    if (!seek_required) {
+        return std::nullopt;
+    }
+    if (far_ahead) session.forward_seek_origin = decoder_position;
+    return seek_stream(session, target, stop);
 }
 
 auto retain_decoded_frame(video_decoder_session_t::impl_t& session, std::int64_t target,
@@ -281,6 +322,52 @@ auto feed_video_decoder(video_decoder_session_t::impl_t& session,
                        "video packet submission failed: " + ffmpeg_message(result)});
     }
     return std::nullopt;
+}
+
+auto decode_after_seek(video_decoder_session_t::impl_t& session, std::int64_t target,
+                       video_frame_decode_limits_t limits, std::stop_token stop)
+    -> video_frame_decode_result_t {
+    session.last_target = target;
+
+    if (timestamp_of(session.lookahead.get()) != AV_NOPTS_VALUE &&
+        timestamp_of(session.lookahead.get()) <= target) {
+        av_frame_unref(session.current.get());
+        av_frame_move_ref(session.current.get(), session.lookahead.get());
+    }
+    if (timestamp_of(session.current.get()) != AV_NOPTS_VALUE &&
+        ((timestamp_of(session.lookahead.get()) != AV_NOPTS_VALUE &&
+          target < timestamp_of(session.lookahead.get())) ||
+         session.decoder_eof)) {
+        return render_frame(session, limits);
+    }
+
+    std::size_t packet_count{};
+    while (packet_count < limits.maximum_packets) {
+        if (stop.stop_requested()) {
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video frame decode was cancelled"});
+        }
+        auto result = avcodec_receive_frame(session.decoder.get(), session.scratch.get());
+        if (result >= 0) {
+            if (auto frame = retain_decoded_frame(session, target, limits)) {
+                return std::move(*frame);
+            }
+            continue;
+        }
+        if (result == AVERROR_EOF) {
+            session.decoder_eof = true;
+            return render_frame(session, limits);
+        }
+        if (result != AVERROR(EAGAIN)) {
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
+                           "video frame decode failed: " + ffmpeg_message(result)});
+        }
+
+        if (auto fed = feed_video_decoder(session, limits, stop, packet_count)) {
+            return std::move(*fed);
+        }
+    }
+    return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
+                   "video decode exceeded the configured packet limit"});
 }
 
 } // namespace
@@ -395,47 +482,17 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
     if (auto seek_error = seek_to_target(session, target, stop)) {
         return std::move(*seek_error);
     }
-    session.last_target = target;
-
-    if (timestamp_of(session.lookahead.get()) != AV_NOPTS_VALUE &&
-        timestamp_of(session.lookahead.get()) <= target) {
-        av_frame_unref(session.current.get());
-        av_frame_move_ref(session.current.get(), session.lookahead.get());
+    auto decoded = decode_after_seek(session, target, limits, stop);
+    if (!decoded && decoded.error().code == failure_code_t::invalid_data &&
+        session.forward_seek_origin) {
+        // The demuxer landed after the target (sparse or missing index): rewind to where the
+        // decoder was and decode forward, as before the forward seek existed.
+        const auto origin = *session.forward_seek_origin;
+        session.forward_seek_origin.reset();
+        if (auto seek_error = seek_stream(session, origin, stop)) return std::move(*seek_error);
+        decoded = decode_after_seek(session, target, limits, stop);
     }
-    if (timestamp_of(session.current.get()) != AV_NOPTS_VALUE &&
-        ((timestamp_of(session.lookahead.get()) != AV_NOPTS_VALUE &&
-          target < timestamp_of(session.lookahead.get())) ||
-         session.decoder_eof)) {
-        return render_frame(session, limits);
-    }
-
-    std::size_t packet_count{};
-    while (packet_count < limits.maximum_packets) {
-        if (stop.stop_requested()) {
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video frame decode was cancelled"});
-        }
-        auto result = avcodec_receive_frame(session.decoder.get(), session.scratch.get());
-        if (result >= 0) {
-            if (auto frame = retain_decoded_frame(session, target, limits)) {
-                return std::move(*frame);
-            }
-            continue;
-        }
-        if (result == AVERROR_EOF) {
-            session.decoder_eof = true;
-            return render_frame(session, limits);
-        }
-        if (result != AVERROR(EAGAIN)) {
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                           "video frame decode failed: " + ffmpeg_message(result)});
-        }
-
-        if (auto fed = feed_video_decoder(session, limits, stop, packet_count)) {
-            return std::move(*fed);
-        }
-    }
-    return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                   "video decode exceeded the configured packet limit"});
+    return decoded;
 }
 
 auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,

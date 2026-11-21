@@ -324,9 +324,12 @@ struct player_preview_settings_t {
     // Scales how many beats fit on screen (pixels per beat); 1 is the default view.
     double zoom{1.0};
     bool downscroll{};
+    // The miss (poor) image and storyboard Fail/Pass sprites: a player shows them only for a miss
+    // or a gauge state, and over the BGA they hide everything else.
+    bool show_state_layers{true};
 
     static constexpr double minimum_zoom = 0.4;
-    static constexpr double maximum_zoom = 3.0;
+    static constexpr double maximum_zoom = 16.0;
     [[nodiscard]] static constexpr auto clamp_zoom(double value) -> double {
         return !(value >= minimum_zoom) ? minimum_zoom : value > maximum_zoom ? maximum_zoom : value;
     }

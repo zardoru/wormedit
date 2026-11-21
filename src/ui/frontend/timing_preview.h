@@ -148,6 +148,8 @@ struct player_preview_lane_view_t {
     wormedit::lane_role_t role{};
     wormedit::lane_glyph_t glyph{};
     uint32_t display_order{};
+    // Resolved like Compose's (generic lanes take their role's color), for the lane background.
+    wormedit::lane_key_color_t key_color{wormedit::lane_key_color_t::generic};
     wormedit::rect_t bounds{};
     auto operator==(const player_preview_lane_view_t&) const -> bool = default;
 };
@@ -251,6 +253,7 @@ struct player_preview_view_t {
     wormedit::player_preview_color_view_t color_view{};
     double zoom{1.0};
     bool downscroll{};
+    bool show_state_layers{true};
     wormedit::visual_fit_policy_t visual_fit{};
     wormedit::song_id_t project_id{};
     wormedit::chart_id_t chart_id{};
@@ -278,6 +281,7 @@ struct player_preview_view_t {
         color_view = {};
         zoom = 1.0;
         downscroll = {};
+        show_state_layers = true;
         visual_fit = {};
         project_id = {};
         chart_id = {};

@@ -491,3 +491,40 @@ void process_compose_key_events(struct nk_context* context, const wormedit::ui::
     if (step) append_measure_navigation_step(action, *step, SDL_GetModState(), *view,
                                          pointer_paint_mode_active);
 }
+
+static bool is_preview_page_key(const worm_ui_nuklear_compose_key_event_t& event) {
+    constexpr auto chord_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_MODE;
+    return (event.keycode == static_cast<uint32_t>(SDLK_PAGEUP) ||
+            event.keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) &&
+        (event.modifiers & chord_modifiers) == 0;
+}
+
+// Under a full-screen player preview Compose is not drawn, so only navigation that needs no canvas
+// stays live: Go to measure (Ctrl+G) and the page keys. Other presses are dropped so nothing edits
+// the chart out of sight; their releases still end any held navigation.
+void process_compose_preview_navigation_keys(struct nk_context* context,
+                                             const wormedit::ui::compose_view_t* view,
+                                             wormedit::ui::compose_ui_window_t* action,
+                                             bool window_focused, bool ime_composition_active) {
+    if (process_go_to_measure_keys(context, *view, action, window_focused, ime_composition_active)) {
+        action->input.compose_input_ownership = 1;
+        release_discarded_compose_keys(action);
+        return;
+    }
+    const bool keyboard_ready = context && !ime_composition_active &&
+        worm_ui_nuklear_compose_canvas_input_available(view, window_focused, compose_text_owned(context),
+                                                       ime_composition_active);
+    if (!keyboard_ready) {
+        cancel_compose_navigation(action);
+        release_discarded_compose_keys(action);
+        return;
+    }
+    worm_ui_nuklear_dispatch_compose_keys(state, true, [&](const auto& key_event) {
+        if (release_compose_key_hold(key_event, action)) return;
+        if (key_event.down && is_preview_page_key(key_event))
+            (void)process_compose_navigation_key(key_event, view, action, false);
+    });
+    const auto step = state.keyboard_navigation.tab_navigation.advance(
+        SDL_GetTicks(), !state.input_queue.action_overflowed);
+    if (step) append_measure_navigation_step(action, *step, SDL_GetModState(), *view, false);
+}

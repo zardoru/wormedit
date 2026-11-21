@@ -206,6 +206,31 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
     state.input_queue.wheel_event_count = 0;
 }
 
+// Under a full-screen player preview there is no canvas to hit-test: a plain wheel scrolls the
+// chart field (moving the cursor while stopped, stepping it during playback) exactly as over
+// Compose. Zoom chords belong to the preview; Alt steps and other wheel gestures are dropped.
+void append_compose_preview_wheel_inputs(const wormedit::ui::compose_view_t& view,
+                                         wormedit::ui::compose_ui_window_t* action, bool window_focused) {
+    auto& inputs = action->input.compose_viewport_inputs;
+    for (size_t index = 0; index < state.input_queue.wheel_event_count && !state.input_queue.action_overflowed &&
+                           view.scene_available && window_focused; ++index) {
+        const auto& wheel = state.input_queue.wheel_events[index];
+        if (compose_wheel_zooms(wheel.modifiers) || (wheel.modifiers & SDL_KMOD_ALT) != 0) continue;
+        if (inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit) break;
+        const auto unit_pixels = wheel.coarse_steps ? 1.0 : worm_ui_nuklear_smooth_wheel_pixels_per_unit;
+        // The chart pane: x = 0 is never inside the BGM pane.
+        inputs.push_back({.kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
+                                                     : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
+                          .zoom_modifier = false,
+                          .delta_x = 0.0,
+                          .delta_y = worm_ui_nuklear_compose_wheel_speed(wheel.delta_y, wheel.tab_speed_modifier) *
+                                     unit_pixels,
+                          .cursor_x_pixels = 0.0,
+                          .cursor_y_pixels = 0.0});
+    }
+    state.input_queue.wheel_event_count = 0;
+}
+
 static void append_compose_pinch_inputs(const ComposeViewportInputContext& input,
                                         bool competing_capture) {
     const auto& view = *input.view;

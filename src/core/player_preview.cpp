@@ -1,5 +1,6 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/player_preview.h>
+#include <wormedit/core/lane_presentation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -139,13 +140,22 @@ auto preview_y(double displacement, double current_displacement,
                : request.receptor_y_pixels - distance;
 }
 
+// Compose's anchoring: bar and square heads rest on their row on the side they travel from
+// (above it in downscroll, below it in upscroll); round and arrow heads stay centered.
+auto preview_head_bounds(double y, double height, lane_glyph_t glyph,
+                         const player_preview_scene_request_t& request) -> std::pair<double, double> {
+    return editor_note_head_bounds(y, height, glyph,
+                                   request.direction == player_preview_scroll_direction_t::toward_bottom);
+}
+
 auto append_preview_endpoint(player_preview_scene_view_t& scene,
                              const player_preview_scene_request_t& request,
                              const player_preview_note_source_t& note,
                              const player_preview_lane_geometry_t& lane_geometry, double y,
                              bool tail) -> void {
-    if (y + request.note_head_height_pixels / 2.0 < 0.0 ||
-        y - request.note_head_height_pixels / 2.0 > request.viewport_height_pixels) {
+    const auto [top, bottom] =
+        preview_head_bounds(y, request.note_head_height_pixels, lane_geometry.glyph, request);
+    if (bottom < 0.0 || top > request.viewport_height_pixels) {
         return;
     }
     const auto lane_center = (lane_geometry.bounds.left + lane_geometry.bounds.right) / 2.0;
@@ -160,8 +170,7 @@ auto append_preview_endpoint(player_preview_scene_view_t& scene,
          .key_color = lane_geometry.key_color,
          .phase = tail ? note.end_phase : note.begin_phase,
          .semantic_color = note.semantic_color,
-         .bounds = {lane_center - head_width / 2.0, y - request.note_head_height_pixels / 2.0,
-                    lane_center + head_width / 2.0, y + request.note_head_height_pixels / 2.0}});
+         .bounds = {lane_center - head_width / 2.0, top, lane_center + head_width / 2.0, bottom}});
 }
 
 struct note_render_context_t {
@@ -395,6 +404,8 @@ auto player_preview_index_t::from(const chart_document_t& chart, std::uint64_t d
     };
     index.notes.reserve(field_index.notes.size());
     for (const auto& source : field_index.notes) {
+        // A player never draws invisible notes; Compose still shows them for editing.
+        if (source.kind == note_kind_t::invisible) continue;
         const auto before = index.notes.size();
         append_index_note(index, source, result.diagnostics);
         if (index.notes.size() == before) continue;
@@ -526,12 +537,12 @@ auto player_preview_scene_view_t::from(const player_preview_index_t& index,
                                .display_order = lanes[lane_index]->display_order,
                                .key_color = resolved_key_color(*lanes[lane_index]),
                                .bounds = {left, 0.0, right, request.viewport_height_pixels}});
-        scene.receptors.push_back(
-            {.lane = lanes[lane_index]->id,
-             .glyph = glyph,
-             .bounds = {
-                 left + 1.0, request.receptor_y_pixels - request.receptor_height_pixels / 2.0,
-                 right - 1.0, request.receptor_y_pixels + request.receptor_height_pixels / 2.0}});
+        // The receptor shares the head anchoring, so a note fills it exactly at its hit time.
+        const auto [receptor_top, receptor_bottom] = preview_head_bounds(
+            request.receptor_y_pixels, request.receptor_height_pixels, glyph, request);
+        scene.receptors.push_back({.lane = lanes[lane_index]->id,
+                                   .glyph = glyph,
+                                   .bounds = {left + 1.0, receptor_top, right - 1.0, receptor_bottom}});
         lane_indices.emplace(lanes[lane_index]->id.value, lane_index);
     }
 

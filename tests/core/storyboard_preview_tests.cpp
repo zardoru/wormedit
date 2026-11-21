@@ -123,3 +123,10 @@ TEST_CASE("storyboard frame preserves quiet empty success", "[core][storyboard][
     REQUIRE(frame.is_success());
     CHECK(frame.instances.empty());
 }
+
+TEST_CASE("storyboard Fail and Pass are the gauge-state layers", "[unit][core][storyboard]") {
+    STATIC_CHECK(wormedit::is_storyboard_state_layer("Fail"));
+    STATIC_CHECK(wormedit::is_storyboard_state_layer("Pass"));
+    STATIC_CHECK_FALSE(wormedit::is_storyboard_state_layer("Background"));
+    STATIC_CHECK_FALSE(wormedit::is_storyboard_state_layer("Foreground"));
+}

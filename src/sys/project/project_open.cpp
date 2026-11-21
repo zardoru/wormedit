@@ -275,8 +275,8 @@ void resolve_audio_assets(song_document_t& document, const std::filesystem::path
 void resolve_visual_assets(song_document_t& document, const std::filesystem::path& asset_base,
                            std::vector<std::string>& warnings, std::string_view format = "BMS") {
     constexpr std::array<std::string_view, 4> image_extensions{".bmp", ".png", ".jpg", ".jpeg"};
-    constexpr std::array<std::string_view, 5> video_extensions{".mpg", ".mp4", ".avi", ".wmv",
-                                                               ".webm"};
+    constexpr std::array<std::string_view, 12> video_extensions{
+        ".mpg", ".mpeg", ".m1v", ".m2v", ".mp4", ".m4v", ".avi", ".wmv", ".webm", ".mkv", ".ogv", ".flv"};
     bms_asset_directory_cache_t cache;
     for (auto& asset : document.visual_assets) {
         std::span<const std::string_view> extensions;

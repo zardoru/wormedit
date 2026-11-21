@@ -551,9 +551,6 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
                                ? document.visual_assets.end()
                                : std::ranges::find(document.visual_assets, resource->asset,
                                                    &wormedit::visual_asset_t::id);
-        const auto expected_asset_kind = event.kind == wormedit::visual_event_kind_t::video
-                                             ? wormedit::asset_kind_t::video
-                                             : wormedit::asset_kind_t::image;
         append_compose_geometry_row(
             view.bga_events,
             {.event_id = event.event,
@@ -564,7 +561,8 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
              .name = name,
              .bmp_id = bmp_id,
              .missing = resource == document.resources.end() || resource->missing ||
-                        asset == document.visual_assets.end() || asset->kind != expected_asset_kind,
+                        asset == document.visual_assets.end() ||
+                        !wormedit::can_bga_event_show_asset(event.kind, asset->kind),
              .selected = event.selected,
              .bounds = {event.bounds.left, event.bounds.top, event.bounds.right,
                         event.bounds.bottom}},

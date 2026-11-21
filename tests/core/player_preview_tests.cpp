@@ -128,7 +128,7 @@ TEST_CASE("player preview composes lanes receptors notes and holds from one tran
     CHECK(scene.value->visible_note_count == 2);
 }
 
-TEST_CASE("player preview skins share geometry and change presentation only",
+TEST_CASE("player preview skins share lanes and rows and anchor heads like Compose",
           "[unit][core][player-preview][skin]") {
     const auto built = player_preview_index_t::from(preview_chart(), 9);
     REQUIRE(built.value);
@@ -148,10 +148,17 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     REQUIRE(arrows.value->note_endpoints.size() == neutral.value->note_endpoints.size());
     REQUIRE(arrows.value->note_endpoints.size() == mania.value->note_endpoints.size());
     for (std::size_t index = 0; index < arrows.value->note_endpoints.size(); ++index) {
-        CHECK(arrows.value->note_endpoints[index].bounds ==
-              neutral.value->note_endpoints[index].bounds);
-        CHECK(arrows.value->note_endpoints[index].bounds ==
-              mania.value->note_endpoints[index].bounds);
+        const auto& arrow = arrows.value->note_endpoints[index].bounds;
+        const auto row_y = (arrow.top + arrow.bottom) / 2.0;
+        const auto height = arrow.bottom - arrow.top;
+        // Arrow heads center on their row; square and bar heads rest below it in upscroll.
+        for (const auto* anchored : {&neutral.value->note_endpoints[index],
+                                     &mania.value->note_endpoints[index]}) {
+            CHECK(anchored->bounds.left == Catch::Approx(arrow.left));
+            CHECK(anchored->bounds.right == Catch::Approx(arrow.right));
+            CHECK(anchored->bounds.top == Catch::Approx(row_y));
+            CHECK(anchored->bounds.bottom == Catch::Approx(row_y + height));
+        }
         CHECK(neutral.value->note_endpoints[index].glyph == lane_glyph_t::square);
         CHECK(mania.value->note_endpoints[index].glyph == lane_glyph_t::bar);
     }
@@ -453,4 +460,22 @@ TEST_CASE("player preview retains warning-bearing values and diagnostics", "[cor
     check_preview_scene_rejected(scene);
     REQUIRE(scene.diagnostics.size() == 1);
     CHECK(scene.diagnostics.front() == warning);
+}
+
+TEST_CASE("player preview hides invisible notes that Compose still shows",
+          "[unit][core][player-preview][invisible]") {
+    auto chart = preview_chart();
+    chart.measures.front().notes.front().kind = note_kind_t::invisible;
+    const auto built = player_preview_index_t::from(chart, 9);
+    REQUIRE(built.value);
+    REQUIRE(built.diagnostics.empty());
+    const auto scene = player_preview_scene_view_t::from(*built.value,
+                                                         request(frame_at(*built.value, 240)));
+    require_preview_scene(scene);
+    CHECK(std::ranges::find(scene.value->note_endpoints, object_id_t{10},
+                            &player_preview_note_geometry_t::note) ==
+          scene.value->note_endpoints.end());
+    CHECK(std::ranges::find(scene.value->note_endpoints, object_id_t{11},
+                            &player_preview_note_geometry_t::note) !=
+          scene.value->note_endpoints.end());
 }

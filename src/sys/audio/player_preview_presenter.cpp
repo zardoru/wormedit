@@ -304,6 +304,7 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
                          .role = lane.role,
                          .glyph = lane.glyph,
                          .display_order = lane.display_order,
+                         .key_color = lane.key_color,
                          .bounds = lane.bounds});
     }
     for (const auto& receptor : scene.receptors) {
@@ -421,6 +422,24 @@ struct player_preview_frame_t {
     std::vector<storyboard_draw_instance_t> storyboard_instances;
 };
 
+// BMS has no video channel: a movie assigned to a base-lane BGA event plays from that event's
+// activation until another base-lane event replaces it. Its draw order stays the background's,
+// so layers still composite above it.
+template <typename Context>
+void promote_background_video(const Context& context, bga_layer_state_t& layers) {
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    if (!layers.background || layers.video) return;
+    const auto resolved = visual::resolved_visual_asset_t::from(
+        context.history.document, layers.background->resource, context.project_directory);
+    if (!resolved || resolved->kind != asset_kind_t::video) return;
+    layers.video = std::exchange(layers.background, std::nullopt);
+    layers.video->kind = visual_event_kind_t::video;
+#else
+    static_cast<void>(context);
+    static_cast<void>(layers);
+#endif
+}
+
 template <typename Context>
 auto prepare_player_preview_frame(const Context& context)
     -> std::optional<player_preview_frame_t> {
@@ -452,6 +471,7 @@ auto prepare_player_preview_frame(const Context& context)
     // advance_events accepted this token; no queue operation intervenes before this snapshot.
     auto layers = state.visual_queue->current_layers(*state.visual_token);
     player_preview_frame_t frame{.visual = std::move(*layers), .storyboard_instances = {}};
+    promote_background_video(context, frame.visual);
     std::string storyboard_error;
     if (!evaluate_storyboards(context.history.document, state.storyboards, *time_ms,
                               frame.storyboard_instances, storyboard_error)) {
@@ -498,9 +518,12 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
     if (layer.video_clock_ready) {
         layer.video_frame = true;
+        // The last decoded frame stays up while the next one decodes, as in a player; it is
+        // withdrawn only so a decoder failure can be reported.
         if (state.decoded_video && state.decoded_video->context.source.resource == event->resource &&
             state.decoded_video->context.clock.event == scene.video_clock->event &&
-            visual::is_video_frame_covering_clock(*state.decoded_video->payload, *scene.video_clock)) {
+            state.failed_video_event != event->object &&
+            visual::is_video_frame_started_by_clock(*state.decoded_video->payload, *scene.video_clock)) {
             layer.image_ready = true;
             layer.image_content_id = state.decoded_video_content_id;
             layer.image_width = state.decoded_video->payload->width;
@@ -524,7 +547,8 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
 template <typename Context>
 void append_player_preview_visual_layers(const Context& context, const auto& scene) {
     append_player_preview_visual_layer(context, scene.visual_layers.background, scene);
-    append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
+    if (context.settings.show_state_layers)
+        append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.layer, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.layer2, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.video, scene);
@@ -711,7 +735,8 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                           context.view.measure_lines);
     append_player_preview_visual_layers(context, *scene.value);
     for (const auto& instance : scene.value->storyboard_instances)
-        append_player_preview_storyboard_sprite(context, instance);
+        if (context.settings.show_state_layers || !is_storyboard_state_layer(instance.layer))
+            append_player_preview_storyboard_sprite(context, instance);
     request_player_preview_images(context);
     request_player_preview_video(context);
     publish_player_preview_scene(context, *scene.value);
@@ -753,6 +778,7 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     view.zoom = wormedit::player_preview_settings_t::clamp_zoom(settings.zoom);
     view.color_view = settings.color_view;
     view.downscroll = settings.downscroll;
+    view.show_state_layers = settings.show_state_layers;
     view.visual_fit = wormedit::visual_fit_policy_t::contain;
     view.viewport_width_pixels = 300.0;
     view.viewport_height_pixels = 420.0;

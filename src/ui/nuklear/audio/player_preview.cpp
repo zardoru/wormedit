@@ -473,21 +473,34 @@ void draw_preview_warning(struct nk_command_buffer* target, const PreviewCanvas&
                  canvas.context->style.font, background, nk_rgb(255, 218, 222));
 }
 
+auto clip_to(struct nk_rect outer, struct nk_rect inner) -> struct nk_rect {
+    const auto left = std::max(outer.x, inner.x);
+    const auto top = std::max(outer.y, inner.y);
+    const auto right = std::min(outer.x + outer.w, inner.x + inner.w);
+    const auto bottom = std::min(outer.y + outer.h, inner.y + inner.h);
+    return nk_rect(left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top));
+}
+
 void draw_preview_scene(const PreviewCanvas& canvas) {
     auto result = worm_ui_nuklear_draw_player_preview_visual_layers(
         nk_window_get_canvas(canvas.context), canvas.bga, canvas.renderer, canvas.view);
-    merge_preview_result(result, worm_ui_nuklear_draw_player_preview_storyboard_sprites(
-                                    nk_window_get_canvas(canvas.context), canvas.bga,
-                                    canvas.renderer, canvas.view, false));
     auto* target = nk_window_get_canvas(canvas.context);
+    // Storyboard sprites belong to the BGA panel: they never spill onto the note field.
+    const auto field_clip = target->clip;
+    nk_push_scissor(target, clip_to(field_clip, canvas.bga));
+    merge_preview_result(result, worm_ui_nuklear_draw_player_preview_storyboard_sprites(
+                                    target, canvas.bga, canvas.renderer, canvas.view, false));
+    nk_push_scissor(target, field_clip);
     if (canvas.draw_field) {
         draw_preview_lanes(canvas, result.drew_image);
         draw_preview_holds(target, canvas);
         draw_preview_receptors(target, canvas);
         draw_preview_notes(target, canvas);
     }
+    nk_push_scissor(target, clip_to(field_clip, canvas.bga));
     merge_preview_result(result, worm_ui_nuklear_draw_player_preview_storyboard_sprites(
                                     target, canvas.bga, canvas.renderer, canvas.view, true));
+    nk_push_scissor(target, field_clip);
     draw_preview_warning(target, canvas, result);
 }
 
@@ -547,8 +560,10 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
     static bool was_immersive{};
     const auto immersive = view->layout != wormedit::player_preview_layout_t::floating;
     if (immersive) {
-        const auto area = nk_rect(0.0f, 0.0f, static_cast<float>(window_width),
-                                  static_cast<float>(window_height));
+        // Below the title bar: SDL claims clicks in its drag zone before Nuklear sees them.
+        const auto top = static_cast<float>(worm_ui_frontend_title_bar_height());
+        const auto area = nk_rect(0.0f, top, static_cast<float>(window_width),
+                                  std::max(1.0f, static_cast<float>(window_height) - top));
         nk_window_set_bounds(context, window_name, area);
         if (nk_begin(context, window_name, area, NK_WINDOW_NO_SCROLLBAR))
             render_preview_immersive_content(context, renderer, view, kind, settings_request, area);

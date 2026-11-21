@@ -11,15 +11,16 @@ namespace {
 using namespace wormedit;
 using namespace wormedit::visual;
 
-auto fixture_path() -> std::filesystem::path {
-    return std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video" / "three-colors.mkv";
+auto fixture_path(const char* name = "three-colors.mkv") -> std::filesystem::path {
+    return std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video" / name;
 }
 
-auto video_source(asset_kind_t kind = asset_kind_t::video) -> resolved_visual_asset_t {
+auto video_source(asset_kind_t kind = asset_kind_t::video,
+                  const char* name = "three-colors.mkv") -> resolved_visual_asset_t {
     return {.resource = resource_id_t{10},
             .asset = asset_id_t{20},
             .kind = kind,
-            .path = fixture_path(),
+            .path = fixture_path(name),
             .declared_width = 16,
             .declared_height = 16};
 }
@@ -54,6 +55,17 @@ auto check_primary_pixel(const video_frame_decode_result_t& decoded, std::size_t
 auto check_video_error(const video_frame_decode_result_t& decoded, failure_code_t code) -> void {
     REQUIRE_FALSE(decoded.has_value());
     CHECK(decoded.error().code == code);
+}
+
+// Lossy fixtures only keep the dominant channel clearly above the others.
+auto check_dominant_pixel(const video_frame_decode_result_t& decoded, std::size_t primary,
+                          const video_preview_clock_t& clock) -> void {
+    REQUIRE(decoded);
+    CHECK(is_video_frame_covering_clock(*decoded, clock));
+    for (std::size_t channel = 0; channel < 3; ++channel) {
+        if (channel != primary)
+            CHECK(first_pixel(*decoded, primary) > first_pixel(*decoded, channel) + 100);
+    }
 }
 
 auto check_first_frame_interval(const rgba_video_frame_t& frame) -> void {
@@ -151,4 +163,41 @@ TEST_CASE("video decoder session seeks instead of decoding through a far forward
     auto fresh = open_video_decoder_session(video_source());
     REQUIRE(fresh);
     check_primary_pixel((*fresh)->decode(video_clock(5, 2)), 2);
+}
+
+TEST_CASE("video decoder shows the first frame when B-frames time it after the stream start",
+          "[unit][visual][video][session][bframes]") {
+    const auto source = video_source(asset_kind_t::video, "three-colors-bframes.avi");
+    auto opened = open_video_decoder_session(source);
+    REQUIRE(opened);
+    check_dominant_pixel((*opened)->decode(video_clock(0)), 0, video_clock(0));
+    check_dominant_pixel((*opened)->decode(video_clock(1, 60)), 0, video_clock(1, 60));
+    check_dominant_pixel((*opened)->decode(video_clock(5, 2)), 2, video_clock(5, 2));
+    // Rewinding to before the first frame's timestamp reopens at the stream start.
+    check_dominant_pixel((*opened)->decode(video_clock(0)), 0, video_clock(0));
+}
+
+TEST_CASE("video decoder recovers when a program stream seek lands after the target",
+          "[unit][visual][video][session][late-seek]") {
+    const auto source = video_source(asset_kind_t::video, "three-colors-late-seek.mpg");
+    auto opened = open_video_decoder_session(source);
+    REQUIRE(opened);
+    check_dominant_pixel((*opened)->decode(video_clock(0)), 0, video_clock(0));
+    check_dominant_pixel((*opened)->decode(video_clock(5, 2)), 2, video_clock(5, 2));
+    check_dominant_pixel((*opened)->decode(video_clock(3, 2)), 1, video_clock(3, 2));
+    check_dominant_pixel((*opened)->decode(video_clock(1, 2)), 0, video_clock(1, 2));
+    // A fresh session started mid-clip seeks, lands late, and retries from earlier.
+    auto fresh = open_video_decoder_session(source);
+    REQUIRE(fresh);
+    check_dominant_pixel((*fresh)->decode(video_clock(3, 2)), 1, video_clock(3, 2));
+}
+
+TEST_CASE("video frames stay presentable after their interval but never before it",
+          "[unit][visual][video][hold]") {
+    const auto green = decode_video_frame_rgba(video_source(), video_clock(3, 2));
+    REQUIRE(green);
+    CHECK(is_video_frame_started_by_clock(*green, video_clock(3, 2)));
+    CHECK(is_video_frame_started_by_clock(*green, video_clock(5, 2)));
+    CHECK_FALSE(is_video_frame_covering_clock(*green, video_clock(5, 2)));
+    CHECK_FALSE(is_video_frame_started_by_clock(*green, video_clock(1, 2)));
 }

@@ -28,5 +28,11 @@ void populate_audio_waveform_views(
     std::optional<bgm_bar_pan_override_t>* bgm_bar_pan_override = nullptr,
     std::optional<bgm_bar_window_capture_t>* bgm_bar_window_capture = nullptr) -> bool;
 
+// Use the same timeline as the song bar, or derive it from the chart before a song waveform exists.
+void populate_compose_minimap_density(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
+    const editor_interaction_state_t& interaction,
+    bgm_bar_range_t requested, std::optional<bgm_bar_pan_override_t>* pan_override,
+    std::optional<bgm_bar_window_capture_t>* window_capture);
+
 } // namespace wormedit::sys
 #endif

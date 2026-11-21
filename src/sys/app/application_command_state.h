@@ -303,6 +303,7 @@ struct application_command_state_t {
             std::optional<bgm_bar_pan_override_t> bgm_bar_pan_override;
             std::optional<bgm_bar_window_capture_t> bgm_bar_window_capture;
             std::optional<bool> bgm_bar_hidden;
+            bool bgm_bar_nps_visible{true};
         } bgm;
 
         struct generator_state_t {

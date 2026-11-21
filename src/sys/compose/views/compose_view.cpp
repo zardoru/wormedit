@@ -2388,8 +2388,8 @@ void build_loop_selection_controls_view(wormedit::ui::compose_view_t& view,
 
 } // namespace compose_projection_detail
 
-auto default_song_bar_hidden(const wormedit::song_document_t& document,
-                             std::optional<wormedit::chart_id_t> chart) -> bool {
+static auto is_bms_or_bmson_difficulty(const wormedit::song_document_t& document,
+                                    std::optional<wormedit::chart_id_t> chart) -> bool {
     if (!chart) return false;
     const auto selected = document.read_chart(*chart);
     return selected != nullptr &&
@@ -2419,7 +2419,7 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
 
     cache.scene.area_object_geometry.reset();
     if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
-                                       default_song_bar_hidden(history.document, workspace.selected_chart),
+                                       is_bms_or_bmson_difficulty(history.document, workspace.selected_chart),
                                        retained_state, application_state)) {
         return;
     }

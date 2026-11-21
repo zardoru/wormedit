@@ -1401,6 +1401,7 @@ void wormedit::ui::compose_view_t::reset() {
         channel_waveform_rows,
         waveform_overview_rows,
         bgm_bar_rows,
+        bgm_bar_nps,
         bgm_bar_marks,
         bgm_bar_bookmarks,
         bmson_marker_drafts,
@@ -1498,6 +1499,7 @@ void wormedit::ui::compose_view_t::reset() {
     waveform_rows.clear();
     waveform_overview_rows.clear();
     bgm_bar_rows.clear();
+    bgm_bar_nps.clear();
     bgm_bar_marks.clear();
     bgm_bar_bookmarks.clear();
     bmson_marker_drafts.clear();

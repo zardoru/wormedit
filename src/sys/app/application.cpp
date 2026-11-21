@@ -1638,7 +1638,7 @@ void retain_compose_bgm_window_capture(
     application.project.bgm.bgm_bar_window_capture.reset();
     if (!action.input.minimap.window_capture_active || view.project_id.value == 0 ||
         view.selected_chart_id.value == 0 ||
-        view.compose.selected_audio_asset_id.value == 0 ||
+        (view.compose.selected_audio_asset_id.value == 0 && !view.compose.bgm_bar_chart_timeline) ||
         view.compose.waveform_overview_total_frames == 0 ||
         view.compose.waveform_overview_sample_rate == 0 ||
         !std::isfinite(action.input.minimap.window_capture_begin_fraction) ||

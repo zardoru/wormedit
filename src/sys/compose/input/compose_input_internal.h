@@ -1553,10 +1553,10 @@ auto compose_input_rejection(std::string message,
                              const wormedit::editor_interaction_result_t& result)
     -> compose_input_family_result_t;
 
-auto reveal_compose_bga_lane_input(const wormedit::ui::compose_input_action_t& input,
-                                   compose_input_context_t& context,
-                                   wormedit::editor_interaction_result_t& result,
-                                   std::string_view& accepted) -> compose_input_family_result_t;
+auto set_compose_bga_lane_visibility_input(const wormedit::ui::compose_input_action_t& input,
+                                           compose_input_context_t& context,
+                                           wormedit::editor_interaction_result_t& result,
+                                           std::string_view& accepted) -> compose_input_family_result_t;
 
 auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context,

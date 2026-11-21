@@ -27,7 +27,8 @@ enum class editor_gesture_kind_t {
 };
 
 [[nodiscard]] auto editor_bga_visible_lane_mask(const chart_document_t& chart,
-                                               std::uint8_t revealed) -> std::uint8_t;
+                                               std::uint8_t revealed,
+                                               std::uint8_t hidden = 0) -> std::uint8_t;
 
 inline constexpr double minimum_pixels_per_standard_measure = 24.0;
 inline constexpr double maximum_pixels_per_standard_measure = 4096.0;

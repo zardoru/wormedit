@@ -7,7 +7,6 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/player_preview.h>
-#include <wormedit/core/preferences.h>
 #include <wormedit/core/workspace.h>
 
 #include <cstdint>
@@ -20,6 +19,10 @@
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
 #include <wormedit/visual/video_job.h>
 #endif
+
+namespace wormedit {
+struct editor_preferences_t;
+}
 
 namespace wormedit::sys {
 

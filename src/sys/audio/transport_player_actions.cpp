@@ -1,3 +1,4 @@
+#include <cmath>
 #include "sys/audio/transport_player_actions.h"
 
 
@@ -68,12 +69,16 @@ auto dispatch_transport_player_action(WormUiWorkspaceActionKind kind,
         if (player_preview_settings.skin > wormedit::player_preview_skin_t::squared ||
             player_preview_settings.layout > wormedit::player_preview_layout_t::focus ||
             player_preview_settings.content > wormedit::player_preview_content_t::bga_only ||
-            player_preview_settings.bga_side > wormedit::player_preview_bga_side_t::right) {
+            player_preview_settings.bga_side > wormedit::player_preview_bga_side_t::right ||
+            player_preview_settings.color_view > wormedit::player_preview_color_view_t::snap ||
+            !std::isfinite(player_preview_settings.zoom)) {
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview setting ignored.");
         }
         // The scroll direction is resolved per chart each frame, never stored.
         application_state.project.compose_view.player_preview_settings = player_preview_settings;
         application_state.project.compose_view.player_preview_settings.downscroll = false;
+        application_state.project.compose_view.player_preview_settings.zoom =
+            wormedit::player_preview_settings_t::clamp_zoom(player_preview_settings.zoom);
         return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview settings changed.");
     default:
         return std::nullopt;

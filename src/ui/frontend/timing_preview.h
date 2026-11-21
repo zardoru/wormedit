@@ -137,6 +137,12 @@ struct timing_view_t {
     }
 };
 
+struct player_preview_measure_line_view_t {
+    uint32_t number{};
+    double y_pixels{};
+    auto operator==(const player_preview_measure_line_view_t&) const -> bool = default;
+};
+
 struct player_preview_lane_view_t {
     wormedit::lane_id_t lane_id{};
     wormedit::lane_role_t role{};
@@ -158,6 +164,9 @@ struct player_preview_note_view_t {
     wormedit::lane_id_t lane_id{};
     wormedit::note_kind_t kind{};
     wormedit::lane_glyph_t glyph{};
+    wormedit::lane_key_color_t key_color{};
+    uint64_t grid_row{};
+    uint64_t grid_period{};
     bool tail{};
     bool semantic_color_visible{};
     uint8_t semantic_red{};
@@ -171,6 +180,9 @@ struct player_preview_note_view_t {
 struct player_preview_hold_view_t {
     wormedit::object_id_t note_id{};
     wormedit::lane_id_t lane_id{};
+    wormedit::lane_key_color_t key_color{};
+    uint64_t grid_row{};
+    uint64_t grid_period{};
     bool semantic_color_visible{};
     uint8_t semantic_red{};
     uint8_t semantic_green{};
@@ -236,6 +248,8 @@ struct player_preview_view_t {
     wormedit::player_preview_layout_t layout{};
     wormedit::player_preview_content_t content{};
     wormedit::player_preview_bga_side_t bga_side{};
+    wormedit::player_preview_color_view_t color_view{};
+    double zoom{1.0};
     bool downscroll{};
     wormedit::visual_fit_policy_t visual_fit{};
     wormedit::song_id_t project_id{};
@@ -249,6 +263,7 @@ struct player_preview_view_t {
     std::vector<player_preview_receptor_view_t> receptors{};
     std::vector<player_preview_hold_view_t> hold_bodies{};
     std::vector<player_preview_note_view_t> note_endpoints{};
+    std::vector<player_preview_measure_line_view_t> measure_lines{};
     std::vector<player_preview_visual_layer_view_t> visual_layers{};
     std::vector<player_preview_storyboard_sprite_view_t> storyboard_sprites{};
     void reset() {
@@ -260,6 +275,8 @@ struct player_preview_view_t {
         layout = {};
         content = {};
         bga_side = {};
+        color_view = {};
+        zoom = 1.0;
         downscroll = {};
         visual_fit = {};
         project_id = {};
@@ -273,6 +290,7 @@ struct player_preview_view_t {
         receptors.clear();
         hold_bodies.clear();
         note_endpoints.clear();
+        measure_lines.clear();
         visual_layers.clear();
         storyboard_sprites.clear();
     }

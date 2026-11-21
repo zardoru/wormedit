@@ -40,6 +40,17 @@ auto is_visible_lane(const lane_definition_t& lane) -> bool {
     return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible;
 }
 
+// Generic lanes take their key color from the lane role, as Compose draws them.
+auto resolved_key_color(const lane_definition_t& lane) -> lane_key_color_t {
+    if (lane.key_color != lane_key_color_t::generic) return lane.key_color;
+    switch (lane.role) {
+    case lane_role_t::scratch: return lane_key_color_t::scratch;
+    case lane_role_t::free_zone: return lane_key_color_t::free_zone;
+    case lane_role_t::foot_pedal: return lane_key_color_t::foot_pedal;
+    default: return lane_key_color_t::generic;
+    }
+}
+
 auto glyph_for_skin(const lane_definition_t& lane, player_preview_skin_t skin) -> lane_glyph_t {
     if (skin == player_preview_skin_t::neutral) {
         return lane_glyph_t::square;
@@ -146,6 +157,8 @@ auto append_preview_endpoint(player_preview_scene_view_t& scene,
          .kind = note.kind,
          .glyph = lane_geometry.glyph,
          .tail = tail,
+         .key_color = lane_geometry.key_color,
+         .phase = tail ? note.end_phase : note.begin_phase,
          .semantic_color = note.semantic_color,
          .bounds = {lane_center - head_width / 2.0, y - request.note_head_height_pixels / 2.0,
                     lane_center + head_width / 2.0, y + request.note_head_height_pixels / 2.0}});
@@ -189,6 +202,8 @@ auto append_preview_note(note_render_context_t& context,
         context.scene.hold_bodies.push_back(
             {.note = note.note,
              .lane = note.lane,
+             .key_color = geometry.key_color,
+             .phase = note.begin_phase,
              .semantic_color = note.semantic_color,
              .bounds = {lane_center - body_half_width, top, lane_center + body_half_width,
                         bottom}});
@@ -236,6 +251,21 @@ auto append_index_note(player_preview_index_t& index,
          .minimum_displacement_beats = std::min(begin_displacement, end_displacement),
          .maximum_displacement_beats = std::max(begin_displacement, end_displacement),
          .semantic_color = source.semantic_color});
+}
+
+// Measure heads become the preview's bar lines; a row whose displacement cannot be evaluated is
+// skipped rather than failing the whole preview.
+void append_index_measures(player_preview_index_t& index, const measure_index_t& measures) {
+    std::uint32_t number = 0;
+    for (const auto& entry : measures.entries) {
+        ++number;
+        if (entry.absolute_begin_row >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) continue;
+        const auto at = scroll_speed_at(index.scroll_speed, index.timing,
+                                        {static_cast<std::int64_t>(entry.absolute_begin_row), 1});
+        if (!at || !std::isfinite(at.state->render_displacement_beats)) continue;
+        index.measures.push_back({number, at.state->render_displacement_beats});
+    }
 }
 
 auto is_valid_scene_request(const player_preview_index_t& index,
@@ -365,7 +395,19 @@ auto player_preview_index_t::from(const chart_document_t& chart, std::uint64_t d
     };
     index.notes.reserve(field_index.notes.size());
     for (const auto& source : field_index.notes) {
+        const auto before = index.notes.size();
         append_index_note(index, source, result.diagnostics);
+        if (index.notes.size() == before) continue;
+        index.notes.back().begin_phase = grid_phase(chart, field_index.measures, source.begin_row,
+                                                    quantization_space_t::standard_measure);
+        index.notes.back().end_phase = grid_phase(chart, field_index.measures, source.end_row,
+                                                  quantization_space_t::standard_measure);
+    }
+    append_index_measures(index, field_index.measures);
+    for (const auto& segment : index.layouts) {
+        const auto visible = static_cast<std::size_t>(std::ranges::count_if(
+            segment.layout.lanes, is_visible_lane));
+        index.visible_lane_count = std::max(index.visible_lane_count, visible);
     }
     if (!result.diagnostics.empty()) {
         return result;
@@ -482,6 +524,7 @@ auto player_preview_scene_view_t::from(const player_preview_index_t& index,
                                .stage = lanes[lane_index]->stage,
                                .glyph = glyph,
                                .display_order = lanes[lane_index]->display_order,
+                               .key_color = resolved_key_color(*lanes[lane_index]),
                                .bounds = {left, 0.0, right, request.viewport_height_pixels}});
         scene.receptors.push_back(
             {.lane = lanes[lane_index]->id,
@@ -505,6 +548,13 @@ auto player_preview_scene_view_t::from(const player_preview_index_t& index,
             : (request.receptor_y_pixels + padding) / request.pixels_per_beat;
     const auto visible_low = current.state->render_displacement_beats + std::min(delta_a, delta_b);
     const auto visible_high = current.state->render_displacement_beats + std::max(delta_a, delta_b);
+    for (const auto& measure : index.measures) {
+        if (measure.displacement_beats < visible_low || measure.displacement_beats > visible_high)
+            continue;
+        scene.measure_lines.push_back(
+            {measure.number, preview_y(measure.displacement_beats,
+                                       current.state->render_displacement_beats, request)});
+    }
     std::size_t operations{};
     note_render_context_t render_context{scene, request, lane_indices,
                                          current.state->render_displacement_beats};

@@ -102,6 +102,7 @@ class RenderSubphaseScope {
 #include <span>
 #include <string>
 #include <string_view>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -621,7 +622,22 @@ static void consume_compose_text_hotkeys(wormedit::ui::workspace_action_t& actio
     }
 }
 
+// Where the player preview was drawn last frame; Ctrl+wheel over it zooms the preview, not Compose.
+static std::optional<struct nk_rect> g_player_preview_bounds;
+static double g_player_preview_wheel_steps{};
+
+static bool take_player_preview_wheel(const SDL_MouseWheelEvent* event) {
+    if (!g_player_preview_bounds || (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) == 0)
+        return false;
+    const auto& bounds = *g_player_preview_bounds;
+    if (event->mouse_x < bounds.x || event->mouse_x >= bounds.x + bounds.w ||
+        event->mouse_y < bounds.y || event->mouse_y >= bounds.y + bounds.h) return false;
+    g_player_preview_wheel_steps += event->direction == SDL_MOUSEWHEEL_FLIPPED ? -event->y : event->y;
+    return true;
+}
+
 static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
+    if (event && take_player_preview_wheel(event)) return;
     if (!event || !g_window_focused || (!g_window && !g_headless) ||
         !frontend_event_window_matches(event->windowID, true) ||
         !std::isfinite(event->x) || !std::isfinite(event->y) || !std::isfinite(event->mouse_x) ||
@@ -3782,6 +3798,8 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
 }
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    // Stays unset on every early return below; the preview sets it again when it draws.
+    g_player_preview_bounds.reset();
     if (frame.view.lane_keys && frame.view.lane_keys->visible) {
         wormedit::ui::nuklear::render_lane_keys_dialog(g_context, *frame.view.lane_keys,
             frame.action.lane_keys, frame.width, frame.height);
@@ -3814,7 +3832,13 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action.timing_settings,
                                                   frame.action.compose);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
-                                          &frame.action.kind, &frame.action.player_preview_settings, frame.width, worm_ui_frontend_title_bar_height(), frame.height);
+                                          &frame.action.kind, &frame.action.player_preview_settings, frame.width,
+                                          worm_ui_frontend_title_bar_height(), frame.height,
+                                          std::exchange(g_player_preview_wheel_steps, 0.0));
+    const auto* preview_window = frame.view.player_preview.visible
+        ? nk_window_find(g_context, "Player preview") : nullptr;
+    if (preview_window) g_player_preview_bounds = preview_window->bounds;
+    else g_player_preview_bounds.reset();
 }
 
 static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {

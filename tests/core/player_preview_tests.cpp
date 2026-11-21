@@ -194,6 +194,21 @@ void check_preview_scene_rejected(const player_preview_scene_view_outcome_t& res
 }
 }
 
+TEST_CASE("player preview draws measure lines and reports its visible lane count",
+          "[unit][core][player-preview]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    CHECK(built.value->visible_lane_count == 4);
+    REQUIRE_FALSE(built.value->measures.empty());
+    const auto scene = player_preview_scene_view_t::from(*built.value, request(0));
+    require_preview_scene(scene);
+    REQUIRE_FALSE(scene.value->measure_lines.empty());
+    // The first measure starts at the receptor line while the transport sits at row 0.
+    CHECK(scene.value->measure_lines.front().number == 1);
+    CHECK(scene.value->measure_lines.front().y_pixels == Catch::Approx(64.0));
+    for (const auto& note : scene.value->note_endpoints) CHECK(note.phase.period != 0);
+}
+
 TEST_CASE("player preview without notes survives a note cap that would discard the frame",
           "[unit][core][player-preview]") {
     const auto built = player_preview_index_t::from(preview_chart(), 9);

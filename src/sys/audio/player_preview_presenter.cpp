@@ -28,6 +28,9 @@ namespace {
 
 // Distance from the receptor line to the edge notes arrive from, in preview-space pixels.
 constexpr double preview_receptor_inset_pixels = 52.0;
+constexpr double preview_lane_width_pixels = 38.0;
+constexpr double minimum_preview_width_pixels = 260.0;
+constexpr double preview_stage_gutter_pixels = 12.0;
 
 using wormedit::ui::maximum_preview_notes;
 using wormedit::ui::maximum_preview_storyboard_instances;
@@ -292,7 +295,10 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
                            std::vector<wormedit::ui::player_preview_lane_view_t>& lanes,
                            std::vector<wormedit::ui::player_preview_receptor_view_t>& receptors,
                            std::vector<wormedit::ui::player_preview_hold_view_t>& holds,
-                           std::vector<wormedit::ui::player_preview_note_view_t>& notes) {
+                           std::vector<wormedit::ui::player_preview_note_view_t>& notes,
+                           std::vector<wormedit::ui::player_preview_measure_line_view_t>& measure_lines) {
+    for (const auto& line : scene.measure_lines)
+        measure_lines.push_back({.number = line.number, .y_pixels = line.y_pixels});
     for (const auto& lane : scene.lanes) {
         lanes.push_back({.lane_id = lane.lane,
                          .role = lane.role,
@@ -309,6 +315,9 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
         holds.push_back(
             {.note_id = hold.note,
              .lane_id = hold.lane,
+             .key_color = hold.key_color,
+             .grid_row = hold.phase.row,
+             .grid_period = hold.phase.period,
              .semantic_color_visible = hold.semantic_color.has_value(),
              .semantic_red =
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->red : 0),
@@ -326,6 +335,9 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
              .lane_id = note.lane,
              .kind = note.kind,
              .glyph = note.glyph,
+             .key_color = note.key_color,
+             .grid_row = note.phase.row,
+             .grid_period = note.phase.period,
              .tail = note.tail,
              .semantic_color_visible = note.semantic_color.has_value(),
              .semantic_red =
@@ -665,6 +677,11 @@ template <typename Context>
 auto present_player_preview_frame(const Context& context, const player_preview_frame_t& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
+    // Lanes keep a playable width however many there are (DP has twice the lanes of SP).
+    view.viewport_width_pixels = std::max(
+        minimum_preview_width_pixels,
+        static_cast<double>(state.index.value()->visible_lane_count) * preview_lane_width_pixels +
+            preview_stage_gutter_pixels);
     const auto scene = player_preview_scene_view_t::from(
         *state.index.value(), {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
@@ -673,7 +690,7 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                        .receptor_y_pixels = context.settings.downscroll
                            ? view.viewport_height_pixels - preview_receptor_inset_pixels
                            : preview_receptor_inset_pixels,
-                       .pixels_per_beat = 82.0,
+                       .pixels_per_beat = 82.0 * wormedit::player_preview_settings_t::clamp_zoom(context.settings.zoom),
                        .skin = context.settings.skin,
                        .direction = context.settings.downscroll
                            ? player_preview_scroll_direction_t::toward_bottom
@@ -690,7 +707,8 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                                       : scene.diagnostics.front().message);
         return false;
     }
-    append_scene_geometry(*scene.value, context.view.lanes, context.view.receptors, context.view.hold_bodies, context.view.note_endpoints);
+    append_scene_geometry(*scene.value, context.view.lanes, context.view.receptors, context.view.hold_bodies, context.view.note_endpoints,
+                          context.view.measure_lines);
     append_player_preview_visual_layers(context, *scene.value);
     for (const auto& instance : scene.value->storyboard_instances)
         append_player_preview_storyboard_sprite(context, instance);
@@ -732,6 +750,8 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     view.layout = settings.layout;
     view.content = settings.content;
     view.bga_side = settings.bga_side;
+    view.zoom = wormedit::player_preview_settings_t::clamp_zoom(settings.zoom);
+    view.color_view = settings.color_view;
     view.downscroll = settings.downscroll;
     view.visual_fit = wormedit::visual_fit_policy_t::contain;
     view.viewport_width_pixels = 300.0;

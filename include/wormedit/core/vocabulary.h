@@ -299,6 +299,13 @@ enum class player_preview_content_t : std::uint8_t {
     bga_only,
 };
 
+// What colors notes, as in Compose: the lane's key color, the semantic layer, or the snap class.
+enum class player_preview_color_view_t : std::uint8_t {
+    layout,
+    layers,
+    snap,
+};
+
 // Which side of the note field the BGA takes in the full-screen layout.
 enum class player_preview_bga_side_t : std::uint8_t {
     left,
@@ -313,7 +320,16 @@ struct player_preview_settings_t {
     player_preview_layout_t layout{player_preview_layout_t::floating};
     player_preview_content_t content{player_preview_content_t::play};
     player_preview_bga_side_t bga_side{player_preview_bga_side_t::right};
+    player_preview_color_view_t color_view{player_preview_color_view_t::layout};
+    // Scales how many beats fit on screen (pixels per beat); 1 is the default view.
+    double zoom{1.0};
     bool downscroll{};
+
+    static constexpr double minimum_zoom = 0.4;
+    static constexpr double maximum_zoom = 3.0;
+    [[nodiscard]] static constexpr auto clamp_zoom(double value) -> double {
+        return !(value >= minimum_zoom) ? minimum_zoom : value > maximum_zoom ? maximum_zoom : value;
+    }
 
     constexpr player_preview_settings_t() = default;
     constexpr player_preview_settings_t(player_preview_skin_t value) : skin(value) {}

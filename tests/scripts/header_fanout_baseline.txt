@@ -81,6 +81,7 @@ src/ui/nuklear/compose/compose_viewport_input.h 85
 src/ui/nuklear/resources/sound_import_dialog.h 71
 src/ui/nuklear/resources/sound_import_runtime.h 63
 tests/sys/application_dispatch_fixture.h 244
+tests/sys/compose_action_notification_fixture.h 265
 tests/sys/compose_area_dispatch_fixture.h 170
 tests/sys/compose_scene_cache_fixture.h 186
 tests/sys/compose_window_overloads_input.h 195

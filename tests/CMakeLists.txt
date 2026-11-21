@@ -801,6 +801,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/resource_paint_event_harness_tests.cpp
         ui/bga_advance_workflow_tests.cpp
         ui/bga_lane_event_harness_tests.cpp
+        ui/timing_controls_event_harness_tests.cpp
         ui/playback_status_event_harness_tests.cpp
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp

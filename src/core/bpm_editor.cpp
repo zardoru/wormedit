@@ -1,4 +1,5 @@
 #include "timing_event_internal.h"
+#include "timing_arithmetic.h"
 #include "text_util.h"
 #include <wormedit/core/rational.h>
 #include "position_validation.h"
@@ -225,6 +226,115 @@ auto stage_bpm_edit(document_command_transaction_t& transaction, const bpm_edit_
     auto staged = transaction.stage<bpm_operation_visitor_t>(action, limits);
     const auto chart = std::visit([](const auto& edit) { return edit.chart; }, action);
     return stage_timing_reposition(transaction, chart, anchoring, std::move(staged));
+}
+
+namespace {
+
+struct bpm_range_warp_plan_t {
+    chart_id_t chart;
+    position_span_t range;
+    signed_rational_t multiplier;
+    std::uint64_t first{};
+    std::uint64_t last{};
+    bool has_first_event{};
+    bool has_last_event{};
+    std::vector<bpm_edit_action_t> edits;
+
+    auto add(local_position_t position, signed_rational_t bpm, object_id_t id = {}) -> bool {
+        const auto scaled = position == range.end ? std::optional{bpm}
+                                                  : timing_arithmetic::multiply(bpm, multiplier);
+        if (!scaled || scaled->numerator <= 0) return false;
+        const auto value = bpm_edit_value_t::from(position, timing_bpm_value_t{*scaled});
+        if (id.value) edits.emplace_back(update_edit_t<bpm_edit_value_t>{chart, id, value});
+        else edits.emplace_back(insert_edit_t<bpm_edit_value_t>{chart, value});
+        return true;
+    }
+
+    auto collect(const chart_document_t& source, const measure_index_t& index) -> bool {
+        for (const auto& bpm : source.bpms) {
+            const auto row = index.row_of(bpm.position);
+            if (!row || *row < first || *row > last) continue;
+            if (*row == last) {
+                has_last_event = true;
+                continue;
+            }
+            has_first_event |= *row == first;
+            if (!add(bpm.position, bpm.beats_per_minute, bpm.id)) return false;
+        }
+        return true;
+    }
+
+    auto add_boundaries(const timing_index_t& timing) -> bool {
+        const auto at = [&](std::uint64_t row) {
+            return std::prev(std::ranges::upper_bound(timing.rows, row, {},
+                &timing_row_state_t::absolute_row))->effective_bpm;
+        };
+        return (has_first_event || add(range.begin, at(first))) &&
+               (has_last_event || add(range.end, at(last)));
+    }
+};
+
+auto stage_flat_bpm_range_warp(document_command_transaction_t& transaction,
+                              const bpm_range_warp_plan_t& plan) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage(plan.chart, bpm_operation_visitor_t::unknown_chart_message,
+        [&](chart_document_t& chart, song_document_t& document) -> attempt_t<document_edit_effect_t> {
+            auto& outcome = transaction.outcome();
+            const bpm_edit_limits_t limits;
+            if (chart.bpms.size() > limits.maximum_bpm_events) {
+                reject(outcome, diagnostic_code_t::invalid_resolution, "Selected chart exceeds the BPM event cap.");
+                return {};
+            }
+            bpm_operation_visitor_t operation{{outcome, limits}};
+            for (const auto& edit : plan.edits) {
+                std::visit([&](const auto& action) { operation(chart, action); }, edit);
+                if (!outcome.diagnostics.empty()) return {};
+            }
+            if (!timing_index_t::from(chart).value) {
+                reject(outcome, diagnostic_code_t::invalid_rational, "The warped timing exceeds clock bounds.");
+                return {};
+            }
+            if (!operation.postvalidate(chart, document)) return {};
+            return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
+        });
+}
+
+auto valid_bpm_range_warp_multiplier(rational_t ratio) -> bool {
+    return std::ranges::find(bpm_range_warp_factors, ratio.numerator) != bpm_range_warp_factors.end() &&
+           std::ranges::find(bpm_range_warp_factors, ratio.denominator) != bpm_range_warp_factors.end();
+}
+
+} // namespace
+
+auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart, position_span_t range,
+                          rational_t multiplier) -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    if (!valid_bpm_range_warp_multiplier(multiplier))
+        return transaction.reject(diagnostic_code_t::invalid_rational, "Choose an available BPM multiplier.");
+    if (multiplier.numerator == multiplier.denominator) return transaction.finish_without_commit();
+
+    const auto* source = transaction.read_chart(chart);
+    if (!source) return transaction.reject(diagnostic_code_t::invalid_id, "The chart is no longer available.");
+    const auto measures = measure_index_t::from(*source);
+    const auto first = measures ? measures->row_of(range.begin) : std::nullopt;
+    const auto last = measures ? measures->row_of(range.end) : std::nullopt;
+    if (!first || !last || *first >= *last || range.begin.measure != measures->position_at(*last - 1)->measure)
+        return transaction.reject(diagnostic_code_t::invalid_measure,
+                                  "Select a nonempty range within one authored measure.");
+    const auto timing = timing_index_t::from(*source);
+    bpm_range_warp_plan_t plan{.chart = chart, .range = range,
+        .multiplier = {static_cast<std::int64_t>(multiplier.numerator), multiplier.denominator},
+        .first = *first, .last = *last, .edits = {}};
+    if (!timing.value || timing.value->rows.empty() || !plan.collect(*source, *measures) ||
+        !plan.add_boundaries(*timing.value))
+        return transaction.reject(diagnostic_code_t::invalid_rational,
+                                  "The selected timing cannot be scaled exactly.");
+    if (!transaction.has_bms_program(chart))
+        return transaction.finish_execution(stage_flat_bpm_range_warp(transaction, plan));
+    for (const auto& edit : plan.edits) {
+        auto staged = stage_bpm_edit(transaction, edit);
+        if (!staged.value || !staged.ok()) return transaction.finish_execution(std::move(staged));
+    }
+    return transaction.commit("Warp selected timing range");
 }
 
 // Native commands retain their immediate-publication boundary; compositions use staging.

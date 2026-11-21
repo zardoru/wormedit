@@ -28,6 +28,8 @@ struct compose_area_request_t {
     bool is_virtual;
     bool begin_edge;
     bool clear_requested;
+    std::uint64_t bpm_multiplier_numerator{};
+    std::uint64_t bpm_multiplier_denominator{};
 };
 /* Quantize preset and snap inputs. */
 struct compose_quantize_request_t {

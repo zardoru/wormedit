@@ -4,6 +4,7 @@
 #include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -806,5 +807,46 @@ TEST_CASE("BPM execution resolves chart before checking its event cap and edit t
     CHECK(capped.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
         "selected chart exceeds the BPM event cap")});
     CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("BPM range warp scales interior events and restores the effective boundary tempo",
+          "[core][bpm-editor][range-warp]") {
+    const auto measure = measure_id_t{3};
+    const auto chart_id = chart_id_t{2};
+    auto song = bpm_song();
+    auto& tempos = song.charts.front().bpms;
+    tempos.push_back({.id = object_id_t{11}, .position = {measure, 360}, .beats_per_minute = {150, 1}});
+    if (const auto existing_end = GENERATE(false, true); existing_end)
+        tempos.push_back({.id = object_id_t{12}, .position = {measure, 600}, .beats_per_minute = {90, 1}});
+    const auto expected_end = tempos.size() == 3 ? signed_rational_t{90, 1} : signed_rational_t{150, 1};
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure, 240}, {measure, 600}}, {3, 2}));
+    const auto timing = timing_index_t::from(*history.read_chart(chart_id));
+    REQUIRE(timing.value);
+    const auto check_tempo = [&](std::uint64_t row, signed_rational_t bpm) {
+        const auto event = std::ranges::find(timing.value->rows, row, &timing_row_state_t::absolute_row);
+        REQUIRE(event != timing.value->rows.end());
+        CHECK(event->effective_bpm == bpm);
+    };
+    check_tempo(0, {120, 1});
+    check_tempo(240, {180, 1});
+    check_tempo(360, {225, 1});
+    check_tempo(600, expected_end);
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.read_chart(chart_id)->bpms == tempos);
+}
+
+TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit",
+          "[core][bpm-editor][range-warp]") {
+    auto history = document_history_t::from(bpm_song());
+    const auto before = history.document.revision;
+    const auto result = apply_bpm_range_warp(history, chart_id_t{2},
+        {{measure_id_t{3}, 240}, {measure_id_t{3}, 600}}, {16, 1});
+    CHECK_FALSE(result.applied);
+    CHECK(has_code(result, diagnostic_code_t::invalid_rational));
+    CHECK(history.document.revision == before);
     CHECK(history.undo.empty());
 }

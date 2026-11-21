@@ -508,9 +508,10 @@ auto player_preview_scene_view_t::from(const player_preview_index_t& index,
     std::size_t operations{};
     note_render_context_t render_context{scene, request, lane_indices,
                                          current.state->render_displacement_beats};
-    const auto query_ok = query_notes(
-        index, visible_low, visible_high, operations, request.maximum_composition_operations,
-        std::bind_front(append_preview_note, std::ref(render_context)));
+    const auto query_ok = !request.include_notes ||
+        query_notes(index, visible_low, visible_high, operations,
+                    request.maximum_composition_operations,
+                    std::bind_front(append_preview_note, std::ref(render_context)));
     if (!query_ok) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_resolution,

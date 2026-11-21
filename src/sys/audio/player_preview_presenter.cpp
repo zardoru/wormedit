@@ -681,6 +681,7 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                        .visual_fit = visual_fit_policy_t::contain,
                        .visual_layers = frame.visual,
                        .storyboard_instances = frame.storyboard_instances,
+                       .include_notes = context.settings.content != player_preview_content_t::bga_only,
                        .maximum_visible_notes = maximum_preview_notes,
                        .maximum_storyboard_instances = maximum_preview_storyboard_instances});
     if (!scene.value || !scene.diagnostics.empty()) {

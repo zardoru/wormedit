@@ -194,6 +194,19 @@ void check_preview_scene_rejected(const player_preview_scene_view_outcome_t& res
 }
 }
 
+TEST_CASE("player preview without notes survives a note cap that would discard the frame",
+          "[unit][core][player-preview]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    auto capped = request(frame_at(*built.value, 240));
+    capped.maximum_visible_notes = 1;
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.value, capped));
+    capped.include_notes = false;
+    const auto scene = player_preview_scene_view_t::from(*built.value, capped);
+    require_preview_scene(scene);
+    CHECK(scene.value->note_endpoints.empty());
+}
+
 TEST_CASE("player preview validates Layer 2 identities, kind and frame bounds", "[player-preview][bga][layer2]") {
     const auto built = player_preview_index_t::from(preview_chart(), 9);
     REQUIRE(built.value);

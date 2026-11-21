@@ -125,6 +125,8 @@ struct player_preview_scene_request_t {
     // Asset decoding and texture ownership remain renderer responsibilities.
     bga_layer_state_t visual_layers;
     std::span<const storyboard_draw_instance_t> storyboard_instances;
+    // False skips composing notes (a BGA-only view): the visible-note cap cannot then discard the frame.
+    bool include_notes{true};
     std::size_t maximum_visible_notes{4'096};
     std::size_t maximum_storyboard_instances{4'096};
     std::size_t maximum_composition_operations{100'000};

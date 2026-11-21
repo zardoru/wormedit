@@ -243,14 +243,19 @@ auto make_preview_canvas(struct nk_context* context, struct SDL_Renderer* render
         canvas.field = nk_rect(area.x + (area.w - fit_width) * 0.5f, area.y, fit_width, fit_height);
         return canvas;
     }
-    const auto field_width = std::min(area.w, aspect_field_width(*view, area.h));
+    const auto scene_aspect = aspect_field_width(*view, 1.0f);
+    // The height always follows the final width, so a narrow window shrinks the field instead of
+    // stretching it.
+    const auto field_width = std::min(area.w, area.h * scene_aspect);
     if (view->layout == wormedit::player_preview_layout_t::focus) {
-        canvas.field = nk_rect(area.x + (area.w - field_width) * 0.5f, area.y, field_width, area.h);
+        const auto focus_height = scene_aspect > 0.0f ? field_width / scene_aspect : area.h;
+        canvas.field = nk_rect(area.x + (area.w - field_width) * 0.5f,
+                               area.y + (area.h - focus_height) * 0.5f, field_width, focus_height);
         return canvas;
     }
     // Tall windows: keep a quarter of the width for the BGA and shrink the field in proportion.
     const auto full_width = std::min(field_width, area.w * 0.75f);
-    const auto full_height = full_width < field_width ? area.h * full_width / field_width : area.h;
+    const auto full_height = scene_aspect > 0.0f ? full_width / scene_aspect : area.h;
     const auto bga_width = std::max(0.0f, area.w - full_width);
     const auto bga_right = view->bga_side == wormedit::player_preview_bga_side_t::right;
     canvas.field = nk_rect(bga_right ? area.x : area.x + bga_width,

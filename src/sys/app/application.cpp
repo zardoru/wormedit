@@ -2338,6 +2338,23 @@ struct application_t::implementation_t {
         return current_tap_event_ ? *current_tap_event_ : views.last_tap_event_ns;
     }
 
+    // A full-screen or focus preview hides Compose, so edit shortcuts (Delete, cut, paste, undo...)
+    // would change notes nobody can see. Transport, navigation and view commands stay available.
+    auto preview_blocks_editing() const -> bool {
+        const auto& view = commands.project.compose_view;
+        return view.player_preview_visible &&
+               view.player_preview_settings.layout != wormedit::player_preview_layout_t::floating;
+    }
+
+    static auto is_edit_command(const std::optional<wormedit::command_id_t>& id) -> bool {
+        return id && id->value.starts_with("edit.");
+    }
+
+    void disable_edit_commands_for_preview() {
+        for (auto& command : command_registry.commands)
+            if (command.definition.id.value.starts_with("edit.")) command.definition.enabled = false;
+    }
+
     auto dispatch_application_shortcuts(const wormedit::ui::workspace_action_t& action,
                                         std::optional<std::uint64_t>& tap_event_ns,
                                         bool& preserves_editor_gesture) -> bool {
@@ -2361,6 +2378,7 @@ struct application_t::implementation_t {
                 preserves_editor_gesture = false;
                 return true;
             }
+            if (preview_blocks_editing()) disable_edit_commands_for_preview();
             const auto& input = action.input.shortcuts.events[index];
             tap_event_ns = input.timestamp_ns;
             const auto dispatched =
@@ -2382,6 +2400,7 @@ struct application_t::implementation_t {
                 handled = true;
             } else if (dispatched.value.status == command_dispatch_status_t::disabled) {
                 handled = true;
+                if (preview_blocks_editing() && is_edit_command(dispatched.value.command)) continue;
                 platform.notification_sink.post(
                     notification_severity_t::warning, notification_source_t::input,
                     wormedit::sys::unavailable_application_command_message(

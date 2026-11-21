@@ -3,6 +3,7 @@
 #include "chart_object_ids.h"
 #include "bms_native_content_internal.h"
 #include "resource_assignment_internal.h"
+#include "resource_asset_relinks.h"
 #include "text_util.h"
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/natural_order.h>
@@ -2048,17 +2049,20 @@ auto apply_primary_music_set(document_history_t& history,
     return relink_primary_music(history, *music, paths->second.value_or(paths->first), action);
 }
 
-auto apply_resource_asset_relink(document_history_t& history,
-                                 const relink_resource_asset_action_t& action)
-    -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+namespace {
+auto stage_asset_relink(document_command_transaction_t& transaction,
+                        const relink_resource_asset_action_t& action,
+                        std::map<std::filesystem::path, std::filesystem::path>& audio_paths,
+                        std::set<asset_id_t>& audio_ids) -> bool {
+    const auto& original = transaction.source_document();
+    auto& result = transaction.outcome();
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
     if (path.empty() || path.filename().empty() || !text_util::is_valid_bounded_text(path_text, 4096) ||
         (path.has_root_name() && !path.is_absolute())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink path is empty, malformed, or too long");
-        return result;
+        return false;
     }
     if (!path.is_absolute() &&
         std::ranges::any_of(path, [](const auto& component) {
@@ -2066,45 +2070,71 @@ auto apply_resource_asset_relink(document_history_t& history,
         })) {
         reject(result, diagnostic_code_t::invalid_id,
                "relative resource paths cannot escape the project directory");
-        return result;
+        return false;
     }
-    const auto audio = history.document.find_audio_asset(action.asset);
-    const auto visual = std::ranges::find(history.document.visual_assets, action.asset,
+    const auto audio = original.find_audio_asset(action.asset);
+    const auto visual = std::ranges::find(original.visual_assets, action.asset,
                                            &visual_asset_t::id);
     if (!action.asset ||
         (audio == nullptr &&
-         visual == history.document.visual_assets.end()) ||
+         visual == original.visual_assets.end()) ||
         (audio != nullptr &&
-         visual != history.document.visual_assets.end())) {
+         visual != original.visual_assets.end())) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource asset relink requires one known audio or image asset");
-        return result;
+        return false;
     }
     const auto current = audio != nullptr
                              ? audio->source_path
                              : visual->source_path;
     if (current == path) {
-        return result;
+        return true;
     }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    if (audio != nullptr) {
-        const auto index = static_cast<std::size_t>(audio -
-                                                    history.document.audio_assets.data());
-        proposed.audio_assets[index].source_path = path;
+
+    const auto staged = transaction.stage([&](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+        if (audio != nullptr) {
+            const auto index = static_cast<std::size_t>(audio - original.audio_assets.data());
+            proposed.audio_assets[index].source_path = path;
+            audio_ids.insert(action.asset);
+            audio_paths.insert_or_assign(current.lexically_normal(), path);
+        } else {
+            const auto index = static_cast<std::size_t>(visual - original.visual_assets.begin());
+            proposed.visual_assets[index].source_path = path;
+        }
+        return {.value = document_edit_effect_t{.changed = true}};
+    });
+    return staged.value.has_value();
+}
+} // namespace
+
+auto apply_resource_asset_relinks(document_history_t& history,
+                                  std::span<const relink_resource_asset_action_t> actions)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    std::map<std::filesystem::path, std::filesystem::path> audio_paths;
+    std::set<asset_id_t> audio_ids;
+    for (const auto& action : actions)
+        if (!stage_asset_relink(transaction, action, audio_paths, audio_ids))
+            return transaction.finish_without_commit();
+    if (!transaction.has_copy()) return transaction.finish_without_commit();
+    const auto staged = transaction.stage([&](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
         for (auto& chart : proposed.charts)
             chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
-                if (reference.lexically_normal() == current.lexically_normal()) reference = path;
+                if (const auto found = audio_paths.find(reference.lexically_normal()); found != audio_paths.end())
+                    reference = found->second;
             });
-        // The user pointed the asset at a file they chose, so its sounds are no longer missing.
         for (auto& resource : proposed.resources)
-            if (resource.asset == action.asset) resource.missing = false;
-    } else {
-        const auto index = static_cast<std::size_t>(visual -
-                                                    history.document.visual_assets.begin());
-        proposed.visual_assets[index].source_path = path;
-    }
-    return transaction.commit("Relink resource asset");
+            if (audio_ids.contains(resource.asset)) resource.missing = false;
+        return {.value = document_edit_effect_t{
+            .changed = true, .command_label = actions.size() == 1 ? "Relink resource asset" : "Relink resource assets"}};
+    });
+    return transaction.finish_execution(staged);
+}
+
+auto apply_resource_asset_relink(document_history_t& history,
+                                 const relink_resource_asset_action_t& action)
+    -> document_command_result_t {
+    return apply_resource_asset_relinks(history, std::span{&action, 1});
 }
 
 namespace {

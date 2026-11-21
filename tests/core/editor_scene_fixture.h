@@ -1,13 +1,13 @@
 #pragma once
-// Chart, lane and view builders shared by the editor-scene test files.
-#include <wormedit/core/editor_scene.h>
-#include <wormedit/core/lane_profiles.h>
 
+#include <wormedit/core/editor_scene.h>
+
+#include <cstdint>
 #include <string>
 
-namespace {
+namespace wormedit::test {
 
-auto lane(wormedit::lane_id_t id, std::uint32_t order, wormedit::stage_group_t stage)
+inline auto lane(wormedit::lane_id_t id, std::uint32_t order, wormedit::stage_group_t stage)
     -> wormedit::lane_definition_t {
     return {.id = id,
             .name = "lane " + std::to_string(id.value),
@@ -17,7 +17,7 @@ auto lane(wormedit::lane_id_t id, std::uint32_t order, wormedit::stage_group_t s
             .glyph = wormedit::lane_glyph_t::bar};
 }
 
-auto scene_chart() -> wormedit::chart_document_t {
+inline auto scene_chart() -> wormedit::chart_document_t {
     wormedit::chart_document_t chart;
     chart.id = wormedit::chart_id_t{1};
     chart.divisions_per_standard_measure = 960;
@@ -63,7 +63,7 @@ auto scene_chart() -> wormedit::chart_document_t {
     return chart;
 }
 
-auto view(std::uint64_t revision = 7) -> wormedit::editor_interaction_view_model_t {
+inline auto view(std::uint64_t revision = 7) -> wormedit::editor_interaction_view_model_t {
     return {.chart = wormedit::chart_id_t{1},
             .active_lane = wormedit::lane_id_t{1},
             .active_lane_name = "lane 1",
@@ -79,9 +79,4 @@ auto view(std::uint64_t revision = 7) -> wormedit::editor_interaction_view_model
                 {wormedit::editor_selection_object_kind_t::note, wormedit::object_id_t{11}}}};
 }
 
-auto has_code(const wormedit::diagnostic_list_t& diagnostics, wormedit::diagnostic_code_t code)
-    -> bool {
-    return std::ranges::any_of(diagnostics, [code](const auto& item) { return item.code == code; });
-}
-
-} // namespace
+} // namespace wormedit::test

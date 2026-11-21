@@ -1,3 +1,4 @@
+#include "editor_scene_fixture.h"
 #include "../support/stale_action_assertions.h"
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/editor_scene.h>
@@ -15,8 +16,18 @@
 #include <variant>
 #include <tuple>
 
-#include "editor_scene_fixtures.h"
+namespace {
 
+using wormedit::test::lane;
+using wormedit::test::scene_chart;
+using wormedit::test::view;
+
+auto has_code(const wormedit::diagnostic_list_t& diagnostics, wormedit::diagnostic_code_t code)
+    -> bool {
+    return std::ranges::any_of(diagnostics, [code](const auto& item) { return item.code == code; });
+}
+
+} // namespace
 
 namespace {
 auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_model_t {

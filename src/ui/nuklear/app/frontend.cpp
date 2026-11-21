@@ -1,3 +1,7 @@
+#include "common/file_dialog.h"
+#ifdef __EMSCRIPTEN__
+#include "common/browser_workspace.h"
+#endif
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/compose/compose_ui_window_of.h"
 #include "ui/nuklear/audio/audio_ui_window_of.h"
@@ -389,10 +393,10 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
         {"wormedit project", "wormedit"},
     };
     if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE || kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE)
-        SDL_ShowOpenFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_open_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                open_filters, SDL_arraysize(open_filters), nullptr, false);
     else
-        SDL_ShowSaveFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_save_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                save_filters, SDL_arraysize(save_filters), "Untitled.wormedit");
 }
 
@@ -2023,12 +2027,16 @@ static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& v
 }
 
 static void open_user_manual() {
+#ifdef __EMSCRIPTEN__
+    wormedit::platform::show_browser_manual();
+#else
     const auto* base = SDL_GetBasePath();
     const auto manual = wormedit::ui::nuklear::manual_location_t::from(base ? base : "");
     if (manual && manual->open()) return;
     const auto* message = manual ? SDL_GetError() :
         "The user manual is not installed. Build or install Wormedit with WORMEDIT_INSTALL_MANUAL enabled.";
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not open user manual", message, SDL_GetKeyboardFocus());
+#endif
 }
 
 static void apply_workspace_menu_action(MenuAction chosen,
@@ -2046,6 +2054,9 @@ static void apply_workspace_menu_action(MenuAction chosen,
     }
     switch (chosen) {
     case MenuAction::manual: open_user_manual(); break;
+#ifdef __EMSCRIPTEN__
+    case MenuAction::download_native: wormedit::platform::show_browser_native_downloads(); break;
+#endif
     case MenuAction::open: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE); break;
     case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
     case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;

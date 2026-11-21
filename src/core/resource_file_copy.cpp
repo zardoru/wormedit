@@ -1,4 +1,5 @@
 #include <wormedit/core/resource_file_copy.h>
+#include "browser_file_publication.h"
 
 #include <algorithm>
 #include <array>
@@ -466,6 +467,8 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
 #if defined(_WIN32)
     const auto installed =
         MoveFileExW(temporary.c_str(), location.destination.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
+#elif defined(__EMSCRIPTEN__)
+    const auto installed = platform::browser_move_no_replace(temporary, location.destination) == 0;
 #else
     const auto installed = ::link(temporary.c_str(), location.destination.c_str()) == 0;
 #endif

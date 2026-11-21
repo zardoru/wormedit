@@ -12,7 +12,7 @@ namespace wormedit::sys {
 [[nodiscard]] inline auto dispatch_transport_player_action(
     const wormedit::ui::workspace_action_t& action, application_command_state_t& application_state,
     notification_sink_t notifications = notification_sink_t::muted()) -> std::optional<std::string> {
-    return dispatch_transport_player_action(action.kind, action.transport, action.player_preview_skin,
+    return dispatch_transport_player_action(action.kind, action.transport, action.player_preview_settings,
                                             application_state, notifications);
 }
 

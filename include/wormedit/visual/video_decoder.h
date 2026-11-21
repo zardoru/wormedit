@@ -73,6 +73,13 @@ class video_decoder_session_t {
 [[nodiscard]] auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,
                                             const video_preview_clock_t& clock) noexcept -> bool;
 
+// The frame was presented at or before the clock: a player keeps showing it while the frame that
+// covers the clock is still decoding. A frame from later in the stream (after a backward seek)
+// is never shown early.
+[[nodiscard]] auto is_video_frame_started_by_clock(const rgba_video_frame_t& frame,
+                                                   const video_preview_clock_t& clock) noexcept
+    -> bool;
+
 // Opens, seeks, and decodes the frame presented at an exact player-preview
 // media clock. FFmpeg state and pixel conversion stay behind this optional
 // adapter; callers receive an immutable-friendly tightly packed RGBA8 payload.

@@ -61,6 +61,11 @@ struct storyboard_draw_instance_t {
     auto operator==(const storyboard_draw_instance_t&) const -> bool = default;
 };
 
+// Fail and Pass sprites show only while the player's gauge is failing or passing.
+[[nodiscard]] constexpr auto is_storyboard_state_layer(std::string_view layer) noexcept -> bool {
+    return layer == "Fail" || layer == "Pass";
+}
+
 struct storyboard_frame_options_t {
     std::size_t maximum_instances{100'000};
     std::size_t maximum_nesting{128};

@@ -1048,6 +1048,18 @@ TEST_CASE("BMS video fallback preserves its declared basename for export",
     check_bmson_condition(ambiguous.warnings.front().find("movie.webm") != std::string::npos);
 }
 
+TEST_CASE("BMS classifies every common movie extension as video",
+          "[integration][sys][project-open][bms-video]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "mpeg.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Mpeg\n#BPM 120\n#BMP01 movie.mpeg\n#00104:01\n";
+    std::ofstream(temporary.path / "movie.mpeg") << "video";
+    const auto opened = open_with_bms_profile(chart);
+    require_opened_project(opened);
+    check_bmson_condition(opened.document->visual_assets.front().kind == wormedit::asset_kind_t::video);
+    check_bmson_condition(opened.warnings.empty());
+}
+
 TEST_CASE("BMS visual fallback rejects traversal and drive declarations",
           "[integration][sys][project-open][bms-image]") {
     temporary_project_directory_t temporary;

@@ -68,7 +68,7 @@ struct workspace_action_t {
     std::optional<audio_slicer_action_t> audio_slicer;
     wormedit::ui::bga_usage_activation_t bga_usage;
     wormedit::ui::sound_usage_locate_request_t sound_usage;
-    wormedit::player_preview_skin_t player_preview_skin;
+    wormedit::player_preview_settings_t player_preview_settings;
     // Metadata payloads own their text and lists across frontend calls.
     metadata_edit_request_t metadata;
     // Input sampled this frame (keyboard, pointer, hover); not requests.

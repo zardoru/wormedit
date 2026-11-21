@@ -1633,6 +1633,22 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 
+void worm_ui_nuklear_compose_preview_navigation(struct nk_context* context,
+                                                const wormedit::ui::compose_view_t* view,
+                                                wormedit::ui::compose_ui_window_t* action,
+                                                bool window_focused, bool ime_composition_active) {
+    if (!context || !view || !action || !view->visible) {
+        worm_ui_nuklear_compose_discard_frame_input();
+        return;
+    }
+    process_compose_preview_navigation_keys(context, view, action, window_focused, ime_composition_active);
+    append_compose_preview_wheel_inputs(*view, action, window_focused);
+    worm_ui_nuklear_compose_discard_frame_input();
+    render_go_to_measure(context, *view, *action, window_focused);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, &action->compose,
+        &action->stamp, window_focused, &state.bookmark_ui.bookmark_chooser);
+}
+
 bool worm_ui_nuklear_compose_lane_focused(const wormedit::ui::compose_view_t* view, bool compose_tab_active,
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(

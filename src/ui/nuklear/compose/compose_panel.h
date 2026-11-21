@@ -44,6 +44,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
                                           std::size_t double_click_count,
                                           std::size_t shortcut_event_count);
 
+// Compose navigation while a full-screen player preview hides the panel: Go to measure (Ctrl+G),
+// page keys and the plain wheel. Call it inside the preview window so the Go to measure prompt and
+// the bookmark chooser open over it. Discards the rest of Compose's queued pointer input.
+void worm_ui_nuklear_compose_preview_navigation(struct nk_context* context,
+                                                const wormedit::ui::compose_view_t* view,
+                                                wormedit::ui::compose_ui_window_t* action,
+                                                bool window_focused, bool ime_composition_active);
+
 [[nodiscard]] bool worm_ui_nuklear_compose_lane_focused(const wormedit::ui::compose_view_t* view,
                                                         bool compose_tab_active,
                                                         bool window_focused);

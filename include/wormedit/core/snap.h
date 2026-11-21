@@ -63,6 +63,8 @@ struct snap_grid_t {
 struct grid_phase_t {
     std::uint64_t row{};
     std::uint64_t period{};
+
+    auto operator==(const grid_phase_t&) const -> bool = default;
 };
 [[nodiscard]] auto grid_phase(const chart_document_t& chart, const measure_index_t& index,
                               std::uint64_t absolute_row, quantization_space_t space) noexcept

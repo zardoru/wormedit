@@ -128,7 +128,7 @@ TEST_CASE("player preview composes lanes receptors notes and holds from one tran
     CHECK(scene.value->visible_note_count == 2);
 }
 
-TEST_CASE("player preview skins share geometry and change presentation only",
+TEST_CASE("player preview skins share lanes and rows and anchor heads like Compose",
           "[unit][core][player-preview][skin]") {
     const auto built = player_preview_index_t::from(preview_chart(), 9);
     REQUIRE(built.value);
@@ -148,10 +148,17 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     REQUIRE(arrows.value->note_endpoints.size() == neutral.value->note_endpoints.size());
     REQUIRE(arrows.value->note_endpoints.size() == mania.value->note_endpoints.size());
     for (std::size_t index = 0; index < arrows.value->note_endpoints.size(); ++index) {
-        CHECK(arrows.value->note_endpoints[index].bounds ==
-              neutral.value->note_endpoints[index].bounds);
-        CHECK(arrows.value->note_endpoints[index].bounds ==
-              mania.value->note_endpoints[index].bounds);
+        const auto& arrow = arrows.value->note_endpoints[index].bounds;
+        const auto row_y = (arrow.top + arrow.bottom) / 2.0;
+        const auto height = arrow.bottom - arrow.top;
+        // Arrow heads center on their row; square and bar heads rest below it in upscroll.
+        for (const auto* anchored : {&neutral.value->note_endpoints[index],
+                                     &mania.value->note_endpoints[index]}) {
+            CHECK(anchored->bounds.left == Catch::Approx(arrow.left));
+            CHECK(anchored->bounds.right == Catch::Approx(arrow.right));
+            CHECK(anchored->bounds.top == Catch::Approx(row_y));
+            CHECK(anchored->bounds.bottom == Catch::Approx(row_y + height));
+        }
         CHECK(neutral.value->note_endpoints[index].glyph == lane_glyph_t::square);
         CHECK(mania.value->note_endpoints[index].glyph == lane_glyph_t::bar);
     }
@@ -161,10 +168,65 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(64.0));
 }
 
+TEST_CASE("player preview square skin uses bar heads and downscroll mirrors note positions",
+          "[unit][core][player-preview][skin][direction]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    REQUIRE(built.diagnostics.empty());
+    auto up_request = request(frame_at(*built.value, 240));
+    up_request.skin = player_preview_skin_t::squared;
+    const auto up = player_preview_scene_view_t::from(*built.value, up_request);
+    require_preview_scene(up);
+    for (const auto& note : up.value->note_endpoints) CHECK(note.glyph == lane_glyph_t::bar);
+
+    auto down_request = up_request;
+    down_request.direction = player_preview_scroll_direction_t::toward_bottom;
+    down_request.receptor_y_pixels = down_request.viewport_height_pixels - up_request.receptor_y_pixels;
+    const auto down = player_preview_scene_view_t::from(*built.value, down_request);
+    require_preview_scene(down);
+    REQUIRE(down.value->note_endpoints.size() == up.value->note_endpoints.size());
+    // Mirroring the field about its horizontal axis maps every head onto its upscroll position.
+    for (std::size_t index = 0; index < up.value->note_endpoints.size(); ++index) {
+        const auto& a = up.value->note_endpoints[index].bounds;
+        const auto& b = down.value->note_endpoints[index].bounds;
+        CHECK(b.top == Catch::Approx(up_request.viewport_height_pixels - a.bottom));
+        CHECK(b.bottom == Catch::Approx(up_request.viewport_height_pixels - a.top));
+    }
+    CHECK(down.value->direction == player_preview_scroll_direction_t::toward_bottom);
+}
+
 namespace {
 void check_preview_scene_rejected(const player_preview_scene_view_outcome_t& result) {
     CHECK_FALSE((result.value && result.diagnostics.empty()));
 }
+}
+
+TEST_CASE("player preview draws measure lines and reports its visible lane count",
+          "[unit][core][player-preview]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    CHECK(built.value->visible_lane_count == 4);
+    REQUIRE_FALSE(built.value->measures.empty());
+    const auto scene = player_preview_scene_view_t::from(*built.value, request(0));
+    require_preview_scene(scene);
+    REQUIRE_FALSE(scene.value->measure_lines.empty());
+    // The first measure starts at the receptor line while the transport sits at row 0.
+    CHECK(scene.value->measure_lines.front().number == 1);
+    CHECK(scene.value->measure_lines.front().y_pixels == Catch::Approx(64.0));
+    for (const auto& note : scene.value->note_endpoints) CHECK(note.phase.period != 0);
+}
+
+TEST_CASE("player preview without notes survives a note cap that would discard the frame",
+          "[unit][core][player-preview]") {
+    const auto built = player_preview_index_t::from(preview_chart(), 9);
+    REQUIRE(built.value);
+    auto capped = request(frame_at(*built.value, 240));
+    capped.maximum_visible_notes = 1;
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.value, capped));
+    capped.include_notes = false;
+    const auto scene = player_preview_scene_view_t::from(*built.value, capped);
+    require_preview_scene(scene);
+    CHECK(scene.value->note_endpoints.empty());
 }
 
 TEST_CASE("player preview validates Layer 2 identities, kind and frame bounds", "[player-preview][bga][layer2]") {
@@ -398,4 +460,22 @@ TEST_CASE("player preview retains warning-bearing values and diagnostics", "[cor
     check_preview_scene_rejected(scene);
     REQUIRE(scene.diagnostics.size() == 1);
     CHECK(scene.diagnostics.front() == warning);
+}
+
+TEST_CASE("player preview hides invisible notes that Compose still shows",
+          "[unit][core][player-preview][invisible]") {
+    auto chart = preview_chart();
+    chart.measures.front().notes.front().kind = note_kind_t::invisible;
+    const auto built = player_preview_index_t::from(chart, 9);
+    REQUIRE(built.value);
+    REQUIRE(built.diagnostics.empty());
+    const auto scene = player_preview_scene_view_t::from(*built.value,
+                                                         request(frame_at(*built.value, 240)));
+    require_preview_scene(scene);
+    CHECK(std::ranges::find(scene.value->note_endpoints, object_id_t{10},
+                            &player_preview_note_geometry_t::note) ==
+          scene.value->note_endpoints.end());
+    CHECK(std::ranges::find(scene.value->note_endpoints, object_id_t{11},
+                            &player_preview_note_geometry_t::note) !=
+          scene.value->note_endpoints.end());
 }

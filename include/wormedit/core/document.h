@@ -538,6 +538,16 @@ enum class asset_kind_t {
     midi,
 };
 
+// The BGA base lane shows an image or a movie (BMS plays video from channel 04); a video event
+// shows only video, and every other lane only images.
+[[nodiscard]] constexpr auto can_bga_event_show_asset(visual_event_kind_t event,
+                                                      asset_kind_t asset) noexcept -> bool {
+    if (event == visual_event_kind_t::video) return asset == asset_kind_t::video;
+    if (event == visual_event_kind_t::background)
+        return asset == asset_kind_t::image || asset == asset_kind_t::video;
+    return asset == asset_kind_t::image;
+}
+
 struct audio_stream_info_t {
     std::uint32_t sample_rate{};
     std::uint32_t channels{};

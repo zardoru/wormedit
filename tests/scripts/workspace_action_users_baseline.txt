@@ -20,6 +20,7 @@ tests/sys/application_commands_tests.cpp
 tests/sys/application_dispatch_fixture.h
 tests/sys/bga_actions_tests.cpp
 tests/sys/bga_usage_actions_tests.cpp
+tests/sys/compose_action_notification_fixture.h
 tests/sys/compose_action_notification_tests.cpp
 tests/sys/compose_area_dispatch_fixture.h
 tests/sys/compose_area_span_input_tests.cpp

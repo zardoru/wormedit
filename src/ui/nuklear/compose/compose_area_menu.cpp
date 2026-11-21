@@ -162,7 +162,8 @@ void render_warp_timing(nk_context* context, const wormedit::ui::compose_view_t&
     if (available) {
         const auto seconds = *view.area_bpm_warp_moving_seconds;
         char preview[128];
-        std::snprintf(preview, sizeof(preview), "Beat travel: %.3f s → %.3f s",
+        std::snprintf(preview, sizeof(preview), "BPM × %llu/%llu · %.3f s → %.3f s",
+            static_cast<unsigned long long>(numerator), static_cast<unsigned long long>(denominator),
             seconds, seconds * static_cast<double>(denominator) / static_cast<double>(numerator));
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, preview, NK_TEXT_LEFT);

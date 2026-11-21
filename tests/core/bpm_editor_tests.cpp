@@ -839,6 +839,24 @@ TEST_CASE("BPM range warp scales interior events and restores the effective boun
     CHECK(history.read_chart(chart_id)->bpms == tempos);
 }
 
+TEST_CASE("BPM range warp accepts the exact reciprocal factors one half and one quarter",
+          "[core][bpm-editor][range-warp]") {
+    const auto divisor = GENERATE(std::uint64_t{2}, std::uint64_t{4});
+    auto history = document_history_t::from(bpm_song());
+    const auto chart_id = chart_id_t{2};
+    const auto measure = measure_id_t{3};
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure, 240}, {measure, 480}}, {1, divisor}));
+
+    const auto timing = timing_index_t::from(*history.read_chart(chart_id));
+    REQUIRE(timing.value);
+    const auto begin = timing.value->seconds_at(240);
+    const auto end = timing.value->seconds_at(480);
+    REQUIRE(begin.seconds);
+    REQUIRE(end.seconds);
+    CHECK(*begin.seconds == signed_rational_t{1, 2});
+    CHECK(*end.seconds == signed_rational_t{static_cast<std::int64_t>(divisor + 1), 2});
+}
+
 TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit",
           "[core][bpm-editor][range-warp]") {
     auto history = document_history_t::from(bpm_song());

@@ -1066,6 +1066,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp
+            sys/compose_audio_analysis_tests.cpp
+            ../src/sys/audio/compose_audio_analysis.cpp
             sys/bmson_projection_cache_tests.cpp
             ../src/sys/compose/actions/compose_sound_actions.cpp
             ../src/sys/commands/application_command_dispatch.cpp

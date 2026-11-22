@@ -1465,11 +1465,31 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
         .available = available, .right = right};
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+static void render_compose_audio_analysis(nk_context* context, const wormedit::ui::compose_view_t& view) {
+    if (!view.selected_audio_asset_id.value) return;
+    constexpr const char* modes[]{"Waveform", "Spectrum (40 Hz–20 kHz)",
+        "Low band (40–250 Hz)", "Mid band (250 Hz–2.5 kHz)", "High band (2.5–16 kHz)"};
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    state.audio_analysis_mode = static_cast<wormedit::ui::compose_audio_analysis_mode_t>(
+        wormedit::ui::chrome::safe_combo(context, modes, static_cast<int>(std::size(modes)),
+            static_cast<int>(state.audio_analysis_mode), 24, nk_vec2(220, 150)));
+    if (view.compose_audio_analysis_pending || view.compose_audio_analysis_unavailable) {
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+        nk_label(context, view.compose_audio_analysis_pending ? "Analyzing song audio…"
+            : "Audio analysis unavailable", NK_TEXT_LEFT);
+    }
+}
+#endif
+
 static void render_compose_inspector_contents(nk_context* context,
                                                const wormedit::ui::compose_view_t* view,
                                                const wormedit::ui::timing_view_t* timing_view,
                                                wormedit::ui::compose_ui_window_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    render_compose_audio_analysis(context, *view);
+#endif
     render_compose_recipe_form(inspector);
     render_compose_quantize_section(inspector);
     render_compose_transform_section(inspector);

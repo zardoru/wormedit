@@ -99,6 +99,11 @@ void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
     auto& view = flattened.view.compose;
     view.waveform_cut_frames.reset();
     view.waveform_rows.clear();
+    view.filtered_waveform_rows.clear();
+    view.spectrum_rows.clear();
+    view.audio_analysis_mode = {};
+    view.compose_audio_analysis_pending = false;
+    view.compose_audio_analysis_unavailable = false;
     view.waveform_overview_rows.clear();
     view.bgm_bar_rows.clear();
     view.bgm_bar_begin_fraction = 0;

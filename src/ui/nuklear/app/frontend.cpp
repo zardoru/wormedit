@@ -891,6 +891,10 @@ wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint3
     return worm_ui_nuklear_metadata_drop_target(g_interface_scale.logical(x), g_interface_scale.logical(y));
 }
 
+auto worm_ui_frontend_compose_audio_analysis_mode() -> wormedit::ui::compose_audio_analysis_mode_t {
+    return worm_ui_nuklear_compose_state().audio_analysis_mode;
+}
+
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request) {
     if (!request) return;
     worm_ui_nuklear_audio_waveform_viewport_request(*request);

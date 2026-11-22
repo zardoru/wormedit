@@ -281,6 +281,63 @@ enum class player_preview_skin_t : std::uint8_t {
     neutral,
     mania,
     arrows,
+    // Appended so stored values keep their meaning: plain square-cornered note heads.
+    squared,
+};
+
+// Where the preview is drawn and what it shows. Layout only changes the drawing rectangle: the
+// scene itself (scroll, SV, direction) is the same in every layout.
+enum class player_preview_layout_t : std::uint8_t {
+    floating,
+    full_screen,
+    // The BGA fills the window and the note field is drawn centered over it.
+    focus,
+};
+
+enum class player_preview_content_t : std::uint8_t {
+    play,
+    bga_only,
+};
+
+// What colors notes, as in Compose: the lane's key color, the semantic layer, or the snap class.
+enum class player_preview_color_view_t : std::uint8_t {
+    layout,
+    layers,
+    snap,
+};
+
+// Which side of the note field the BGA takes in the full-screen layout.
+enum class player_preview_bga_side_t : std::uint8_t {
+    left,
+    right,
+};
+
+// What the person chose for the preview plus the scroll direction the caller resolved for the
+// chart (editor preference, else the layout's default). Converts from a skin so call sites that
+// only care about the skin stay terse.
+struct player_preview_settings_t {
+    player_preview_skin_t skin{player_preview_skin_t::neutral};
+    player_preview_layout_t layout{player_preview_layout_t::floating};
+    player_preview_content_t content{player_preview_content_t::play};
+    player_preview_bga_side_t bga_side{player_preview_bga_side_t::right};
+    player_preview_color_view_t color_view{player_preview_color_view_t::layout};
+    // Scales how many beats fit on screen (pixels per beat); 1 is the default view.
+    double zoom{1.0};
+    bool downscroll{};
+    // The miss (poor) image and storyboard Fail/Pass sprites: a player shows them only for a miss
+    // or a gauge state, and over the BGA they hide everything else.
+    bool show_state_layers{true};
+
+    static constexpr double minimum_zoom = 0.4;
+    static constexpr double maximum_zoom = 16.0;
+    [[nodiscard]] static constexpr auto clamp_zoom(double value) -> double {
+        return !(value >= minimum_zoom) ? minimum_zoom : value > maximum_zoom ? maximum_zoom : value;
+    }
+
+    constexpr player_preview_settings_t() = default;
+    constexpr player_preview_settings_t(player_preview_skin_t value) : skin(value) {}
+
+    auto operator==(const player_preview_settings_t&) const -> bool = default;
 };
 
 enum class native_project_recovery_action_t {

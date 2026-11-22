@@ -20,6 +20,10 @@
 #include <wormedit/visual/video_job.h>
 #endif
 
+namespace wormedit {
+struct editor_preferences_t;
+}
+
 namespace wormedit::sys {
 
 struct workspace_frame_transport_t {
@@ -53,7 +57,8 @@ struct workspace_frame_view_args_t {
     workspace_frame_transport_t transport;
     player_preview_presenter_t& player_preview_presenter;
     bool player_preview_visible{};
-    player_preview_skin_t player_preview_skin{};
+    player_preview_settings_t player_preview_settings{};
+    const editor_preferences_t* editor_preferences{};
     const std::filesystem::path& asset_base;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     visual::image_job_t& player_image_job;

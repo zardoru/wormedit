@@ -720,6 +720,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness_tests.cpp
         ui/bms_program_event_harness_tests.cpp
         ui/walkthrough_bms_event_harness_tests.cpp
+        ui/player_preview_occlusion_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
         ../src/sys/app/application_defaults.cpp
         ../src/sys/app/application_command_state.cpp
@@ -800,6 +801,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/resource_paint_event_harness_tests.cpp
         ui/bga_advance_workflow_tests.cpp
         ui/bga_lane_event_harness_tests.cpp
+        ui/timing_controls_event_harness_tests.cpp
         ui/playback_status_event_harness_tests.cpp
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp

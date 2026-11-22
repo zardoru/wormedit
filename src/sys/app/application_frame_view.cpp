@@ -26,13 +26,14 @@ namespace {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 void populate_compose_audio_analysis_view(const runtime::waveform_analysis_t& runtime,
                                            ui::compose_view_t& view,
-                                           const audio::display_row_table_t& table,
+                                           const audio::display_row_table_t* table,
                                            ui::compose_audio_analysis_mode_t mode) {
-    view.audio_analysis_mode = mode;
-    view.compose_audio_analysis_pending = runtime.is_compose_audio_analysis_pending();
+    view.compose_audio_analysis_pending = runtime.is_compose_audio_analysis_pending() ||
+        view.waveform_analysis_pending;
+    view.compose_audio_analysis_percent = runtime.compose_audio_analysis_percent();
     const auto* analysis = runtime.compose_audio_analysis();
     view.compose_audio_analysis_unavailable = !analysis && !view.compose_audio_analysis_pending;
-    if (analysis) analysis->populate_view(view, table, mode);
+    if (analysis && table) analysis->populate_view(view, *table, mode);
 }
 #endif
 
@@ -272,7 +273,8 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
                 .transport = frame_transport,
                 .player_preview_presenter = context.player_preview_presenter,
                 .player_preview_visible = context.application_command_state.project.compose_view.player_preview_visible,
-                .player_preview_skin = context.application_command_state.project.compose_view.player_preview_skin,
+                .player_preview_settings = context.application_command_state.project.compose_view.player_preview_settings,
+                .editor_preferences = &context.application_command_state.preferences.editor_preferences,
                 .asset_base = context.asset_base,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 .player_image_job = context.player_image_job,
@@ -338,7 +340,9 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
         context.waveform_runtime.waveform_asset() == context.workspace.transport.audio_asset
             ? context.waveform_runtime.waveform_analysis().get()
             : nullptr;
-    const auto analysis_mode = worm_ui_frontend_compose_audio_analysis_mode();
+    auto& compose = flattened.view.compose;
+    const auto analysis_mode = context.application_command_state.project.compose_view.audio_analysis_mode;
+    compose.audio_analysis_mode = analysis_mode;
     const bool inspect_audio = flattened.view.compose.visible &&
         analysis_mode != ui::compose_audio_analysis_mode_t::waveform;
     context.waveform_runtime.service_compose_audio_analysis(context.workspace.transport.audio_asset,
@@ -377,9 +381,10 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             context.application_command_state.project.bgm.bgm_bar_range,
             &context.application_command_state.project.bgm.bgm_bar_pan_override,
             &context.application_command_state.project.bgm.bgm_bar_window_capture);
-        if (inspect_audio && compose_waveform_overview_available)
+        if (inspect_audio)
             populate_compose_audio_analysis_view(context.waveform_runtime, flattened.view.compose,
-                context.compose_scene_cache.waveform.waveform_row_table, analysis_mode);
+                compose_waveform_overview_available ? &context.compose_scene_cache.waveform.waveform_row_table : nullptr,
+                analysis_mode);
     }
     {
         frame_phase_scope_t overlays(frame_phase_t::workspace_waveform_overlays);

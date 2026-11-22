@@ -1,3 +1,7 @@
+#include "common/file_dialog.h"
+#ifdef __EMSCRIPTEN__
+#include "common/browser_workspace.h"
+#endif
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/compose/compose_ui_window_of.h"
 #include "ui/nuklear/audio/audio_ui_window_of.h"
@@ -102,6 +106,7 @@ class RenderSubphaseScope {
 #include <span>
 #include <string>
 #include <string_view>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -388,10 +393,10 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
         {"wormedit project", "wormedit"},
     };
     if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE || kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE)
-        SDL_ShowOpenFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_open_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                open_filters, SDL_arraysize(open_filters), nullptr, false);
     else
-        SDL_ShowSaveFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_save_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                save_filters, SDL_arraysize(save_filters), "Untitled.wormedit");
 }
 
@@ -621,7 +626,46 @@ static void consume_compose_text_hotkeys(wormedit::ui::workspace_action_t& actio
     }
 }
 
+// Where the player preview was drawn last frame; Ctrl+wheel over it zooms the preview, not Compose.
+static std::optional<struct nk_rect> g_player_preview_bounds;
+static double g_player_preview_wheel_steps{};
+
+static bool take_player_preview_wheel(const SDL_MouseWheelEvent* event) {
+    if (!g_player_preview_bounds || (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) == 0)
+        return false;
+    const auto& bounds = *g_player_preview_bounds;
+    if (event->mouse_x < bounds.x || event->mouse_x >= bounds.x + bounds.w ||
+        event->mouse_y < bounds.y || event->mouse_y >= bounds.y + bounds.h) return false;
+    g_player_preview_wheel_steps += event->direction == SDL_MOUSEWHEEL_FLIPPED ? -event->y : event->y;
+    return true;
+}
+
+// A press that starts on the floating preview belongs to it until every button is up; Compose
+// reads raw pointer input, so without this a click on the preview would also hit the canvas
+// behind it. A press that started in Compose stays Compose's even if it is released over it.
+static bool g_player_preview_owns_press{};
+
+static bool is_in_player_preview(struct nk_vec2 point) {
+    if (!g_player_preview_bounds) return false;
+    const auto& bounds = *g_player_preview_bounds;
+    return point.x >= bounds.x && point.x < bounds.x + bounds.w && point.y >= bounds.y &&
+           point.y < bounds.y + bounds.h;
+}
+
+static bool update_player_preview_press_ownership(const struct nk_mouse& mouse) {
+    bool any_down = false;
+    for (const auto& button : mouse.buttons) {
+        const bool pressed_here = button.clicked != 0 && (button.down != 0 || button.clicked > 1);
+        if (pressed_here && is_in_player_preview(button.clicked_pos)) g_player_preview_owns_press = true;
+        any_down = any_down || button.down != 0;
+    }
+    const bool owned = g_player_preview_owns_press;
+    if (!any_down) g_player_preview_owns_press = false;
+    return owned;
+}
+
 static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
+    if (event && take_player_preview_wheel(event)) return;
     if (!event || !g_window_focused || (!g_window && !g_headless) ||
         !frontend_event_window_matches(event->windowID, true) ||
         !std::isfinite(event->x) || !std::isfinite(event->y) || !std::isfinite(event->mouse_x) ||
@@ -889,10 +933,6 @@ wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint3
         !std::isfinite(y))
         return {};
     return worm_ui_nuklear_metadata_drop_target(g_interface_scale.logical(x), g_interface_scale.logical(y));
-}
-
-auto worm_ui_frontend_compose_audio_analysis_mode() -> wormedit::ui::compose_audio_analysis_mode_t {
-    return worm_ui_nuklear_compose_state().audio_analysis_mode;
 }
 
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request) {
@@ -1987,12 +2027,16 @@ static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& v
 }
 
 static void open_user_manual() {
+#ifdef __EMSCRIPTEN__
+    wormedit::platform::show_browser_manual();
+#else
     const auto* base = SDL_GetBasePath();
     const auto manual = wormedit::ui::nuklear::manual_location_t::from(base ? base : "");
     if (manual && manual->open()) return;
     const auto* message = manual ? SDL_GetError() :
         "The user manual is not installed. Build or install Wormedit with WORMEDIT_INSTALL_MANUAL enabled.";
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not open user manual", message, SDL_GetKeyboardFocus());
+#endif
 }
 
 static void apply_workspace_menu_action(MenuAction chosen,
@@ -2010,6 +2054,9 @@ static void apply_workspace_menu_action(MenuAction chosen,
     }
     switch (chosen) {
     case MenuAction::manual: open_user_manual(); break;
+#ifdef __EMSCRIPTEN__
+    case MenuAction::download_native: wormedit::platform::show_browser_native_downloads(); break;
+#endif
     case MenuAction::open: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE); break;
     case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
     case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;
@@ -2406,8 +2453,9 @@ static bool snap_badge_available(const wormedit::ui::workspace_view_t& view) {
         (!compose_popup_owns_input() || own);
 }
 
-static void render_status_transport_buttons(const wormedit::ui::workspace_view_t* view,
-                                            wormedit::ui::workspace_action_t* action) {
+// Play/pause and stop, shared by the status bar and the full-screen preview's transport strip.
+static void render_play_stop_buttons(const wormedit::ui::workspace_view_t* view,
+                                     wormedit::ui::workspace_action_t* action) {
     if (!view->transport_available) nk_widget_disable_begin(g_context);
     const char* play_hint = view->transport_playing ? "Pause playback (Space)"
                             : view->transport_paused ? "Resume playback (Space)"
@@ -2425,6 +2473,11 @@ static void render_status_transport_buttons(const wormedit::ui::workspace_view_t
         can_stop)
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
     if (!can_stop) nk_widget_disable_end(g_context);
+}
+
+static void render_status_transport_buttons(const wormedit::ui::workspace_view_t* view,
+                                            wormedit::ui::workspace_action_t* action) {
+    render_play_stop_buttons(view, action);
     if (wormedit::ui::chrome::IconButton{Glyph::eye,
                                          view->player_preview.visible ? "Hide player preview"
                                                                       : "Show player preview",
@@ -2454,6 +2507,16 @@ static void render_transport_readout(const std::string& text, const std::string&
     }
 }
 
+// Columns render_transport_rate fills: gutter, slower, rate label, faster, gutter, keep pitch.
+static void push_transport_rate_columns(nk_context* context, float control, float gutter) {
+    nk_layout_row_template_push_static(context, gutter);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+    nk_layout_row_template_push_static(context, 40);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+    nk_layout_row_template_push_static(context, gutter);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+}
+
 struct status_bar_layout_t {
     bool show_snap{}, show_zoom{}, show_rate{}, show_row{}, show_musical{}, show_details{};
     float control{}, gutter{}, snap{}, notification{}, time{}, row{}, musical{}, details{};
@@ -2476,15 +2539,8 @@ struct status_bar_layout_t {
     void begin(nk_context* context) const {
         nk_layout_row_template_begin(context, 30);
         wormedit::ui::chrome::IconButton::layout_columns(context, 4, control);
-        if (show_rate) {
-            // Rate stepper: chevrons hug the value, with a gutter on both sides.
-            nk_layout_row_template_push_static(context, gutter);
-            wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
-            nk_layout_row_template_push_static(context, 40);
-            wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
-            nk_layout_row_template_push_static(context, gutter);
-            wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
-        }
+        // Rate stepper: chevrons hug the value, with a gutter on both sides.
+        if (show_rate) push_transport_rate_columns(context, control, gutter);
         if (show_snap) nk_layout_row_template_push_static(context, snap);
         if (show_zoom) nk_layout_row_template_push_static(context, 116);
         nk_layout_row_template_push_dynamic(context);
@@ -2833,6 +2889,12 @@ static bool is_compose_content_input_occluded(const wormedit::ui::workspace_view
     return options_owns_content_input(view) || command_menu_owns_input();
 }
 
+// Runs once per frame: press ownership must be tracked even while another owner occludes Compose.
+static bool is_compose_input_occluded_this_frame(const wormedit::ui::workspace_view_t& view) {
+    const bool preview_owns_press = update_player_preview_press_ownership(g_context->input.mouse);
+    return is_compose_content_input_occluded(view) || preview_owns_press;
+}
+
 class compose_input_occlusion_scope_t {
   public:
     compose_input_occlusion_scope_t(wormedit::ui::compose_view_t& view, bool frontend_occluded)
@@ -2994,10 +3056,11 @@ static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& vi
         wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label.c_str());
 }
 
-static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view,
-                                      wormedit::ui::workspace_action_t& action) {
+// The seek progress in the current layout slot. The Compose bar also reports the hovered source
+// time for its timing tooltip; the full-screen preview's bar does not.
+static void render_transport_seek_progress(const wormedit::ui::workspace_view_t& view,
+                                           wormedit::ui::workspace_action_t& action, bool report_hover) {
     constexpr nk_size seek_steps = 10'000;
-    nk_layout_row_dynamic(g_context, preview_row_height, 1);
     if (view.transport_end_frame == 0) {
         nk_size unavailable_position = 0;
         nk_widget_disable_begin(g_context);
@@ -3019,8 +3082,14 @@ static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view
             (view.transport_end_frame / seek_steps) * seek_position +
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
-    report_transport_seek_hover(view, action, bounds);
+    if (report_hover) report_transport_seek_hover(view, action, bounds);
     render_seek_grip(bounds, seek_position, seek_steps);
+}
+
+static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view,
+                                      wormedit::ui::workspace_action_t& action) {
+    nk_layout_row_dynamic(g_context, preview_row_height, 1);
+    render_transport_seek_progress(view, action, true);
 }
 
 // Flat stand-in while the song's waveform is still being prepared.
@@ -3712,6 +3781,18 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
+        // A full-screen or focus preview hides everything below the title bar: skip drawing it.
+        if (worm_ui_nuklear_player_preview_covers_workspace(view.player_preview)) {
+            {
+                const wormedit::ui::nuklear::sdl_region_scope_t header(
+                    g_context, wormedit::ui::nuklear::sdl_region_t::header);
+                render_title_bar(&view, &action);
+            }
+            // Compose's queued input is consumed by its navigation inside the preview window.
+            nk_end(g_context);
+            render_project_modals(frame);
+            return;
+        }
         {
             const wormedit::ui::nuklear::sdl_region_scope_t header(
                 g_context, wormedit::ui::nuklear::sdl_region_t::header);
@@ -3785,7 +3866,38 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
     nk_end(g_context);
 }
 
+// The full-screen preview's transport strip: play/pause, stop, rate with keep pitch, and a plain
+// seek bar. No snap badge, readouts or diagnostics; those belong to the editor's status bar.
+struct preview_transport_strip_t {
+    const wormedit::ui::workspace_view_t* view{};
+    wormedit::ui::workspace_action_t* action{};
+};
+
+static constexpr float preview_transport_row_height = 30.0f;
+
+static void render_preview_transport_strip(nk_context* context, void* user) {
+    const auto& strip = *static_cast<const preview_transport_strip_t*>(user);
+    const auto control = wormedit::ui::chrome::IconButton::width;
+    nk_layout_row_template_begin(context, preview_transport_row_height);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 2, control);
+    push_transport_rate_columns(context, control, 10.0f);
+    nk_layout_row_template_push_static(context, 10.0f);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_end(context);
+    render_play_stop_buttons(strip.view, strip.action);
+    render_transport_rate(*strip.view, strip.action);
+    nk_spacing(context, 1);
+    render_transport_seek_progress(*strip.view, *strip.action, false);
+    // Navigation that keeps working over the picture; it moves the Compose cursor, which is the
+    // preview's playhead while stopped.
+    auto compose_window = wormedit::ui::compose_ui_window_of(*strip.action);
+    worm_ui_nuklear_compose_preview_navigation(context, &strip.view->compose, &compose_window,
+                                               g_window_focused, g_ime_composition_active);
+}
+
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    // Stays unset on every early return below; the preview sets it again when it draws.
+    g_player_preview_bounds.reset();
     if (frame.view.lane_keys && frame.view.lane_keys->visible) {
         wormedit::ui::nuklear::render_lane_keys_dialog(g_context, *frame.view.lane_keys,
             frame.action.lane_keys, frame.width, frame.height);
@@ -3817,8 +3929,19 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     render_tap_timing_tool(frame);
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action.timing_settings,
                                                   frame.action.compose);
+    preview_transport_strip_t strip{&frame.view, &frame.action};
+    const worm_ui_nuklear_preview_footer_t footer{
+        .height = preview_transport_row_height + 2.0f * g_context->style.window.padding.y,
+        .render = render_preview_transport_strip,
+        .user = &strip};
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
-                                          &frame.action.kind, &frame.action.player_preview_skin, frame.width, frame.height);
+                                          &frame.action.kind, &frame.action.player_preview_settings, frame.width,
+                                          worm_ui_frontend_title_bar_height(), frame.height,
+                                          std::exchange(g_player_preview_wheel_steps, 0.0), &footer);
+    const auto* preview_window = frame.view.player_preview.visible
+        ? nk_window_find(g_context, "Player preview") : nullptr;
+    if (preview_window) g_player_preview_bounds = preview_window->bounds;
+    else g_player_preview_bounds.reset();
 }
 
 static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {
@@ -3976,7 +4099,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         !g_notification_modal && !command_menu_dialog_blocked() &&
         !wormedit::ui::chrome::context_menu_keyboard_owned());
     const compose_input_occlusion_scope_t occlusion{view->compose,
-        is_compose_content_input_occluded(*view)};
+        is_compose_input_occluded_this_frame(*view)};
     // Existing command owners see the closing frame before release guards retire.
     worm_ui_nuklear_update_compose_release_latches(worm_ui_nuklear_compose_state(), g_context);
 

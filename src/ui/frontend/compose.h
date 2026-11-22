@@ -3,6 +3,7 @@
 #include "bga_usage.h"
 #include "bms_program.h"
 #include "compose_measure_lane.h"
+#include "compose_audio_analysis.h"
 #include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
 #include <wormedit/core/preview_mix.h>
@@ -1272,6 +1273,7 @@ struct compose_view_t {
     uint64_t area_range_begin_row{};
     uint64_t area_range_end_row{};
     wormedit::ui::preview_audio_range_view_t preview_audio_range{};
+    std::optional<double> area_bpm_warp_moving_seconds;
     uint64_t area_canvas_rows{};
     uint64_t area_rows_per_measure{};
     uint64_t area_snap_denominator{};
@@ -1342,7 +1344,7 @@ struct compose_view_t {
     bool bga_lane_visible{};
     std::vector<wormedit::ui::compose_bga_event_view_t> bga_events;
     wormedit::ui::compose_rect_t bga_lane_bounds{};
-    uint8_t bga_revealed_lane_mask{};
+    uint8_t bga_visible_lane_mask{};
     size_t bga_lane_count{};
     wormedit::ui::compose_rect_t bga_lane_rects[4]{};
     uint8_t bga_lane_kinds[4]{};
@@ -1468,6 +1470,7 @@ struct compose_view_t {
     wormedit::ui::compose_audio_analysis_mode_t audio_analysis_mode{};
     std::vector<wormedit::ui::compose_spectrum_row_view_t> spectrum_rows;
     std::vector<wormedit::ui::compose_waveform_row_view_t> filtered_waveform_rows;
+    unsigned compose_audio_analysis_percent{};
     bool compose_audio_analysis_pending{};
     bool compose_audio_analysis_unavailable{};
     // Cached canvas passes need presence without copying waveform rows.

@@ -1466,17 +1466,36 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-static void render_compose_audio_analysis(nk_context* context, const wormedit::ui::compose_view_t& view) {
+static void render_compose_audio_analysis(nk_context* context, const wormedit::ui::compose_view_t& view,
+                                          wormedit::ui::compose_ui_window_t& action) {
     if (!view.selected_audio_asset_id.value) return;
-    constexpr const char* modes[]{"Waveform", "Spectrum (40 Hz–20 kHz)",
-        "Low band (40–250 Hz)", "Mid band (250 Hz–2.5 kHz)", "High band (2.5–16 kHz)"};
+    using mode_t = wormedit::ui::compose_audio_analysis_mode_t;
+    constexpr const char* displays[]{"Waveform", "Spectrum"};
+    constexpr const char* bands[]{"Full band", "Low band", "Mid band", "High band"};
+    constexpr mode_t band_modes[]{mode_t::waveform, mode_t::lows, mode_t::mids, mode_t::highs};
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-    state.audio_analysis_mode = static_cast<wormedit::ui::compose_audio_analysis_mode_t>(
-        wormedit::ui::chrome::safe_combo(context, modes, static_cast<int>(std::size(modes)),
-            static_cast<int>(state.audio_analysis_mode), 24, nk_vec2(220, 150)));
+    const auto display = wormedit::ui::chrome::safe_combo(context, displays, std::size(displays),
+        view.audio_analysis_mode == mode_t::spectrum, 24, nk_vec2(180, 80));
+    auto mode = mode_t::spectrum;
+    if (display == 0) {
+        const auto band = std::ranges::find(band_modes, view.audio_analysis_mode);
+        const auto selected = band == std::end(band_modes) ? 0 : static_cast<int>(band - band_modes);
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+        mode = band_modes[wormedit::ui::chrome::safe_combo(context, bands, std::size(bands),
+            selected, 24, nk_vec2(180, 130))];
+    }
+    auto& inputs = action.input.compose_inputs;
+    if (mode != view.audio_analysis_mode && inputs.size() < wormedit::ui::compose_input_admission_limit) {
+        auto& input = inputs.emplace_back();
+        input.kind = WORM_UI_COMPOSE_INPUT_SET_AUDIO_ANALYSIS_MODE;
+        input.audio_analysis_mode = mode;
+    }
     if (view.compose_audio_analysis_pending || view.compose_audio_analysis_unavailable) {
         nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
-        nk_label(context, view.compose_audio_analysis_pending ? "Analyzing song audio…"
+        char progress[48];
+        std::snprintf(progress, sizeof(progress), "Analyzing song audio… %u%%",
+                      view.compose_audio_analysis_percent);
+        nk_label(context, view.compose_audio_analysis_pending ? progress
             : "Audio analysis unavailable", NK_TEXT_LEFT);
     }
 }
@@ -1488,7 +1507,7 @@ static void render_compose_inspector_contents(nk_context* context,
                                                wormedit::ui::compose_ui_window_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    render_compose_audio_analysis(context, *view);
+    render_compose_audio_analysis(context, *view, *action);
 #endif
     render_compose_recipe_form(inspector);
     render_compose_quantize_section(inspector);
@@ -1651,6 +1670,22 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     render_go_to_measure(context, *view, *action, window_focused);
     (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, &action->compose, &action->stamp, window_focused, &state.bookmark_ui.bookmark_chooser);
     render_compose_sound_picker(context, *view, *action, state, window_focused);
+}
+
+void worm_ui_nuklear_compose_preview_navigation(struct nk_context* context,
+                                                const wormedit::ui::compose_view_t* view,
+                                                wormedit::ui::compose_ui_window_t* action,
+                                                bool window_focused, bool ime_composition_active) {
+    if (!context || !view || !action || !view->visible) {
+        worm_ui_nuklear_compose_discard_frame_input();
+        return;
+    }
+    process_compose_preview_navigation_keys(context, view, action, window_focused, ime_composition_active);
+    append_compose_preview_wheel_inputs(*view, action, window_focused);
+    worm_ui_nuklear_compose_discard_frame_input();
+    render_go_to_measure(context, *view, *action, window_focused);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, &action->compose,
+        &action->stamp, window_focused, &state.bookmark_ui.bookmark_chooser);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const wormedit::ui::compose_view_t* view, bool compose_tab_active,

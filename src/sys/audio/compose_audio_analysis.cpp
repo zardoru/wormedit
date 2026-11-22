@@ -113,7 +113,7 @@ void merge_bin(compose_audio_analysis_bin_t& result, const compose_audio_analysi
 
 auto compose_audio_analysis_t::from(audio::decoded_source_registry_t& sources,
                                     const audio::decoded_source_binding_t& binding,
-                                    std::stop_token stop)
+                                    std::stop_token stop, std::atomic<unsigned>* progress)
     -> std::shared_ptr<const compose_audio_analysis_t> {
     if (binding.output_frame_count == 0 || binding.output_sample_rate <= 2 * band_limits_hz.back()) return {};
     auto result = std::make_shared<compose_audio_analysis_t>();
@@ -130,6 +130,9 @@ auto compose_audio_analysis_t::from(audio::decoded_source_registry_t& sources,
         if (stop.stop_requested() || !sources.decode_block_into(blocks, key)) return {};
         if (!blocks.with_block(key, [&](const auto& block) { append_block(filters, block, *result); }))
             return {};
+        if (progress)
+            progress->store(static_cast<unsigned>(100.0 * (index + 1) / (last_block + 1)),
+                            std::memory_order_relaxed);
     }
     if (filters.bin_frames != 0) result->bins.push_back(filters.finish_bin());
     return result;
@@ -193,6 +196,7 @@ void runtime::waveform_analysis_t::reset_compose_audio_analysis() {
     compose_audio_analysis_task_.reset();
     compose_audio_analysis_binding_.reset();
     compose_audio_analysis_.reset();
+    compose_audio_analysis_progress_.reset();
 }
 
 void runtime::waveform_analysis_t::service_compose_audio_analysis(std::optional<asset_id_t> asset,
@@ -216,17 +220,19 @@ void runtime::waveform_analysis_t::service_compose_audio_analysis(std::optional<
     const auto binding = sources_.binding(*asset);
     if (!binding || binding->source != waveform->key.source) return;
 
+    auto progress = std::make_shared<std::atomic<unsigned>>(0);
     task_graph_t graph{1};
-    const auto task = graph.create_task({}, [this, binding = *binding](
+    const auto task = graph.create_task({}, [&sources = sources_, binding = *binding, progress](
         std::span<const task_outcome_t>, std::stop_token stop) {
-        return task_value_t::from(compose_audio_analysis_t::from(sources_, binding, stop));
+        return task_value_t::from(compose_audio_analysis_t::from(sources, binding, stop, progress.get()));
     });
     if (!task) return;
-    auto submitted = scheduler_.begin(std::move(graph));
+    auto submitted = compose_audio_analysis_scheduler_.begin(std::move(graph));
     if (!submitted) return;
     compose_audio_analysis_worker_ = std::move(submitted.value());
     compose_audio_analysis_task_ = *task;
     compose_audio_analysis_binding_ = binding;
+    compose_audio_analysis_progress_ = std::move(progress);
 }
 
 } // namespace wormedit::sys

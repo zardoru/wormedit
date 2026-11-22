@@ -1,3 +1,4 @@
+#include <cmath>
 #include "sys/audio/transport_player_actions.h"
 
 
@@ -23,7 +24,7 @@ auto toggle_metronome_status(application_command_state_t& state,
 } // namespace
 
 auto dispatch_transport_player_action(WormUiWorkspaceActionKind kind,
-    const wormedit::ui::transport_request_t& transport, wormedit::player_preview_skin_t player_preview_skin,
+    const wormedit::ui::transport_request_t& transport, const wormedit::player_preview_settings_t& player_preview_settings,
                                       application_command_state_t& application_state,
                                       notification_sink_t notifications)
     -> std::optional<std::string> {
@@ -64,13 +65,21 @@ auto dispatch_transport_player_action(WormUiWorkspaceActionKind kind,
         application_state.project.compose_view.player_preview_visible = !application_state.project.compose_view.player_preview_visible;
         return publish_transport_feedback(notifications, notification_severity_t::info,
             application_state.project.compose_view.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
-    case WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN:
-        if (player_preview_skin > wormedit::player_preview_skin_t::arrows) {
-            return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview skin ignored.");
+    case WORM_UI_WORKSPACE_ACTION_SET_PLAYER_PREVIEW_SETTINGS:
+        if (player_preview_settings.skin > wormedit::player_preview_skin_t::squared ||
+            player_preview_settings.layout > wormedit::player_preview_layout_t::focus ||
+            player_preview_settings.content > wormedit::player_preview_content_t::bga_only ||
+            player_preview_settings.bga_side > wormedit::player_preview_bga_side_t::right ||
+            player_preview_settings.color_view > wormedit::player_preview_color_view_t::snap ||
+            !std::isfinite(player_preview_settings.zoom)) {
+            return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview setting ignored.");
         }
-        application_state.project.compose_view.player_preview_skin =
-            static_cast<wormedit::player_preview_skin_t>(player_preview_skin);
-        return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview skin changed.");
+        // The scroll direction is resolved per chart each frame, never stored.
+        application_state.project.compose_view.player_preview_settings = player_preview_settings;
+        application_state.project.compose_view.player_preview_settings.downscroll = false;
+        application_state.project.compose_view.player_preview_settings.zoom =
+            wormedit::player_preview_settings_t::clamp_zoom(player_preview_settings.zoom);
+        return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview settings changed.");
     default:
         return std::nullopt;
     }

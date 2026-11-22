@@ -1655,7 +1655,8 @@ static void draw_compose_spectrum(const ComposePaintContext& paint, float left, 
 
 static void draw_compose_waveform(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
-    const auto& rows = view.filtered_waveform_rows.empty() ? view.waveform_rows : view.filtered_waveform_rows;
+    const auto& rows = view.audio_analysis_mode == wormedit::ui::compose_audio_analysis_mode_t::waveform
+        ? view.waveform_rows : view.filtered_waveform_rows;
     if (rows.empty() && view.spectrum_rows.empty()) return;
     const auto scale = paint.viewport.w / static_cast<float>(view.viewport_width_pixels);
     const auto left = paint.viewport.x + static_cast<float>(view.playable_field_left_pixels) * scale;

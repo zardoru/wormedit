@@ -48,10 +48,6 @@ void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_re
     if (request) *request = {};
 }
 
-auto worm_ui_frontend_compose_audio_analysis_mode() -> wormedit::ui::compose_audio_analysis_mode_t {
-    return wormedit::ui::compose_audio_analysis_mode_t::waveform;
-}
-
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request) {
     if (request) *request = {};
 }

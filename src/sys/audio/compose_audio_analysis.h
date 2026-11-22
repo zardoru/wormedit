@@ -1,6 +1,8 @@
 #pragma once
 
-#include "ui/frontend/metadata_audio.h"
+#include "ui/frontend/compose_audio_analysis.h"
+
+#include <atomic>
 
 #include <array>
 #include <cstdint>
@@ -27,7 +29,7 @@ struct compose_audio_analysis_bin_t {
 struct compose_audio_analysis_t {
     [[nodiscard]] static auto from(audio::decoded_source_registry_t& sources,
                                    const audio::decoded_source_binding_t& binding,
-                                   std::stop_token stop)
+                                   std::stop_token stop, std::atomic<unsigned>* progress = nullptr)
         -> std::shared_ptr<const compose_audio_analysis_t>;
     void populate_view(ui::compose_view_t& view, const audio::display_row_table_t& table,
                        ui::compose_audio_analysis_mode_t mode) const;

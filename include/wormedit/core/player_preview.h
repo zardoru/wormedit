@@ -6,6 +6,7 @@
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/storyboard_preview.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/video_preview.h>
 #include <wormedit/core/visual_layout.h>
@@ -43,7 +44,15 @@ struct player_preview_note_source_t {
     double end_displacement_beats{};
     double minimum_displacement_beats{};
     double maximum_displacement_beats{};
+    // Where the head and tail sit in the standard-measure grid, for snap colors.
+    grid_phase_t begin_phase;
+    grid_phase_t end_phase;
     std::optional<color_rgba_t> semantic_color;
+};
+
+struct player_preview_measure_source_t {
+    std::uint32_t number{};
+    double displacement_beats{};
 };
 
 // Immutable chart/revision-bound source data. The interval tree is keyed by
@@ -59,6 +68,9 @@ struct player_preview_index_t {
     scroll_speed_index_t scroll_speed;
     std::vector<editor_field_scene_layout_source_t> layouts;
     std::vector<player_preview_note_source_t> notes;
+    std::vector<player_preview_measure_source_t> measures;
+    // Most visible (non-autoplay, non-invisible) lanes of any layout segment.
+    std::size_t visible_lane_count{};
     std::size_t note_tree_leaf_base{1};
     std::vector<double> note_tree_max_end;
 };
@@ -73,6 +85,8 @@ struct player_preview_lane_geometry_t {
     stage_group_t stage{stage_group_t::none};
     lane_glyph_t glyph{lane_glyph_t::bar};
     std::uint32_t display_order{};
+    // The lane's key color with generic lanes resolved from their role (what Compose shows).
+    lane_key_color_t key_color{lane_key_color_t::generic};
     player_preview_rect_t bounds;
 
     auto operator==(const player_preview_lane_geometry_t&) const -> bool = default;
@@ -92,6 +106,8 @@ struct player_preview_note_geometry_t {
     note_kind_t kind{note_kind_t::tap};
     lane_glyph_t glyph{lane_glyph_t::bar};
     bool tail{};
+    lane_key_color_t key_color{lane_key_color_t::generic};
+    grid_phase_t phase;
     std::optional<color_rgba_t> semantic_color;
     player_preview_rect_t bounds;
 
@@ -101,10 +117,19 @@ struct player_preview_note_geometry_t {
 struct player_preview_hold_geometry_t {
     object_id_t note;
     lane_id_t lane;
+    lane_key_color_t key_color{lane_key_color_t::generic};
+    grid_phase_t phase;
     std::optional<color_rgba_t> semantic_color;
     player_preview_rect_t bounds;
 
     auto operator==(const player_preview_hold_geometry_t&) const -> bool = default;
+};
+
+struct player_preview_measure_geometry_t {
+    std::uint32_t number{};
+    double y_pixels{};
+
+    auto operator==(const player_preview_measure_geometry_t&) const -> bool = default;
 };
 
 struct player_preview_scene_request_t {
@@ -125,6 +150,8 @@ struct player_preview_scene_request_t {
     // Asset decoding and texture ownership remain renderer responsibilities.
     bga_layer_state_t visual_layers;
     std::span<const storyboard_draw_instance_t> storyboard_instances;
+    // False skips composing notes (a BGA-only view): the visible-note cap cannot then discard the frame.
+    bool include_notes{true};
     std::size_t maximum_visible_notes{4'096};
     std::size_t maximum_storyboard_instances{4'096};
     std::size_t maximum_composition_operations{100'000};
@@ -156,6 +183,7 @@ struct player_preview_scene_view_t {
     std::vector<player_preview_receptor_geometry_t> receptors;
     std::vector<player_preview_hold_geometry_t> hold_bodies;
     std::vector<player_preview_note_geometry_t> note_endpoints;
+    std::vector<player_preview_measure_geometry_t> measure_lines;
 
     auto operator==(const player_preview_scene_view_t&) const -> bool = default;
 };

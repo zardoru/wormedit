@@ -32,8 +32,10 @@ auto analyze_tone(double frequency) -> std::shared_ptr<const compose_audio_analy
     const auto source = sources.create_generated_source({.source = {"tone", "v1"},
         .interleaved_stereo = stereo_tone(frequency, wormedit::audio::maximum_read_frames + output_sample_rate)});
     REQUIRE(source);
-    auto analysis = compose_audio_analysis_t::from(sources, *source, {});
+    std::atomic<unsigned> progress{};
+    auto analysis = compose_audio_analysis_t::from(sources, *source, {}, &progress);
     REQUIRE(analysis);
+    CHECK(progress.load(std::memory_order_relaxed) == 100);
     return analysis;
 }
 

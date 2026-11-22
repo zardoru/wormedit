@@ -191,7 +191,7 @@ struct compose_static_layout_key_t {
         return {view.project_id.value, view.chart_id.value, view.document_revision, view.viewport_width_pixels,
                 view.pixels_per_standard_measure, view.playable_field_left_pixels,
                 view.playable_field_right_pixels, view.bgm_horizontal_scroll_pixels,
-                view.bga_lane_visible, view.bga_revealed_lane_mask, view.timing_lane_visibility_mask,
+                view.bga_lane_visible, view.bga_visible_lane_mask, view.timing_lane_visibility_mask,
                 view.timing_focus, view.downscroll, view.lane_key_legend_visible};
     }
 };

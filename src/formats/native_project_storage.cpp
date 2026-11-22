@@ -1,4 +1,5 @@
 #include "../core/text_util.h"
+#include "../core/browser_file_publication.h"
 #include <wormedit/formats/native_project_storage.h>
 #include <wormedit/core/command_journal.h>
 
@@ -930,7 +931,11 @@ auto replace_destination(const std::filesystem::path& temporary,
     // A same-directory hard-link install is atomic and fails if the target
     // already exists. The temporary remains owned by its RAII cleanup object.
     const auto installed = replace_existing ? ::rename(temporary.c_str(), destination.c_str())
+#ifdef __EMSCRIPTEN__
+                                            : platform::browser_move_no_replace(temporary, destination);
+#else
                                             : ::link(temporary.c_str(), destination.c_str());
+#endif
     if (installed != 0) {
         failure = "atomic destination replacement failed: " +
                   std::error_code(errno, std::generic_category()).message();
@@ -976,6 +981,12 @@ auto move_no_replace(const std::filesystem::path& source, const std::filesystem:
     if (!MoveFileExW(source.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH)) {
         failure =
             "could not move recovery artifact with Windows error " + std::to_string(GetLastError());
+        return false;
+    }
+#elif defined(__EMSCRIPTEN__)
+    if (platform::browser_move_no_replace(source, destination) != 0) {
+        failure = "could not move browser recovery artifact: " +
+                  std::error_code(errno, std::generic_category()).message();
         return false;
     }
 #elif defined(__APPLE__)

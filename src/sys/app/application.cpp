@@ -1,3 +1,7 @@
+#include "common/file_dialog.h"
+#ifdef __EMSCRIPTEN__
+#include "common/browser_workspace.h"
+#endif
 #include "common/window_presentation.h"
 #include "sys/request_stamp_check.h"
 #include "common/local_file_location.h"
@@ -2013,6 +2017,9 @@ struct application_t::implementation_t {
                               wormedit::document_stamp_t stamp) {
         using namespace wormedit;
         report.publish_paths(session.history, session.project_identity.asset_base);
+#ifdef __EMSCRIPTEN__
+        platform::download_browser_project(report.destination.string().c_str());
+#endif
         for (auto* frame : {&views.workspace_frame, &views.compare_first_frame, &views.compare_second_frame})
             frame->metadata_projection_cache.invalidate_asset_paths();
         session.history.saved_revision = stamp.revision;
@@ -2338,6 +2345,23 @@ struct application_t::implementation_t {
         return current_tap_event_ ? *current_tap_event_ : views.last_tap_event_ns;
     }
 
+    // A full-screen or focus preview hides Compose, so edit shortcuts (Delete, cut, paste, undo...)
+    // would change notes nobody can see. Transport, navigation and view commands stay available.
+    auto preview_blocks_editing() const -> bool {
+        const auto& view = commands.project.compose_view;
+        return view.player_preview_visible &&
+               view.player_preview_settings.layout != wormedit::player_preview_layout_t::floating;
+    }
+
+    static auto is_edit_command(const std::optional<wormedit::command_id_t>& id) -> bool {
+        return id && id->value.starts_with("edit.");
+    }
+
+    void disable_edit_commands_for_preview() {
+        for (auto& command : command_registry.commands)
+            if (command.definition.id.value.starts_with("edit.")) command.definition.enabled = false;
+    }
+
     auto dispatch_application_shortcuts(const wormedit::ui::workspace_action_t& action,
                                         std::optional<std::uint64_t>& tap_event_ns,
                                         bool& preserves_editor_gesture) -> bool {
@@ -2361,6 +2385,7 @@ struct application_t::implementation_t {
                 preserves_editor_gesture = false;
                 return true;
             }
+            if (preview_blocks_editing()) disable_edit_commands_for_preview();
             const auto& input = action.input.shortcuts.events[index];
             tap_event_ns = input.timestamp_ns;
             const auto dispatched =
@@ -2382,6 +2407,7 @@ struct application_t::implementation_t {
                 handled = true;
             } else if (dispatched.value.status == command_dispatch_status_t::disabled) {
                 handled = true;
+                if (preview_blocks_editing() && is_edit_command(dispatched.value.command)) continue;
                 platform.notification_sink.post(
                     notification_severity_t::warning, notification_source_t::input,
                     wormedit::sys::unavailable_application_command_message(
@@ -2733,7 +2759,7 @@ struct application_t::implementation_t {
             static_cast<void>(dispatch_audio_offset_drag_action(
                 action, commands.audio_offset_edits_locked(), sample_rate));
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action.kind, action.transport, action.player_preview_skin, commands,
+                       action.kind, action.transport, action.player_preview_settings, commands,
                        platform.notification_sink)) {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
@@ -3313,6 +3339,11 @@ struct application_t::implementation_t {
     }
 
     auto open_project_folder() -> dispatch_outcome_t {
+#ifdef __EMSCRIPTEN__
+        return reject_application_command(platform.notification_sink,
+            "This browser workspace has no host folder. Use Download workspace to keep its files.",
+            notification_severity_t::warning, notification_source_t::document);
+#else
         const auto& project = session.project_identity;
         if (!project.has_project_folder())
             return reject_application_command(platform.notification_sink,
@@ -3328,6 +3359,7 @@ struct application_t::implementation_t {
                 std::string{"Could not open project folder: "} + SDL_GetError(),
                 notification_severity_t::error, notification_source_t::document);
         return dispatch_outcome_t{.value = true};
+#endif
     }
 
     auto dispatch_file_command(application_command_kind_t command)
@@ -3674,6 +3706,9 @@ struct application_t::implementation_t {
     }
 
     void start_display_watchdog() {
+#ifndef __EMSCRIPTEN__
+        // Background browser tabs suspend animation frames by design, so native
+        // compositor-stall detection is not meaningful for this platform.
         auto log = platform.recovery_directory
             ? platform.recovery_directory->parent_path() / "display-stalls.log"
             : std::filesystem::path{};
@@ -3684,6 +3719,7 @@ struct application_t::implementation_t {
         if (requested && actual && std::string_view{requested} == "wayland,x11" && std::string_view{actual} == "x11")
             platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system,
                 "Native Wayland initialization failed; using X11.");
+#endif
     }
 
     void shutdown() noexcept {
@@ -4739,6 +4775,11 @@ struct application_t::implementation_t {
         update_caret_phase();
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();
+#ifdef __EMSCRIPTEN__
+        wormedit::platform::service_browser_assets(session.history, session.project_identity.asset_base,
+            views.project_chart_runtime.session_generation, session.project_identity.session_loaded,
+            jobs.is_file_job_busy() || jobs.project_open_runtime.is_busy());
+#endif
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         service_frame_audio(wormedit::sys::frame_timing().expected_presentation_ns(frame_start_ns));
         const auto field_skin_lanes = configure_frame_field_skin();

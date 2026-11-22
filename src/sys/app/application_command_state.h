@@ -291,9 +291,9 @@ struct application_command_state_t {
             // Session-only, like the bar-line time policy below: never persisted.
             bool measure_lane_visible{false};
             wormedit::bar_line_time_t bar_line_time{wormedit::bar_line_time_t::keep_song_time};
+            wormedit::ui::compose_audio_analysis_mode_t audio_analysis_mode{};
             bool player_preview_visible{};
-            wormedit::player_preview_skin_t player_preview_skin{
-                wormedit::player_preview_skin_t::neutral};
+            wormedit::player_preview_settings_t player_preview_settings{};
         } compose_view;
 
         struct bgm_state_t {

@@ -242,7 +242,6 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
                             const wormedit::ui::compose_hold_view_t& hold) -> nk_color;
 
 struct worm_ui_nuklear_compose_state_t {
-    wormedit::ui::compose_audio_analysis_mode_t audio_analysis_mode{};
     wormedit::ui::preview_audio_dialog_t preview_audio;
     [[nodiscard]] auto has_palette_context_menu() const -> bool;
     void retire_palette_context_menus(nk_context* context);

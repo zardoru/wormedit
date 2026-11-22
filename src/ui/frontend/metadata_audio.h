@@ -12,8 +12,6 @@
 namespace wormedit::ui {
 inline constexpr std::size_t metadata_channel_map_lane_limit = 256;
 inline constexpr std::size_t audio_waveform_column_limit = 4096;
-inline constexpr std::size_t compose_spectrum_band_count = 9;
-enum class compose_audio_analysis_mode_t { waveform, spectrum, lows, mids, highs };
 inline constexpr std::size_t audio_sound_row_limit = 512;
 }
 #include <string_view>

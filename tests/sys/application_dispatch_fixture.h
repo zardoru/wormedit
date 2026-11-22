@@ -17,6 +17,24 @@
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/recovery_controller.h>
 namespace wormedit::sys {
+
+inline auto action_notification_song() -> song_document_t {
+    song_document_t song;
+    song.id = song_id_t{1};
+    song.revision = 1;
+    chart_document_t chart;
+    chart.id = chart_id_t{1};
+    chart.divisions_per_standard_measure = 960;
+    chart.measures = {{.id = measure_id_t{1}}};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0},
+        .layout = {.profile_id = "notification-test", .display_name = "Notification test",
+                   .lanes = {{.id = lane_id_t{1}, .name = "Key", .role = lane_role_t::playable}}}}};
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
 namespace test_dispatch {
 struct defaults_t {
     notification_center_t center;

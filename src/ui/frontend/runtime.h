@@ -8,7 +8,6 @@
 #include <vector>
 
 namespace wormedit::ui {
-enum class compose_audio_analysis_mode_t;
 struct testing_drawn_text_view_t {
     float x{}, y{}, width{}, height{};
     std::string text;
@@ -126,7 +125,6 @@ void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request);
 void worm_ui_frontend_sound_usage_request(wormedit::ui::sound_usage_request_t* request);
-auto worm_ui_frontend_compose_audio_analysis_mode() -> wormedit::ui::compose_audio_analysis_mode_t;
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request);
 void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t resource_id,
                                               uint64_t channel_id, uint64_t clip_id);

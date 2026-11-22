@@ -125,11 +125,12 @@ a music track, and timing must be unlocked.
 
 === Spectrum and filtered waveforms
 
-Open the Compose Inspector and use the *Waveform* selector to inspect the current audio source.
-*Spectrum* shows energy by octave band, with lower frequencies on the left. Choose *Low band*,
-*Mid band* or *High band* to isolate part of the waveform. The analysis can take a moment and
-uses the same timeline as the original waveform. Playback, export and onset snapping continue
-to use the original audio.
+Open the Compose Inspector and choose *Waveform* or *Spectrum*. For a waveform, select
+*Full band*, *Low band*, *Mid band* or *High band*. Spectrum shows energy by octave band, with
+lower frequencies on the left. The analysis can take a moment and uses the same timeline as
+the original waveform. At high zoom you may see individual analysis blocks. Long tracks use
+wider blocks to keep the analysis bounded. Playback, export and onset snapping use the
+original audio.
 
 === Beat fitting
 

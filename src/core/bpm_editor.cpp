@@ -371,7 +371,6 @@ auto deform_warp_measures(chart_document_t& chart, std::vector<bpm_warp_geometry
 
 auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_t& plan,
                              document_command_result_t& outcome, bool resize_span) -> attempt_t<document_edit_effect_t> {
-    const auto old_timing = resize_span ? timing_index_t::from(chart).value : std::nullopt;
     const auto old_index = measure_index_t::from(chart);
     const bpm_edit_limits_t limits;
     bpm_operation_visitor_t operation{{outcome, limits}};
@@ -389,23 +388,13 @@ auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_
     const auto ratio = reduce_fraction(
         rational_t{static_cast<std::uint64_t>(plan.multiplier.numerator), plan.multiplier.denominator});
     auto segments = old_index ? warp_segments(*old_index, plan, ratio) : std::vector<bpm_warp_geometry_t>{};
-    if (!old_index || !old_timing || segments.empty() || !scale_warp_pauses(chart, *old_index, plan) ||
+    if (!old_index || segments.empty() || !scale_warp_pauses(chart, *old_index, plan) ||
         !deform_warp_measures(chart, segments)) {
         reject(outcome, diagnostic_code_t::invalid_resolution, "The selected range cannot be warped on an exact chart grid.");
         return {};
     }
-    const auto new_timing = timing_index_t::from(chart);
-    const auto new_index = measure_index_t::from(chart);
-    // Every touched measure must end at the same song time as before.
-    const auto ends_in_place = [&](const bpm_warp_geometry_t& segment) {
-        const auto* previous = old_index->entry_for(segment.measure);
-        const auto* warped = new_index ? new_index->entry_for(segment.measure) : nullptr;
-        return previous && warped &&
-            old_timing->seconds_at(previous->absolute_begin_row + previous->row_capacity).seconds ==
-            new_timing.value->seconds_at(warped->absolute_begin_row + warped->row_capacity).seconds;
-    };
-    if (!new_timing.value || !std::ranges::all_of(segments, ends_in_place)) {
-        reject(outcome, diagnostic_code_t::invalid_measure, "The warp would move the end of a measure in audio time.");
+    if (!timing_index_t::from(chart).value) {
+        reject(outcome, diagnostic_code_t::invalid_rational, "The warped timing exceeds clock bounds.");
         return {};
     }
     return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};

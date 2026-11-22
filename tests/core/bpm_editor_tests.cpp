@@ -1048,3 +1048,60 @@ TEST_CASE("BPM range warp can keep every measure's geometry across a multi-measu
     REQUIRE(at_end);
     CHECK(*at_end == signed_rational_t{7, 5});
 }
+
+TEST_CASE("BPM range warp carries every timing object across a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    const auto ratio = GENERATE(rational_t{2, 1}, rational_t{1, 4});
+    const auto m3 = measure_id_t{3};
+    const auto m4 = measure_id_t{4};
+    const auto m5 = measure_id_t{5};
+    auto song = multi_measure_song();
+    auto& source = song.charts.front();
+    source.kiai.push_back({.id = object_id_t{30}, .position = {m4, 500}, .enabled = true});
+    source.scrolls.push_back({.id = object_id_t{31}, .position = {m4, 100}, .multiplier = {2, 1}});
+    source.speeds.push_back({.id = object_id_t{32}, .position = {m5, 300}, .multiplier = {3, 2}});
+    source.pauses.push_back({.id = object_id_t{33}, .position = {m4, 200}, .kind = pause_kind_t::stop,
+        .duration = {1, 1}, .source_unit = pause_unit_t::beats});
+    source.pauses.push_back({.id = object_id_t{34}, .position = {m5, 100}, .kind = pause_kind_t::delay,
+        .duration = {1, 2}, .source_unit = pause_unit_t::beats});
+    source.pauses.push_back({.id = object_id_t{35}, .position = {m4, 600}, .kind = pause_kind_t::stop,
+        .duration = {1, 10}, .source_unit = pause_unit_t::seconds});
+    source.warps.push_back({.id = object_id_t{36}, .span = {{m4, 800}, {m4, 900}}});
+    source.sv_recipes.push_back({.id = recipe_id_t{38}, .name = "Rise", .range = {{m3, 500}, {m4, 500}},
+        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}});
+    source.bookmarks.push_back({.id = object_id_t{37}, .position = local_position_t{m5, 200}});
+    REQUIRE(validate_document(song).empty());
+    const auto before_index = measure_index_t::from(source);
+    const auto before_timing = timing_index_t::from(source);
+    REQUIRE(before_index);
+    REQUIRE(before_timing.value);
+    const auto before = [&](local_position_t position) {
+        return before_timing.value->seconds_at(*before_index, position).seconds;
+    };
+    const auto expected = std::array{before({m4, 500}), before({m4, 100}), before({m5, 300}),
+        before({m5, 200}), before({m4, 800}), before({m4, 900}), before({m3, 500}), before({m4, 500})};
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, source.id, {{m3, 240}, {m5, 480}}, ratio));
+    const auto& warped = *history.read_chart(source.id);
+    const auto index = measure_index_t::from(warped);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(index);
+    REQUIRE(timing.value);
+    const auto at = [&](local_position_t position) { return timing.value->seconds_at(*index, position).seconds; };
+    CHECK(at(warped.kiai.front().position) == expected[0]);
+    CHECK(at(warped.scrolls.front().position) == expected[1]);
+    CHECK(at(warped.speeds.front().position) == expected[2]);
+    CHECK(at(*warped.bookmarks.front().position) == expected[3]);
+    CHECK(at(warped.warps.front().span.begin) == expected[4]);
+    CHECK(at(warped.warps.front().span.end) == expected[5]);
+    CHECK(at(warped.sv_recipes.front().range.begin) == expected[6]);
+    CHECK(at(warped.sv_recipes.front().range.end) == expected[7]);
+    const auto duration = [&](std::uint64_t id) {
+        return std::ranges::find(warped.pauses, object_id_t{id}, &pause_event_t::id)->duration;
+    };
+    const auto stretched = ratio.numerator == 2;
+    CHECK(duration(33) == (stretched ? signed_rational_t{2, 1} : signed_rational_t{1, 4}));
+    CHECK(duration(34) == (stretched ? signed_rational_t{1, 1} : signed_rational_t{1, 8}));
+    CHECK(duration(35) == signed_rational_t{1, 10});
+}

@@ -359,7 +359,7 @@ auto warp_compose_area_timing_action_t::perform(compose_action_context_t& contex
     const auto& request = context.action.compose.area;
     auto result = apply_bpm_range_warp(context.environment.document.history, context.state.chart,
         *context.state.retained_selection_range,
-        {request.bpm_multiplier_numerator, request.bpm_multiplier_denominator});
+        {request.bpm_multiplier_numerator, request.bpm_multiplier_denominator}, request.bpm_warp_resize_span);
     return compose_action_outcome_t::from(std::move(result), compose_action_description_t{
         .success = "Warped the selected timing range.",
         .unchanged = "Timing is unchanged.",

@@ -18,6 +18,7 @@ bool consumed{};
 bool band_visible{};
 bool sound_layers{};
 bool warp_timing{};
+bool warp_resize_span{true};
 int warp_numerator{};
 int warp_denominator{};
 chrome::ContextMenu menu{.title = "Area actions"};
@@ -150,21 +151,27 @@ void render_warp_timing(nk_context* context, const wormedit::ui::compose_view_t&
     }
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "BPM multiplier numerator", NK_TEXT_LEFT);
-    if (const auto i = chrome::ChipGrid{labels.data(), count, warp_numerator}.render(context).chosen; i >= 0)
+    if (const auto i = chrome::ChipGrid{labels.data(), count, warp_numerator, 8}.render(context).chosen; i >= 0)
         warp_numerator = i;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     nk_label(context, "BPM multiplier denominator", NK_TEXT_LEFT);
-    if (const auto i = chrome::ChipGrid{labels.data(), count, warp_denominator}.render(context).chosen; i >= 0)
+    if (const auto i = chrome::ChipGrid{labels.data(), count, warp_denominator, 8}.render(context).chosen; i >= 0)
         warp_denominator = i;
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
+    const auto resize_state = warp_resize_span ? chrome::CheckState::on : chrome::CheckState::off;
+    if (chrome::Checkbox{"Resize span to preserve audio time", resize_state}.render(context))
+        warp_resize_span = !warp_resize_span;
     const auto numerator = factors[warp_numerator];
     const auto denominator = factors[warp_denominator];
     const bool available = view.area_bpm_warp_moving_seconds.has_value() && !view.waveform_timing_locked;
     if (available) {
         const auto seconds = *view.area_bpm_warp_moving_seconds;
         char preview[128];
-        std::snprintf(preview, sizeof(preview), "BPM and span × %llu/%llu · %.3f s preserved",
+        const auto resulting_seconds = warp_resize_span ? seconds :
+            seconds * static_cast<double>(denominator) / static_cast<double>(numerator);
+        std::snprintf(preview, sizeof(preview), "×%llu/%llu · %.3f s → %.3f s",
             static_cast<unsigned long long>(numerator), static_cast<unsigned long long>(denominator),
-            seconds);
+            seconds, resulting_seconds);
         nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
         nk_label(context, preview, NK_TEXT_LEFT);
     }
@@ -176,6 +183,7 @@ void render_warp_timing(nk_context* context, const wormedit::ui::compose_view_t&
     action.compose.area.end_row = view.area_range_end_row;
     action.compose.area.bpm_multiplier_numerator = numerator;
     action.compose.area.bpm_multiplier_denominator = denominator;
+    action.compose.area.bpm_warp_resize_span = warp_resize_span;
     action.stamp = menu.stamp.request_stamp();
     consumed = true;
 }
@@ -191,7 +199,7 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
         return;
     }
     if (!chrome::context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view),
-                                    nk_vec2(320.0f, chrome::context_menu_height(warp_timing ? 10 : 16)))) {
+                                    nk_vec2(320.0f, chrome::context_menu_height(warp_timing ? 11 : 16)))) {
         retire_sound_layer_window(action);
         consumed = true;
         return;

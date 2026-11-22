@@ -70,11 +70,12 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
     -> document_command_result_t;
 
 // Factors available to both sides of the exact range-warp ratio: 2^0..2^3,
-// with or without the triplet factor.
-inline constexpr std::array<std::uint64_t, 8> bpm_range_warp_factors{1, 2, 3, 4, 6, 8, 12, 24};
+// with optional factors of 3 and 5.
+inline constexpr std::array<std::uint64_t, 16> bpm_range_warp_factors{
+    1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40, 60, 120};
 
 [[nodiscard]] auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart,
-    position_span_t range, rational_t multiplier) -> document_command_result_t;
+    position_span_t range, rational_t multiplier, bool resize_span = true) -> document_command_result_t;
 
 // Begins a fit anchored at a timing row. Updates the BPM event already at that
 // row, or inserts one there when none exists (committed as one undoable edit).

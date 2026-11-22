@@ -30,6 +30,7 @@ struct compose_area_request_t {
     bool clear_requested;
     std::uint64_t bpm_multiplier_numerator{};
     std::uint64_t bpm_multiplier_denominator{};
+    bool bpm_warp_resize_span{true};
 };
 /* Quantize preset and snap inputs. */
 struct compose_quantize_request_t {

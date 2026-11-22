@@ -841,9 +841,9 @@ TEST_CASE("BPM range warp scales interior events and restores the effective boun
     CHECK(history.read_chart(chart_id)->bpms == tempos);
 }
 
-TEST_CASE("BPM range warp accepts the exact reciprocal factors one half and one quarter",
+TEST_CASE("BPM range warp accepts the exact reciprocal factors one half, one quarter and one fifth",
           "[core][bpm-editor][range-warp]") {
-    const auto divisor = GENERATE(std::uint64_t{2}, std::uint64_t{4});
+    const auto divisor = GENERATE(std::uint64_t{2}, std::uint64_t{4}, std::uint64_t{5});
     auto history = document_history_t::from(bpm_song());
     const auto chart_id = chart_id_t{2};
     const auto measure = measure_id_t{3};
@@ -916,6 +916,34 @@ TEST_CASE("BMS warp boundary BPMs can be moved and deleted as a group",
     CHECK(history.read_chart(chart_id)->bpms.size() == 1);
     REQUIRE(undo_document_command(history));
     CHECK(history.read_chart(chart_id)->bpms.size() == 3);
+}
+
+TEST_CASE("BPM range warp can keep the original measure geometry",
+          "[core][bpm-editor][range-warp]") {
+    const auto scoped = GENERATE(false, true);
+    auto song = bpm_song();
+    const auto chart_id = song.charts.front().id;
+    if (scoped) {
+        auto& chart = song.charts.front();
+        chart.source_family = format_family_t::bms;
+        const auto owner = bms_program_document_t::from_native_chart(chart, song, object_id_t{100});
+        REQUIRE(owner.value);
+        song.prepared_bms_programs.push_back(*owner.value);
+        song.charts.clear();
+    }
+    auto history = document_history_t::from(std::move(song));
+    const auto& measure = history.read_chart(chart_id)->measures.front();
+    const auto id = measure.id;
+    const auto definition = measure.definition;
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{id, 240}, {id, 480}}, {5, 1}, false));
+    const auto& warped = *history.read_chart(chart_id);
+    CHECK(warped.measures.front().definition == definition);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(timing.value);
+    CHECK(timing.value->seconds_at(240).seconds == signed_rational_t{1, 2});
+    CHECK(timing.value->seconds_at(480).seconds == signed_rational_t{3, 5});
+    CHECK(timing.value->seconds_at(720).seconds == signed_rational_t{11, 10});
+    REQUIRE(undo_document_command(history));
 }
 
 TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit",

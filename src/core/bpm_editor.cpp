@@ -346,8 +346,8 @@ auto deform_warp_measure(chart_document_t& chart, bpm_warp_geometry_t geometry) 
 }
 
 auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_t& plan,
-                             document_command_result_t& outcome) -> attempt_t<document_edit_effect_t> {
-    const auto old_timing = timing_index_t::from(chart);
+                             document_command_result_t& outcome, bool resize_span) -> attempt_t<document_edit_effect_t> {
+    const auto old_timing = resize_span ? timing_index_t::from(chart).value : std::nullopt;
     const auto old_index = measure_index_t::from(chart);
     const bpm_edit_limits_t limits;
     bpm_operation_visitor_t operation{{outcome, limits}};
@@ -355,8 +355,15 @@ auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_
         std::visit([&](const auto& action) { operation(chart, action); }, edit);
         if (!outcome.diagnostics.empty()) return {};
     }
+    if (!resize_span) {
+        if (!timing_index_t::from(chart).value) {
+            reject(outcome, diagnostic_code_t::invalid_rational, "The warped timing exceeds clock bounds.");
+            return {};
+        }
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
+    }
     const auto end_row = plan.range.begin.row + (plan.last - plan.first);
-    if (!old_index || !old_timing.value || !scale_warp_pauses(chart, *old_index, plan) ||
+    if (!old_index || !old_timing || !scale_warp_pauses(chart, *old_index, plan) ||
         !deform_warp_measure(chart, {plan.range.begin.measure, plan.range.begin.row, end_row,
             reduce_fraction(rational_t{static_cast<std::uint64_t>(plan.multiplier.numerator), plan.multiplier.denominator})})) {
         reject(outcome, diagnostic_code_t::invalid_resolution, "The selected range cannot be warped on an exact chart grid.");
@@ -367,7 +374,7 @@ auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_
     const auto* previous = old_index->entry_for(plan.range.begin.measure);
     const auto* warped = new_index ? new_index->entry_for(plan.range.begin.measure) : nullptr;
     if (!new_timing.value || !warped ||
-        old_timing.value->seconds_at(previous->absolute_begin_row + previous->row_capacity).seconds !=
+        old_timing->seconds_at(previous->absolute_begin_row + previous->row_capacity).seconds !=
         new_timing.value->seconds_at(warped->absolute_begin_row + warped->row_capacity).seconds) {
         reject(outcome, diagnostic_code_t::invalid_measure, "The warp would move the end of the measure in audio time.");
         return {};
@@ -383,7 +390,7 @@ auto valid_bpm_range_warp_multiplier(rational_t ratio) -> bool {
 } // namespace
 
 auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart, position_span_t range,
-                          rational_t multiplier) -> document_command_result_t {
+                          rational_t multiplier, bool resize_span) -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
     if (!valid_bpm_range_warp_multiplier(multiplier))
         return transaction.reject(diagnostic_code_t::invalid_rational, "Choose an available BPM multiplier.");
@@ -405,8 +412,15 @@ auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart, positio
         !plan.add_boundaries(*timing.value))
         return transaction.reject(diagnostic_code_t::invalid_rational,
                                   "The selected timing cannot be scaled exactly.");
+    if (!resize_span && transaction.has_bms_program(chart)) {
+        for (const auto& event : plan.edits) {
+            auto staged = stage_bpm_edit(transaction, event);
+            if (!staged.value || !staged.ok()) return transaction.finish_execution(std::move(staged));
+        }
+        return transaction.commit("Warp selected timing range");
+    }
     const auto edit = [&](chart_document_t& working) {
-        return stage_bpm_warp_geometry(working, plan, transaction.outcome());
+        return stage_bpm_warp_geometry(working, plan, transaction.outcome(), resize_span);
     };
     if (transaction.has_bms_program(chart))
         return transaction.finish_execution(transaction.stage_bms_structure_edit(chart, edit));

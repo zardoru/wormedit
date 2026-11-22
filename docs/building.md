@@ -27,6 +27,13 @@ This preserves the project policy: omitted designated members use their defaults
 while omitted positional members remain errors. GCC's warning policy and the
 separately pinned complexity toolchain remain unchanged.
 
+## Update check (libcurl)
+
+The native editor's update check ([docs/update-check.md](update-check.md)) links libcurl. Install
+`libcurl4-openssl-dev` on Linux (macOS ships it in the SDK). `-DWORMEDIT_UPDATE_CHECK=AUTO` (default)
+uses libcurl when found and otherwise compiles the check out, `ON` requires it, `OFF` disables it.
+The AppImage and Windows packages are built without it until libcurl is packaged there.
+
 ## Release versions
 
 The numeric CMake `PROJECT_VERSION` is `1.0.0`. `WORMEDIT_VERSION_SUFFIX` defaults

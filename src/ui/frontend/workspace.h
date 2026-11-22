@@ -28,6 +28,7 @@ struct workspace_view_t {
     std::vector<menu_command_view_t> menu_commands;
     wormedit::ui::notification_view_t notifications;
     wormedit::ui::options_view_t options;
+    wormedit::ui::updates_view_t updates;
     const wormedit::ui::lane_keys_view_t* lane_keys{};
     close_confirmation_view_t close_confirmation;
     wormedit::ui::chart_import_view_t chart_import;

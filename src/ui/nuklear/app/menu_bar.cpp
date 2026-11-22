@@ -170,6 +170,12 @@ auto build_workspace_menu(const wormedit::ui::workspace_view_t& view, bool block
 #endif
     menu.push_back({"Help", "Shortcut cheat sheet", Action::shortcuts, nullptr, !blocked});
     menu.push_back({"Help", "About WormEdit", Action::about, nullptr, !blocked});
+    if (view.updates.check_available) {
+        menu.push_back({"Help", "Check for updates…", Action::check_updates, nullptr,
+                        !blocked && !view.updates.checking});
+        if (view.updates.update_available)
+            menu.push_back({"Help", "Download the new version…", Action::download_update, nullptr, !blocked});
+    }
     apply_command_rows(menu, view);
     if (text_owner) for (auto& entry : menu) if (entry.command_id) entry.enabled = false;
     return menu;

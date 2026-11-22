@@ -1,6 +1,7 @@
 #include "core/text_util.h"
 #include "sys/preferences/options_runtime.h"
 #include "sys/commands/shortcut_rows.h"
+#include "sys/updates/manifest_fetch.h"
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
 #include <algorithm>
@@ -27,6 +28,7 @@ void copy_category(program_preferences_t& target, const program_preferences_t& s
         target.general.autosave_minutes = source.general.autosave_minutes;
         target.general.recent_files_count = source.general.recent_files_count;
         target.general.confirm_unsaved_close = source.general.confirm_unsaved_close;
+        target.updates = source.updates;
         break;
     case WORM_UI_OPTIONS_EDITOR: target.editor = source.editor; target.minimap = source.minimap; break;
     case WORM_UI_OPTIONS_AUDIO: target.audio = source.audio; break;
@@ -142,6 +144,7 @@ auto edit_general(program_preferences_t& p, const wormedit::ui::options_action_t
     case WORM_UI_OPTIONS_FIELD_AUTOSAVE: p.general.autosave_minutes = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_RECENT_FILES: p.general.recent_files_count = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE: p.general.confirm_unsaved_close = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_CHECK_UPDATES: p.updates.check_on_startup = a.boolean; return true;
     default: return false;
     }
 }
@@ -394,6 +397,8 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
         .audition_on_click = p.editor.audition_on_click,
         .invert_scroll_wheel = p.editor.invert_scroll_wheel,
         .scrub_audio_on_scroll = p.editor.scrub_audio_on_scroll,
+        .check_updates_on_startup = p.updates.check_on_startup,
+        .update_check_available = has_libcurl_fetch(),
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .snap_colored_grid = p.display.snap_colored_grid,

@@ -214,6 +214,9 @@ add_library(wormedit_core
     src/core/shortcut_profile_storage.cpp
     src/core/atomic_file_storage.cpp
     src/core/preferences.cpp
+    src/core/first_run.cpp
+    src/core/release_version.cpp
+    src/core/update_check.cpp
     src/core/ui_layout_preferences.cpp
     src/core/preview_mix.cpp
     src/core/project_settings.cpp
@@ -303,6 +306,27 @@ add_custom_target(manual-reference
     DEPENDS wormedit-manual-reference
     COMMENT "Regenerating docs/manual/generated"
 )
+
+# Update check (Help > Check for updates, optional startup check). AUTO links libcurl when it is
+# installed and otherwise compiles the check out; the browser build never checks.
+set(WORMEDIT_UPDATE_CHECK AUTO CACHE STRING "Link libcurl for the update check: AUTO, ON or OFF")
+set_property(CACHE WORMEDIT_UPDATE_CHECK PROPERTY STRINGS AUTO ON OFF)
+add_library(wormedit_updates STATIC
+    src/sys/updates/manifest_fetch.cpp
+    src/sys/updates/update_checker.cpp)
+target_include_directories(wormedit_updates PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit_updates PUBLIC wormedit::core)
+if(NOT EMSCRIPTEN AND NOT WORMEDIT_UPDATE_CHECK STREQUAL "OFF")
+    if(WORMEDIT_UPDATE_CHECK STREQUAL "ON")
+        find_package(CURL REQUIRED)
+    else()
+        find_package(CURL QUIET)
+    endif()
+    if(CURL_FOUND)
+        target_link_libraries(wormedit_updates PRIVATE CURL::libcurl)
+        target_compile_definitions(wormedit_updates PRIVATE WORMEDIT_HAS_LIBCURL=1)
+    endif()
+endif()
 
 find_package(Iconv QUIET)
 if(Iconv_FOUND)
@@ -693,6 +717,7 @@ endif()
 if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
         src/sys/audio/audio.cpp
+        src/sys/updates/update_service.cpp
         src/sys/app/application_defaults.cpp
         src/sys/app/application_command_state.cpp
         src/sys/commands/application_commands.cpp
@@ -858,6 +883,7 @@ if(WORMEDIT_BUILD_APP)
             "${CMAKE_BINARY_DIR}/generated"
     )
 
+    target_link_libraries(wormedit PRIVATE wormedit_updates)
     target_link_libraries(wormedit
         PRIVATE
             wormedit::core

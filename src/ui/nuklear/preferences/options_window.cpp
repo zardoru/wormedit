@@ -54,6 +54,9 @@ void general_page(nk_context* context, const wormedit::ui::options_view_t* view,
         view->recent_files_count, 1, 100);
     edit_toggle(context, *view, *action, "Confirm closing unsaved work", WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE,
         view->confirm_unsaved_close);
+    if (view->update_check_available)
+        edit_toggle(context, *view, *action, "Check for updates at startup", WORM_UI_OPTIONS_FIELD_CHECK_UPDATES,
+            view->check_updates_on_startup);
 }
 void scroll_directions(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     constexpr std::array<const char*, 6> families{"Beat keys", "Pop’n buttons", "Dance", "Pump", "Keyboard", "Other modes"};

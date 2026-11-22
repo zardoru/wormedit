@@ -32,6 +32,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PUBLISHED_AT: ${{ github.event.release.published_at }}
         run: |
           source_check=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '[.build_type, .source.branch, .source.path] | join(" ")')
           if [[ "$source_check" != "legacy gh-pages /" ]]; then
@@ -49,6 +50,9 @@ jobs:
             --pattern "$name.zip" --dir "$RUNNER_TEMP/release"
           unzip -q "$RUNNER_TEMP/release/$name.zip" -d "$RUNNER_TEMP/release"
           python3 scripts/stage-wasm-pages.py "$RUNNER_TEMP/release/$name" "$RUNNER_TEMP/site" "$GITHUB_SHA"
+          # The editor's update check reads this file; see docs/update-check.md.
+          python3 scripts/write-update-manifest.py "$RUNNER_TEMP/site/latest.json" \
+            --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --published "$PUBLISHED_AT"
           printf 'Release: %s\nSource: %s/%s/commit/%s\n' \
             "$RELEASE_TAG" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" >"$RUNNER_TEMP/site/build.txt"
       - name: Update gh-pages

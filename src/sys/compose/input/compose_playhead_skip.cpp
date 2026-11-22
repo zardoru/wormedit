@@ -107,7 +107,10 @@ auto skip_target_row(const measure_index_t& measures, double playhead_row,
         const auto chart_like = chart_document_t{.divisions_per_standard_measure = divisions_per_measure};
         const auto resolution = unit == playhead_skip_unit_t::snap ? row_step_resolution_t::snap
                                                                     : row_step_resolution_t::beat;
-        const auto count = static_cast<std::uint64_t>(std::llround(std::abs(amount)));
+        // Every step moves at least one row or stops on an edge, so more steps than rows change
+        // nothing; clamping first also avoids llround overflow, which MSVC answers with 0.
+        const auto count = static_cast<std::uint64_t>(std::llround(
+            std::min(std::abs(amount), static_cast<double>(measures.total_rows))));
         const auto start = std::clamp(static_cast<long double>(playhead_row), 0.0L,
                                       static_cast<long double>(measures.total_rows - 1));
         const auto unusable = cut_unusable(timing, cut_axis);

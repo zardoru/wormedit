@@ -26,6 +26,7 @@
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_misc.h>
 
 #include "sys/commands/application_commands.h"
 #include "sys/app/application_startup.h"
@@ -96,6 +97,7 @@
 #include "sys/compose/views/compose_waveform_overlays.h"
 #include "ui/frontend.h"
 #include "wormedit/config.h"
+#include "sys/updates/update_service.h"
 
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/autosave_loop.h>
@@ -1785,6 +1787,8 @@ struct application_t::implementation_t {
         lane_keys_runtime_t lane_keys{};
         shortcut_editor_runtime_t shortcut_editor{};
     } preferences;
+    // Release check and first-run questions; created once the preferences location is known.
+    std::optional<wormedit::sys::update_service_t> update_service;
     application_command_state_t commands{};
     command_registry_t command_registry{};
     // Shortcut text the command palette shows beside each command.
@@ -3448,6 +3452,27 @@ struct application_t::implementation_t {
                                       wormedit::notification_source_t::edit, std::move(message));
     }
 
+    static auto unix_seconds_now() -> std::int64_t {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
+    void start_update_service() {
+        wormedit::sys::update_service_options_t options{
+            .current_version = WORMEDIT_VERSION,
+            .state_path = preferences.program_preferences.path.empty()
+                ? std::filesystem::path{}
+                : preferences.program_preferences.path.parent_path() / "update-check.txt",
+            .notifications = platform.notification_sink,
+            .open_url = [](std::string_view url) { (void)SDL_OpenURL(std::string{url}.c_str()); }};
+        if (wormedit::sys::has_libcurl_fetch())
+            options.fetch = [](std::string_view url, std::stop_token stop) {
+                return wormedit::sys::curl_fetch_manifest(url, stop, wormedit::maximum_update_manifest_bytes);
+            };
+        update_service.emplace(std::move(options));
+        update_service->start_if_enabled(preferences.program_preferences.preferences, unix_seconds_now());
+    }
+
     void dispatch_options_page_action(const wormedit::ui::options_action_t& action) {
         if (handle_shortcut_editor_action(preferences.shortcut_editor, action,
                                           preferences.options_runtime, platform.notification_sink))
@@ -3668,6 +3693,7 @@ struct application_t::implementation_t {
         initialize_program_preferences(preferences.program_preferences,
                                        commands,
                                        platform.notification_sink);
+        start_update_service();
         const auto display_message = update_frontend_display_preferences(
             preferences.program_preferences.preferences.display);
         if (!display_message.empty())
@@ -4484,6 +4510,10 @@ struct application_t::implementation_t {
                            command_registry, flattened.view);
         publish_tap_assist();
         wormedit::sys::build_recent_files_view(preferences.program_preferences, flattened.view);
+        if (update_service) {
+            update_service->refresh(preferences.program_preferences.preferences);
+            update_service->fill_view(flattened.view.updates);
+        }
         flattened.view.project_loaded = session.project_identity.session_loaded;
         flattened.view.project_has_native_path = session.project_identity.native_project_loaded;
         flattened.view.pending_new_project_audio_path =
@@ -4535,6 +4565,7 @@ struct application_t::implementation_t {
         const std::optional<std::uint32_t>& selected_waveform_sample_rate, double viewport_height) {
         dispatch_lane_keys(action);
         dispatch_options_page_action(action.options);
+        if (update_service) update_service->handle(action.options.updates, preferences.program_preferences, unix_seconds_now());
         dispatch_preview_audio_export(action);
         dispatch_audio_slicer(action);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

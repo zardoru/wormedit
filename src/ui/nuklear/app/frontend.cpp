@@ -115,6 +115,7 @@ static bool g_menu_popup_open{};
 enum class HelpDialog { none, about, shortcuts };
 static HelpDialog g_help_dialog{};
 static wormedit::ui::chrome::Dialog g_about_dialog;
+static wormedit::ui::chrome::Dialog g_first_run_dialog;
 static bool g_menu_popup_release_pending{};
 
 static wormedit::ui::nuklear::editor_font_t g_editor_font;
@@ -2054,6 +2055,8 @@ static void apply_workspace_menu_action(MenuAction chosen,
     }
     switch (chosen) {
     case MenuAction::manual: open_user_manual(); break;
+    case MenuAction::check_updates: action.options.updates.kind = wormedit::ui::updates_request_t::kind_t::check_now; break;
+    case MenuAction::download_update: action.options.updates.kind = wormedit::ui::updates_request_t::kind_t::open_download; break;
 #ifdef __EMSCRIPTEN__
     case MenuAction::download_native: wormedit::platform::show_browser_native_downloads(); break;
 #endif
@@ -3225,7 +3228,8 @@ static bool external_project_modal_active(const wormedit::ui::workspace_view_t& 
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open ||
-           !view.pending_bms_encoding_path.empty() || metadata_timing_links_own_input();
+           !view.pending_bms_encoding_path.empty() || !view.updates.first_run_step.empty() ||
+           metadata_timing_links_own_input();
 }
 
 static bool project_modal_active(const wormedit::ui::workspace_view_t& view) {
@@ -3310,6 +3314,42 @@ static void render_about(const wormedit::ui::workspace_view_t& view) {
 static nk_flags workspace_window_flags(const wormedit::ui::workspace_view_t& view) {
     const auto flags = NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND;
     return flags | ((project_modal_active(view) || command_menu_owns_input()) ? NK_WINDOW_NO_INPUT : 0);
+}
+
+// First-run questions: one modal per step, asked in the order of wormedit::first_run_steps. A new
+// step adds a case to first_run_body() and its id to that table; the answer travels as
+// updates.first_run_answer with the step id and a choice string.
+static void render_first_run(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
+    namespace chrome = wormedit::ui::chrome;
+    const auto step = view.updates.first_run_step;
+    if (step.empty()) { g_first_run_dialog = {}; return; }
+    const auto answer = [&](const char* choice) {
+        action.options.updates = {.kind = wormedit::ui::updates_request_t::kind_t::first_run_answer,
+                          .step = std::string{step}, .choice = choice};
+    };
+    if (step == "updates") {
+        constexpr const char* title = "Check for updates?";
+        if (chrome::dialog_begin(g_first_run_dialog, g_context, "first_run_updates", title,
+                                 {.width = 480.0f, .escape_cancels = false})) {
+            chrome::dialog_text(g_first_run_dialog, g_context,
+                "WormEdit can check once a day whether a newer release is available. It downloads one small "
+                "public file and sends nothing about you, your projects or your computer.",
+                chrome::color(chrome::UiColor::text));
+            chrome::dialog_text(g_first_run_dialog, g_context,
+                "Change this any time in Options > General. Help > Check for updates asks on demand.",
+                chrome::color(chrome::UiColor::text_muted));
+            chrome::dialog_footer_begin(g_first_run_dialog, g_context, 2, false,
+                chrome::dialog_button_width_for(g_context, {"Check for updates", "Not now"}));
+            if (chrome::dialog_button(g_first_run_dialog, g_context, "Check for updates", chrome::DialogButtonRole::primary))
+                answer("yes");
+            if (chrome::dialog_button(g_first_run_dialog, g_context, "Not now", chrome::DialogButtonRole::secondary))
+                answer("no");
+        }
+        (void)chrome::dialog_end(g_first_run_dialog, g_context);
+        return;
+    }
+    // A step this build has no presentation for must not block the editor.
+    answer("");
 }
 
 static wormedit::ui::chrome::Dialog g_project_modal_dialog;
@@ -4128,6 +4168,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
         render_about(*view);
+        render_first_run(*view, action);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         return action;
     }
@@ -4145,6 +4186,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
         render_command_menu(g_context, *view, action, width, height);
         render_about(*view);
+        render_first_run(*view, action);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         expose_shortcut_input(&action);
         g_audio.offset_escape_pending = false;
@@ -4180,6 +4222,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
         worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review,
             worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_menu.release_pending, width, height);
     render_about(*view);
+    render_first_run(*view, action);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         !worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned &&

@@ -273,6 +273,25 @@ void read_field_scheme_overrides(preference_reader_t& reader, const json_t& disp
         overrides.emplace(key, scheme);
     }
 }
+void read_updates_first_run(preference_reader_t& reader, const json_t& root) {
+    auto& values = reader.result.preferences;
+    const auto& updates = reader.section(root, "updates");
+    reader.check_keys(updates, {"check_on_startup"});
+    reader.boolean(updates, "check_on_startup", values.updates.check_on_startup);
+    const auto& first_run = reader.section(root, "first_run");
+    reader.check_keys(first_run, {"completed"});
+    const auto completed = first_run.find("completed");
+    if (completed == first_run.end()) return;
+    if (!completed->is_array()) { reader.warn("completed must be a list; default retained."); return; }
+    for (const auto& id : *completed) {
+        if (!id.is_string() || !is_valid_string(id.get<std::string>()) ||
+            values.first_run.completed.size() >= 64) {
+            reader.warn("Invalid first-run entry ignored.");
+            continue;
+        }
+        values.first_run.completed.push_back(id.get<std::string>());
+    }
+}
 void read_display_minimap_layout(preference_reader_t& reader, const json_t& root) {
     auto& values = reader.result.preferences;
     const auto& display = reader.section(root, "display");
@@ -347,7 +366,9 @@ auto is_valid_preferences(const program_preferences_t& value) -> bool {
         value.display.snap_grid_opacity_percent <= 100 && value.display.field_waveform_opacity_percent <= 100 &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
-        is_valid_external_player_preferences(value.players);
+        is_valid_external_player_preferences(value.players) &&
+        value.first_run.completed.size() <= 64 &&
+        std::ranges::all_of(value.first_run.completed, [](const auto& id) { return is_valid_string(id); });
 }
 
 auto preferences_json(const program_preferences_t& value) -> json_t {
@@ -378,6 +399,8 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
             {"field_waveform_opacity_percent", value.display.field_waveform_opacity_percent}}},
         {"players", {{"selected", value.players.selected}, {"definitions", std::move(players)}}},
         {"minimap", {{"click_moves_paused_playhead", value.minimap.click_moves_paused_playhead}}},
+        {"updates", {{"check_on_startup", value.updates.check_on_startup}}},
+        {"first_run", {{"completed", value.first_run.completed}}},
         {"layout", {{"compose_dock", json_t::parse(value.layout.dock.serialized())}}}};
 }
 } // namespace
@@ -444,11 +467,12 @@ auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_par
         if (version != root.end() && (!version->is_number_integer() || *version != 1))
             throw std::runtime_error("Unsupported preferences version.");
         preference_reader_t reader{result};
-        reader.check_keys(root, {"version", "general", "editor", "audio", "display", "players", "minimap", "layout", "lane_keys", "default_lane_keys"});
+        reader.check_keys(root, {"version", "general", "editor", "audio", "display", "players", "minimap", "layout", "lane_keys", "default_lane_keys", "updates", "first_run"});
         read_lane_keys(reader, root);
         read_default_lane_keys(reader, root);
         read_general(reader, root); read_editor_audio(reader, root);
         read_display_minimap_layout(reader, root); read_players(reader, root);
+        read_updates_first_run(reader, root);
         if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
         result.succeeded = true;
         return result;

@@ -63,6 +63,15 @@ struct general_preferences_t {
     std::string shortcut_profile_path{"shortcuts.json"};
     auto operator==(const general_preferences_t&) const -> bool = default;
 };
+struct first_run_preferences_t {
+    std::vector<std::string> completed; // First-run question ids already answered; unknown ids are preserved.
+    auto operator==(const first_run_preferences_t&) const -> bool = default;
+};
+struct update_preferences_t {
+    // Ask the release manifest at startup, at most once a day. Opt-out in Options > General.
+    bool check_on_startup{true};
+    auto operator==(const update_preferences_t&) const -> bool = default;
+};
 enum class editor_mode_family_t : std::uint32_t { beatmania, popn, dance, pump, keyboard, other };
 inline constexpr std::size_t editor_mode_family_count = 6;
 enum class move_collision_policy_t : std::uint32_t { reject, displace_to_bgm };
@@ -150,6 +159,8 @@ struct program_preferences_t {
     minimap_preferences_t minimap;
     layout_preferences_t layout;
     lane_key_preferences_t lane_keys;
+    update_preferences_t updates;
+    first_run_preferences_t first_run;
     auto operator==(const program_preferences_t&) const -> bool = default;
 };
 struct preferences_parse_effect_t {

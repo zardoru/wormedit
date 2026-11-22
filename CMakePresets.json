@@ -105,7 +105,8 @@
         "WORMEDIT_ENABLE_VIDEO_DECODER": "ON",
         "WORMEDIT_ENABLE_FFMPEG": "ON",
         "WORMEDIT_REQUIRE_FFMPEG": "ON",
-        "WORMEDIT_ENABLE_LUA": "ON"
+        "WORMEDIT_ENABLE_LUA": "ON",
+        "WORMEDIT_BUNDLED_CURL": "ON"
       }
     },
     {

@@ -51,7 +51,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_COUNT_IN, WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
     WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, WORM_UI_OPTIONS_FIELD_REDUCED_MOTION,
     WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY, WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW,
-    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK
+    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK, WORM_UI_OPTIONS_FIELD_CHECK_UPDATES
 } WormUiOptionsField;
 namespace wormedit::ui {
 struct options_diagnostic_view_t {
@@ -73,6 +73,19 @@ struct lane_key_choice_view_t {
 };
 } // namespace wormedit::ui
 namespace wormedit::ui {
+// What the shell shows about releases and the first-run questions. All text is owned by the
+// application for the frame.
+struct updates_view_t {
+    // The first-run step to ask now ("" when none); the frontend picks its presentation by id.
+    std::string_view first_run_step;
+    bool check_available{}; // This build can reach the network at all.
+    bool checking{};
+    bool update_available{};
+    std::string_view latest_version;
+    std::string_view download_url;
+    std::string_view notes_url;
+};
+
 struct options_view_t {
     bool visible{};
     std::uint64_t revision{};
@@ -84,6 +97,7 @@ struct options_view_t {
     std::uint32_t playhead_anchor_percent{}, area_band_alpha{};
     wormedit::move_collision_policy_t move_collision_policy{};
     bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{}, scrub_audio_on_scroll{};
+    bool check_updates_on_startup{}, update_check_available{};
     bool confirm_unsaved_close{}, keep_pitch{}, frame_timing_overlay{}, snap_colored_grid{};
     bool reduced_motion{};
     std::uint32_t snap_grid_opacity_percent{}, field_waveform_opacity_percent{};
@@ -150,6 +164,15 @@ typedef enum WormUiOptionsActionKind {
 } WormUiOptionsActionKind;
 // EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
 namespace wormedit::ui {
+/* Update check and first-run answers. */
+struct updates_request_t {
+    enum class kind_t { none, check_now, first_run_answer, open_download } kind{};
+    // first_run_answer: the step id and the chosen value ("yes"/"no" for "updates").
+    std::string step;
+    std::string choice;
+    auto operator==(const updates_request_t&) const -> bool = default;
+};
+
 struct options_action_t {
     WormUiOptionsActionKind kind{};
     std::uint64_t revision{};
@@ -162,6 +185,7 @@ struct options_action_t {
     std::uint32_t lane_count{}, lane_index{};
     std::string shortcut_command_id;
     std::string text;
+    updates_request_t updates;
     auto operator==(const options_action_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

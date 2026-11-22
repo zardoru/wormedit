@@ -208,6 +208,9 @@ add_executable(wormedit_core_tests
     core/sound_groups_tests.cpp
     core/sound_group_proposal_tests.cpp
     core/preferences_tests.cpp
+    core/release_version_tests.cpp
+    core/update_check_tests.cpp
+    core/first_run_tests.cpp
     core/ui_layout_preferences_tests.cpp
     core/project_settings_tests.cpp
     core/lane_keys_tests.cpp
@@ -268,8 +271,10 @@ target_compile_definitions(wormedit_core_tests
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)
 endif()
+target_sources(wormedit_core_tests PRIVATE sys/update_checker_tests.cpp)
 target_link_libraries(wormedit_core_tests
     PRIVATE
+        wormedit_updates
         wormedit::core
         Catch2::Catch2WithMain
         nlohmann_json::nlohmann_json
@@ -790,6 +795,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/timing_links_event_harness_tests.cpp
         ui/metadata_inheritance_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
+        ui/updates_event_harness_tests.cpp
         ../src/sys/commands/menu_command_view.cpp
         ../src/sys/commands/shortcut_rows.cpp
         ../src/sys/bookmarks/bookmark_rename_commands.cpp

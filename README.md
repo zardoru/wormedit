@@ -109,10 +109,17 @@ ships; configure with `-DWORMEDIT_INSTALL_MANUAL=OFF` to skip it.
 Add `-DWORMEDIT_ENABLE_LUA=ON` when configuring to enable scripting with the pinned Lua 5.4
 runtime. Lua scripting is disabled by default; the manual and API reference are included either way.
 
-The headless core and its tests need no window or GPU:
+That is the **development / verification build**: it compiles only the application, not the
+test suite (hundreds of test files, several times the compile cost). Tests are opt-in.
+
+To build **with tests**, enable them explicitly. The headless core and its tests need no window
+or GPU:
 
 ```sh
 cmake --preset headless && cmake --build --preset headless && ctest --preset headless
+# or, in the application build tree:
+cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
 Offline builds, cross-compiling, Windows packaging and crash backtraces are covered in

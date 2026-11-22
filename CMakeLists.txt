@@ -42,6 +42,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(cmake/check_compiler_requirements.cmake)
 include(cmake/build_speed.cmake)
 
+# Tests are opt-in: they are most of the compile cost. CTest's own default is ON, so the option
+# is declared first. The headless/headless-events/linux-clang presets, CI and scripts/gate.sh
+# enable it explicitly; a plain configure builds only the application.
+option(BUILD_TESTING "Build the test tree (several times the application's compile cost)" OFF)
 include(CTest)
 include(FetchContent)
 

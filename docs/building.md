@@ -31,8 +31,9 @@ separately pinned complexity toolchain remain unchanged.
 
 The native editor's update check ([docs/update-check.md](update-check.md)) links libcurl. Install
 `libcurl4-openssl-dev` on Linux (macOS ships it in the SDK). `-DWORMEDIT_UPDATE_CHECK=AUTO` (default)
-uses libcurl when found and otherwise compiles the check out, `ON` requires it, `OFF` disables it.
-The AppImage and Windows packages are built without it until libcurl is packaged there.
+uses the system libcurl when found and otherwise compiles the check out, `ON` requires it, `OFF`
+disables it. `-DWORMEDIT_BUNDLED_CURL=ON` builds a static libcurl from source instead (static OpenSSL
+on Linux, Schannel on Windows); the AppImage and Windows packages do this.
 
 ## Release versions
 

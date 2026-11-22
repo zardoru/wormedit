@@ -2,6 +2,7 @@
 
 #if defined(WORMEDIT_HAS_LIBCURL)
 #include <curl/curl.h>
+#include <filesystem>
 #endif
 
 namespace wormedit::sys {
@@ -26,6 +27,21 @@ auto write_body(char* data, std::size_t size, std::size_t count, void* user) -> 
 auto on_progress(void* user, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int {
     return static_cast<download_t*>(user)->stop->stop_requested() ? 1 : 0;
 }
+
+#if defined(WORMEDIT_BUNDLED_CURL) && !defined(_WIN32)
+// A bundled OpenSSL only knows the CA locations of the machine that built it; probe the common
+// ones so the AppImage verifies certificates on any distribution.
+auto system_ca_bundle() -> const char* {
+    static constexpr const char* candidates[]{
+        "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem", "/etc/pki/tls/cacert.pem", "/etc/ssl/cert.pem"};
+    for (const auto* path : candidates) {
+        std::error_code error;
+        if (std::filesystem::exists(path, error)) return path;
+    }
+    return nullptr;
+}
+#endif
 
 struct curl_handle_t {
     CURL* handle{curl_easy_init()};
@@ -53,6 +69,9 @@ auto curl_fetch_manifest(std::string_view url, std::stop_token stop, std::size_t
     curl_easy_setopt(curl.handle, CURLOPT_TIMEOUT, 10L);
     curl_easy_setopt(curl.handle, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl.handle, CURLOPT_USERAGENT, "wormedit-update-check");
+#if defined(WORMEDIT_BUNDLED_CURL) && !defined(_WIN32)
+    if (const auto* bundle = system_ca_bundle()) curl_easy_setopt(curl.handle, CURLOPT_CAINFO, bundle);
+#endif
     curl_easy_setopt(curl.handle, CURLOPT_WRITEFUNCTION, write_body);
     curl_easy_setopt(curl.handle, CURLOPT_WRITEDATA, &download);
     curl_easy_setopt(curl.handle, CURLOPT_NOPROGRESS, 0L);

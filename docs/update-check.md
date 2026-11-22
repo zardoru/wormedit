@@ -37,10 +37,16 @@ Nightly builds (`-nightly.*`) are never offered an update.
 
 ## Build
 
-The check links libcurl. `-DWORMEDIT_UPDATE_CHECK=AUTO` (default) uses it when found,
-`ON` requires it, `OFF` compiles the check out; without libcurl the Help entry, the Options
+The check links libcurl. `-DWORMEDIT_UPDATE_CHECK=AUTO` (default) uses the system libcurl when
+found, `ON` requires it, `OFF` compiles the check out; without libcurl the Help entry, the Options
 toggle and the first-run question do not appear. On Linux install `libcurl4-openssl-dev`; macOS
 ships libcurl in the SDK.
+
+Packages that cannot rely on a system libcurl build it statically with `-DWORMEDIT_BUNDLED_CURL=ON`
+(`cmake/dependencies/curl.cmake`, HTTP(S) only): the AppImage links static OpenSSL
+(`libssl-dev` in its Dockerfile) and probes the usual CA bundle locations at run time; the Windows
+package (`windows-cross-release` preset) uses Schannel and the Windows certificate store. Their
+licences are installed under `third-party/`.
 
 ## First-run questions
 

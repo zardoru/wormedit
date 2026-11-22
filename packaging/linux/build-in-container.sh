@@ -30,6 +30,7 @@ cmake "${configure_mode[@]}" -S /source -B /work/build -DCMAKE_BUILD_TYPE=Releas
     -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DWORMEDIT_WARNINGS_AS_ERRORS=ON \
     -DWORMEDIT_ENABLE_LUA=ON -DWORMEDIT_REQUIRE_FFMPEG=ON \
+    -DWORMEDIT_BUNDLED_CURL=ON \
     -DWORMEDIT_FFMPEG_NOTICES_DIR=/opt/ffmpeg/share/wormedit-ffmpeg \
     -DCMAKE_INSTALL_PREFIX=/usr "${suffix_args[@]}"
 cmake --build /work/build --parallel "$jobs"

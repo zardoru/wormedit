@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
     libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
     wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libdrm-dev libgbm-dev libudev-dev \
-    libdbus-1-dev libibus-1.0-dev libvulkan-dev \
+    libdbus-1-dev libibus-1.0-dev libvulkan-dev libssl-dev \
     && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
     && apt-get update && apt-get install -y --no-install-recommends g++-13 \
     && rm -rf /var/lib/apt/lists/*

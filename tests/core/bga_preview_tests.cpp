@@ -286,3 +286,18 @@ TEST_CASE("BGA preview stale windows return an empty layer snapshot",
     CHECK_FALSE(stale.has_value());
     CHECK(stale_layers == bga_layer_state_t{});
 }
+
+TEST_CASE("BGA lanes accept a movie only on the base lane or a video event",
+          "[unit][core][bga][video]") {
+    using wormedit::asset_kind_t;
+    using wormedit::can_bga_event_show_asset;
+    using wormedit::visual_event_kind_t;
+    // BMS plays #BMPxx movie.mpg from channel 04, the base lane.
+    STATIC_CHECK(can_bga_event_show_asset(visual_event_kind_t::background, asset_kind_t::video));
+    STATIC_CHECK(can_bga_event_show_asset(visual_event_kind_t::background, asset_kind_t::image));
+    STATIC_CHECK(can_bga_event_show_asset(visual_event_kind_t::video, asset_kind_t::video));
+    STATIC_CHECK_FALSE(can_bga_event_show_asset(visual_event_kind_t::video, asset_kind_t::image));
+    STATIC_CHECK_FALSE(can_bga_event_show_asset(visual_event_kind_t::layer, asset_kind_t::video));
+    STATIC_CHECK_FALSE(can_bga_event_show_asset(visual_event_kind_t::poor, asset_kind_t::video));
+    STATIC_CHECK_FALSE(can_bga_event_show_asset(visual_event_kind_t::background, asset_kind_t::audio));
+}

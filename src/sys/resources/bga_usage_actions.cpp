@@ -24,6 +24,8 @@ auto dispatch_bga_usage_action(const ui::bga_usage_activation_t& use,
         select_editor_objects_action_t{{{editor_selection_object_kind_t::bga_event, use.target.event}},
                                        editor_area_selection_mode_t::replace});
     if (!selected.accepted) return "The BGA event cannot be selected.";
+    if (const auto lane = editor_bga_lane_index(use.target.kind))
+        navigation->interaction.bga_hidden_lane_mask &= static_cast<std::uint8_t>(~(1U << *lane));
     navigation->interaction.bga_lane_visible = true;
     std::move(*navigation).apply(workspace, interaction);
     return std::nullopt;

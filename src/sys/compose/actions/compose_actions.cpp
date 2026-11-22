@@ -2471,10 +2471,15 @@ auto toggle_compose_bga_visibility_action_t::validate(compose_action_context_t& 
 
 auto toggle_compose_bga_visibility_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
-    const auto mask = wormedit::editor_bga_visible_lane_mask(*chart, context.state.bga_revealed_lane_mask);
+    const auto mask = wormedit::editor_bga_visible_lane_mask(
+        *chart, context.state.bga_revealed_lane_mask, context.state.bga_hidden_lane_mask);
     const auto visible = context.state.bga_lane_visible && mask != 0;
     context.state.bga_lane_visible = !visible;
-    if (!visible && mask == 0) context.state.bga_revealed_lane_mask |= 1U;
+    if (!visible && mask == 0) {
+        constexpr std::uint8_t base_lane = 1U;
+        context.state.bga_revealed_lane_mask |= base_lane;
+        context.state.bga_hidden_lane_mask &= static_cast<std::uint8_t>(~base_lane);
+    }
     return compose_action_outcome_t::from(visible ? "BGA lane hidden." : "BGA lane shown.",
                                           notification_severity_t::info,
                                           notification_source_t::input);
@@ -2764,7 +2769,7 @@ auto process_compose_action_boundary(compose_action_context_t& context,
             return blocked;
         }
     }
-    if (compose_area_pause_conversion(action.compose.kind) &&
+    if (compose_area_timing_edit(action.compose.kind) &&
         (application.project.clipboard.paste_session ||
          application.project.compose_gesture.bga_draw_stroke ||
          application.project.compose_gesture.bmson_razor_stroke)) {

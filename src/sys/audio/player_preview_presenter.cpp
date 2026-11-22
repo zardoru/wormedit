@@ -26,6 +26,12 @@
 namespace wormedit::sys {
 namespace {
 
+// Distance from the receptor line to the edge notes arrive from, in preview-space pixels.
+constexpr double preview_receptor_inset_pixels = 52.0;
+constexpr double preview_lane_width_pixels = 38.0;
+constexpr double minimum_preview_width_pixels = 260.0;
+constexpr double preview_stage_gutter_pixels = 12.0;
+
 using wormedit::ui::maximum_preview_notes;
 using wormedit::ui::maximum_preview_storyboard_instances;
 
@@ -289,12 +295,16 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
                            std::vector<wormedit::ui::player_preview_lane_view_t>& lanes,
                            std::vector<wormedit::ui::player_preview_receptor_view_t>& receptors,
                            std::vector<wormedit::ui::player_preview_hold_view_t>& holds,
-                           std::vector<wormedit::ui::player_preview_note_view_t>& notes) {
+                           std::vector<wormedit::ui::player_preview_note_view_t>& notes,
+                           std::vector<wormedit::ui::player_preview_measure_line_view_t>& measure_lines) {
+    for (const auto& line : scene.measure_lines)
+        measure_lines.push_back({.number = line.number, .y_pixels = line.y_pixels});
     for (const auto& lane : scene.lanes) {
         lanes.push_back({.lane_id = lane.lane,
                          .role = lane.role,
                          .glyph = lane.glyph,
                          .display_order = lane.display_order,
+                         .key_color = lane.key_color,
                          .bounds = lane.bounds});
     }
     for (const auto& receptor : scene.receptors) {
@@ -306,6 +316,9 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
         holds.push_back(
             {.note_id = hold.note,
              .lane_id = hold.lane,
+             .key_color = hold.key_color,
+             .grid_row = hold.phase.row,
+             .grid_period = hold.phase.period,
              .semantic_color_visible = hold.semantic_color.has_value(),
              .semantic_red =
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->red : 0),
@@ -323,6 +336,9 @@ void append_scene_geometry(const player_preview_scene_view_t& scene,
              .lane_id = note.lane,
              .kind = note.kind,
              .glyph = note.glyph,
+             .key_color = note.key_color,
+             .grid_row = note.phase.row,
+             .grid_period = note.phase.period,
              .tail = note.tail,
              .semantic_color_visible = note.semantic_color.has_value(),
              .semantic_red =
@@ -343,7 +359,7 @@ struct player_preview_projection_context_t {
     wormedit::ui::player_preview_view_t& view;
     const document_history_t& history;
     const chart_document_t& chart;
-    player_preview_skin_t skin;
+    player_preview_settings_t settings;
     std::uint64_t sample_frame;
     std::uint32_t sample_rate;
     const std::filesystem::path& project_directory;
@@ -406,6 +422,24 @@ struct player_preview_frame_t {
     std::vector<storyboard_draw_instance_t> storyboard_instances;
 };
 
+// BMS has no video channel: a movie assigned to a base-lane BGA event plays from that event's
+// activation until another base-lane event replaces it. Its draw order stays the background's,
+// so layers still composite above it.
+template <typename Context>
+void promote_background_video(const Context& context, bga_layer_state_t& layers) {
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    if (!layers.background || layers.video) return;
+    const auto resolved = visual::resolved_visual_asset_t::from(
+        context.history.document, layers.background->resource, context.project_directory);
+    if (!resolved || resolved->kind != asset_kind_t::video) return;
+    layers.video = std::exchange(layers.background, std::nullopt);
+    layers.video->kind = visual_event_kind_t::video;
+#else
+    static_cast<void>(context);
+    static_cast<void>(layers);
+#endif
+}
+
 template <typename Context>
 auto prepare_player_preview_frame(const Context& context)
     -> std::optional<player_preview_frame_t> {
@@ -437,6 +471,7 @@ auto prepare_player_preview_frame(const Context& context)
     // advance_events accepted this token; no queue operation intervenes before this snapshot.
     auto layers = state.visual_queue->current_layers(*state.visual_token);
     player_preview_frame_t frame{.visual = std::move(*layers), .storyboard_instances = {}};
+    promote_background_video(context, frame.visual);
     std::string storyboard_error;
     if (!evaluate_storyboards(context.history.document, state.storyboards, *time_ms,
                               frame.storyboard_instances, storyboard_error)) {
@@ -483,9 +518,12 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
     if (layer.video_clock_ready) {
         layer.video_frame = true;
+        // The last decoded frame stays up while the next one decodes, as in a player; it is
+        // withdrawn only so a decoder failure can be reported.
         if (state.decoded_video && state.decoded_video->context.source.resource == event->resource &&
             state.decoded_video->context.clock.event == scene.video_clock->event &&
-            visual::is_video_frame_covering_clock(*state.decoded_video->payload, *scene.video_clock)) {
+            state.failed_video_event != event->object &&
+            visual::is_video_frame_started_by_clock(*state.decoded_video->payload, *scene.video_clock)) {
             layer.image_ready = true;
             layer.image_content_id = state.decoded_video_content_id;
             layer.image_width = state.decoded_video->payload->width;
@@ -509,7 +547,8 @@ void append_player_preview_visual_layer(const Context& context, const auto& even
 template <typename Context>
 void append_player_preview_visual_layers(const Context& context, const auto& scene) {
     append_player_preview_visual_layer(context, scene.visual_layers.background, scene);
-    append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
+    if (context.settings.show_state_layers)
+        append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.layer, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.layer2, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.video, scene);
@@ -662,17 +701,28 @@ template <typename Context>
 auto present_player_preview_frame(const Context& context, const player_preview_frame_t& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
+    // Lanes keep a playable width however many there are (DP has twice the lanes of SP).
+    view.viewport_width_pixels = std::max(
+        minimum_preview_width_pixels,
+        static_cast<double>(state.index.value()->visible_lane_count) * preview_lane_width_pixels +
+            preview_stage_gutter_pixels);
     const auto scene = player_preview_scene_view_t::from(
         *state.index.value(), {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,
                        .viewport_height_pixels = view.viewport_height_pixels,
-                       .receptor_y_pixels = 52.0,
-                       .pixels_per_beat = 82.0,
-                       .skin = context.skin,
+                       .receptor_y_pixels = context.settings.downscroll
+                           ? view.viewport_height_pixels - preview_receptor_inset_pixels
+                           : preview_receptor_inset_pixels,
+                       .pixels_per_beat = 82.0 * wormedit::player_preview_settings_t::clamp_zoom(context.settings.zoom),
+                       .skin = context.settings.skin,
+                       .direction = context.settings.downscroll
+                           ? player_preview_scroll_direction_t::toward_bottom
+                           : player_preview_scroll_direction_t::toward_top,
                        .visual_fit = visual_fit_policy_t::contain,
                        .visual_layers = frame.visual,
                        .storyboard_instances = frame.storyboard_instances,
+                       .include_notes = context.settings.content != player_preview_content_t::bga_only,
                        .maximum_visible_notes = maximum_preview_notes,
                        .maximum_storyboard_instances = maximum_preview_storyboard_instances});
     if (!scene.value || !scene.diagnostics.empty()) {
@@ -681,10 +731,12 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
                                       : scene.diagnostics.front().message);
         return false;
     }
-    append_scene_geometry(*scene.value, context.view.lanes, context.view.receptors, context.view.hold_bodies, context.view.note_endpoints);
+    append_scene_geometry(*scene.value, context.view.lanes, context.view.receptors, context.view.hold_bodies, context.view.note_endpoints,
+                          context.view.measure_lines);
     append_player_preview_visual_layers(context, *scene.value);
     for (const auto& instance : scene.value->storyboard_instances)
-        append_player_preview_storyboard_sprite(context, instance);
+        if (context.settings.show_state_layers || !is_storyboard_state_layer(instance.layer))
+            append_player_preview_storyboard_sprite(context, instance);
     request_player_preview_images(context);
     request_player_preview_video(context);
     publish_player_preview_scene(context, *scene.value);
@@ -703,7 +755,7 @@ auto player_preview_presenter_t::operator=(player_preview_presenter_t&&) noexcep
 void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& view,
                                           const document_history_t& history,
                                           std::optional<chart_id_t> selected_chart, bool visible,
-                                          player_preview_skin_t skin, std::uint64_t sample_frame,
+                                          const player_preview_settings_t& settings, std::uint64_t sample_frame,
                                           std::uint32_t sample_rate,
                                           const std::filesystem::path& project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
@@ -719,7 +771,14 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     auto& state = *impl_;
     view.reset();
     view.visible = visible;
-    view.skin = static_cast<wormedit::player_preview_skin_t>(skin);
+    view.skin = settings.skin;
+    view.layout = settings.layout;
+    view.content = settings.content;
+    view.bga_side = settings.bga_side;
+    view.zoom = wormedit::player_preview_settings_t::clamp_zoom(settings.zoom);
+    view.color_view = settings.color_view;
+    view.downscroll = settings.downscroll;
+    view.show_state_layers = settings.show_state_layers;
     view.visual_fit = wormedit::visual_fit_policy_t::contain;
     view.viewport_width_pixels = 300.0;
     view.viewport_height_pixels = 420.0;
@@ -755,7 +814,7 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
     view.document_revision = history.document.revision;
     view.sample_frame = sample_frame;
     player_preview_projection_context_t preview_context{
-        state, view, history, *chart, skin, sample_frame, sample_rate, project_directory
+        state, view, history, *chart, settings, sample_frame, sample_rate, project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         , image_job
 #endif

@@ -507,13 +507,26 @@ auto build_minimap_note_density(std::span<const editor_field_scene_note_source_t
 void sample_minimap_note_density(std::span<const double> heads, double duration, bgm_bar_range_t range,
                                  std::vector<std::uint32_t>& samples) {
     samples.resize(wormedit::ui::compose_bgm_bar_nps_sample_count);
-    // Use a centered, half-open second on the song clock even at the edge of a zoomed window.
+    // Each plotted point owns the interval halfway to its neighboring points.
+    // Track the largest centered one-second window in that interval, including
+    // windows that become denser between the displayed sample coordinates.
+    const auto spacing = (range.end - range.begin) * duration / (samples.size() - 1);
+    const auto first_center = range.begin * duration;
+    auto oldest = std::ranges::upper_bound(heads, first_center - 0.5);
+    auto newest = std::upper_bound(oldest, heads.end(), first_center + 0.5);
+    auto advance_oldest = [&](double threshold) {
+        while (oldest != newest && *oldest <= threshold) ++oldest;
+    };
     for (std::size_t index = 0; index < samples.size(); ++index) {
-        const auto center_seconds = std::lerp(range.begin, range.end,
-            static_cast<double>(index) / (samples.size() - 1)) * duration;
-        const auto begin = std::ranges::lower_bound(heads, center_seconds - 0.5);
-        const auto end = std::lower_bound(begin, heads.end(), center_seconds + 0.5);
-        samples[index] = static_cast<std::uint32_t>(end - begin);
+        auto maximum = newest - oldest;
+        const auto edge = std::min(range.end * duration, first_center + (index + 0.5) * spacing);
+        while (newest != heads.end() && *newest <= edge + 0.5) {
+            advance_oldest(*newest - 1.0);
+            ++newest;
+            maximum = std::max(maximum, newest - oldest);
+        }
+        advance_oldest(edge - 0.5);
+        samples[index] = static_cast<std::uint32_t>(maximum);
     }
 }
 

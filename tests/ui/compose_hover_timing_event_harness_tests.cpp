@@ -129,12 +129,14 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
     REQUIRE(harness.ready());
     const bool available = GENERATE(false, true);
     harness.view().compose.bgm_bar_available = available;
+    harness.view().compose.bgm_bar_nps_available = available;
     (void)harness.frame();
-    const auto* tooltip = available ? "Show song bar" : "Song audio is unavailable";
+    const auto* tooltip = available ? "Show song overview · Right-click overview for NPS"
+                                    : "Song overview is unavailable";
     (void)harness.hover_widget(tooltip);
     const auto [x, y] = harness.widget_center(tooltip);
     if (!available)
-        check_native_toolbar(harness.drawn_text().find("Song audio is unavailable") != std::string::npos);
+        check_native_toolbar(harness.drawn_text().find("Song overview is unavailable") != std::string::npos);
     const std::array down{mouse_motion(x, y), mouse_button(true, x, y)};
     const auto clicked = harness.frame(down);
     const auto& action = clicked.get();

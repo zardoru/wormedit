@@ -1,9 +1,12 @@
 #include "../support/stale_action_assertions.h"
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -806,5 +809,151 @@ TEST_CASE("BPM execution resolves chart before checking its event cap and edit t
     CHECK(capped.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
         "selected chart exceeds the BPM event cap")});
     CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("BPM range warp scales interior events and restores the effective boundary tempo",
+          "[core][bpm-editor][range-warp]") {
+    const auto measure = measure_id_t{3};
+    const auto chart_id = chart_id_t{2};
+    auto song = bpm_song();
+    auto& tempos = song.charts.front().bpms;
+    tempos.push_back({.id = object_id_t{11}, .position = {measure, 360}, .beats_per_minute = {150, 1}});
+    if (const auto existing_end = GENERATE(false, true); existing_end)
+        tempos.push_back({.id = object_id_t{12}, .position = {measure, 600}, .beats_per_minute = {90, 1}});
+    const auto expected_end = tempos.size() == 3 ? signed_rational_t{90, 1} : signed_rational_t{150, 1};
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure, 240}, {measure, 600}}, {3, 2}));
+    const auto timing = timing_index_t::from(*history.read_chart(chart_id));
+    REQUIRE(timing.value);
+    const auto check_tempo = [&](std::uint64_t row, signed_rational_t bpm) {
+        const auto event = std::ranges::find(timing.value->rows, row, &timing_row_state_t::absolute_row);
+        REQUIRE(event != timing.value->rows.end());
+        CHECK(event->effective_bpm == bpm);
+    };
+    check_tempo(0, {120, 1});
+    check_tempo(240, {180, 1});
+    check_tempo(420, {225, 1});
+    check_tempo(780, expected_end);
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.read_chart(chart_id)->bpms == tempos);
+}
+
+TEST_CASE("BPM range warp accepts the exact reciprocal factors one half, one quarter and one fifth",
+          "[core][bpm-editor][range-warp]") {
+    const auto divisor = GENERATE(std::uint64_t{2}, std::uint64_t{4}, std::uint64_t{5});
+    auto history = document_history_t::from(bpm_song());
+    const auto chart_id = chart_id_t{2};
+    const auto measure = measure_id_t{3};
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure, 240}, {measure, 480}}, {1, divisor}));
+
+    const auto timing = timing_index_t::from(*history.read_chart(chart_id));
+    REQUIRE(timing.value);
+    const auto begin = timing.value->seconds_at(240);
+    const auto end = timing.value->seconds_at(240 + 240 / divisor);
+    REQUIRE(begin.seconds);
+    REQUIRE(end.seconds);
+    CHECK(*begin.seconds == signed_rational_t{1, 2});
+    CHECK(*end.seconds == signed_rational_t{1, 1});
+}
+
+TEST_CASE("BPM range warp preserves hold endpoints and the next bar in song time",
+          "[core][bpm-editor][range-warp]") {
+    const auto ratio = GENERATE(rational_t{2, 1}, rational_t{1, 4});
+    const auto measure = measure_id_t{3};
+    const auto next = measure_id_t{4};
+    auto song = bpm_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = next});
+    chart.lane_layouts.push_back({.id = object_id_t{20}, .position = {measure, 0},
+        .layout = {.lanes = {lane_definition_t::from(1, 0, stage_group_t::none)}}});
+    chart.measures.front().notes.push_back({.id = object_id_t{21}, .position = {measure, 301},
+        .lane = lane_id_t{1}, .kind = note_kind_t::hold, .end = local_position_t{measure, 661}});
+    const auto before_index = measure_index_t::from(chart);
+    const auto before_timing = timing_index_t::from(chart);
+    REQUIRE(before_index);
+    REQUIRE(before_timing.value);
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_range_warp(history, chart.id, {{measure, 240}, {measure, 480}}, ratio));
+    const auto& warped = *history.read_chart(chart.id);
+    const auto after_index = measure_index_t::from(warped);
+    const auto after_timing = timing_index_t::from(warped);
+    REQUIRE(after_index);
+    REQUIRE(after_timing.value);
+    const auto& note = warped.measures.front().notes.front();
+    REQUIRE(note.end);
+    CHECK(after_timing.value->seconds_at(*after_index, note.position).seconds ==
+          before_timing.value->seconds_at(*before_index, {measure, 301}).seconds);
+    CHECK(after_timing.value->seconds_at(*after_index, *note.end).seconds ==
+          before_timing.value->seconds_at(*before_index, {measure, 661}).seconds);
+    CHECK(after_timing.value->seconds_at(*after_index, {next, 0}).seconds ==
+          before_timing.value->seconds_at(*before_index, {next, 0}).seconds);
+    CHECK(warped.measures.front().definition.length ==
+          (ratio.numerator == 2 ? rational_t{5, 4} : rational_t{13, 16}));
+}
+
+TEST_CASE("BMS warp boundary BPMs can be moved and deleted as a group",
+          "[core][bpm-editor][range-warp]") {
+    auto song = bpm_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    const auto chart_id = chart.id;
+    const auto owned = bms_program_document_t::from_native_chart(chart, song, object_id_t{100});
+    REQUIRE(owned.value);
+    song.prepared_bms_programs.push_back(*owned.value);
+    song.charts.clear();
+    auto history = document_history_t::from(std::move(song));
+    const auto measure = history.read_chart(chart_id)->measures.front().id;
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure, 240}, {measure, 480}}, {2, 1}));
+    std::vector<timing_lane_event_ref_t> boundaries;
+    for (const auto& bpm : history.read_chart(chart_id)->bpms)
+        if (bpm.position.row != 0) boundaries.push_back({timing_lane_kind_t::bpm, bpm.id});
+    REQUIRE(boundaries.size() == 2);
+    REQUIRE(move_timing_lane_event_group(history, chart_id, boundaries, 60, false));
+    REQUIRE(delete_timing_lane_event_group(history, chart_id, boundaries, false));
+    CHECK(history.read_chart(chart_id)->bpms.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.read_chart(chart_id)->bpms.size() == 3);
+}
+
+TEST_CASE("BPM range warp can keep the original measure geometry",
+          "[core][bpm-editor][range-warp]") {
+    const auto scoped = GENERATE(false, true);
+    auto song = bpm_song();
+    const auto chart_id = song.charts.front().id;
+    if (scoped) {
+        auto& chart = song.charts.front();
+        chart.source_family = format_family_t::bms;
+        const auto owner = bms_program_document_t::from_native_chart(chart, song, object_id_t{100});
+        REQUIRE(owner.value);
+        song.prepared_bms_programs.push_back(*owner.value);
+        song.charts.clear();
+    }
+    auto history = document_history_t::from(std::move(song));
+    const auto& measure = history.read_chart(chart_id)->measures.front();
+    const auto id = measure.id;
+    const auto definition = measure.definition;
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{id, 240}, {id, 480}}, {5, 1}, false));
+    const auto& warped = *history.read_chart(chart_id);
+    CHECK(warped.measures.front().definition == definition);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(timing.value);
+    CHECK(timing.value->seconds_at(240).seconds == signed_rational_t{1, 2});
+    CHECK(timing.value->seconds_at(480).seconds == signed_rational_t{3, 5});
+    CHECK(timing.value->seconds_at(720).seconds == signed_rational_t{11, 10});
+    REQUIRE(undo_document_command(history));
+}
+
+TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit",
+          "[core][bpm-editor][range-warp]") {
+    auto history = document_history_t::from(bpm_song());
+    const auto before = history.document.revision;
+    const auto result = apply_bpm_range_warp(history, chart_id_t{2},
+        {{measure_id_t{3}, 240}, {measure_id_t{3}, 600}}, {16, 1});
+    CHECK_FALSE(result.applied);
+    CHECK(has_code(result, diagnostic_code_t::invalid_rational));
+    CHECK(history.document.revision == before);
     CHECK(history.undo.empty());
 }

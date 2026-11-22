@@ -65,7 +65,9 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     const bool clicked = wormedit::ui::chrome::IconButton{
         .glyph = Glyph::waves_horizontal,
         .tooltip = !view->bgm_bar_available ? "Song overview is unavailable"
-            : view->bgm_bar_reserved ? "Hide song overview" : "Show song overview",
+            : view->bgm_bar_reserved
+                ? (view->bgm_bar_nps_available ? "Hide song overview · Right-click overview for NPS" : "Hide song overview")
+                : (view->bgm_bar_nps_available ? "Show song overview · Right-click overview for NPS" : "Show song overview"),
         .selected = view->bgm_bar_reserved,
         .enabled = view->bgm_bar_available}.render(context);
     if (!clicked ||

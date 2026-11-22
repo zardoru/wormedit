@@ -1198,6 +1198,32 @@ void populate_preview_audio_range(const compose_scene_cache_t& cache, wormedit::
             wormedit::to_double(*begin.seconds), wormedit::to_double(*end.seconds));
 }
 
+auto area_bpm_warp_moving_seconds(const wormedit::measure_index_t& measures,
+    const wormedit::timing_index_t* timing, const wormedit::ui::compose_view_t& view)
+    -> std::optional<double> {
+    const auto begin = view.area_range_begin_row;
+    const auto end = view.area_range_end_row;
+    if (!timing || !view.area_range_available || view.area_range_virtual ||
+        begin >= end || end >= measures.total_rows)
+        return std::nullopt;
+    const auto first = measures.position_at(begin);
+    const auto last = measures.position_at(end - 1);
+    if (!first || !last || first->measure != last->measure) return std::nullopt;
+
+    double seconds = 0;
+    const auto& segments = timing->segments;
+    const auto first_segment = std::ranges::upper_bound(segments, begin, {},
+        &wormedit::timing_segment_t::end_row);
+    for (auto it = first_segment; it != segments.end() && it->begin_row < end; ++it) {
+        if (it->warped) continue;
+        const auto rows = std::min(it->end_row, end) - std::max(it->begin_row, begin);
+        seconds += 240.0 * static_cast<double>(rows) /
+            (static_cast<double>(timing->divisions_per_standard_measure) *
+             wormedit::to_double(it->effective_bpm));
+    }
+    return seconds;
+}
+
 WormUiComposeSelectionMode compose_scalar_selection_mode(
     wormedit::editor_area_selection_mode_t mode) {
     switch (mode) {
@@ -1284,6 +1310,8 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     }
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     populate_preview_audio_range(cache, view);
+    view.area_bpm_warp_moving_seconds = area_bpm_warp_moving_seconds(cache.scene.index.value()->measures,
+        cache.timing.marker_timing_index ? &*cache.timing.marker_timing_index : nullptr, view);
     if (view.area_range_available && !view.area_range_virtual)
         view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index.value()->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;
@@ -1455,7 +1483,7 @@ auto make_compose_static_view(const wormedit::ui::compose_view_t& view,
     retained.bmson_tools_available = view.bmson_tools_available;
     retained.downscroll = view.downscroll;
     retained.bga_lane_visible = view.bga_lane_visible;
-    retained.bga_revealed_lane_mask = view.bga_revealed_lane_mask;
+    retained.bga_visible_lane_mask = view.bga_visible_lane_mask;
     retained.lane_key_legend_visible = view.lane_key_legend_visible;
     retained.project_id.value = view.project_id.value;
     retained.chart_id.value = view.chart_id.value;
@@ -1865,16 +1893,17 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
             : 0;
     build_compose_lane_key_view(input);
 
-    view.bga_lane_visible = interaction_view.bga_lane_visible &&
-        wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;
+    view.bga_visible_lane_mask = interaction_view.bga_lane_visible
+        ? wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask,
+                                                interaction_view.bga_hidden_lane_mask)
+        : 0;
+    view.bga_lane_visible = view.bga_visible_lane_mask != 0;
     const auto horizontal_layout =
         compose_horizontal_layout(compose_editor_layout_width(view.viewport_width_pixels,
                                       application_state.project.compose_view.compose_editor_right_pixels),
                                   maximum_layout_lane_count(chart),
                                   compose_has_bgm_pane(chart, interaction_view),
-                                  interaction_view.bga_lane_visible ? std::popcount(
-                                      wormedit::editor_bga_visible_lane_mask(chart,
-                                          interaction_view.bga_revealed_lane_mask)) : 0,
+                                  std::popcount(view.bga_visible_lane_mask),
                                   effective_compose_timing_lane_mask(application_state),
                                   application_state.project.compose_view.compose_timing_region_width_pixels);
     // The region can be too narrow for every requested lane; geometry, drawing and picking all
@@ -2418,8 +2447,9 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
                                  comparison_rows, bga_move_preview};
 
     cache.scene.area_object_geometry.reset();
+    const auto default_song_bar_hidden = is_bms_or_bmson_difficulty(history.document, workspace.selected_chart);
     if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
-                                       is_bms_or_bmson_difficulty(history.document, workspace.selected_chart),
+                                       default_song_bar_hidden,
                                        retained_state, application_state)) {
         return;
     }

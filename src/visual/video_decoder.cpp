@@ -14,6 +14,7 @@ extern "C" {
 #include <limits>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace wormedit::visual {
 namespace {
@@ -102,6 +103,9 @@ struct video_decoder_session_t::impl_t {
     std::int64_t stream_start{};
     std::optional<std::int64_t> last_target;
     std::optional<std::int64_t> forward_seek_origin;
+    // True from opening the file until the first frame is retained: the decoder reads from the
+    // stream's beginning, so its first frame is the stream's first frame.
+    bool at_stream_origin{};
     bool positioned{};
     bool input_eof{};
     bool flush_sent{};
@@ -191,6 +195,7 @@ void reposition_decoder(video_decoder_session_t::impl_t& session) {
     av_frame_unref(session.lookahead.get());
     av_packet_unref(session.packet.get());
     session.positioned = true;
+    session.at_stream_origin = false;
     session.input_eof = false;
     session.flush_sent = false;
     session.decoder_eof = false;
@@ -239,6 +244,12 @@ auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t targe
                                   : session.last_target.value_or(AV_NOPTS_VALUE);
     const auto forward_gap = av_rescale_q(forward_seek_threshold_seconds, AVRational{1, 1},
                                           session.time_base);
+    if (!session.positioned && session.at_stream_origin && target - session.stream_start <= forward_gap) {
+        // A freshly opened file already reads from its first frame; seeking there could only
+        // land later (MPEG program streams do).
+        session.positioned = true;
+        return std::nullopt;
+    }
     const bool far_ahead = session.positioned && decoder_position != AV_NOPTS_VALUE &&
                            target > decoder_position &&
                            static_cast<std::uint64_t>(target) - static_cast<std::uint64_t>(decoder_position) >
@@ -257,12 +268,20 @@ auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t targe
 auto retain_decoded_frame(video_decoder_session_t::impl_t& session, std::int64_t target,
                           video_frame_decode_limits_t limits)
     -> std::optional<video_frame_decode_result_t> {
-    const auto timestamp = timestamp_of(session.scratch.get());
+    auto timestamp = timestamp_of(session.scratch.get());
     if (timestamp == AV_NOPTS_VALUE) {
+        // Some streams end with a flushed frame that carries no timestamp; it cannot be placed
+        // on the clock, so it is skipped rather than failing the whole video.
         av_frame_unref(session.scratch.get());
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_data,
-                       "video decoder produced a frame without a timestamp"});
+        return std::nullopt;
     }
+    if (session.at_stream_origin && timestamp > session.stream_start) {
+        // B-frame reordering (AVI, ASF) can time the first decoded frame after the stream start;
+        // a player shows it from the start instead of nothing.
+        session.scratch->best_effort_timestamp = session.stream_start;
+        timestamp = session.stream_start;
+    }
+    session.at_stream_origin = false;
     auto* destination = timestamp <= target ? session.current.get() : session.lookahead.get();
     const auto copied = copy_frame(destination, session.scratch.get());
     av_frame_unref(session.scratch.get());
@@ -370,6 +389,106 @@ auto decode_after_seek(video_decoder_session_t::impl_t& session, std::int64_t ta
                    "video decode exceeded the configured packet limit"});
 }
 
+auto open_failure(const std::stop_token& stop, failure_code_t code, const char* cancelled,
+                  std::string message) -> error_t<failure_code_t> {
+    if (stop.stop_requested()) return {failure_code_t::cancelled, cancelled};
+    return {code, std::move(message)};
+}
+
+auto open_decoder(video_decoder_session_t::impl_t& session, const AVCodec* decoder_type,
+                  std::stop_token stop) -> std::optional<error_t<failure_code_t>> {
+    session.decoder.reset(avcodec_alloc_context3(decoder_type));
+    if (!session.decoder) {
+        return error_t<failure_code_t>{failure_code_t::decode_failed,
+                                       "video decoder context could not be allocated"};
+    }
+    auto result = avcodec_parameters_to_context(session.decoder.get(),
+                                                session.format->streams[session.stream_index]->codecpar);
+    if (result >= 0) result = avcodec_open2(session.decoder.get(), decoder_type, nullptr);
+    if (result < 0) {
+        return open_failure(stop, failure_code_t::decode_failed, "video decoder open was cancelled",
+                            "video decoder could not be opened: " + ffmpeg_message(result));
+    }
+    return std::nullopt;
+}
+
+// Opens the file and its best video stream, reading from the first packet.
+auto open_media(video_decoder_session_t::impl_t& session, std::stop_token stop)
+    -> std::optional<error_t<failure_code_t>> {
+    session.decoder.reset();
+    session.format.reset();
+    AVFormatContext* opened = avformat_alloc_context();
+    if (!opened) {
+        return error_t<failure_code_t>{failure_code_t::io_failed,
+                                       "video format context could not be allocated"};
+    }
+    opened->interrupt_callback = {.callback = interrupt_ffmpeg, .opaque = &session};
+    const auto path = session.source.path.string();
+    auto result = avformat_open_input(&opened, path.c_str(), nullptr, nullptr);
+    session.format.reset(opened);
+    if (result < 0) {
+        return open_failure(stop, failure_code_t::io_failed, "video input open was cancelled",
+                            "video input could not be opened: " + ffmpeg_message(result));
+    }
+    result = avformat_find_stream_info(session.format.get(), nullptr);
+    if (result < 0) {
+        return open_failure(stop, failure_code_t::decode_failed,
+                            "video stream discovery was cancelled",
+                            "video stream information could not be read: " + ffmpeg_message(result));
+    }
+    const AVCodec* decoder_type{};
+    session.stream_index =
+        av_find_best_stream(session.format.get(), AVMEDIA_TYPE_VIDEO, -1, -1, &decoder_type, 0);
+    if (session.stream_index < 0 || decoder_type == nullptr) {
+        return error_t<failure_code_t>{failure_code_t::decode_failed,
+                                       "asset contains no supported video stream"};
+    }
+    const auto* stream = session.format->streams[session.stream_index];
+    session.time_base = stream->time_base;
+    session.stream_start = stream->start_time == AV_NOPTS_VALUE ? 0 : stream->start_time;
+    session.at_stream_origin = true;
+    return open_decoder(session, decoder_type, stop);
+}
+
+// Seeking to the stream start is not a reliable rewind (MPEG program streams land later, byte
+// seeks break ASF and AVI timing), so the last resort reopens the file at its first packet.
+auto reopen_at_stream_origin(video_decoder_session_t::impl_t& session, std::stop_token stop)
+    -> std::optional<video_frame_decode_result_t> {
+    if (auto failed = open_media(session, stop)) return std::unexpected(std::move(*failed));
+    reposition_decoder(session);
+    session.at_stream_origin = true;
+    return std::nullopt;
+}
+
+// The demuxer positioned the decoder past the target: no decoded frame is at or before it.
+auto is_landed_after_target(const video_decoder_session_t::impl_t& session,
+                            const video_frame_decode_result_t& decoded) -> bool {
+    return !decoded && decoded.error().code == failure_code_t::invalid_data &&
+           timestamp_of(session.current.get()) == AV_NOPTS_VALUE;
+}
+
+// FFmpeg lands at or before the target in indexed containers, but MPEG program streams (and
+// other sparsely indexed files) can land after it. Each retry starts earlier: where the decoder
+// was before a forward seek, one and four seconds back, and finally the file's first frame.
+auto decode_from_earlier_position(video_decoder_session_t::impl_t& session, std::int64_t target,
+                                  video_frame_decode_limits_t limits, std::stop_token stop)
+    -> video_frame_decode_result_t {
+    std::vector<std::int64_t> positions;
+    if (session.forward_seek_origin) positions.push_back(*session.forward_seek_origin);
+    session.forward_seek_origin.reset();
+    for (const std::int64_t seconds : {1, 4}) {
+        const auto position = target - av_rescale_q(seconds, AVRational{1, 1}, session.time_base);
+        if (position > session.stream_start) positions.push_back(position);
+    }
+    for (const auto position : positions) {
+        if (auto seek_error = seek_stream(session, position, stop)) return std::move(*seek_error);
+        auto decoded = decode_after_seek(session, target, limits, stop);
+        if (!is_landed_after_target(session, decoded)) return decoded;
+    }
+    if (auto reopen_error = reopen_at_stream_origin(session, stop)) return std::move(*reopen_error);
+    return decode_after_seek(session, target, limits, stop);
+}
+
 } // namespace
 
 video_decoder_session_t::video_decoder_session_t(std::unique_ptr<impl_t> impl)
@@ -397,60 +516,7 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     auto impl = std::make_unique<video_decoder_session_t::impl_t>();
     impl->source = source;
     impl->active_stop = stop;
-    AVFormatContext* opened = avformat_alloc_context();
-    if (!opened) {
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
-                            "video format context could not be allocated"});
-    }
-    opened->interrupt_callback = {.callback = interrupt_ffmpeg, .opaque = impl.get()};
-    const auto path = source.path.string();
-    auto result = avformat_open_input(&opened, path.c_str(), nullptr, nullptr);
-    impl->format.reset(opened);
-    if (result < 0) {
-        if (stop.stop_requested()) {
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video input open was cancelled"});
-        }
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
-                            "video input could not be opened: " + ffmpeg_message(result)});
-    }
-    result = avformat_find_stream_info(impl->format.get(), nullptr);
-    if (result < 0) {
-        if (stop.stop_requested()) {
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
-                                "video stream discovery was cancelled"});
-        }
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                            "video stream information could not be read: " +
-                                ffmpeg_message(result)});
-    }
-
-    const AVCodec* decoder_type{};
-    impl->stream_index =
-        av_find_best_stream(impl->format.get(), AVMEDIA_TYPE_VIDEO, -1, -1, &decoder_type, 0);
-    if (impl->stream_index < 0 || decoder_type == nullptr) {
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                            "asset contains no supported video stream"});
-    }
-    auto* stream = impl->format->streams[impl->stream_index];
-    impl->time_base = stream->time_base;
-    impl->stream_start = stream->start_time == AV_NOPTS_VALUE ? 0 : stream->start_time;
-    impl->decoder.reset(avcodec_alloc_context3(decoder_type));
-    if (!impl->decoder) {
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                            "video decoder context could not be allocated"});
-    }
-    result = avcodec_parameters_to_context(impl->decoder.get(), stream->codecpar);
-    if (result >= 0) {
-        result = avcodec_open2(impl->decoder.get(), decoder_type, nullptr);
-    }
-    if (result < 0) {
-        if (stop.stop_requested()) {
-            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
-                                "video decoder open was cancelled"});
-        }
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
-                            "video decoder could not be opened: " + ffmpeg_message(result)});
-    }
+    if (auto failed = open_media(*impl, stop)) return std::unexpected(std::move(*failed));
     if (!impl->scratch || !impl->current || !impl->lookahead || !impl->packet) {
         return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "video packet or frame storage could not be allocated"});
@@ -483,29 +549,36 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
         return std::move(*seek_error);
     }
     auto decoded = decode_after_seek(session, target, limits, stop);
-    if (!decoded && decoded.error().code == failure_code_t::invalid_data &&
-        session.forward_seek_origin) {
-        // The demuxer landed after the target (sparse or missing index): rewind to where the
-        // decoder was and decode forward, as before the forward seek existed.
-        const auto origin = *session.forward_seek_origin;
-        session.forward_seek_origin.reset();
-        if (auto seek_error = seek_stream(session, origin, stop)) return std::move(*seek_error);
-        decoded = decode_after_seek(session, target, limits, stop);
-    }
-    return decoded;
+    if (!is_landed_after_target(session, decoded)) return decoded;
+    return decode_from_earlier_position(session, target, limits, stop);
 }
+
+namespace {
+
+// The clock as a timestamp in the frame's stream, when the frame belongs to the clock's resource.
+auto frame_clock_timestamp(const rgba_video_frame_t& frame,
+                           const video_preview_clock_t& clock) noexcept -> std::optional<std::int64_t> {
+    if (frame.resource != clock.resource || frame.time_base_numerator <= 0 ||
+        frame.time_base_denominator <= 0) {
+        return std::nullopt;
+    }
+    return clock_timestamp(clock, AVRational{frame.time_base_numerator, frame.time_base_denominator},
+                           frame.stream_start_timestamp);
+}
+
+} // namespace
 
 auto is_video_frame_covering_clock(const rgba_video_frame_t& frame,
                               const video_preview_clock_t& clock) noexcept -> bool {
-    if (frame.resource != clock.resource || frame.time_base_numerator <= 0 ||
-        frame.time_base_denominator <= 0) {
-        return false;
-    }
-    const auto target =
-        clock_timestamp(clock, AVRational{frame.time_base_numerator, frame.time_base_denominator},
-                        frame.stream_start_timestamp);
+    const auto target = frame_clock_timestamp(frame, clock);
     return target && *target >= frame.presentation_timestamp &&
            (!frame.next_presentation_timestamp || *target < *frame.next_presentation_timestamp);
+}
+
+auto is_video_frame_started_by_clock(const rgba_video_frame_t& frame,
+                                     const video_preview_clock_t& clock) noexcept -> bool {
+    const auto target = frame_clock_timestamp(frame, clock);
+    return target && *target >= frame.presentation_timestamp;
 }
 
 auto decode_video_frame_rgba(const resolved_visual_asset_t& source,

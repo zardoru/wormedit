@@ -1269,6 +1269,7 @@ struct compose_view_t {
     uint64_t area_range_begin_row{};
     uint64_t area_range_end_row{};
     wormedit::ui::preview_audio_range_view_t preview_audio_range{};
+    std::optional<double> area_bpm_warp_moving_seconds;
     uint64_t area_canvas_rows{};
     uint64_t area_rows_per_measure{};
     uint64_t area_snap_denominator{};
@@ -1339,7 +1340,7 @@ struct compose_view_t {
     bool bga_lane_visible{};
     std::vector<wormedit::ui::compose_bga_event_view_t> bga_events;
     wormedit::ui::compose_rect_t bga_lane_bounds{};
-    uint8_t bga_revealed_lane_mask{};
+    uint8_t bga_visible_lane_mask{};
     size_t bga_lane_count{};
     wormedit::ui::compose_rect_t bga_lane_rects[4]{};
     uint8_t bga_lane_kinds[4]{};

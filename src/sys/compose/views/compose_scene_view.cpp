@@ -514,7 +514,6 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
         return;
     }
     view.bga_lane_visible = scene.bga_lane.has_value();
-    view.bga_revealed_lane_mask = projection.inputs.scope.interaction_view.bga_revealed_lane_mask;
     view.bga_lane_count = std::min<std::size_t>(scene.bga_lanes.size(), 4);
     for (std::size_t index = 0; index < view.bga_lane_count; ++index) {
         const auto& lane = scene.bga_lanes[index];
@@ -551,9 +550,6 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
                                ? document.visual_assets.end()
                                : std::ranges::find(document.visual_assets, resource->asset,
                                                    &wormedit::visual_asset_t::id);
-        const auto expected_asset_kind = event.kind == wormedit::visual_event_kind_t::video
-                                             ? wormedit::asset_kind_t::video
-                                             : wormedit::asset_kind_t::image;
         append_compose_geometry_row(
             view.bga_events,
             {.event_id = event.event,
@@ -564,7 +560,8 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
              .name = name,
              .bmp_id = bmp_id,
              .missing = resource == document.resources.end() || resource->missing ||
-                        asset == document.visual_assets.end() || asset->kind != expected_asset_kind,
+                        asset == document.visual_assets.end() ||
+                        !wormedit::can_bga_event_show_asset(event.kind, asset->kind),
              .selected = event.selected,
              .bounds = {event.bounds.left, event.bounds.top, event.bounds.right,
                         event.bounds.bottom}},
@@ -631,7 +628,7 @@ bool initialize_compose_view_state(
                             !application_state.project.bgm.bgm_bar_hidden.value_or(bms_or_bmson);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
-    view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
+    view.bga_visible_lane_mask = 0;
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.same_sound_selection_available = false;

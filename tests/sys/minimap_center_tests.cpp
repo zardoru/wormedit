@@ -345,6 +345,20 @@ TEST_CASE("minimap density counts playable heads in a rolling second on the wave
     check_minimap(density_at(view, 3.5) == 0);
 }
 
+TEST_CASE("minimap density preserves short peaks between the samples of a long chart",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    for (std::uint64_t id = 9; id <= 8400; ++id)
+        fixture.chart.measures.push_back({.id = measure_id_t{id}});
+    fixture.refresh_density_source(7);
+    fixture.project_density();
+    const auto& view = fixture.flattened.view.compose;
+    require_minimap(!view.bgm_bar_nps.empty());
+    check_minimap(view.bgm_bar_peak_nps == 5);
+    check_minimap(*std::ranges::max_element(view.bgm_bar_nps) == view.bgm_bar_peak_nps);
+}
+
 TEST_CASE("minimap density refreshes after note and timing edits and follows the zoomed window",
           "[frame-timing][minimap-nps]") {
     projection_fixture_t fixture;

@@ -1496,19 +1496,26 @@ auto compose_input_rejection(std::string message,
         wormedit::notification_source_t::input);
 }
 
-auto reveal_compose_bga_lane_input(const wormedit::ui::compose_input_action_t& input,
-                                   compose_input_context_t& context,
-                                   wormedit::editor_interaction_result_t& result,
-                                   std::string_view& accepted) -> compose_input_family_result_t {
+auto set_compose_bga_lane_visibility_input(const wormedit::ui::compose_input_action_t& input,
+                                           compose_input_context_t& context,
+                                           wormedit::editor_interaction_result_t& result,
+                                           std::string_view& accepted) -> compose_input_family_result_t {
     if (context.gesture_active)
-        return compose_input_rejection("Finish or cancel the active gesture before adding a BGA lane.", result);
+        return compose_input_rejection("Finish or cancel the active gesture before changing BGA lane visibility.", result);
     const auto lane = wormedit::editor_bga_lane_index(input.bga_lane_kind);
     if (!lane || input.bga_lane_kind == wormedit::visual_event_kind_t::video)
         return compose_input_rejection("Unsupported BGA lane kind.", result);
-    context.state.bga_revealed_lane_mask |= static_cast<std::uint8_t>(1U << *lane);
-    context.state.bga_lane_visible = true;
+    const auto bit = static_cast<std::uint8_t>(1U << *lane);
+    const bool show = input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL;
+    if (show) {
+        context.state.bga_revealed_lane_mask |= bit;
+        context.state.bga_hidden_lane_mask &= static_cast<std::uint8_t>(~bit);
+        context.state.bga_lane_visible = true;
+    } else {
+        context.state.bga_hidden_lane_mask |= bit;
+    }
     result.accepted = true;
-    accepted = "BGA lane shown.";
+    accepted = show ? "BGA lane shown." : "BGA lane hidden.";
     return compose_input_family_result_t::continue_with_result();
 }
 
@@ -1581,7 +1588,8 @@ auto dispatch_compose_bga_input(const wormedit::ui::compose_input_action_t& inpu
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL:
-        return reveal_compose_bga_lane_input(input, context, result, accepted);
+    case WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE:
+        return set_compose_bga_lane_visibility_input(input, context, result, accepted);
     default: return std::nullopt;
     }
 }
@@ -2566,7 +2574,8 @@ auto dispatch_compose_input_action_impl(wormedit::ui::compose_input_window_t& ui
         input_chart == nullptr ? 0 : maximum_layout_lane_count(*input_chart), bgm_lane_count != 0,
         state.bga_lane_visible && input_chart != nullptr
             ? std::popcount(
-                  editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask))
+                  editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask,
+                                               state.bga_hidden_lane_mask))
             : 0,
         effective_compose_timing_lane_mask(application_state),
         application_state.project.compose_view.compose_timing_region_width_pixels);

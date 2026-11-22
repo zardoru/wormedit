@@ -263,3 +263,113 @@ TEST_CASE("player preview publishes an event-linked video decoder failure",
     CHECK(std::string_view{layer.diagnostic_text}.find("could not be opened") !=
           std::string_view::npos);
 }
+
+TEST_CASE("player preview plays a movie assigned to the BGA base lane as video",
+          "[integration][visual][video][player-preview][bms-video]") {
+    // BMS has no video channel: #BMP01 movie.mpg on channel 04 is a background event.
+    auto song = document();
+    song.charts.front().bga_events.front().kind = visual_event_kind_t::background;
+    const auto history = document_history_t::from(std::move(song));
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    wormedit::ui::player_preview_view_t view{};
+
+    REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 72'000));
+    const auto& layer = view.visual_layers[0];
+    CHECK(layer.object_id == object_id_t{4});
+    CHECK(layer.kind == visual_event_kind_t::video);
+    CHECK(layer.video_frame);
+    CHECK(layer.draw_order == 0);
+    REQUIRE(layer.rgba_pixels.size() == 16U * 16U * 4U);
+    CHECK(layer.rgba_pixels[0] < 16);
+    CHECK(layer.rgba_pixels[1] > 240);
+}
+
+TEST_CASE("player preview keeps the last video frame up while the next one decodes",
+          "[integration][visual][video][player-preview][hold]") {
+    const auto history = document_history_t::from(document());
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    wormedit::ui::player_preview_view_t view{};
+    REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 24'000));
+    const auto red_content_id = view.visual_layers[0].image_content_id;
+
+    // The clock has moved into the green frame; red stays drawn until green is delivered.
+    presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 72'000,
+                       48'000, std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video", image_job,
+                       video_job);
+    REQUIRE(view.visual_layers.size() == 1);
+    CHECK(view.visual_layers[0].image_ready);
+    CHECK(view.visual_layers[0].image_content_id == red_content_id);
+    CHECK(view.visual_layers[0].diagnostic == wormedit::ui::player_preview_visual_diagnostic_t::none);
+    REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 72'000, red_content_id));
+    CHECK(view.visual_layers[0].rgba_pixels[1] > 240);
+}
+
+TEST_CASE("player preview lanes carry the layout's key color for their backgrounds",
+          "[player-preview][lanes]") {
+    auto song = document();
+    song.charts.front().lane_layouts.front().layout.lanes.front().role = lane_role_t::scratch;
+    song.charts.front().bga_events.clear();
+    const auto history = document_history_t::from(std::move(song));
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    wormedit::ui::player_preview_view_t view{};
+    presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 0, 48'000,
+                       std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video", image_job, video_job);
+    REQUIRE(view.lanes.size() == 1);
+    // A generic scratch lane resolves to the scratch color, as Compose draws it.
+    CHECK(view.lanes.front().key_color == lane_key_color_t::scratch);
+}
+
+TEST_CASE("player preview hides the miss layer when state layers are off", "[bga][player-preview][poor]") {
+    temporary_bga_image_t image;
+    auto song = document();
+    song.visual_assets.front().kind = asset_kind_t::image;
+    song.visual_assets.front().source_path = image.path.filename();
+    song.visual_assets.front().width = 2;
+    song.visual_assets.front().height = 1;
+    const auto resource = song.resources.front().id;
+    song.charts.front().bga_events = {{.id = object_id_t{4}, .position = {measure_id_t{1}, 0},
+        .resource = resource, .kind = visual_event_kind_t::background},
+        {.id = object_id_t{5}, .position = {measure_id_t{1}, 0},
+         .resource = resource, .kind = visual_event_kind_t::poor}};
+    const auto history = document_history_t::from(std::move(song));
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    wormedit::ui::player_preview_view_t view{};
+    const auto has_kind = [&](visual_event_kind_t kind) {
+        return std::ranges::any_of(view.visual_layers, [kind](const auto& layer) { return layer.kind == kind; });
+    };
+    player_preview_settings_t settings{player_preview_skin_t::mania};
+    presenter.populate(view, history, chart_id_t{7}, true, settings, 0, 48'000, image.path.parent_path(),
+                       image_job, video_job);
+    CHECK(has_kind(visual_event_kind_t::poor));
+
+    settings.show_state_layers = false;
+    presenter.populate(view, history, chart_id_t{7}, true, settings, 0, 48'000, image.path.parent_path(),
+                       image_job, video_job);
+    CHECK_FALSE(view.show_state_layers);
+    CHECK_FALSE(has_kind(visual_event_kind_t::poor));
+    CHECK(has_kind(visual_event_kind_t::background));
+}

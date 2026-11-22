@@ -67,23 +67,6 @@ auto same_bgm_event(const bgm_event_t& left, const bgm_event_t& right) -> bool {
         left.structural_slot == right.structural_slot && left.branch == right.branch &&
         left.semantic_layers == right.semantic_layers;
 }
-auto action_notification_song() -> song_document_t {
-    song_document_t song;
-    song.id = song_id_t{1};
-    song.revision = 1;
-    chart_document_t chart;
-    chart.id = chart_id_t{1};
-    chart.divisions_per_standard_measure = 960;
-    chart.measures = {{.id = measure_id_t{1}}};
-    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
-                   .beats_per_minute = {120, 1}}};
-    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0},
-        .layout = {.profile_id = "notification-test", .display_name = "Notification test",
-                   .lanes = {{.id = lane_id_t{1}, .name = "Key", .role = lane_role_t::playable}}}}};
-    song.charts.push_back(std::move(chart));
-    return song;
-}
-
 struct action_notification_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
@@ -234,6 +217,21 @@ TEST_CASE("BGA lane reveal is view-only and rejects an unsupported kind", "[bga]
     fixture.dispatch_input(invalid);
     check_action(fixture.state.bga_revealed_lane_mask == 15);
     check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("BGA lane visibility can hide and restore an authored lane", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    const auto& chart = fixture.history.document.charts.front();
+    auto hide = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_HIDE, 2);
+    fixture.dispatch_input(hide);
+    check_action(editor_bga_visible_lane_mask(chart, fixture.state.bga_revealed_lane_mask,
+                                             fixture.state.bga_hidden_lane_mask) == 4);
+    auto reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 2);
+    fixture.dispatch_input(reveal);
+    check_action(editor_bga_visible_lane_mask(chart, fixture.state.bga_revealed_lane_mask,
+                                             fixture.state.bga_hidden_lane_mask) == 6);
+    fixture.check_unchanged(revision);
 }
 
 TEST_CASE("BGA production invalid and stale move payloads preserve state", "[bga][compose-input]") {

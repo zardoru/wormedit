@@ -5,6 +5,7 @@
 #include <wormedit/core/timing_event_access.h>
 
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/pause_warp_editor.h>
 #include <wormedit/core/scroll_speed_editor.h>
@@ -494,10 +495,11 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                   std::span<const timing_lane_event_ref_t> events,
                                   std::int64_t row_delta,
                                   bool timing_locked) -> document_command_result_t {
-    if (history.document.find_bms_program(chart_id))
+    if (const auto* owner = history.document.find_bms_program(chart_id);
+        owner && owner->prepared().program.has_control_flow())
         return document_command_transaction_t::rejection(history.document.revision,
             diagnostic_code_t::unsupported_feature,
-            "Scoped timing groups require an explicit owner-aware batch; individual event edits are available.");
+            "Timing group edits across BMS branches are unavailable; edit events individually.");
 
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
@@ -681,10 +683,11 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
                                     std::span<const timing_lane_event_ref_t> events, bool timing_locked)
     -> document_command_result_t {
-    if (history.document.find_bms_program(chart_id))
+    if (const auto* owner = history.document.find_bms_program(chart_id);
+        owner && owner->prepared().program.has_control_flow())
         return document_command_transaction_t::rejection(history.document.revision,
             diagnostic_code_t::unsupported_feature,
-            "Scoped timing groups require an explicit owner-aware batch; individual event edits are available.");
+            "Timing group edits across BMS branches are unavailable; edit events individually.");
 
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;

@@ -4,6 +4,7 @@
 #include <wormedit/core/rational.h>
 #include "position_validation.h"
 #include "chart_object_ids.h"
+#include "chart_position_storage.h"
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/timing_reposition.h>
 #include <wormedit/core/measure.h>
@@ -274,28 +275,104 @@ struct bpm_range_warp_plan_t {
     }
 };
 
-auto stage_flat_bpm_range_warp(document_command_transaction_t& transaction,
-                              const bpm_range_warp_plan_t& plan) -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(plan.chart, bpm_operation_visitor_t::unknown_chart_message,
-        [&](chart_document_t& chart, song_document_t& document) -> attempt_t<document_edit_effect_t> {
-            auto& outcome = transaction.outcome();
-            const bpm_edit_limits_t limits;
-            if (chart.bpms.size() > limits.maximum_bpm_events) {
-                reject(outcome, diagnostic_code_t::invalid_resolution, "Selected chart exceeds the BPM event cap.");
-                return {};
-            }
-            bpm_operation_visitor_t operation{{outcome, limits}};
-            for (const auto& edit : plan.edits) {
-                std::visit([&](const auto& action) { operation(chart, action); }, edit);
-                if (!outcome.diagnostics.empty()) return {};
-            }
-            if (!timing_index_t::from(chart).value) {
-                reject(outcome, diagnostic_code_t::invalid_rational, "The warped timing exceeds clock bounds.");
-                return {};
-            }
-            if (!operation.postvalidate(chart, document)) return {};
-            return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
+struct bpm_warp_geometry_t {
+    measure_id_t measure;
+    std::uint64_t first, last;
+    rational_t ratio;
+
+    auto scale_rows(std::uint64_t rows) const -> std::optional<std::uint64_t> {
+        if (rows % ratio.denominator != 0) return std::nullopt;
+        return timing_arithmetic::checked_multiply(rows / ratio.denominator, ratio.numerator);
+    }
+
+    auto map(std::uint64_t row) const -> std::optional<std::uint64_t> {
+        if (row <= first) return row;
+        const auto scaled_part = std::min(row, last) - first;
+        const auto width = scale_rows(scaled_part);
+        if (!width || *width > std::numeric_limits<std::uint64_t>::max() - (row - scaled_part))
+            return std::nullopt;
+        return first + *width + (row - std::min(row, last));
+    }
+
+    auto grid_factor(const chart_document_t& chart) const -> std::uint64_t {
+        auto divisor = std::gcd(ratio.denominator, last - first);
+        for_each_chart_position(chart, [&](const local_position_t& position, auto) {
+            if (position.measure == measure && position.row > first)
+                divisor = std::gcd(divisor, std::min(position.row, last) - first);
         });
+        return ratio.denominator / divisor;
+    }
+};
+
+auto scale_warp_pauses(chart_document_t& chart, const measure_index_t& index,
+                        const bpm_range_warp_plan_t& plan) -> bool {
+    for (auto& pause : chart.pauses) {
+        if (pause.source_unit != pause_unit_t::bms_stop_ticks &&
+            pause.source_unit != pause_unit_t::beats) continue;
+        const auto row = index.row_of(pause.position);
+        if (!row || *row < plan.first || *row >= plan.last) continue;
+        const auto scaled = timing_arithmetic::multiply(pause.duration, plan.multiplier);
+        if (!scaled) return false;
+        pause.duration = *scaled;
+    }
+    return true;
+}
+
+auto deform_warp_measure(chart_document_t& chart, bpm_warp_geometry_t geometry) -> bool {
+    const auto factor = geometry.grid_factor(chart);
+    if (factor != 1) {
+        const auto resolution = timing_arithmetic::checked_multiply(chart.divisions_per_standard_measure, factor);
+        if (!resolution) return false;
+        auto redivision = redivision_plan_t::from(chart, *resolution);
+        if (!redivision.value.chart) return false;
+        chart = std::move(*redivision.value.chart);
+        geometry.first *= factor;
+        geometry.last *= factor;
+    }
+    auto* measure = chart.find_measure(geometry.measure);
+    const auto before = validate_measure(chart.divisions_per_standard_measure, measure->definition);
+    if (!before.row_capacity) return false;
+    const auto capacity = geometry.map(*before.row_capacity);
+    if (!capacity) return false;
+    measure->definition = {.length = rows_to_fraction(*capacity, chart.divisions_per_standard_measure)};
+    bool exact = true;
+    for_each_chart_position(chart, [&](local_position_t& position, auto) {
+        if (position.measure != geometry.measure) return;
+        const auto row = geometry.map(position.row);
+        if (row) position.row = *row;
+        else exact = false;
+    });
+    return exact;
+}
+
+auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_t& plan,
+                             document_command_result_t& outcome) -> attempt_t<document_edit_effect_t> {
+    const auto old_timing = timing_index_t::from(chart);
+    const auto old_index = measure_index_t::from(chart);
+    const bpm_edit_limits_t limits;
+    bpm_operation_visitor_t operation{{outcome, limits}};
+    for (const auto& edit : plan.edits) {
+        std::visit([&](const auto& action) { operation(chart, action); }, edit);
+        if (!outcome.diagnostics.empty()) return {};
+    }
+    const auto end_row = plan.range.begin.row + (plan.last - plan.first);
+    if (!old_index || !old_timing.value || !scale_warp_pauses(chart, *old_index, plan) ||
+        !deform_warp_measure(chart, {plan.range.begin.measure, plan.range.begin.row, end_row,
+            reduce_fraction(rational_t{static_cast<std::uint64_t>(plan.multiplier.numerator), plan.multiplier.denominator})})) {
+        reject(outcome, diagnostic_code_t::invalid_resolution, "The selected range cannot be warped on an exact chart grid.");
+        return {};
+    }
+    const auto new_timing = timing_index_t::from(chart);
+    const auto new_index = measure_index_t::from(chart);
+    const auto* previous = old_index->entry_for(plan.range.begin.measure);
+    const auto* warped = new_index ? new_index->entry_for(plan.range.begin.measure) : nullptr;
+    if (!new_timing.value || !warped ||
+        old_timing.value->seconds_at(previous->absolute_begin_row + previous->row_capacity).seconds !=
+        new_timing.value->seconds_at(warped->absolute_begin_row + warped->row_capacity).seconds) {
+        reject(outcome, diagnostic_code_t::invalid_measure, "The warp would move the end of the measure in audio time.");
+        return {};
+    }
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
 }
 
 auto valid_bpm_range_warp_multiplier(rational_t ratio) -> bool {
@@ -328,13 +405,13 @@ auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart, positio
         !plan.add_boundaries(*timing.value))
         return transaction.reject(diagnostic_code_t::invalid_rational,
                                   "The selected timing cannot be scaled exactly.");
-    if (!transaction.has_bms_program(chart))
-        return transaction.finish_execution(stage_flat_bpm_range_warp(transaction, plan));
-    for (const auto& edit : plan.edits) {
-        auto staged = stage_bpm_edit(transaction, edit);
-        if (!staged.value || !staged.ok()) return transaction.finish_execution(std::move(staged));
-    }
-    return transaction.commit("Warp selected timing range");
+    const auto edit = [&](chart_document_t& working) {
+        return stage_bpm_warp_geometry(working, plan, transaction.outcome());
+    };
+    if (transaction.has_bms_program(chart))
+        return transaction.finish_execution(transaction.stage_bms_structure_edit(chart, edit));
+    return transaction.finish_execution(transaction.stage(chart, bpm_operation_visitor_t::unknown_chart_message,
+        [&](chart_document_t& working, song_document_t&) { return edit(working); }));
 }
 
 // Native commands retain their immediate-publication boundary; compositions use staging.

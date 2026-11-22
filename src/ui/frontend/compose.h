@@ -1267,6 +1267,7 @@ struct compose_view_t {
     uint64_t area_range_begin_row{};
     uint64_t area_range_end_row{};
     wormedit::ui::preview_audio_range_view_t preview_audio_range{};
+    std::optional<double> area_bpm_warp_moving_seconds;
     uint64_t area_canvas_rows{};
     uint64_t area_rows_per_measure{};
     uint64_t area_snap_denominator{};

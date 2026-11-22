@@ -17,7 +17,7 @@ dispatch_compose_area_action(const wormedit::ui::workspace_action_t& action, doc
         kind, compose_action_detail::compose_area_routes);
     if (!action.compose.area.clear_requested && !route)
         return std::nullopt;
-    if (compose_area_pause_conversion(kind) &&
+    if (compose_area_timing_edit(kind) &&
         history.document.id != action.stamp.project_id) {
         auto message = stale_action_message("Area conversion");
         notifications.post_feedback(notification_severity_t::warning, notification_source_t::edit,

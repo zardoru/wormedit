@@ -2769,7 +2769,7 @@ auto process_compose_action_boundary(compose_action_context_t& context,
             return blocked;
         }
     }
-    if (compose_area_pause_conversion(action.compose.kind) &&
+    if (compose_area_timing_edit(action.compose.kind) &&
         (application.project.clipboard.paste_session ||
          application.project.compose_gesture.bga_draw_stroke ||
          application.project.compose_gesture.bmson_razor_stroke)) {

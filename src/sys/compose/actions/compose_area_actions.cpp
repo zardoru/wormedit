@@ -10,6 +10,7 @@
 #include <array>
 #include <ranges>
 #include <utility>
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/grid.h>
@@ -331,6 +332,42 @@ auto resize_compose_area_action_t::perform(compose_action_context_t& context) co
         notification_severity_t::hint, notification_source_t::input);
 }
 
+struct warp_compose_area_timing_action_t {
+    const wormedit::measure_index_t* source_index{};
+    auto operator==(const warp_compose_area_timing_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<warp_compose_area_timing_action_t, compose_action_context_t>);
+
+auto warp_compose_area_timing_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
+    if (context.environment.editor.commands.project.timing_recipe.timing_locked)
+        return compose_action_outcome_t::blocked("Timing is locked.");
+    if (auto blocked = context.require_no_gesture("Finish the current edit before warping the area."))
+        return std::move(*blocked);
+    const auto& range = context.state.retained_selection_range;
+    const auto& request = context.action.compose.area;
+    if (!range || source_index->row_of(range->begin) != request.begin_row ||
+        source_index->row_of(range->end) != request.end_row)
+        return compose_action_outcome_t::blocked("The selected timing range changed.");
+    return std::nullopt;
+}
+
+auto warp_compose_area_timing_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    const auto& request = context.action.compose.area;
+    auto result = apply_bpm_range_warp(context.environment.document.history, context.state.chart,
+        *context.state.retained_selection_range,
+        {request.bpm_multiplier_numerator, request.bpm_multiplier_denominator}, request.bpm_warp_resize_span);
+    return compose_action_outcome_t::from(std::move(result), compose_action_description_t{
+        .success = "Warped the selected timing range.",
+        .unchanged = "Timing is unchanged.",
+        .rebind_failure = "The timing warp was applied, but workspace rebinding failed.",
+        .source = notification_source_t::edit,
+        .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
+}
+
 struct convert_compose_area_to_pause_action_t {
     auto operator==(const convert_compose_area_to_pause_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -435,7 +472,7 @@ namespace compose_action_detail {
 
 auto process_compose_area_boundary(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
-    if (compose_area_pause_conversion(context.action.compose.kind) &&
+    if (compose_area_timing_edit(context.action.compose.kind) &&
         context.environment.document.history.document.id.value !=
             context.action.stamp.project_id.value)
         return compose_action_outcome_t::blocked(stale_action_message("Area conversion"));
@@ -492,6 +529,10 @@ constexpr auto area_route_entries = std::array{
     compose_action_route_t{
         .kind = WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN,
         .operation = run_routed_area_action<add_speed_span_over_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_WARP_TIMING,
+        .operation = run_routed_area_action<warp_compose_area_timing_action_t>,
     },
     compose_action_route_t{
         .kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP,

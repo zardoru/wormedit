@@ -1198,6 +1198,32 @@ void populate_preview_audio_range(const compose_scene_cache_t& cache, wormedit::
             wormedit::to_double(*begin.seconds), wormedit::to_double(*end.seconds));
 }
 
+auto area_bpm_warp_moving_seconds(const wormedit::measure_index_t& measures,
+    const wormedit::timing_index_t* timing, const wormedit::ui::compose_view_t& view)
+    -> std::optional<double> {
+    const auto begin = view.area_range_begin_row;
+    const auto end = view.area_range_end_row;
+    if (!timing || !view.area_range_available || view.area_range_virtual ||
+        begin >= end || end >= measures.total_rows)
+        return std::nullopt;
+    const auto first = measures.position_at(begin);
+    const auto last = measures.position_at(end - 1);
+    if (!first || !last || first->measure != last->measure) return std::nullopt;
+
+    double seconds = 0;
+    const auto& segments = timing->segments;
+    const auto first_segment = std::ranges::upper_bound(segments, begin, {},
+        &wormedit::timing_segment_t::end_row);
+    for (auto it = first_segment; it != segments.end() && it->begin_row < end; ++it) {
+        if (it->warped) continue;
+        const auto rows = std::min(it->end_row, end) - std::max(it->begin_row, begin);
+        seconds += 240.0 * static_cast<double>(rows) /
+            (static_cast<double>(timing->divisions_per_standard_measure) *
+             wormedit::to_double(it->effective_bpm));
+    }
+    return seconds;
+}
+
 WormUiComposeSelectionMode compose_scalar_selection_mode(
     wormedit::editor_area_selection_mode_t mode) {
     switch (mode) {
@@ -1284,6 +1310,8 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     }
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     populate_preview_audio_range(cache, view);
+    view.area_bpm_warp_moving_seconds = area_bpm_warp_moving_seconds(cache.scene.index.value()->measures,
+        cache.timing.marker_timing_index ? &*cache.timing.marker_timing_index : nullptr, view);
     if (view.area_range_available && !view.area_range_virtual)
         view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index.value()->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;

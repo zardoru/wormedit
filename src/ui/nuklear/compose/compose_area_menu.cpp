@@ -159,7 +159,7 @@ void render_warp_timing(nk_context* context, const wormedit::ui::compose_view_t&
         warp_denominator = i;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::row_text, 1);
     const auto resize_state = warp_resize_span ? chrome::CheckState::on : chrome::CheckState::off;
-    if (chrome::Checkbox{"Resize span to preserve audio time", resize_state}.render(context))
+    if (chrome::Checkbox{"Stretch measures to keep audio time", resize_state}.render(context))
         warp_resize_span = !warp_resize_span;
     const auto numerator = factors[warp_numerator];
     const auto denominator = factors[warp_denominator];
@@ -176,7 +176,7 @@ void render_warp_timing(nk_context* context, const wormedit::ui::compose_view_t&
         nk_label(context, preview, NK_TEXT_LEFT);
     }
     if (!chrome::context_menu_item(menu, context, "Apply timing warp",
-            !available ? "Select a range within one authored measure" :
+            !available ? "Select a timing range first" :
             numerator == denominator ? "Choose a multiplier other than 1" : nullptr)) return;
     action.compose.kind = WORM_UI_COMPOSE_ACTION_AREA_WARP_TIMING;
     action.compose.area.begin_row = view.area_range_begin_row;
@@ -265,7 +265,7 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
     nk_layout_row_dynamic(context, chrome::context_menu_row_height, 1);
     if (chrome::context_menu_button(context, "Warp timing…",
             conversion_reason ? conversion_reason : reason_unless(view.area_bpm_warp_moving_seconds.has_value(),
-                "Select a range within one authored measure"), true)) {
+                "Select a timing range first"), true)) {
         warp_timing = true;
         warp_numerator = warp_denominator = 0;
         chrome::context_menu_reset_navigation(menu);

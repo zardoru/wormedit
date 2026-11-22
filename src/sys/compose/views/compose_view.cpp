@@ -1206,9 +1206,7 @@ auto area_bpm_warp_moving_seconds(const wormedit::measure_index_t& measures,
     if (!timing || !view.area_range_available || view.area_range_virtual ||
         begin >= end || end >= measures.total_rows)
         return std::nullopt;
-    const auto first = measures.position_at(begin);
-    const auto last = measures.position_at(end - 1);
-    if (!first || !last || first->measure != last->measure) return std::nullopt;
+    if (!measures.position_at(begin) || !measures.position_at(end - 1)) return std::nullopt;
 
     double seconds = 0;
     const auto& segments = timing->segments;

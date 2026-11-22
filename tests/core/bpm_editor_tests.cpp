@@ -957,3 +957,151 @@ TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit
     CHECK(history.document.revision == before);
     CHECK(history.undo.empty());
 }
+
+namespace {
+auto multi_measure_song() -> song_document_t {
+    auto song = bpm_song();
+    auto& chart = song.charts.front();
+    for (std::uint64_t id = 4; id <= 6; ++id) chart.measures.push_back({.id = measure_id_t{id}});
+    chart.lane_layouts.push_back({.id = object_id_t{20}, .position = {measure_id_t{3}, 0},
+        .layout = {.lanes = {lane_definition_t::from(1, 0, stage_group_t::none)}}});
+    chart.measures[1].notes.push_back({.id = object_id_t{21}, .position = {measure_id_t{4}, 100},
+        .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    chart.measures[2].notes.push_back({.id = object_id_t{22}, .position = {measure_id_t{5}, 300},
+        .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+} // namespace
+
+TEST_CASE("BPM range warp stretches every measure inside a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    const auto ratio = GENERATE(rational_t{2, 1}, rational_t{1, 4});
+    const auto first = measure_id_t{3};
+    const auto middle = measure_id_t{4};
+    const auto last = measure_id_t{5};
+    const auto after = measure_id_t{6};
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    const auto before_index = measure_index_t::from(song.charts.front());
+    const auto before_timing = timing_index_t::from(song.charts.front());
+    REQUIRE(before_index);
+    REQUIRE(before_timing.value);
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{first, 240}, {last, 480}}, ratio));
+    REQUIRE(history.undo.size() == 1);
+    const auto& warped = *history.read_chart(chart_id);
+    const auto index = measure_index_t::from(warped);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(index);
+    REQUIRE(timing.value);
+    REQUIRE(warped.divisions_per_standard_measure == 960);
+    const auto capacity = [&](measure_id_t id) { return index->entry_for(id)->row_capacity; };
+    const auto scale = [&](std::uint64_t rows) { return rows * ratio.numerator / ratio.denominator; };
+    CHECK(capacity(first) == 240 + scale(720));
+    CHECK(capacity(middle) == scale(960));
+    CHECK(capacity(last) == scale(480) + 480);
+    // Stretched notes keep their song time at their new rows.
+    const auto& moved_middle = warped.measures[1].notes.front();
+    const auto& moved_last = warped.measures[2].notes.front();
+    CHECK(timing.value->seconds_at(*index, moved_middle.position).seconds ==
+          before_timing.value->seconds_at(*before_index, {middle, 100}).seconds);
+    CHECK(timing.value->seconds_at(*index, moved_last.position).seconds ==
+          before_timing.value->seconds_at(*before_index, {last, 300}).seconds);
+    for (const auto& position : {local_position_t{after, 0}, {last, 0}})
+        CHECK(timing.value->seconds_at(*index, position).seconds ==
+              before_timing.value->seconds_at(*before_index, position).seconds);
+    REQUIRE(undo_document_command(history));
+    const auto& restored = *history.read_chart(chart_id);
+    CHECK(restored.bpms == song.charts.front().bpms);
+    for (std::size_t i = 0; i < restored.measures.size(); ++i)
+        CHECK(restored.measures[i].definition == song.charts.front().measures[i].definition);
+}
+
+TEST_CASE("BPM range warp ending on a measure boundary leaves the next measure alone",
+          "[core][bpm-editor][range-warp]") {
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure_id_t{3}, 480}, {measure_id_t{5}, 0}}, {2, 1}));
+    const auto& warped = *history.read_chart(chart_id);
+    const auto index = measure_index_t::from(warped);
+    REQUIRE(index);
+    CHECK(index->entry_for(measure_id_t{5})->row_capacity == index->entry_for(measure_id_t{6})->row_capacity);
+    CHECK(warped.find_measure(measure_id_t{5})->definition == song.charts.front().measures[2].definition);
+}
+
+TEST_CASE("BPM range warp can keep every measure's geometry across a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure_id_t{3}, 240}, {measure_id_t{5}, 480}}, {5, 1}, false));
+    const auto& warped = *history.read_chart(chart_id);
+    for (std::size_t i = 0; i < warped.measures.size(); ++i)
+        CHECK(warped.measures[i].definition == song.charts.front().measures[i].definition);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(timing.value);
+    // 240 rows at 120 BPM, then 2160 rows at 600 BPM, and 120 BPM again from the boundary.
+    const auto at_end = timing.value->seconds_at(2400).seconds;
+    REQUIRE(at_end);
+    CHECK(*at_end == signed_rational_t{7, 5});
+}
+
+TEST_CASE("BPM range warp carries every timing object across a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    const auto ratio = GENERATE(rational_t{2, 1}, rational_t{1, 4});
+    const auto m3 = measure_id_t{3};
+    const auto m4 = measure_id_t{4};
+    const auto m5 = measure_id_t{5};
+    auto song = multi_measure_song();
+    auto& source = song.charts.front();
+    source.kiai.push_back({.id = object_id_t{30}, .position = {m4, 500}, .enabled = true});
+    source.scrolls.push_back({.id = object_id_t{31}, .position = {m4, 100}, .multiplier = {2, 1}});
+    source.speeds.push_back({.id = object_id_t{32}, .position = {m5, 300}, .multiplier = {3, 2}});
+    source.pauses.push_back({.id = object_id_t{33}, .position = {m4, 200}, .kind = pause_kind_t::stop,
+        .duration = {1, 1}, .source_unit = pause_unit_t::beats});
+    source.pauses.push_back({.id = object_id_t{34}, .position = {m5, 100}, .kind = pause_kind_t::delay,
+        .duration = {1, 2}, .source_unit = pause_unit_t::beats});
+    source.pauses.push_back({.id = object_id_t{35}, .position = {m4, 600}, .kind = pause_kind_t::stop,
+        .duration = {1, 10}, .source_unit = pause_unit_t::seconds});
+    source.warps.push_back({.id = object_id_t{36}, .span = {{m4, 800}, {m4, 900}}});
+    source.sv_recipes.push_back({.id = recipe_id_t{38}, .name = "Rise", .range = {{m3, 500}, {m4, 500}},
+        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}});
+    source.bookmarks.push_back({.id = object_id_t{37}, .position = local_position_t{m5, 200}});
+    REQUIRE(validate_document(song).empty());
+    const auto before_index = measure_index_t::from(source);
+    const auto before_timing = timing_index_t::from(source);
+    REQUIRE(before_index);
+    REQUIRE(before_timing.value);
+    const auto before = [&](local_position_t position) {
+        return before_timing.value->seconds_at(*before_index, position).seconds;
+    };
+    const auto expected = std::array{before({m4, 500}), before({m4, 100}), before({m5, 300}),
+        before({m5, 200}), before({m4, 800}), before({m4, 900}), before({m3, 500}), before({m4, 500})};
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, source.id, {{m3, 240}, {m5, 480}}, ratio));
+    const auto& warped = *history.read_chart(source.id);
+    const auto index = measure_index_t::from(warped);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(index);
+    REQUIRE(timing.value);
+    const auto at = [&](local_position_t position) { return timing.value->seconds_at(*index, position).seconds; };
+    CHECK(at(warped.kiai.front().position) == expected[0]);
+    CHECK(at(warped.scrolls.front().position) == expected[1]);
+    CHECK(at(warped.speeds.front().position) == expected[2]);
+    CHECK(at(*warped.bookmarks.front().position) == expected[3]);
+    CHECK(at(warped.warps.front().span.begin) == expected[4]);
+    CHECK(at(warped.warps.front().span.end) == expected[5]);
+    CHECK(at(warped.sv_recipes.front().range.begin) == expected[6]);
+    CHECK(at(warped.sv_recipes.front().range.end) == expected[7]);
+    const auto duration = [&](std::uint64_t id) {
+        return std::ranges::find(warped.pauses, object_id_t{id}, &pause_event_t::id)->duration;
+    };
+    const auto stretched = ratio.numerator == 2;
+    CHECK(duration(33) == (stretched ? signed_rational_t{2, 1} : signed_rational_t{1, 4}));
+    CHECK(duration(34) == (stretched ? signed_rational_t{1, 1} : signed_rational_t{1, 8}));
+    CHECK(duration(35) == signed_rational_t{1, 10});
+}

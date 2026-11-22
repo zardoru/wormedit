@@ -318,27 +318,51 @@ auto scale_warp_pauses(chart_document_t& chart, const measure_index_t& index,
     return true;
 }
 
-auto deform_warp_measure(chart_document_t& chart, bpm_warp_geometry_t geometry) -> bool {
-    const auto factor = geometry.grid_factor(chart);
+// One entry per authored measure the range touches, in local rows of the original grid.
+auto warp_segments(const measure_index_t& index, const bpm_range_warp_plan_t& plan,
+                   rational_t ratio) -> std::vector<bpm_warp_geometry_t> {
+    std::vector<bpm_warp_geometry_t> segments;
+    for (const auto& entry : index.entries) {
+        const auto begin = entry.absolute_begin_row;
+        const auto end = begin + entry.row_capacity;
+        if (end <= plan.first || begin >= plan.last) continue;
+        segments.push_back({entry.id, std::max(plan.first, begin) - begin,
+                            std::min(plan.last, end) - begin, ratio});
+    }
+    return segments;
+}
+
+auto deform_warp_measures(chart_document_t& chart, std::vector<bpm_warp_geometry_t> segments) -> bool {
+    std::uint64_t factor = 1;
+    for (const auto& segment : segments) {
+        const auto next = std::lcm(factor, segment.grid_factor(chart));
+        if (next < factor) return false;
+        factor = next;
+    }
     if (factor != 1) {
         const auto resolution = timing_arithmetic::checked_multiply(chart.divisions_per_standard_measure, factor);
         if (!resolution) return false;
         auto redivision = redivision_plan_t::from(chart, *resolution);
         if (!redivision.value.chart) return false;
         chart = std::move(*redivision.value.chart);
-        geometry.first *= factor;
-        geometry.last *= factor;
+        for (auto& segment : segments) {
+            segment.first *= factor;
+            segment.last *= factor;
+        }
     }
-    auto* measure = chart.find_measure(geometry.measure);
-    const auto before = validate_measure(chart.divisions_per_standard_measure, measure->definition);
-    if (!before.row_capacity) return false;
-    const auto capacity = geometry.map(*before.row_capacity);
-    if (!capacity) return false;
-    measure->definition = {.length = rows_to_fraction(*capacity, chart.divisions_per_standard_measure)};
+    for (const auto& segment : segments) {
+        auto* measure = chart.find_measure(segment.measure);
+        const auto before = validate_measure(chart.divisions_per_standard_measure, measure->definition);
+        if (!before.row_capacity) return false;
+        const auto capacity = segment.map(*before.row_capacity);
+        if (!capacity) return false;
+        measure->definition = {.length = rows_to_fraction(*capacity, chart.divisions_per_standard_measure)};
+    }
     bool exact = true;
     for_each_chart_position(chart, [&](local_position_t& position, auto) {
-        if (position.measure != geometry.measure) return;
-        const auto row = geometry.map(position.row);
+        const auto segment = std::ranges::find(segments, position.measure, &bpm_warp_geometry_t::measure);
+        if (segment == segments.end()) return;
+        const auto row = segment->map(position.row);
         if (row) position.row = *row;
         else exact = false;
     });
@@ -347,7 +371,6 @@ auto deform_warp_measure(chart_document_t& chart, bpm_warp_geometry_t geometry) 
 
 auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_t& plan,
                              document_command_result_t& outcome, bool resize_span) -> attempt_t<document_edit_effect_t> {
-    const auto old_timing = resize_span ? timing_index_t::from(chart).value : std::nullopt;
     const auto old_index = measure_index_t::from(chart);
     const bpm_edit_limits_t limits;
     bpm_operation_visitor_t operation{{outcome, limits}};
@@ -362,21 +385,16 @@ auto stage_bpm_warp_geometry(chart_document_t& chart, const bpm_range_warp_plan_
         }
         return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
     }
-    const auto end_row = plan.range.begin.row + (plan.last - plan.first);
-    if (!old_index || !old_timing || !scale_warp_pauses(chart, *old_index, plan) ||
-        !deform_warp_measure(chart, {plan.range.begin.measure, plan.range.begin.row, end_row,
-            reduce_fraction(rational_t{static_cast<std::uint64_t>(plan.multiplier.numerator), plan.multiplier.denominator})})) {
+    const auto ratio = reduce_fraction(
+        rational_t{static_cast<std::uint64_t>(plan.multiplier.numerator), plan.multiplier.denominator});
+    auto segments = old_index ? warp_segments(*old_index, plan, ratio) : std::vector<bpm_warp_geometry_t>{};
+    if (!old_index || segments.empty() || !scale_warp_pauses(chart, *old_index, plan) ||
+        !deform_warp_measures(chart, segments)) {
         reject(outcome, diagnostic_code_t::invalid_resolution, "The selected range cannot be warped on an exact chart grid.");
         return {};
     }
-    const auto new_timing = timing_index_t::from(chart);
-    const auto new_index = measure_index_t::from(chart);
-    const auto* previous = old_index->entry_for(plan.range.begin.measure);
-    const auto* warped = new_index ? new_index->entry_for(plan.range.begin.measure) : nullptr;
-    if (!new_timing.value || !warped ||
-        old_timing->seconds_at(previous->absolute_begin_row + previous->row_capacity).seconds !=
-        new_timing.value->seconds_at(warped->absolute_begin_row + warped->row_capacity).seconds) {
-        reject(outcome, diagnostic_code_t::invalid_measure, "The warp would move the end of the measure in audio time.");
+    if (!timing_index_t::from(chart).value) {
+        reject(outcome, diagnostic_code_t::invalid_rational, "The warped timing exceeds clock bounds.");
         return {};
     }
     return {.value = document_edit_effect_t{.changed = true, .command_label = "Warp selected timing range"}};
@@ -401,9 +419,8 @@ auto apply_bpm_range_warp(document_history_t& history, chart_id_t chart, positio
     const auto measures = measure_index_t::from(*source);
     const auto first = measures ? measures->row_of(range.begin) : std::nullopt;
     const auto last = measures ? measures->row_of(range.end) : std::nullopt;
-    if (!first || !last || *first >= *last || range.begin.measure != measures->position_at(*last - 1)->measure)
-        return transaction.reject(diagnostic_code_t::invalid_measure,
-                                  "Select a nonempty range within one authored measure.");
+    if (!first || !last || *first >= *last)
+        return transaction.reject(diagnostic_code_t::invalid_measure, "Select a nonempty timing range.");
     const auto timing = timing_index_t::from(*source);
     bpm_range_warp_plan_t plan{.chart = chart, .range = range,
         .multiplier = {static_cast<std::int64_t>(multiplier.numerator), multiplier.denominator},

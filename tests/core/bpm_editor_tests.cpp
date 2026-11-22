@@ -957,3 +957,94 @@ TEST_CASE("BPM range warp rejects unavailable factors without publishing an edit
     CHECK(history.document.revision == before);
     CHECK(history.undo.empty());
 }
+
+namespace {
+auto multi_measure_song() -> song_document_t {
+    auto song = bpm_song();
+    auto& chart = song.charts.front();
+    for (std::uint64_t id = 4; id <= 6; ++id) chart.measures.push_back({.id = measure_id_t{id}});
+    chart.lane_layouts.push_back({.id = object_id_t{20}, .position = {measure_id_t{3}, 0},
+        .layout = {.lanes = {lane_definition_t::from(1, 0, stage_group_t::none)}}});
+    chart.measures[1].notes.push_back({.id = object_id_t{21}, .position = {measure_id_t{4}, 100},
+        .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    chart.measures[2].notes.push_back({.id = object_id_t{22}, .position = {measure_id_t{5}, 300},
+        .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+} // namespace
+
+TEST_CASE("BPM range warp stretches every measure inside a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    const auto ratio = GENERATE(rational_t{2, 1}, rational_t{1, 4});
+    const auto first = measure_id_t{3};
+    const auto middle = measure_id_t{4};
+    const auto last = measure_id_t{5};
+    const auto after = measure_id_t{6};
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    const auto before_index = measure_index_t::from(song.charts.front());
+    const auto before_timing = timing_index_t::from(song.charts.front());
+    REQUIRE(before_index);
+    REQUIRE(before_timing.value);
+    auto history = document_history_t::from(song);
+
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{first, 240}, {last, 480}}, ratio));
+    REQUIRE(history.undo.size() == 1);
+    const auto& warped = *history.read_chart(chart_id);
+    const auto index = measure_index_t::from(warped);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(index);
+    REQUIRE(timing.value);
+    REQUIRE(warped.divisions_per_standard_measure == 960);
+    const auto capacity = [&](measure_id_t id) { return index->entry_for(id)->row_capacity; };
+    const auto scale = [&](std::uint64_t rows) { return rows * ratio.numerator / ratio.denominator; };
+    CHECK(capacity(first) == 240 + scale(720));
+    CHECK(capacity(middle) == scale(960));
+    CHECK(capacity(last) == scale(480) + 480);
+    // Stretched notes keep their song time at their new rows.
+    const auto& moved_middle = warped.measures[1].notes.front();
+    const auto& moved_last = warped.measures[2].notes.front();
+    CHECK(timing.value->seconds_at(*index, moved_middle.position).seconds ==
+          before_timing.value->seconds_at(*before_index, {middle, 100}).seconds);
+    CHECK(timing.value->seconds_at(*index, moved_last.position).seconds ==
+          before_timing.value->seconds_at(*before_index, {last, 300}).seconds);
+    for (const auto& position : {local_position_t{after, 0}, {last, 0}})
+        CHECK(timing.value->seconds_at(*index, position).seconds ==
+              before_timing.value->seconds_at(*before_index, position).seconds);
+    REQUIRE(undo_document_command(history));
+    const auto& restored = *history.read_chart(chart_id);
+    CHECK(restored.bpms == song.charts.front().bpms);
+    for (std::size_t i = 0; i < restored.measures.size(); ++i)
+        CHECK(restored.measures[i].definition == song.charts.front().measures[i].definition);
+}
+
+TEST_CASE("BPM range warp ending on a measure boundary leaves the next measure alone",
+          "[core][bpm-editor][range-warp]") {
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure_id_t{3}, 480}, {measure_id_t{5}, 0}}, {2, 1}));
+    const auto& warped = *history.read_chart(chart_id);
+    const auto index = measure_index_t::from(warped);
+    REQUIRE(index);
+    CHECK(index->entry_for(measure_id_t{5})->row_capacity == index->entry_for(measure_id_t{6})->row_capacity);
+    CHECK(warped.find_measure(measure_id_t{5})->definition == song.charts.front().measures[2].definition);
+}
+
+TEST_CASE("BPM range warp can keep every measure's geometry across a multi-measure range",
+          "[core][bpm-editor][range-warp]") {
+    auto song = multi_measure_song();
+    const auto chart_id = song.charts.front().id;
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_bpm_range_warp(history, chart_id, {{measure_id_t{3}, 240}, {measure_id_t{5}, 480}}, {5, 1}, false));
+    const auto& warped = *history.read_chart(chart_id);
+    for (std::size_t i = 0; i < warped.measures.size(); ++i)
+        CHECK(warped.measures[i].definition == song.charts.front().measures[i].definition);
+    const auto timing = timing_index_t::from(warped);
+    REQUIRE(timing.value);
+    // 240 rows at 120 BPM, then 2160 rows at 600 BPM, and 120 BPM again from the boundary.
+    const auto at_end = timing.value->seconds_at(2400).seconds;
+    REQUIRE(at_end);
+    CHECK(*at_end == signed_rational_t{7, 5});
+}

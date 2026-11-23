@@ -475,6 +475,8 @@ struct compose_waveform_overview_row_view_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+inline constexpr std::size_t compose_bgm_bar_nps_sample_count = 1025;
+
 struct compose_bgm_bar_mark_view_t {
     double audio_fraction{};
     uint32_t measure{};
@@ -1482,8 +1484,13 @@ struct compose_view_t {
     double bgm_bar_end_fraction{};
     std::vector<wormedit::ui::compose_bgm_bar_mark_view_t> bgm_bar_marks;
     std::vector<wormedit::ui::compose_bgm_bar_bookmark_view_t> bgm_bar_bookmarks;
-    // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
-    // available = the song has audio, reserved = the row is laid out (and takes vertical space).
+    // Uniformly spaced across the BGM bar window, including both ends.
+    std::vector<std::uint32_t> bgm_bar_nps;
+    std::uint32_t bgm_bar_peak_nps{};
+    bool bgm_bar_nps_available{};
+    bool bgm_bar_nps_visible{};
+    bool bgm_bar_chart_timeline{};
+    // The toolbar can hide the bar even when the chart supplies a timeline.
     bool bgm_bar_available{};
     bool bgm_bar_reserved{};
     bool source_playhead_available{};

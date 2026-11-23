@@ -278,7 +278,7 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
 
 bool initialize_compose_view_state(
     frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,
-    int window_height, bool default_bgm_bar_hidden,
+    int window_height, bool bms_or_bmson,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state);
 
@@ -1010,9 +1010,6 @@ void build_branch_statement_feedback_view(wormedit::ui::compose_view_t& view,
 } // namespace wormedit::sys::compose_projection_detail
 
 namespace wormedit::sys {
-auto default_song_bar_hidden(const wormedit::song_document_t& document,
-                             std::optional<wormedit::chart_id_t> chart) -> bool;
-
 auto projected_pointer_hold_active(const std::optional<wormedit::editor_interaction_state_t>& state)
     -> bool;
 

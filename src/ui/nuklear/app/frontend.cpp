@@ -2257,11 +2257,23 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
 }
 
 static bool status_minimap_available(const wormedit::ui::compose_view_t& view) {
-    // Any song waveform enables the bar, whether or not the chart has BGM events.
-    const bool has_audio = view.has_bgm_events || view.bgm_bar_rows.size() != 0 ||
-                           view.waveform_overview_rows.size() != 0;
-    return view.visible && view.scene_available && has_audio &&
+    const bool has_timeline = view.bgm_bar_chart_timeline || view.has_bgm_events ||
+        !view.bgm_bar_rows.empty() || !view.waveform_overview_rows.empty();
+    return view.visible && view.scene_available && has_timeline &&
            worm_ui_nuklear_compose_overview_valid(&view);
+}
+
+static bool render_minimap_option(wormedit::ui::workspace_action_t& action, const char* label,
+                                  WormUiComposeInputKind kind, bool checked) {
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
+    if (!wormedit::ui::chrome::button_label(g_context, label) ||
+        action.input.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit)
+        return false;
+    auto& input = action.input.compose_inputs.emplace_back();
+    input = {};
+    input.kind = kind;
+    input.overview_primary = !checked;
+    return true;
 }
 
 static void render_minimap_preferences(const wormedit::ui::workspace_view_t& view,
@@ -2270,10 +2282,11 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
     static struct nk_rect popup_bounds{};
     if (nk_input_mouse_clicked(&g_context->input, NK_BUTTON_RIGHT, bounds)) {
         const auto content = nk_window_get_content_region(g_context);
+        const auto height = (view.compose.bgm_bar_nps_available ? 90.0f : 60.0f)
+            + 2 * wormedit::ui::chrome::menu_padding;
         popup_bounds = nk_rect(
             std::clamp(bounds.x - content.x, 0.0f, std::max(0.0f, content.w - 340.0f)),
-            std::max(0.0f, bounds.y - content.y - 70.0f), 340,
-            60 + 2 * wormedit::ui::chrome::menu_padding);
+            std::max(0.0f, bounds.y - content.y - height), 340, height);
         open = true;
     }
     if (!open) return;
@@ -2283,15 +2296,15 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
         open = false;
         return;
     }
-    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_primary, 1);
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
-    if (wormedit::ui::chrome::button_label(g_context, label) &&
-        action->input.compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
-        auto& input = action->input.compose_inputs.emplace_back();
-        input = {};
-        input.kind = WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR;
-        input.overview_primary = !view.minimap_click_moves_paused_playhead;
+    const bool density_visible = view.compose.bgm_bar_nps_visible;
+    if (render_minimap_option(*action, label, WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR,
+                              view.minimap_click_moves_paused_playhead) ||
+        (view.compose.bgm_bar_nps_available &&
+         render_minimap_option(*action,
+            density_visible ? "[x] Show notes per second" : "[ ] Show notes per second",
+            WORM_UI_COMPOSE_INPUT_SET_MINIMAP_NPS, density_visible))) {
         open = false;
         nk_popup_close(g_context);
     }
@@ -2300,7 +2313,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
 
 static void render_status_minimap(const wormedit::ui::workspace_view_t& view,
                                   wormedit::ui::workspace_action_t* action, bool available) {
-    if (available && view.compose.bgm_bar_rows.size() == 0) {
+    if (available && view.compose.bgm_bar_rows.empty() && !view.compose.bgm_bar_chart_timeline) {
         const auto bounds = nk_widget_bounds(g_context);
         nk_widget_disable_begin(g_context);
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
@@ -3113,7 +3126,7 @@ static void render_bgm_bar_placeholder() {
 static void render_transport_seek_control(const wormedit::ui::workspace_view_t& view,
                                          wormedit::ui::workspace_action_t& action) {
     render_transport_seek_bar(view, action);
-    // Without song audio, on other tabs, or when hidden from the toolbar the row does not exist.
+    // Compose reserves the row when the toolbar shows the song overview.
     if (!view.compose.visible || !view.compose.bgm_bar_reserved) return;
     nk_layout_row_dynamic(g_context, bgm_bar_row_height, 1);
     if (status_minimap_available(view.compose)) render_status_minimap(view, &action, true);

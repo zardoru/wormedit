@@ -57,15 +57,17 @@ static void update_compose_note_label_cache(const wormedit::ui::compose_view_t* 
     state.note_label.label_note_id = view->selected_note_label_note_id.value;
 }
 
-// Shows or hides the song bar under the seek bar; unavailable while the song has no audio.
+// Shows or hides the song bar under the seek bar.
 static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     const bool clicked = wormedit::ui::chrome::IconButton{
         .glyph = Glyph::waves_horizontal,
-        .tooltip = !view->bgm_bar_available ? "Song audio is unavailable"
-            : view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
+        .tooltip = !view->bgm_bar_available ? "Song overview is unavailable"
+            : view->bgm_bar_reserved
+                ? (view->bgm_bar_nps_available ? "Hide song overview · Right-click overview for NPS" : "Hide song overview")
+                : (view->bgm_bar_nps_available ? "Show song overview · Right-click overview for NPS" : "Show song overview"),
         .selected = view->bgm_bar_reserved,
         .enabled = view->bgm_bar_available}.render(context);
     if (!clicked ||

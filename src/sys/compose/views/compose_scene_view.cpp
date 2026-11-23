@@ -603,7 +603,7 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
 
 bool initialize_compose_view_state(
     frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,
-    int window_height, bool default_bgm_bar_hidden,
+    int window_height, bool bms_or_bmson,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
@@ -619,9 +619,13 @@ bool initialize_compose_view_state(
         return false;
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
-    view.bgm_bar_available = cache.frame.bgm_bar_audio_seen;
-    view.bgm_bar_reserved = cache.frame.bgm_bar_audio_seen &&
-                            !application_state.project.bgm.bgm_bar_hidden.value_or(default_bgm_bar_hidden);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    view.bgm_bar_nps_available = bms_or_bmson;
+#endif
+    view.bgm_bar_nps_visible = view.bgm_bar_nps_available && application_state.project.bgm.bgm_bar_nps_visible;
+    view.bgm_bar_available = cache.frame.bgm_bar_audio_seen || view.bgm_bar_nps_available;
+    view.bgm_bar_reserved = view.bgm_bar_available &&
+                            !application_state.project.bgm.bgm_bar_hidden.value_or(bms_or_bmson);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
     view.bga_visible_lane_mask = 0;

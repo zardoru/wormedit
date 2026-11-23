@@ -309,12 +309,22 @@ struct compose_scene_cache_t {
         std::optional<audio::channel_detail_demand_t> detail_demand;
     };
     struct bgm_bar_cache_t {
+        using timeline_key_t = std::tuple<compose_scene_source_key_t, std::uint64_t, std::uint32_t,
+            std::shared_ptr<const export_cut_frame_timeline_t>>;
+        struct note_density_t {
+            std::vector<double> head_seconds;
+            std::uint32_t peak{};
+            wormedit::keyed_cache_t<bgm_bar_range_t, std::vector<std::uint32_t>> samples;
+        };
         wormedit::keyed_cache_t<
             std::tuple<audio::waveform_key_t, const void*, bgm_bar_range_t>,
             std::vector<wormedit::ui::compose_waveform_overview_row_view_t>> rows;
         wormedit::keyed_cache_t<
-            std::tuple<std::uint64_t, std::uint64_t, bgm_bar_range_t>,
+            std::tuple<timeline_key_t, bgm_bar_range_t>,
             std::vector<wormedit::ui::compose_bgm_bar_mark_view_t>> marks;
+        wormedit::keyed_cache_t<timeline_key_t, note_density_t> note_density;
+        wormedit::keyed_cache_t<std::shared_ptr<const export_cut_axis_t>,
+            std::shared_ptr<const export_cut_frame_timeline_t>> chart_timeline_cuts;
     };
 #endif
     struct hover_timing_snapshot_t {

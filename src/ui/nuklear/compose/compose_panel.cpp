@@ -522,7 +522,7 @@ static bool compose_waveform_overview_valid(const wormedit::ui::compose_view_t* 
 }
 
 static bool compose_bgm_bar_valid(const wormedit::ui::compose_view_t* view) {
-    if (view->bgm_bar_rows.size() == 0)
+    if (view->bgm_bar_rows.empty() && !view->bgm_bar_chart_timeline)
         return view->bgm_bar_marks.size() == 0 && view->bgm_bar_bookmarks.size() == 0;
     if (!std::isfinite(view->bgm_bar_begin_fraction) || !std::isfinite(view->bgm_bar_end_fraction) ||
         view->bgm_bar_begin_fraction < 0.0 || view->bgm_bar_end_fraction > 1.0 ||
@@ -741,6 +741,31 @@ void draw_bgm_bar_waveform(struct nk_context* context, struct nk_command_buffer*
     }
 }
 
+void draw_bgm_bar_note_density(struct nk_context* context, struct nk_command_buffer* canvas,
+                               const wormedit::ui::compose_view_t& view, const BgmBarGeometry& geometry) {
+    const auto& samples = view.bgm_bar_nps;
+    if (samples.size() != wormedit::ui::compose_bgm_bar_nps_sample_count) return;
+    const auto& bounds = geometry.bounds;
+    const auto color = nk_rgb(188, 238, 128);
+    const auto base = bounds.y + bounds.h - 2.0f;
+    const auto height = std::max(0.0f, bounds.h - 4.0f) / std::max(1U, view.bgm_bar_peak_nps);
+    const auto step = bounds.w / static_cast<float>(samples.size() - 1);
+    std::array<float, 2 * wormedit::ui::compose_bgm_bar_nps_sample_count> points;
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+        points[2 * index] = bounds.x + std::min(step * static_cast<float>(index), bounds.w - 1.0f);
+        points[2 * index + 1] = base - height * std::min(view.bgm_bar_peak_nps, samples[index]);
+    }
+    nk_stroke_polyline(canvas, points.data(), static_cast<int>(samples.size()), 1.5f, color);
+    const auto* font = context->style.font;
+    if (!font) return;
+    char text[32];
+    const auto length = std::snprintf(text, sizeof(text), "Song peak %u NPS", view.bgm_bar_peak_nps);
+    const auto width = font->width(font->userdata, font->height, text, length);
+    if (width + 8.0f <= bounds.w)
+        nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - width - 4.0f, bounds.y + 1.0f, width, font->height),
+                     text, length, font, nk_rgba(0, 0, 0, 180), color);
+}
+
 void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* canvas,
                        const wormedit::ui::compose_view_t& view, const BgmBarGeometry& geometry) {
     const auto* font = context->style.font;
@@ -865,16 +890,33 @@ void process_bgm_bar_view_input(struct nk_context* context, const wormedit::ui::
     }
 }
 
+void show_bgm_bar_tooltip(struct nk_context* context, const wormedit::ui::compose_view_t& view,
+                          const BgmBarGeometry& geometry, double fraction, std::string_view timing) {
+    if (!wormedit::ui::nuklear::tooltip::hovered(context, geometry.bounds)) return;
+    std::string label{timing};
+    if (!view.bgm_bar_nps.empty()) {
+        const auto ratio = (fraction - geometry.begin) / (geometry.end - geometry.begin);
+        const auto index = static_cast<std::size_t>(std::round(ratio * (view.bgm_bar_nps.size() - 1)));
+        if (!label.empty()) label += '\n';
+        label += std::to_string(view.bgm_bar_nps[index]) + " NPS (1-second window)";
+    }
+    constexpr char instructions[] =
+        "Wheel to zoom, Shift+wheel or middle-drag to pan, middle-click for whole song, right-click for options.";
+    wormedit::ui::chrome::timing_tooltip(context, label.empty() ? "Song overview" : label.c_str(), instructions);
+}
+
 void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::compose_view_t* view,
                               wormedit::ui::compose_ui_window_t* action, const BgmBarGeometry& geometry) {
     if (!nk_input_is_mouse_hovering_rect(&context->input, geometry.bounds)) return;
-    constexpr char instructions[] =
-        "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
+    const auto fraction = geometry.fraction_at(context->input.mouse.pos.x);
+    if (view->bgm_bar_chart_timeline) {
+        show_bgm_bar_tooltip(context, *view, geometry, fraction, {});
+        return;
+    }
     if (view->selected_audio_asset_id.value == 0 || view->waveform_overview_total_frames == 0 ||
         view->waveform_overview_sample_rate == 0) {
         return;
     }
-    const auto fraction = geometry.fraction_at(context->input.mouse.pos.x);
     const auto frame_value = view->waveform_cut_frames
         ? static_cast<long double>(view->waveform_cut_frames->source_frame_at_fraction(fraction, view->waveform_overview_total_frames).value_or(0))
         : static_cast<long double>(fraction) * (view->waveform_overview_total_frames - 1);
@@ -891,8 +933,7 @@ void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::co
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
         return;
     }
-    if (!wormedit::ui::nuklear::tooltip::hovered(context, geometry.bounds)) return;
-    wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label.c_str(), instructions);
+    show_bgm_bar_tooltip(context, *view, geometry, fraction, view->hover_timing_label);
 }
 
 } // namespace
@@ -905,7 +946,8 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     action->input.minimap.visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
     action->input.minimap.visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
-        view->scene_available && view->bgm_bar_rows.size() != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
+        view->scene_available && (!view->bgm_bar_rows.empty() || view->bgm_bar_chart_timeline) &&
+        bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
     const auto capture_valid = state.waveform_drag.waveform_overview_drag_active &&
         state.waveform_drag.waveform_overview_capture.window_capture &&
@@ -918,8 +960,9 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     if (available && canvas) {
         nk_fill_rect(canvas, bounds, 0.0f,
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
-        draw_bgm_bar_waveform(context, canvas, *view, geometry);
+        if (!view->bgm_bar_rows.empty()) draw_bgm_bar_waveform(context, canvas, *view, geometry);
         draw_bgm_bar_grid(context, canvas, *view, geometry);
+        draw_bgm_bar_note_density(context, canvas, *view, geometry);
         draw_bgm_bar_bookmarks(context, canvas, *view, geometry);
         draw_bgm_bar_markers(canvas, *view, geometry);
         report_compose_bgm_hover(context, view, action, geometry);

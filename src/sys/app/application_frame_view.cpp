@@ -102,6 +102,16 @@ void build_hover_timing_view(frontend_workspace_view_t& flattened, const documen
 namespace {
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+
+void populate_frame_minimap_density(frontend_workspace_view_t& flattened,
+                                    const application_frame_projection_context_t& context) {
+    if (!context.compose_interaction_state) return;
+    auto& bgm = context.application_command_state.project.bgm;
+    populate_compose_minimap_density(flattened, context.compose_scene_cache,
+        *context.compose_interaction_state, bgm.bgm_bar_range, &bgm.bgm_bar_pan_override,
+        &bgm.bgm_bar_window_capture);
+}
+
 // While stopped, the seek bar shows the Compose cursor as the playhead. Uses the previous
 // frame's cached indexes, so it is absent until Compose has built a scene.
 struct stopped_playhead_t {
@@ -364,6 +374,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             context.compose_scene_cache,
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.audio_offset_drag, context.audio_offset_drag_tab, compose_waveform_analysis);
+        populate_frame_minimap_density(flattened, context);
     }
     {
         frame_phase_scope_t source_playhead(frame_phase_t::workspace_source_playhead);
@@ -399,8 +410,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
         });
     }
 #endif
-    // Sticky across the waveform's analysis flicker: the row only goes away when the song has no
-    // audio.
+    // Preserve availability from the selected audio or BGM while waveform analysis catches up.
     if (flattened.view.compose.visible) {
         context.compose_scene_cache.frame.bgm_bar_audio_seen =
             flattened.view.compose.has_bgm_events ||

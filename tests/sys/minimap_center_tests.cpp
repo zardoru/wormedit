@@ -2,9 +2,11 @@
 #include "compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/compose/input/compose_input.h"
+#include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/audio/waveform_view.h"
 
 #include <wormedit/core/timing.h>
+#include <wormedit/core/export_cut_frames.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -92,11 +94,68 @@ struct projection_fixture_t {
         return populate_compose_waveform_projection(flattened, cache, &analysis, false, true,
             &interaction, nullptr, nullptr, nullptr, range, &pan_override, &window_capture);
     }
+
+    void project_density() {
+        auto& view = flattened.view.compose;
+        view.bgm_bar_reserved = true;
+        view.bgm_bar_nps_available = true;
+        populate_compose_minimap_density(flattened, cache, interaction, range,
+                                         &pan_override, &window_capture);
+    }
+
+    void refresh_density_source(std::uint64_t revision) {
+        const auto index = editor_field_scene_index_t::from(chart, revision);
+        require_minimap(index.has_value());
+        cache.scene.cached_measure_index = std::make_shared<const measure_index_t>(index->measures);
+        cache.timing.marker_timing_index = make_timing_index(chart);
+        static_cast<void>(cache.scene.index.get_or_build(compose_scene_source_key_t{
+            .stamp = {.document = {.revision = revision}, .chart = chart.id}},
+            retained_scene_fixture_t{&*index}));
+    }
 };
 
 auto midpoint(const wormedit::ui::compose_view_t& view) -> double {
     return (view.waveform_overview_visible_begin_fraction +
             view.waveform_overview_visible_end_fraction) * 0.5;
+}
+
+void seed_density_chart(projection_fixture_t& fixture) {
+    auto& chart = fixture.chart;
+    chart.source_family = format_family_t::bmson;
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{2}, .name = "Second key"});
+    chart.bpms.push_back({.id = object_id_t{3}, .position = {measure_id_t{2}, 0},
+                          .beats_per_minute = {480, 1}});
+    chart.measures[0].notes = {
+        {.id = object_id_t{10}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{11}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+    };
+    chart.measures[1].notes = {
+        {.id = object_id_t{12}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{13}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2},
+         .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{5}, 0}},
+        {.id = object_id_t{14}, .position = {measure_id_t{2}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{15}, .position = {measure_id_t{2}, 480}, .lane = lane_id_t{1}},
+        {.id = object_id_t{16}, .position = {measure_id_t{2}, 720}, .lane = lane_id_t{1}},
+        {.id = object_id_t{20}, .position = {measure_id_t{2}, 720}, .lane = lane_id_t{1}},
+        {.id = object_id_t{17}, .position = {measure_id_t{2}, 720}, .lane = lane_id_t{2},
+         .kind = note_kind_t::mine},
+    };
+    const object_id_t bgm_lane{19};
+    chart.bgm_source_lanes.push_back({.id = bgm_lane, .name = "BGM"});
+    chart.measures[1].bgm_events.push_back({.id = object_id_t{18}, .position = {measure_id_t{2}, 480},
+                                          .source_lane = bgm_lane});
+    fixture.refresh_density_source(6);
+    fixture.flattened.view.compose.bgm_bar_nps_visible = true;
+    fixture.range = {};
+}
+
+auto density_at(const wormedit::ui::compose_view_t& view, double seconds) -> std::uint32_t {
+    const auto total = view.waveform_overview_total_frames;
+    const auto kept = view.waveform_cut_frames ? view.waveform_cut_frames->kept_frame_count(0, total) : total;
+    const auto fraction = seconds * view.waveform_overview_sample_rate / kept;
+    const auto ratio = (fraction - view.bgm_bar_begin_fraction) /
+        (view.bgm_bar_end_fraction - view.bgm_bar_begin_fraction);
+    return view.bgm_bar_nps.at(static_cast<std::size_t>(std::round(ratio * (view.bgm_bar_nps.size() - 1))));
 }
 } // namespace
 
@@ -225,7 +284,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     chart.source_family = format_family_t::bms;
     auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .charts = {chart}});
     auto binding = workspace_controller_t::from(history);
-    REQUIRE(binding.value);
+    require_minimap(binding.value.has_value());
     binding.value->selected_chart = chart.id;
     binding.value->active_tab = workspace_tab_t::compose;
     compose_scene_cache_t cache;
@@ -238,32 +297,142 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *binding.value, cache, 1280, 800,
                               interaction, application, nullptr);
-        REQUIRE(flattened.view.compose.scene_available);
-        CHECK(flattened.view.compose.bgm_bar_available);
+        require_minimap(flattened.view.compose.scene_available);
+        check_minimap(flattened.view.compose.bgm_bar_available);
         return flattened.view.compose.bgm_bar_reserved;
     };
-    CHECK_FALSE(project());
+    check_minimap(!project());
     history.document.charts.front().source_family = format_family_t::osu_mania;
-    CHECK(project());
+    check_minimap(project());
     history.document.charts.front().source_family = format_family_t::bms;
-    REQUIRE_FALSE(project());
-    REQUIRE(interaction);
+    require_minimap(!project());
+    require_minimap(interaction.has_value());
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    const auto toggle = [&](bool currently_visible) {
+    const auto set_option = [&](WormUiComposeInputKind kind, bool value) {
         wormedit::ui::workspace_action_t action{};
         action.input.compose_inputs.resize(1);
-        action.input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
-        action.input.compose_inputs[0].overview_primary = currently_visible;
+        action.input.compose_inputs[0].kind = kind;
+        action.input.compose_inputs[0].overview_primary = value;
         (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,
             viewport, navigation, application, cache, 0.0);
     };
-    toggle(false);
-    CHECK(project());
-    CHECK(project());
-    toggle(true);
-    CHECK_FALSE(project());
+    set_option(WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE, false);
+    check_minimap(project());
+    check_minimap(flattened.view.compose.bgm_bar_nps_visible);
+    set_option(WORM_UI_COMPOSE_INPUT_SET_MINIMAP_NPS, false);
+    check_minimap(project());
+    check_minimap(!flattened.view.compose.bgm_bar_nps_visible);
+    set_option(WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE, true);
+    check_minimap(!project());
     history.document.charts.front().source_family = format_family_t::osu_mania;
-    CHECK_FALSE(project());
-    CHECK(history.undo.empty());
+    check_minimap(!project());
+    check_minimap(history.undo.empty());
+}
+
+TEST_CASE("minimap density counts playable heads in a rolling second on the waveform timeline",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    require_minimap(fixture.project());
+    fixture.project_density();
+
+    const auto& view = fixture.flattened.view.compose;
+    check_minimap(!view.bgm_bar_chart_timeline);
+    check_minimap(view.bgm_bar_peak_nps == 5);
+    check_minimap(density_at(view, 0.25) == 2);
+    check_minimap(density_at(view, 2.2) == 5);
+    check_minimap(density_at(view, 3.5) == 0);
+}
+
+TEST_CASE("minimap density preserves short peaks between the samples of a long chart",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    for (std::uint64_t id = 9; id <= 8400; ++id)
+        fixture.chart.measures.push_back({.id = measure_id_t{id}});
+    fixture.refresh_density_source(7);
+    fixture.project_density();
+    const auto& view = fixture.flattened.view.compose;
+    require_minimap(!view.bgm_bar_nps.empty());
+    check_minimap(view.bgm_bar_peak_nps == 5);
+    check_minimap(*std::ranges::max_element(view.bgm_bar_nps) == view.bgm_bar_peak_nps);
+}
+
+TEST_CASE("minimap density refreshes after note and timing edits and follows the zoomed window",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    fixture.range = {0.0, 0.5};
+    require_minimap(fixture.project());
+    fixture.project_density();
+    const auto& view = fixture.flattened.view.compose;
+    check_minimap(view.bgm_bar_end_fraction == 0.5);
+    check_minimap(density_at(view, 2.2) == 5);
+
+    fixture.chart.measures[1].notes.erase(fixture.chart.measures[1].notes.begin());
+    fixture.refresh_density_source(7);
+    fixture.project_density();
+    check_minimap(density_at(view, 2.2) == 4);
+
+    fixture.chart.bpms.back().beats_per_minute = {120, 1};
+    fixture.refresh_density_source(8);
+    fixture.project_density();
+    check_minimap(density_at(view, 2.2) == 2);
+    check_minimap(view.bgm_bar_peak_nps == 2);
+
+    fixture.chart.id = chart_id_t{8};
+    fixture.chart.measures[0].notes.clear();
+    fixture.chart.measures[1].notes.clear();
+    fixture.refresh_density_source(8);
+    fixture.project_density();
+    check_minimap(view.bgm_bar_peak_nps == 0);
+}
+
+TEST_CASE("a chart without a song waveform retains minimap navigation when density is hidden",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    fixture.flattened.view.compose.selected_audio_asset_id = {};
+    fixture.project_density();
+    const auto& view = fixture.flattened.view.compose;
+    check_minimap(view.bgm_bar_chart_timeline);
+    check_minimap(view.bgm_bar_rows.empty());
+    check_minimap(!view.bgm_bar_marks.empty());
+    check_minimap(density_at(view, 2.2) == 5);
+    check_minimap(fixture.cache.waveform.waveform_overview_total_frames ==
+                  view.waveform_overview_total_frames);
+    const auto target = compose_minimap_target(0.5, view.waveform_overview_total_frames,
+        view.waveform_overview_sample_rate, audio::output_sample_rate,
+        *fixture.cache.timing.marker_timing_index, *fixture.cache.scene.cached_measure_index, {0});
+    require_minimap(target.has_value());
+    check_minimap(target->snapped_row == 2400);
+
+    auto& mutable_view = fixture.flattened.view.compose;
+    mutable_view.bgm_bar_nps_visible = false;
+    (void)populate_compose_waveform_projection(fixture.flattened, fixture.cache, nullptr,
+        false, false, &fixture.interaction);
+    fixture.project_density();
+    check_minimap(view.bgm_bar_chart_timeline);
+    check_minimap(view.bgm_bar_nps.empty());
+}
+
+TEST_CASE("minimap density removes cut heads and follows the collapsed song clock",
+          "[frame-timing][minimap-nps]") {
+    projection_fixture_t fixture;
+    seed_density_chart(fixture);
+    const std::array cuts{export_cut_t{
+        .id = object_id_t{30}, .begin_milliseconds = 0, .end_milliseconds = 1000}};
+    const auto timeline = export_cut_timeline_t::from(cuts);
+    require_minimap(timeline.ok());
+    const auto axis = export_cut_axis_t::from(*fixture.cache.timing.marker_timing_index, timeline.value);
+    require_minimap(axis.ok());
+    fixture.interaction.cut_axis = std::make_shared<const export_cut_axis_t>(axis.value);
+    fixture.project_density();
+
+    const auto& view = fixture.flattened.view.compose;
+    check_minimap(view.bgm_bar_chart_timeline);
+    check_minimap(view.bgm_bar_peak_nps == 5);
+    check_minimap(density_at(view, 0.3) == 0);
+    check_minimap(density_at(view, 1.2) == 5);
 }

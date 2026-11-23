@@ -1,4 +1,5 @@
 #include "sys/project/workspace_view.h"
+#include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/rational.h>
 #include "sys/audio/waveform_view.h"
 #include <wormedit/audio/waveform_viewport.h>
@@ -11,22 +12,47 @@
 #include <atomic>
 #include <cmath>
 #include <functional>
+#include <limits>
 
 namespace wormedit::sys {
 namespace {
 // Measure-mark sampling work is independent of owned output storage.
 constexpr std::size_t bgm_bar_measure_mark_budget = 1024;
-auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& timing,
+struct minimap_clock_t {
+    std::uint64_t total_frames{};
+    std::uint32_t sample_rate{};
+    std::shared_ptr<const export_cut_frame_timeline_t> cuts;
+
+    auto fraction_at(std::uint64_t frame) const -> double {
+        return cuts ? cuts->collapsed_fraction(frame, total_frames).value_or(0.0)
+                    : static_cast<double>(frame) / total_frames;
+    }
+    auto source_fraction_at(double fraction) const -> double {
+        if (!cuts) return fraction;
+        return static_cast<double>(cuts->source_frame_at_fraction(fraction, total_frames).value_or(0)) /
+            total_frames;
+    }
+    auto duration_seconds() const -> double {
+        const auto kept = cuts ? cuts->kept_frame_count(0, total_frames) : total_frames;
+        return static_cast<double>(kept) / sample_rate;
+    }
+    auto key(const compose_scene_cache_t& cache) const -> compose_scene_cache_t::bgm_bar_cache_t::timeline_key_t {
+        return {cache.scene.index.key().value_or(compose_scene_source_key_t{}),
+                total_frames, sample_rate, cuts};
+    }
+};
+
+auto overview_fraction(const minimap_clock_t& clock, const timing_index_t& timing,
                        long double row, timing_boundary_side_t side, bool round_up)
     -> std::optional<double> {
     row = std::clamp(row, 0.0L, static_cast<long double>(timing.total_rows));
     const auto time = timing.query_seconds(static_cast<std::uint64_t>(row), side);
     if (!time || time->value.denominator == 0) return std::nullopt;
-    const auto frames = static_cast<long double>(time->value.numerator) * waveform.sample_rate /
+    const auto frames = static_cast<long double>(time->value.numerator) * clock.sample_rate /
                         time->value.denominator;
     const auto bounded = std::clamp(round_up ? std::ceil(frames) : std::floor(frames),
-                                   0.0L, static_cast<long double>(waveform.total_frames));
-    return static_cast<double>(bounded / waveform.total_frames);
+                                   0.0L, static_cast<long double>(clock.total_frames));
+    return clock.fraction_at(static_cast<std::uint64_t>(bounded));
 }
 auto build_waveform_overview(const audio::waveform_t& waveform, const timing_index_t& timing,
                              const audio::aligned_waveform_request_t& request, bool& succeeded,
@@ -49,14 +75,37 @@ auto build_waveform_overview(const audio::waveform_t& waveform, const timing_ind
     data.generation = next_generation.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
-auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
-                              const audio::waveform_t& waveform,
-                              const audio::aligned_waveform_request_t& request) -> bool {
-    if (!std::isfinite(request.viewport_scroll_pixels) ||
+auto publish_overview_geometry(wormedit::ui::compose_view_t& view, compose_scene_cache_t& cache,
+                               const minimap_clock_t& clock,
+                               const audio::aligned_waveform_request_t& request) -> bool {
+    if (clock.total_frames == 0 || clock.sample_rate == 0 ||
+        !std::isfinite(request.viewport_scroll_pixels) ||
         !std::isfinite(request.viewport_height_pixels) ||
         !std::isfinite(request.pixels_per_standard_measure) ||
         request.viewport_height_pixels <= 0 || request.pixels_per_standard_measure <= 0)
         return false;
+    const auto& timing = *cache.timing.marker_timing_index;
+    const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
+                               request.pixels_per_standard_measure;
+    const auto source = [&](long double row) { return request.cut_axis ? request.cut_axis->source_row(row) : row; };
+    const auto begin = overview_fraction(clock, timing,
+        source(std::floor(request.viewport_scroll_pixels * rows_per_pixel)),
+        timing_boundary_side_t::before_delays, false);
+    const auto end = overview_fraction(clock, timing,
+        source(std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel)),
+        timing_boundary_side_t::after_stops, true);
+    if (!begin || !end) return false;
+    view.waveform_overview_visible_begin_fraction = *begin;
+    view.waveform_overview_visible_end_fraction = *end;
+    view.waveform_cut_frames = cache.waveform.waveform_cut_frames = clock.cuts;
+    view.waveform_overview_sample_rate = cache.waveform.waveform_overview_sample_rate = clock.sample_rate;
+    view.waveform_overview_total_frames = cache.waveform.waveform_overview_total_frames = clock.total_frames;
+    return true;
+}
+
+auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
+                              const audio::waveform_t& waveform,
+                              const audio::aligned_waveform_request_t& request) -> bool {
     auto& view = flattened.view.compose;
     const auto& timing = *cache.timing.marker_timing_index;
     bool succeeded = true;
@@ -64,35 +113,16 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         std::tuple<const audio::waveform_key_t&, const void*>{waveform.key, &waveform},
         std::bind_front(build_waveform_overview, std::cref(waveform), std::cref(timing),
                         std::cref(request), std::ref(succeeded)));
-    if (!succeeded) return false;
-    const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
-                               request.pixels_per_standard_measure;
-    const auto source = [&](long double row) { return request.cut_axis ? request.cut_axis->source_row(row) : row; };
-    const auto begin = overview_fraction(waveform, timing,
-        source(std::floor(request.viewport_scroll_pixels * rows_per_pixel)),
-        timing_boundary_side_t::before_delays, false);
-    const auto end = overview_fraction(waveform, timing,
-        source(std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel)),
-        timing_boundary_side_t::after_stops, true);
-    if (!begin || !end) return false;
+    const minimap_clock_t clock{waveform.total_frames, waveform.sample_rate, overview.cut_frames};
+    if (!succeeded || !publish_overview_geometry(view, cache, clock, request)) return false;
     view.waveform_overview_rows.assign(overview.rows.begin(), overview.rows.end());
     view.waveform_overview_generation = overview.generation;
-    view.waveform_cut_frames = overview.cut_frames;
-    cache.waveform.waveform_cut_frames = overview.cut_frames;
-    const auto collapsed_fraction = [&](double fraction) {
-        if (!overview.cut_frames) return fraction;
-        const auto frame = static_cast<std::uint64_t>(std::clamp(static_cast<long double>(fraction) * waveform.total_frames,
-            0.0L, static_cast<long double>(waveform.total_frames)));
-        return overview.cut_frames->collapsed_fraction(frame, waveform.total_frames).value_or(0.0);
-    };
-    view.waveform_overview_visible_begin_fraction = collapsed_fraction(*begin);
-    view.waveform_overview_visible_end_fraction = collapsed_fraction(*end);
     const auto zero = timing.query_seconds(0, timing_boundary_side_t::before_delays);
-    const auto zero_fraction = zero && zero && zero->value.denominator != 0
-        ? static_cast<long double>(zero->value.numerator) * waveform.sample_rate /
-          zero->value.denominator / waveform.total_frames : -1.0L;
-    view.waveform_beat_zero_visible = std::isfinite(zero_fraction) && zero_fraction >= 0 && zero_fraction <= 1;
-    view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible ? collapsed_fraction(static_cast<double>(zero_fraction)) : 0.0;
+    const auto zero_frame = zero ? to_long_double(zero->value) * clock.sample_rate : -1.0L;
+    view.waveform_beat_zero_visible = std::isfinite(zero_frame) && zero_frame >= 0 && zero_frame <= clock.total_frames;
+    view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible
+        ? (clock.cuts ? clock.fraction_at(static_cast<std::uint64_t>(zero_frame))
+                      : static_cast<double>(zero_frame / clock.total_frames)) : 0.0;
     return true;
 }
 void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
@@ -101,6 +131,9 @@ void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
     view.waveform_rows.clear();
     view.waveform_overview_rows.clear();
     view.bgm_bar_rows.clear();
+    view.bgm_bar_nps.clear();
+    view.bgm_bar_peak_nps = 0;
+    view.bgm_bar_chart_timeline = false;
     view.bgm_bar_begin_fraction = 0;
     view.bgm_bar_end_fraction = 1;
     view.bgm_bar_marks.clear();
@@ -311,37 +344,34 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
         std::bind_front(build_bgm_bar_rows, std::cref(waveform), range, frames, std::ref(succeeded))));
     return succeeded;
 }
-void build_bgm_bar_marks(const compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+void build_bgm_bar_marks(const compose_scene_cache_t& cache, const minimap_clock_t& clock,
                          bgm_bar_range_t range, std::vector<wormedit::ui::compose_bgm_bar_mark_view_t>& marks) {
     marks.clear();
     if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
-    const auto* frames = cache.waveform.overview.value().cut_frames.get();
-    const auto source_fraction = [&](double fraction) {
-        if (!frames) return fraction;
-        return static_cast<double>(frames->source_frame_at_fraction(fraction, waveform.total_frames).value_or(0)) / waveform.total_frames;
-    };
-    const bgm_bar_range_t source_range{source_fraction(range.begin), source_fraction(range.end)};
+    const bgm_bar_range_t source_range{
+        clock.source_fraction_at(range.begin), clock.source_fraction_at(range.end)};
     for (const auto& mark : bgm_bar_measure_marks(*cache.scene.cached_measure_index,
-             *cache.timing.marker_timing_index, waveform.sample_rate, waveform.total_frames, source_range,
+             *cache.timing.marker_timing_index, clock.sample_rate, clock.total_frames, source_range,
              bgm_bar_measure_mark_budget)) {
-        const auto frame = static_cast<std::uint64_t>(std::round(static_cast<long double>(mark.audio_fraction) * waveform.total_frames));
-        if (frames && frames->contains(frame)) continue;
-        const auto fraction = frames ? frames->collapsed_fraction(frame, waveform.total_frames).value_or(0.0) : mark.audio_fraction;
+        const auto frame = static_cast<std::uint64_t>(std::round(static_cast<long double>(mark.audio_fraction) * clock.total_frames));
+        if (clock.cuts && clock.cuts->contains(frame)) continue;
+        const auto fraction = clock.cuts ? clock.fraction_at(frame) : mark.audio_fraction;
         marks.push_back({fraction, mark.measure});
     }
 }
-void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const minimap_clock_t& clock,
                            bgm_bar_range_t range) {
     static_cast<void>(cache.waveform.bgm_bar.marks.get_or_build(
-        std::tuple{cache.stamp().document.revision, waveform.total_frames, range},
-        std::bind_front(build_bgm_bar_marks, std::cref(cache), std::cref(waveform), range)));
+        std::tuple{clock.key(cache), range},
+        std::bind_front(build_bgm_bar_marks, std::cref(cache), std::cref(clock), range)));
 }
 // Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
 // their fraction of the song. Bookmarks outside the window are left out.
 void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const compose_scene_cache_t& cache,
-                                const audio::waveform_t& waveform, bgm_bar_range_t range) {
+                                const minimap_clock_t& clock, bgm_bar_range_t range) {
     auto& view = flattened.view.compose;
     auto& out = view.bgm_bar_bookmarks;
+    out.clear();
     const auto add = [&](double fraction, std::string_view label, bool audio) {
         if (std::isfinite(fraction) && fraction >= range.begin && fraction <= range.end)
             (void)out.push_back({fraction, label, audio});
@@ -350,11 +380,11 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
     // Compose; one on the cut's end stays and sits on the seam. Beat bookmarks decide by chart
     // row, which is exact; audio bookmarks by song frame.
     const auto frames_to_fraction = [&](long double seconds, bool hide_inside_cut) -> std::optional<double> {
-        if (!view.waveform_cut_frames) return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
-        const auto frame = static_cast<std::uint64_t>(std::clamp(std::round(seconds * waveform.sample_rate), 0.0L,
-                                                                  static_cast<long double>(waveform.total_frames)));
-        if (hide_inside_cut && view.waveform_cut_frames->contains(frame)) return std::nullopt;
-        return view.waveform_cut_frames->collapsed_fraction(frame, waveform.total_frames).value_or(0.0);
+        if (!clock.cuts) return static_cast<double>(seconds * clock.sample_rate / clock.total_frames);
+        const auto frame = static_cast<std::uint64_t>(std::clamp(std::round(seconds * clock.sample_rate), 0.0L,
+                                                                  static_cast<long double>(clock.total_frames)));
+        if (hide_inside_cut && clock.cuts->contains(frame)) return std::nullopt;
+        return clock.fraction_at(frame);
     };
     if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
@@ -373,41 +403,146 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
             add(*fraction, bookmark.label, true);
     }
 }
-// Publishes the BGM bar rows and measure marks for the requested song window.
-void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
-                      const audio::waveform_t& waveform, bgm_bar_range_t requested,
+auto resolve_minimap_window(const wormedit::ui::compose_view_t& view, const compose_scene_cache_t& cache,
+                      const minimap_clock_t& clock, bgm_bar_range_t requested,
                       std::optional<bgm_bar_pan_override_t>* pan_override,
-                      std::optional<bgm_bar_window_capture_t>* window_capture) {
-    const auto minimum_span = bgm_bar_minimum_span(waveform.total_frames);
-    const auto& projection_view = flattened.view.compose;
+                      std::optional<bgm_bar_window_capture_t>* window_capture) -> bgm_bar_range_t {
+    const auto minimum_span = bgm_bar_minimum_span(clock.total_frames);
     const bool keep_capture = window_capture && *window_capture &&
-        bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id.value},
+        bgm_bar_window_capture_matches(**window_capture, song_id_t{view.project_id.value},
             chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
-            asset_id_t{projection_view.selected_audio_asset_id.value}, waveform.total_frames,
-            waveform.sample_rate);
+            asset_id_t{view.selected_audio_asset_id.value}, clock.total_frames,
+            clock.sample_rate);
     if (window_capture && *window_capture && !keep_capture) window_capture->reset();
     const bool keep_pan = pan_override && *pan_override &&
         bgm_bar_pan_override_matches(**pan_override,
-            projection_view.waveform_overview_visible_begin_fraction,
-            projection_view.waveform_overview_visible_end_fraction,
-            song_id_t{projection_view.project_id.value}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
-            asset_id_t{projection_view.selected_audio_asset_id.value});
+            view.waveform_overview_visible_begin_fraction,
+            view.waveform_overview_visible_end_fraction,
+            song_id_t{view.project_id.value}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
+            asset_id_t{view.selected_audio_asset_id.value});
     if (pan_override && *pan_override && !keep_pan) pan_override->reset();
-    const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
+    return keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
         : keep_pan ? bgm_bar_fit((*pan_override)->range, minimum_span)
         : bgm_bar_center_on_visible_span(requested,
-            projection_view.waveform_overview_visible_begin_fraction,
-            projection_view.waveform_overview_visible_end_fraction, minimum_span);
-    if (!refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range, projection_view.waveform_cut_frames.get())) return;
-    refresh_bgm_bar_marks(cache, waveform, range);
+            view.waveform_overview_visible_begin_fraction,
+            view.waveform_overview_visible_end_fraction, minimum_span);
+}
+
+void publish_minimap_window(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
+                            const minimap_clock_t& clock, bgm_bar_range_t range) {
+    refresh_bgm_bar_marks(cache, clock, range);
     auto& view = flattened.view.compose;
-    const auto& rows = cache.waveform.bgm_bar.rows.value();
-    view.bgm_bar_rows.assign(rows.begin(), rows.end());
     const auto& marks = cache.waveform.bgm_bar.marks.value();
     view.bgm_bar_marks.assign(marks.begin(), marks.end());
     view.bgm_bar_begin_fraction = range.begin;
     view.bgm_bar_end_fraction = range.end;
-    populate_bgm_bar_bookmarks(flattened, cache, waveform, range);
+    populate_bgm_bar_bookmarks(flattened, cache, clock, range);
+}
+
+auto chart_minimap_clock(compose_scene_cache_t& cache, const audio::aligned_waveform_request_t& request)
+    -> std::optional<minimap_clock_t> {
+    const auto& timing = *cache.timing.marker_timing_index;
+    const auto end = timing.seconds_at(timing.total_rows, timing_boundary_side_t::after_stops);
+    if (!end) return std::nullopt;
+    constexpr auto rate = audio::output_sample_rate;
+    const auto end_frame = sample_frame_at(*end.seconds, rate, sample_rounding_t::ceil);
+    if (!end_frame || *end_frame.frame == 0 ||
+        *end_frame.frame >= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        return std::nullopt;
+    minimap_clock_t clock{*end_frame.frame + 1, rate};
+    if (request.cut_axis) {
+        clock.cuts = cache.waveform.bgm_bar.chart_timeline_cuts.get_or_build(request.cut_axis, [&] {
+            auto cuts = export_cut_frame_timeline_t::from(request.cut_axis->timeline(), rate);
+            return cuts.ok() ? std::make_shared<const export_cut_frame_timeline_t>(std::move(cuts.value))
+                             : nullptr;
+        });
+        if (!clock.cuts || clock.duration_seconds() == 0.0) return std::nullopt;
+    }
+    return clock;
+}
+
+auto minimap_row_seconds(std::uint64_t row, const timing_index_t& timing, const minimap_clock_t& clock)
+    -> std::optional<double> {
+    const auto time = timing.seconds_at(row);
+    if (!time || time.inside_warp) return std::nullopt;
+    const auto seconds = to_double(*time.seconds);
+    const auto frame = to_long_double(*time.seconds) * clock.sample_rate;
+    if (frame < 0 || frame >= clock.total_frames) return std::nullopt;
+    if (!clock.cuts) return seconds;
+    const auto source_frame = sample_frame_at(*time.seconds, clock.sample_rate).frame;
+    if (!source_frame || clock.cuts->contains(*source_frame)) return std::nullopt;
+    return static_cast<double>(clock.cuts->collapsed_frame(*source_frame)) / clock.sample_rate;
+}
+
+auto build_minimap_note_density(std::span<const editor_field_scene_note_source_t> notes,
+                                const timing_index_t& timing, const minimap_clock_t& clock)
+    -> compose_scene_cache_t::bgm_bar_cache_t::note_density_t {
+    compose_scene_cache_t::bgm_bar_cache_t::note_density_t density;
+    auto& heads = density.head_seconds;
+    heads.reserve(notes.size());
+    std::optional<std::uint64_t> row;
+    std::optional<double> seconds;
+    std::vector<lane_id_t> counted_lanes;
+    for (const auto& note : notes) {
+        if (!is_note_kind_playable(note.kind)) continue;
+        if (row != note.begin_row) {
+            row = note.begin_row;
+            seconds = minimap_row_seconds(*row, timing, clock);
+            counted_lanes.clear();
+        }
+        // Fused BMSON events on one lane contribute one playable head.
+        if (!seconds || std::ranges::find(counted_lanes, note.lane) != counted_lanes.end()) continue;
+        counted_lanes.push_back(note.lane);
+        heads.push_back(*seconds);
+    }
+    // Scene heads are ordered by row. The timing and cut clocks preserve that order.
+    std::size_t begin = 0;
+    for (std::size_t end = 0; end < heads.size(); ++end) {
+        while (heads[end] - heads[begin] >= 1.0) ++begin;
+        density.peak = std::max(density.peak, static_cast<std::uint32_t>(end - begin + 1));
+    }
+    return density;
+}
+
+void sample_minimap_note_density(std::span<const double> heads, double duration, bgm_bar_range_t range,
+                                 std::vector<std::uint32_t>& samples) {
+    samples.resize(wormedit::ui::compose_bgm_bar_nps_sample_count);
+    // Each plotted point owns the interval halfway to its neighboring points.
+    // Track the largest centered one-second window in that interval, including
+    // windows that become denser between the displayed sample coordinates.
+    const auto spacing = (range.end - range.begin) * duration / (samples.size() - 1);
+    const auto first_center = range.begin * duration;
+    auto oldest = std::ranges::upper_bound(heads, first_center - 0.5);
+    auto newest = std::upper_bound(oldest, heads.end(), first_center + 0.5);
+    auto advance_oldest = [&](double threshold) {
+        while (oldest != newest && *oldest <= threshold) ++oldest;
+    };
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+        auto maximum = newest - oldest;
+        const auto edge = std::min(range.end * duration, first_center + (index + 0.5) * spacing);
+        while (newest != heads.end() && *newest <= edge + 0.5) {
+            advance_oldest(*newest - 1.0);
+            ++newest;
+            maximum = std::max(maximum, newest - oldest);
+        }
+        advance_oldest(edge - 0.5);
+        samples[index] = static_cast<std::uint32_t>(maximum);
+    }
+}
+
+void publish_minimap_note_density(wormedit::ui::compose_view_t& view, compose_scene_cache_t& cache,
+                                  const minimap_clock_t& clock) {
+    const auto duration = clock.duration_seconds();
+    if (!view.bgm_bar_nps_visible || !cache.scene.index.value() || duration <= 0) return;
+    auto& density = cache.waveform.bgm_bar.note_density.get_or_build(clock.key(cache),
+        std::bind_front(build_minimap_note_density,
+            std::span<const editor_field_scene_note_source_t>(cache.scene.index.value()->notes),
+            std::cref(*cache.timing.marker_timing_index), std::cref(clock)));
+    const bgm_bar_range_t range{view.bgm_bar_begin_fraction, view.bgm_bar_end_fraction};
+    const auto& samples = density.samples.get_or_build(range,
+        std::bind_front(sample_minimap_note_density, std::span<const double>(density.head_seconds), duration, range));
+    view.bgm_bar_peak_nps = density.peak;
+    view.bgm_bar_nps.assign(samples.begin(), samples.end());
 }
 } // namespace
 
@@ -530,13 +665,41 @@ auto populate_compose_waveform_projection(
              detail_analysis, stable_style});
     orient_compose_waveform_rows(compose.waveform_rows, compose);
 
-    compose.waveform_overview_sample_rate = waveform.sample_rate;
-    compose.waveform_overview_total_frames = waveform.total_frames;
-    cache.waveform.waveform_overview_total_frames = waveform.total_frames;
-    cache.waveform.waveform_overview_sample_rate = waveform.sample_rate;
-    populate_bgm_bar(flattened, cache, waveform, bgm_bar_range, bgm_bar_pan_override,
-                     bgm_bar_window_capture);
+    const minimap_clock_t clock{waveform.total_frames, waveform.sample_rate, compose.waveform_cut_frames};
+    const auto range = resolve_minimap_window(compose, cache, clock, bgm_bar_range, bgm_bar_pan_override,
+                                              bgm_bar_window_capture);
+    if (refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range, clock.cuts.get())) {
+        const auto& rows = cache.waveform.bgm_bar.rows.value();
+        compose.bgm_bar_rows.assign(rows.begin(), rows.end());
+        publish_minimap_window(flattened, cache, clock, range);
+    }
     return true;
+}
+
+void populate_compose_minimap_density(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
+    const editor_interaction_state_t& interaction,
+    bgm_bar_range_t requested, std::optional<bgm_bar_pan_override_t>* pan_override,
+    std::optional<bgm_bar_window_capture_t>* window_capture) {
+    auto& view = flattened.view.compose;
+    if (!view.bgm_bar_reserved || !view.bgm_bar_nps_available || !view.scene_available ||
+        !cache.timing.marker_timing_index) return;
+    if (!view.bgm_bar_rows.empty()) {
+        publish_minimap_note_density(view, cache,
+            {view.waveform_overview_total_frames, view.waveform_overview_sample_rate, view.waveform_cut_frames});
+        return;
+    }
+
+    const audio::aligned_waveform_request_t request{
+        .viewport_scroll_pixels = interaction.viewport_scroll_pixels,
+        .viewport_height_pixels = view.viewport_height_pixels,
+        .pixels_per_standard_measure = view.pixels_per_standard_measure,
+        .cut_axis = interaction.cut_axis};
+    const auto clock = chart_minimap_clock(cache, request);
+    if (!clock || !publish_overview_geometry(view, cache, *clock, request)) return;
+    view.bgm_bar_chart_timeline = true;
+    const auto range = resolve_minimap_window(view, cache, *clock, requested, pan_override, window_capture);
+    publish_minimap_window(flattened, cache, *clock, range);
+    publish_minimap_note_density(view, cache, *clock);
 }
 
 } // namespace wormedit::sys

@@ -2500,6 +2500,8 @@ auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
         if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
             application.preferences.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
+        } else if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_NPS) {
+            application.project.bgm.bgm_bar_nps_visible = input.overview_primary;
         } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {
             application.project.bgm.bgm_bar_hidden = input.overview_primary;
         } else frame.compose_inputs[kept++] = input;

@@ -76,6 +76,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL,
     WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK,
     WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK,
+    WORM_UI_COMPOSE_INPUT_SET_AUDIO_ANALYSIS_MODE,
     WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
@@ -168,6 +169,7 @@ struct compose_input_action_t {
     /* Raw Compose transport selector. Admission preserves note-paint 0 as the legacy toggle,
        while semantic paint accepts only 1 add and 2 remove. */
     uint8_t paint_intent;
+    compose_audio_analysis_mode_t audio_analysis_mode{};
     auto operator==(const compose_input_action_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

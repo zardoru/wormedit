@@ -1634,25 +1634,48 @@ static void draw_compose_waveform_samples(const ComposePaintContext& paint,
         }
     }
 }
+static auto compose_spectrum_color(float amplitude) -> nk_color {
+    const auto db = 20.0f * std::log10(std::max(0.001f, amplitude));
+    const auto level = std::clamp((db + 60.0f) / 60.0f, 0.0f, 1.0f);
+    return nk_rgba(static_cast<int>(255 * level), static_cast<int>(210 * level * level), 90,
+                   static_cast<int>(220 * level));
+}
+
+static void draw_compose_spectrum(const ComposePaintContext& paint, float left, float right) {
+    const auto height = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto band_width = (right - left) / wormedit::ui::compose_spectrum_band_count;
+    for (const auto& row : paint.view->spectrum_rows) {
+        const auto top = compose_projected_y(paint, row.y_pixels) - height * .5f;
+        for (std::size_t band = 0; band < row.bands.size(); ++band) {
+            field_rect(paint, nk_rect(left + static_cast<float>(band) * band_width, top, band_width, height),
+                       0, compose_spectrum_color(row.bands[band]), 6);
+        }
+    }
+}
+
 static void draw_compose_waveform(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
-    if (view.waveform_rows.size() == 0) {
-        return;
-    }
+    const auto& rows = view.audio_analysis_mode == wormedit::ui::compose_audio_analysis_mode_t::waveform
+        ? view.waveform_rows : view.filtered_waveform_rows;
+    if (rows.empty() && view.spectrum_rows.empty()) return;
     const auto scale = paint.viewport.w / static_cast<float>(view.viewport_width_pixels);
     const auto left = paint.viewport.x + static_cast<float>(view.playable_field_left_pixels) * scale;
     const auto right = paint.viewport.x + static_cast<float>(view.playable_field_right_pixels) * scale;
+    if (!view.spectrum_rows.empty()) {
+        draw_compose_spectrum(paint, left, right);
+        return;
+    }
     const auto center = (left + right) * 0.5f;
     const auto half_width = std::max(0.0f, (right - left) * 0.47f);
-    if (view.waveform_rows[0].sample_point) {
+    if (rows[0].sample_point) {
         draw_compose_waveform_samples(paint, center, half_width);
         return;
     }
-    if (draw_compose_envelope_texture(paint, view.waveform_rows.data(), view.waveform_rows.size(),
-            center, half_width, 0, wormedit::ui::theme::field_waveform_color(nk_rgba(57, 137, 167, 96)), wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 142)), false))
+    const auto band_key = view.filtered_waveform_rows.empty() ? 0U : static_cast<unsigned>(view.audio_analysis_mode);
+    if (draw_compose_envelope_texture(paint, rows.data(), rows.size(),
+            center, half_width, 0, wormedit::ui::theme::field_waveform_color(nk_rgba(57, 137, 167, 96)), wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 142)), false, band_key))
         return;
-    for (size_t index = 0; index < view.waveform_rows.size(); ++index) {
-        const auto& row = view.waveform_rows[index];
+    for (const auto& row : rows) {
         if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.rms[0] * half_width, y, center, y, 2.0f,

@@ -967,6 +967,7 @@ if(WORMEDIT_BUILD_APP)
             src/sys/audio/export_cut_preview.cpp
             src/sys/audio/audio_transport_frame.cpp
             src/sys/audio/waveform_analysis_runtime.cpp
+            src/sys/audio/compose_audio_analysis.cpp
             src/sys/audio/sdl_audition_output.cpp
             src/sys/audio/sdl_preview_output.cpp
             src/sys/audio/sdl_scrub_output.cpp

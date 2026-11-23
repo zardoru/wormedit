@@ -123,6 +123,15 @@ beat. After four taps an estimate appears; keep tapping until it settles, pick h
 offset to match the tapped downbeat; later BPM changes keep their musical positions. The song needs
 a music track, and timing must be unlocked.
 
+=== Spectrum and filtered waveforms
+
+Open the Compose Inspector and choose *Waveform* or *Spectrum*. For a waveform, select
+*Full band*, *Low band*, *Mid band* or *High band*. Spectrum shows energy by octave band, with
+lower frequencies on the left. The analysis can take a moment and uses the same timeline as
+the original waveform. At high zoom you may see individual analysis blocks. Long tracks use
+wider blocks to keep the analysis bounded. Playback, export and onset snapping use the
+original audio.
+
 === Beat fitting
 
 With the song's waveform shown in Timing focus, drag a beat line from the narrow rail immediately

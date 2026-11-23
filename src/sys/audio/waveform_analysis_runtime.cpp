@@ -53,6 +53,8 @@ waveform_analysis_t::~waveform_analysis_t() {
 void waveform_analysis_t::shutdown() noexcept {
     if (shutdown_started_) return;
     shutdown_started_ = true;
+    reset_compose_audio_analysis();
+    compose_audio_analysis_scheduler_.shutdown();
     cancel_detail_worker();
     waveform_job_.cancel();
     channel_waveform_job_.cancel();

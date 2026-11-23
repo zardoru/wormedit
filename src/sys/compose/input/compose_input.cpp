@@ -2497,7 +2497,11 @@ auto consume_minimap_preferences(wormedit::ui::frame_input_t& frame,
     std::size_t kept = 0;
     for (std::size_t index = 0; index < frame.compose_inputs.size(); ++index) {
         const auto& input = frame.compose_inputs[index];
-        if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
+        if (input.kind == WORM_UI_COMPOSE_INPUT_SET_AUDIO_ANALYSIS_MODE) {
+            if (input.audio_analysis_mode >= wormedit::ui::compose_audio_analysis_mode_t::waveform &&
+                input.audio_analysis_mode <= wormedit::ui::compose_audio_analysis_mode_t::highs)
+                application.project.compose_view.audio_analysis_mode = input.audio_analysis_mode;
+        } else if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
             application.preferences.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
         } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {

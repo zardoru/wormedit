@@ -15,12 +15,15 @@
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/task_graph.h>
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <vector>
+
+namespace wormedit::sys { struct compose_audio_analysis_t; }
 
 namespace wormedit::sys::runtime {
 
@@ -61,6 +64,18 @@ public:
         const workspace_controller_t& workspace, compose_scene_cache_t& compose_scene_cache,
         const editor_interaction_state_t* compose_interaction_state,
         std::span<const sound_channel_t* const> visible_stems);
+
+    void service_compose_audio_analysis(std::optional<asset_id_t> asset,
+                                        const audio::waveform_t* waveform, bool requested);
+    [[nodiscard]] auto compose_audio_analysis() const noexcept -> const compose_audio_analysis_t* {
+        return compose_audio_analysis_.get();
+    }
+    [[nodiscard]] auto compose_audio_analysis_percent() const noexcept -> unsigned {
+        return compose_audio_analysis_progress_ ? compose_audio_analysis_progress_->load(std::memory_order_relaxed) : 0;
+    }
+    [[nodiscard]] auto is_compose_audio_analysis_pending() const noexcept -> bool {
+        return compose_audio_analysis_task_.has_value();
+    }
 
     void service_compose_detail(std::optional<asset_id_t> asset,
                                 std::optional<audio::aligned_waveform_window_t> window,
@@ -119,6 +134,13 @@ public:
 
 private:
     bool shutdown_started_{};
+    void reset_compose_audio_analysis();
+    std::optional<audio::decoded_source_binding_t> compose_audio_analysis_binding_;
+    std::shared_ptr<const compose_audio_analysis_t> compose_audio_analysis_;
+    std::shared_ptr<std::atomic<unsigned>> compose_audio_analysis_progress_;
+    task_scheduler_t compose_audio_analysis_scheduler_{1, 1, background_scheduler_options()};
+    task_graph_handle_t compose_audio_analysis_worker_;
+    std::optional<task_id_t> compose_audio_analysis_task_;
     void request_selected_waveform(std::optional<asset_id_t> asset,
         audio::waveform_job_t& job, std::optional<asset_id_t>& accepted,
         std::optional<asset_id_t>& attempted, const char* failure_message);

@@ -3,6 +3,7 @@
 #include "bga_usage.h"
 #include "bms_program.h"
 #include "compose_measure_lane.h"
+#include "compose_audio_analysis.h"
 #include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
 #include <wormedit/core/preview_mix.h>
@@ -456,6 +457,11 @@ struct compose_bgm_draft_view_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+struct compose_spectrum_row_view_t {
+    double y_pixels{};
+    std::array<float, compose_spectrum_band_count> bands{};
+};
+
 struct compose_waveform_row_view_t {
     double y_pixels{};
     std::array<float, 2> absolute_peak{};
@@ -1461,6 +1467,12 @@ struct compose_view_t {
     bool bgm_mix_available{};
     std::vector<wormedit::ui::compose_bgm_event_view_t> bgm_events;
     std::vector<wormedit::ui::compose_waveform_row_view_t> waveform_rows;
+    wormedit::ui::compose_audio_analysis_mode_t audio_analysis_mode{};
+    std::vector<wormedit::ui::compose_spectrum_row_view_t> spectrum_rows;
+    std::vector<wormedit::ui::compose_waveform_row_view_t> filtered_waveform_rows;
+    unsigned compose_audio_analysis_percent{};
+    bool compose_audio_analysis_pending{};
+    bool compose_audio_analysis_unavailable{};
     // Cached canvas passes need presence without copying waveform rows.
     bool has_waveform_geometry{};
     /* BMSON stems other than the selected one, each drawn in its BGM lane. */

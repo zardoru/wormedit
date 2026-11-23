@@ -69,6 +69,34 @@ unknown value always fails configuration. The executable links the selected
 adapter through the private `wormedit::ui_frontend` target; `wormedit_core`
 remains UI-library-free.
 
+## Claude Code cloud sessions (Ubuntu 24.04 container)
+
+`scripts/setup-cloud-env.sh test` prepares a fresh cloud container and runs the same
+build and `ctest` as the CI `linux-gcc` job (`headless-events` preset), event harness
+included, with no display, GPU or audio device. It installs g++-14, CMake 4.2 from PyPI
+(libotoworm needs it) and libogg 1.3.6 / libvorbis 1.3.7 from their GitHub tags, because
+`downloads.xiph.org` returns 403 through the cloud egress proxy; the script passes them
+through `WORMEDIT_OGG_SOURCE_DIR` and `WORMEDIT_VORBIS_SOURCE_DIR`. In a new shell run
+`eval "$(scripts/setup-cloud-env.sh env)"`, then
+`cmake --preset headless-events $WORMEDIT_CLOUD_CMAKE_ARGS`. A cold build takes about
+35 minutes on 4 cores; rebuilds are incremental. Tests rewrite the tracked files under
+`.agent/`; run `git checkout .agent` before committing.
+
+`scripts/setup-cloud-env.sh app` additionally installs the X11, Xvfb and Vulkan (lavapipe)
+packages for the real application and `scripts/smoke-compose-virtual-x.sh`.
+
+### Render snapshots (Linux)
+
+`scripts/visual-snapshots.sh` renders the real app under an isolated Xvfb (Mesa lavapipe, no GPU)
+and compares five screens (landing, wizard, UI gallery, Compose, Audio) with the PNGs in
+`tests/visual/linux/`. In the app build it is `ctest -L render-snapshot`
+(`visual.linux-render-snapshots`; skipped if Xvfb, xdotool, ImageMagick or Pillow are missing).
+Two runs on the same machine are bit-exact (Audio shows a few animated pixels, so the
+tolerance is 8 per channel and 200 pixels). The references are valid only for lavapipe: after
+an intended visual change, regenerate them with `scripts/visual-snapshots.sh --update` and
+review the PNG diff; do not compare against Metal or a real GPU. Failing captures stay in
+`build/visual-snapshots`.
+
 ## Crash backtraces on Linux and macOS
 
 The application installs fatal-signal and C++ termination handlers before SDL

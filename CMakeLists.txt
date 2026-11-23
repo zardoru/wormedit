@@ -1051,6 +1051,16 @@ if(WORMEDIT_BUILD_APP AND WORMEDIT_ENABLE_AUDIO_DECODER)
     target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS=1 WORMEDIT_HAS_PROJECT_AUDIO_WAVEFORMS=1)
 endif()
 
+# Linux render snapshots: the real app under Xvfb with Mesa software Vulkan, compared with the
+# references in tests/visual/linux (scripts/visual-snapshots.sh; exits 77 when tools are missing).
+if(TARGET wormedit AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME visual.linux-render-snapshots
+        COMMAND "${CMAKE_SOURCE_DIR}/scripts/visual-snapshots.sh"
+            --app "$<TARGET_FILE:wormedit>" --out "${CMAKE_BINARY_DIR}/visual-snapshots")
+    set_tests_properties(visual.linux-render-snapshots PROPERTIES
+        LABELS "render-snapshot" SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
+
 if(TARGET wormedit AND WORMEDIT_ENABLE_LUA)
     target_link_libraries(wormedit PRIVATE wormedit::scripting)
 endif()

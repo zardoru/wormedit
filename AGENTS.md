@@ -18,7 +18,7 @@
 
 ## Build and verify
 
-- Application build directory: `build` (contains `compile_commands.json`, `build/wormedit`, and the frontend tests). Headless-only: `cmake --preset headless`.
+- Tests are opt-in (`BUILD_TESTING` is OFF by default). Application build directory: `build`, configured with `-DBUILD_TESTING=ON` (contains `compile_commands.json`, `build/wormedit`, and the frontend tests). Headless-only: `cmake --preset headless`.
 - **GATE:** `scripts/gate.sh` builds, runs every test, fails if any test binary cannot list its tests, checks changed-C++ complexity and whitespace, and prints one summary. `--complexity-base REF` chooses the comparison base (default HEAD). Cards that say "Verify: GATE" mean this script.
 - Job count: `build/` uses Make, which is serial unless told otherwise, so always pass a count. Default to `min(8, nproc / concurrent agents)`; use every core only when the owner says the run may use the whole computer. The gate does this (`--agents N`, `--jobs N`, `--whole-machine`; `--print-jobs` shows its choice).
 - Build by hand: `cmake --build build --parallel <jobs>`. Run everything: `ctest --test-dir build -j <jobs> --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`. A ctest line "Error listing tests" means a test binary never ran; treat it as a failure.

@@ -2,6 +2,31 @@
 
 The headless core and its tests build without a window or GPU; the application is an SDL3 GPU program with a Nuklear frontend. Both use the same CMake project and presets.
 
+## Development build vs. build with tests
+
+`BUILD_TESTING` is **OFF by default**: a plain `cmake -S . -B build` builds only the application
+and libraries, because the test suite is most of the compile cost.
+
+| Goal | Configure |
+| --- | --- |
+| Run or develop the app (no tests) | `cmake -S . -B build -G Ninja` |
+| Application plus tests | `cmake -S . -B build -G Ninja -DBUILD_TESTING=ON`, then `ctest --test-dir build` |
+| Headless core and tests, no window | `cmake --preset headless` |
+| Windowless frontend event harness | `cmake --preset headless-events` |
+
+The test presets (`headless`, `headless-events`, `linux-clang`, the `*-cross-headless` presets)
+and `scripts/gate.sh` enable `BUILD_TESTING` themselves; `scripts/gate.sh` refuses a build
+directory configured without it. Release/package presets and scripts leave tests off.
+
+Test executables share one compile of the `sys/` sources they have in common: the event
+harness, frame-timing and frame-projection-arena tests link the static library
+`wormedit_sys_shared` (defined in `tests/CMakeLists.txt`) instead of each compiling its own copy.
+Add a source there only if its preprocessor inputs are identical in those three targets
+(`WORMEDIT_HAS_AUDIO_DECODER` only); sources that read `WORMEDIT_HAS_IMAGE_DECODER`,
+`WORMEDIT_HAS_VIDEO_DECODER`, `WORMEDIT_HAS_LUA` or the allocation hook stay in each
+executable's own list. Without the audio decoder the library is skipped and each target
+compiles its sources as before.
+
 ## Compiler requirements
 
 Wormedit requires a C++23 compiler and standard library providing `std::expected`

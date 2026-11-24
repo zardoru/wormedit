@@ -3,6 +3,7 @@
 #
 #   scripts/gate.sh [build-dir] [--agents N] [--jobs N] [--whole-machine] [--print-jobs] [--complexity-base REF]
 #
+# Needs a build directory configured with -DBUILD_TESTING=ON (tests are opt-in).
 # Builds, runs every CTest test (event-harness and documentation labels included), checks changed
 # C++ complexity and whitespace. A test binary that fails to list its tests counts as a failure:
 # ctest reports "Error listing tests", which a search for failed tests misses.
@@ -60,6 +61,11 @@ fi
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ ! -f $build_dir/CMakeCache.txt ]]; then
     echo "gate: $build_dir is not a configured build directory" >&2
+    exit 2
+fi
+if ! grep -q '^BUILD_TESTING:BOOL=ON' "$build_dir/CMakeCache.txt"; then
+    echo "gate: $build_dir was configured without tests (BUILD_TESTING is OFF by default)." >&2
+    echo "gate: reconfigure with -DBUILD_TESTING=ON or use a test preset (cmake --preset headless)." >&2
     exit 2
 fi
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/wormedit-gate.XXXXXX")

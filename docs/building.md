@@ -18,6 +18,15 @@ The test presets (`headless`, `headless-events`, `linux-clang`, the `*-cross-hea
 and `scripts/gate.sh` enable `BUILD_TESTING` themselves; `scripts/gate.sh` refuses a build
 directory configured without it. Release/package presets and scripts leave tests off.
 
+Test executables share one compile of the `sys/` sources they have in common: the event
+harness, frame-timing and frame-projection-arena tests link the static library
+`wormedit_sys_shared` (defined in `tests/CMakeLists.txt`) instead of each compiling its own copy.
+Add a source there only if its preprocessor inputs are identical in those three targets
+(`WORMEDIT_HAS_AUDIO_DECODER` only); sources that read `WORMEDIT_HAS_IMAGE_DECODER`,
+`WORMEDIT_HAS_VIDEO_DECODER`, `WORMEDIT_HAS_LUA` or the allocation hook stay in each
+executable's own list. Without the audio decoder the library is skipped and each target
+compiles its sources as before.
+
 ## Compiler requirements
 
 Wormedit requires a C++23 compiler and standard library providing `std::expected`
